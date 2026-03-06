@@ -31,19 +31,19 @@ const SISDEL = (() => {
     //  Condominio CRUD
     // ══════════════════════════════════
     async function getCondominios() {
-        const { data, error } = await db().from('condominios').select('*').order('createdAt', { ascending: false });
+        const { data, error } = await db().from('sisdel_condominios').select('*').order('createdAt', { ascending: false });
         if (error) { console.error('getCondominios error:', error); return []; }
         return data || [];
     }
 
     async function getCondominio(id) {
-        const { data, error } = await db().from('condominios').select('*').eq('id', id).single();
+        const { data, error } = await db().from('sisdel_condominios').select('*').eq('id', id).single();
         if (error) { console.error('getCondominio error:', error); return null; }
         return data;
     }
 
     async function createCondominio(name, address, phone) {
-        const { data, error } = await db().from('condominios').insert([{
+        const { data, error } = await db().from('sisdel_condominios').insert([{
             name: name.trim(), address: address || '', phone: phone || '', active: true
         }]).select().single();
         if (error) { console.error('createCondominio error:', error); return null; }
@@ -51,7 +51,7 @@ const SISDEL = (() => {
     }
 
     async function updateCondominio(id, updates) {
-        const { data, error } = await db().from('condominios').update(updates).eq('id', id).select().single();
+        const { data, error } = await db().from('sisdel_condominios').update(updates).eq('id', id).select().single();
         if (error) { console.error('updateCondominio error:', error); return null; }
         return data;
     }
@@ -63,7 +63,7 @@ const SISDEL = (() => {
     //  User CRUD
     // ══════════════════════════════════
     async function getUsers(condominioId) {
-        let query = db().from('users').select('*').order('createdAt', { ascending: false });
+        let query = db().from('sisdel_users').select('*').order('createdAt', { ascending: false });
         if (condominioId) query = query.eq('condominioId', condominioId);
         const { data, error } = await query;
         if (error) { console.error('getUsers error:', error); return []; }
@@ -71,13 +71,13 @@ const SISDEL = (() => {
     }
 
     async function getUserByCode(code) {
-        const { data, error } = await db().from('users').select('*').eq('accessCode', code.toUpperCase()).maybeSingle();
+        const { data, error } = await db().from('sisdel_users').select('*').eq('accessCode', code.toUpperCase()).maybeSingle();
         if (error) { console.error('getUserByCode error:', error); return null; }
         return data;
     }
 
     async function getUserById(id) {
-        const { data, error } = await db().from('users').select('*').eq('id', id).single();
+        const { data, error } = await db().from('sisdel_users').select('*').eq('id', id).single();
         if (error) { console.error('getUserById error:', error); return null; }
         return data;
     }
@@ -90,7 +90,7 @@ const SISDEL = (() => {
         let isUnique = false;
 
         while (!isUnique) {
-            const { count, error } = await db().from('users').select('*', { count: 'exact', head: true }).eq('accessCode', finalCode);
+            const { count, error } = await db().from('sisdel_users').select('*', { count: 'exact', head: true }).eq('accessCode', finalCode);
             if (error) { console.error('Validation error:', error); return null; }
             if (count === 0) {
                 isUnique = true;
@@ -99,7 +99,7 @@ const SISDEL = (() => {
             }
         }
 
-        const { data, error } = await db().from('users').insert([{
+        const { data, error } = await db().from('sisdel_users').insert([{
             condominioId, name: name.trim(), role, accessCode: finalCode,
             casa: casa || '', phone: phone || '', email: email || '',
             paymentStatus: role === ROLES.VECINO ? PAYMENT_STATUS.AL_DIA : null, active: true
@@ -111,19 +111,19 @@ const SISDEL = (() => {
 
     async function updateUser(userId, updates) {
         delete updates.id;
-        const { data, error } = await db().from('users').update(updates).eq('id', userId).select().single();
+        const { data, error } = await db().from('sisdel_users').update(updates).eq('id', userId).select().single();
         if (error) { console.error('updateUser error:', error); return null; }
         return data;
     }
 
     async function deleteUser(userId) {
-        const { error } = await db().from('users').delete().eq('id', userId);
+        const { error } = await db().from('sisdel_users').delete().eq('id', userId);
         if (error) { console.error('deleteUser error:', error); return false; }
         return true;
     }
 
     async function getUsersByPaymentStatus(condominioId, status) {
-        const { data, error } = await db().from('users').select('*').eq('condominioId', condominioId).eq('paymentStatus', status);
+        const { data, error } = await db().from('sisdel_users').select('*').eq('condominioId', condominioId).eq('paymentStatus', status);
         if (error) { console.error('getUsersByPaymentStatus error:', error); return []; }
         return data || [];
     }
@@ -132,7 +132,7 @@ const SISDEL = (() => {
     //  Visit CRUD
     // ══════════════════════════════════
     async function getVisits(condominioId) {
-        let query = db().from('visits').select('*').order('createdAt', { ascending: false });
+        let query = db().from('sisdel_visits').select('*').order('createdAt', { ascending: false });
         if (condominioId) query = query.eq('condominioId', condominioId);
         const { data, error } = await query;
         if (error) { console.error('getVisits error:', error); return []; }
@@ -140,14 +140,14 @@ const SISDEL = (() => {
     }
 
     async function getVisitsByUser(userId) {
-        const { data, error } = await db().from('visits').select('*').eq('userId', userId).order('createdAt', { ascending: false });
+        const { data, error } = await db().from('sisdel_visits').select('*').eq('userId', userId).order('createdAt', { ascending: false });
         if (error) { console.error('getVisitsByUser error:', error); return []; }
         return data || [];
     }
 
     async function getTodayVisits(condominioId) {
         const todayStr = new Date().toISOString().split('T')[0];
-        let query = db().from('visits').select('*').eq('visitDate', todayStr);
+        let query = db().from('sisdel_visits').select('*').eq('visitDate', todayStr);
         if (condominioId) query = query.eq('condominioId', condominioId);
         const { data, error } = await query;
         if (error) { console.error('getTodayVisits error:', error); return []; }
@@ -161,7 +161,7 @@ const SISDEL = (() => {
             timeFormatted = timeFormatted + ":00"; // Supabase time format requires seconds
         }
 
-        const { data, error } = await db().from('visits').insert([{
+        const { data, error } = await db().from('sisdel_visits').insert([{
             condominioId, userId, visitorName: visitorName.trim(), visitorInfo: visitorInfo || '',
             vehiclePlate: (vehiclePlate || '').toUpperCase(), visitDate: visitDate || new Date().toISOString().split('T')[0],
             visitTime: timeFormatted || null, casa: casa || '', qrCode: visitCode, status: VISIT_STATUS.PENDING
@@ -173,13 +173,13 @@ const SISDEL = (() => {
 
     async function updateVisit(visitId, updates) {
         delete updates.id;
-        const { data, error } = await db().from('visits').update(updates).eq('id', visitId).select().single();
+        const { data, error } = await db().from('sisdel_visits').update(updates).eq('id', visitId).select().single();
         if (error) { console.error('updateVisit error:', error); return null; }
         return data;
     }
 
     async function getVisitByQR(qrCode) {
-        const { data, error } = await db().from('visits').select('*').eq('qrCode', qrCode).maybeSingle();
+        const { data, error } = await db().from('sisdel_visits').select('*').eq('qrCode', qrCode).maybeSingle();
         if (error) { console.error('getVisitByQR error:', error); return null; }
         return data;
     }
@@ -192,7 +192,7 @@ const SISDEL = (() => {
     //  Vehicle / Marbete
     // ══════════════════════════════════
     async function getVehicles(userId) {
-        let query = db().from('vehicles').select('*');
+        let query = db().from('sisdel_vehicles').select('*');
         if (userId) query = query.eq('userId', userId);
         const { data, error } = await query;
         if (error) { console.error('getVehicles error:', error); return []; }
@@ -201,7 +201,7 @@ const SISDEL = (() => {
 
     async function createVehicle(userId, condominioId, plate, brand, model, color) {
         const marbeteCode = 'MAR' + Date.now().toString(36).toUpperCase();
-        const { data, error } = await db().from('vehicles').insert([{
+        const { data, error } = await db().from('sisdel_vehicles').insert([{
             condominioId, userId, plate: (plate || '').toUpperCase(),
             brand: brand || '', model: model || '', color: color || '', marbeteCode
         }]).select().single();
@@ -210,13 +210,13 @@ const SISDEL = (() => {
     }
 
     async function getVehicleByQR(qrCode) {
-        const { data, error } = await db().from('vehicles').select('*').eq('marbeteCode', qrCode).maybeSingle();
+        const { data, error } = await db().from('sisdel_vehicles').select('*').eq('marbeteCode', qrCode).maybeSingle();
         if (error) { console.error('getVehicleByQR error:', error); return null; }
         return data;
     }
 
     async function deleteVehicle(vehicleId) {
-        const { error } = await db().from('vehicles').delete().eq('id', vehicleId);
+        const { error } = await db().from('sisdel_vehicles').delete().eq('id', vehicleId);
         if (error) console.error('deleteVehicle error:', error);
     }
 
@@ -224,7 +224,7 @@ const SISDEL = (() => {
     //  Messages
     // ══════════════════════════════════
     async function getMessages(condominioId) {
-        let query = db().from('messages').select('*').order('createdAt', { ascending: false });
+        let query = db().from('sisdel_messages').select('*').order('createdAt', { ascending: false });
         if (condominioId) {
             query = query.or(`condominioId.eq.${condominioId},condominioId.eq.all`);
         }
@@ -234,7 +234,7 @@ const SISDEL = (() => {
     }
 
     async function createMessage(condominioId, fromName, toRole, subject, body) {
-        const { data, error } = await db().from('messages').insert([{
+        const { data, error } = await db().from('sisdel_messages').insert([{
             condominioId: condominioId || 'all', fromName: fromName || 'SISDEL',
             toRole: toRole || 'all', subject: subject || '', body, read: false
         }]).select().single();

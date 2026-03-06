@@ -2,8 +2,8 @@
 -- SISDEL Cloud Database Migration (Supabase PostgreSQL Schema)
 -- ═══════════════════════════════════════════════════════════════
 
--- 1. Table: condominios
-CREATE TABLE public.condominios (
+-- 1. Table: sisdel_condominios
+CREATE TABLE public.sisdel_condominios (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   name character varying NOT NULL,
   address text NULL,
@@ -11,11 +11,11 @@ CREATE TABLE public.condominios (
   active boolean NOT NULL DEFAULT true,
   createdAt timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   serviceExpiry timestamp with time zone NULL,
-  CONSTRAINT condominios_pkey PRIMARY KEY (id)
+  CONSTRAINT sisdel_condominios_pkey PRIMARY KEY (id)
 );
 
--- 2. Table: users
-CREATE TABLE public.users (
+-- 2. Table: sisdel_users
+CREATE TABLE public.sisdel_users (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   condominioId uuid NOT NULL,
   name character varying NOT NULL,
@@ -27,12 +27,12 @@ CREATE TABLE public.users (
   paymentStatus character varying NULL,
   active boolean NOT NULL DEFAULT true,
   createdAt timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
-  CONSTRAINT users_pkey PRIMARY KEY (id),
-  CONSTRAINT users_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES condominios (id) ON DELETE CASCADE
+  CONSTRAINT sisdel_users_pkey PRIMARY KEY (id),
+  CONSTRAINT sisdel_users_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES sisdel_condominios (id) ON DELETE CASCADE
 );
 
--- 3. Table: visits
-CREATE TABLE public.visits (
+-- 3. Table: sisdel_visits
+CREATE TABLE public.sisdel_visits (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   condominioId uuid NOT NULL,
   userId uuid NOT NULL,
@@ -46,13 +46,13 @@ CREATE TABLE public.visits (
   status character varying NOT NULL DEFAULT 'pending'::character varying,
   createdAt timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   enteredAt timestamp with time zone NULL,
-  CONSTRAINT visits_pkey PRIMARY KEY (id),
-  CONSTRAINT visits_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES condominios (id) ON DELETE CASCADE,
-  CONSTRAINT visits_userId_fkey FOREIGN KEY (userId) REFERENCES users (id) ON DELETE CASCADE
+  CONSTRAINT sisdel_visits_pkey PRIMARY KEY (id),
+  CONSTRAINT sisdel_visits_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES sisdel_condominios (id) ON DELETE CASCADE,
+  CONSTRAINT sisdel_visits_userId_fkey FOREIGN KEY (userId) REFERENCES sisdel_users (id) ON DELETE CASCADE
 );
 
--- 4. Table: vehicles
-CREATE TABLE public.vehicles (
+-- 4. Table: sisdel_vehicles
+CREATE TABLE public.sisdel_vehicles (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   condominioId uuid NOT NULL,
   userId uuid NOT NULL,
@@ -62,13 +62,13 @@ CREATE TABLE public.vehicles (
   color character varying NULL,
   marbeteCode character varying NOT NULL,
   createdAt timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
-  CONSTRAINT vehicles_pkey PRIMARY KEY (id),
-  CONSTRAINT vehicles_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES condominios (id) ON DELETE CASCADE,
-  CONSTRAINT vehicles_userId_fkey FOREIGN KEY (userId) REFERENCES users (id) ON DELETE CASCADE
+  CONSTRAINT sisdel_vehicles_pkey PRIMARY KEY (id),
+  CONSTRAINT sisdel_vehicles_condominioId_fkey FOREIGN KEY (condominioId) REFERENCES sisdel_condominios (id) ON DELETE CASCADE,
+  CONSTRAINT sisdel_vehicles_userId_fkey FOREIGN KEY (userId) REFERENCES sisdel_users (id) ON DELETE CASCADE
 );
 
--- 5. Table: messages
-CREATE TABLE public.messages (
+-- 5. Table: sisdel_messages
+CREATE TABLE public.sisdel_messages (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   condominioId text NOT NULL, -- UUID or 'all'
   fromName character varying NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE public.messages (
   body text NOT NULL,
   read boolean NOT NULL DEFAULT false,
   createdAt timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
-  CONSTRAINT messages_pkey PRIMARY KEY (id)
+  CONSTRAINT sisdel_messages_pkey PRIMARY KEY (id)
 );
 
 -- IMPORTANT: 

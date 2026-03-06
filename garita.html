@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISDEL - Panel de Garita</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
+</head>
+
+<body>
+    <div class="bg-decor">
+        <div class="decor-1"></div>
+        <div class="decor-2"></div>
+    </div>
+
+    <div class="page-container">
+        <header class="top-bar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round" width="24" height="24">
+                        <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
+                        <circle cx="12" cy="10" r="3" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1 id="condoName">SISDEL</h1>
+                    <p>Módulo de Seguridad</p>
+                </div>
+            </div>
+            <div class="top-bar-actions">
+                <button class="btn btn-ghost btn-icon theme-toggle" id="themeToggle" title="Cambiar Tema">
+                    <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
+            </div>
+        </header>
+
+        <div class="page-content">
+            <div id="urgentWarnings" style="margin-bottom:1.5rem;"></div>
+
+            <div class="stats-grid compact">
+                <div class="stat-card">
+                    <div class="stat-value" style="color:var(--success)" id="enteredCount">0</div>
+                    <div class="stat-label">Ingresos Hoy</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:var(--primary-light)" id="pendingCount">0</div>
+                    <div class="stat-label">Pendientes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:var(--danger)" id="morososCount">0</div>
+                    <div class="stat-label">Vecinos Morosos</div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-top:1.5rem;">
+                <!-- Scanner Section -->
+                <div>
+                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">📷 Control de Acceso</h3>
+                    <div class="card" style="padding:1rem; text-align:center;">
+                        <div id="scannerPlaceholder"
+                            style="padding:2rem; background:var(--bg-item); border-radius:12px; margin-bottom:1rem;">
+                            <div style="font-size:3rem; margin-bottom:1rem; opacity:0.5;">📷</div>
+                            <button class="btn btn-primary" id="btnStartScanner">Activar Cámara</button>
+                        </div>
+                        <div id="reader"
+                            style="width:100%; border-radius:12px; overflow:hidden; background:var(--bg-item); display:none;">
+                        </div>
+                        <button class="btn btn-ghost btn-sm" id="btnStopScanner"
+                            style="display:none; margin-top:1rem;">Detener Cámara</button>
+                    </div>
+                    <div class="card" style="margin-top:1.5rem; padding:1.5rem;">
+                        <h4 style="margin-bottom:1rem;">Manual / Directo</h4>
+                        <form id="formManual">
+                            <div class="input-group">
+                                <input type="text" class="form-input" id="manualCode"
+                                    placeholder="Ingrese código manual" style="text-transform:uppercase;">
+                                <button type="submit" class="btn btn-primary btn-sm"
+                                    id="btnManualCheck">Verificar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Visits List Section -->
+                <div>
+                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">📅 Visitas del Día</h3>
+                    <div id="todayVisitsList"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="app-footer">
+            Software de Seguridad Residencial - SISDEL &copy; 2026
+        </footer>
+    </div>
+
+    <!-- Modal Resultados -->
+    <div class="modal-overlay" id="modalResult" style="display:none;">
+        <div class="modal" id="resultCard" style="max-width:400px; text-align:center; padding:2rem;">
+            <div id="resultIcon" style="font-size:4rem; margin-bottom:1rem;"></div>
+            <h2 id="resultTitle" style="margin-bottom:1rem;"></h2>
+            <div id="resultInfo" class="card"
+                style="background:var(--bg-item); padding:1rem; margin-bottom:1.5rem; text-align:left;">
+                <!-- dynamic info -->
+            </div>
+            <div id="resultActions">
+                <button class="btn btn-primary" style="width:100%;" id="btnConfirmEntry">Confirmar Ingreso</button>
+                <button class="btn btn-ghost" style="width:100%; margin-top:0.5rem;" id="btnCloseResult">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
+    <script src="sisdel-core.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = await SISDEL.requireAuth([SISDEL.ROLES.POLICIA, SISDEL.ROLES.ADMIN]);
+            if (!session) return;
+
+            const condoId = session.condominioId;
+            document.getElementById('condoName').textContent = session.condominioName;
+
+            // --- Theme Support ---
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon');
+            const applyTheme = (theme) => {
+                if (theme === 'light') document.body.classList.add('light-mode');
+                else document.body.classList.remove('light-mode');
+                themeIcon.innerHTML = theme === 'light'
+                    ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
+                    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />';
+            };
+            const currentTheme = localStorage.getItem('sisdel_theme') || 'dark';
+            applyTheme(currentTheme);
+            themeToggle.addEventListener('click', () => {
+                const newTheme = document.body.classList.contains('light-mode') ? 'dark' : 'light';
+                localStorage.setItem('sisdel_theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // --- Stats & Rendering ---
+            async function renderStats() {
+                const visits = await SISDEL.getTodayVisits(condoId);
+                const entered = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED).length;
+                const morososList = await SISDEL.getUsersByPaymentStatus(condoId, SISDEL.PAYMENT_STATUS.MOROSO);
+                const morosos = morososList.length;
+
+                document.getElementById('enteredCount').textContent = entered;
+                document.getElementById('pendingCount').textContent = visits.length - entered;
+                document.getElementById('morososCount').textContent = morosos;
+
+                const warnings = document.getElementById('urgentWarnings');
+                if (morosos > 0) {
+                    warnings.innerHTML = `
+                        <div class="card" style="border-left: 6px solid var(--danger); padding:1rem; animation:fadeIn 0.5s;">
+                            <div style="display:flex; align-items:center; gap:0.75rem;">
+                                <div style="color:var(--danger); font-weight:bold;">⚠️ ALERTA VECINOS MOROSOS:</div>
+                                <div style="font-size:0.9rem;">${morosos} viviendas tienen restricciones de acceso por falta de pago.</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    warnings.innerHTML = '';
+                }
+            }
+
+            async function renderVisits() {
+                const visits = await SISDEL.getTodayVisits(condoId);
+                const list = document.getElementById('todayVisitsList');
+                if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas el día de hoy.</p>'; return; }
+                list.innerHTML = visits.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(v => `
+                    <div class="list-item">
+                        <div class="avatar">${v.visitorName.charAt(0)}</div>
+                        <div class="item-info">
+                            <div class="item-name">${v.visitorName}</div>
+                            <div class="item-detail">${v.visitTime || 'Todo el día'} · Casa: ${v.casa || 'N/A'}</div>
+                        </div>
+                        <div>
+                            ${v.status === SISDEL.VISIT_STATUS.ENTERED
+                        ? '<span class="badge badge-success">Ingresó</span>'
+                        : '<button class="btn btn-ghost btn-sm" onclick="processVisit(\'' + v.id + '\')">Validar</button>'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // --- Verification Logic ---
+            let currentVerification = null;
+
+            window.processVisit = async function (visitId) {
+                const visits = await SISDEL.getTodayVisits(condoId);
+                const visit = visits.find(v => v.id === visitId);
+                if (visit) await handleAccessMatch(visit, 'visit');
+            };
+
+            async function handleAccessMatch(obj, type) {
+                currentVerification = { obj, type };
+                const modal = document.getElementById('modalResult');
+                const title = document.getElementById('resultTitle');
+                const icon = document.getElementById('resultIcon');
+                const info = document.getElementById('resultInfo');
+                const btnConfirm = document.getElementById('btnConfirmEntry');
+
+                modal.style.display = 'flex';
+                btnConfirm.style.display = 'block';
+
+                if (type === 'visit') {
+                    // Check resident status
+                    const resident = await SISDEL.getUserById(obj.userId);
+                    const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+
+                    if (isMoroso) {
+                        icon.textContent = '⛔';
+                        title.textContent = 'ACCESO DENEGADO';
+                        title.style.color = 'var(--danger)';
+                        info.innerHTML = `
+                            <p><strong>Invitado:</strong> ${obj.visitorName}</p>
+                            <p><strong>Casa:</strong> ${obj.casa}</p>
+                            <hr style="margin:0.5rem 0; opacity:0.1;">
+                            <p style="color:var(--danger); font-weight:bold;">⚠️ RESIDENTE MOROSO</p>
+                            <p class="text-xs">El residente ${resident.name} tiene pagos pendientes. No se permite el ingreso de visitas.</p>
+                        `;
+                        btnConfirm.style.display = 'none';
+                    } else {
+                        icon.textContent = '✅';
+                        title.textContent = 'ACCESO PERMITIDO';
+                        title.style.color = 'var(--success)';
+                        info.innerHTML = `
+                            <p><strong>Invitado:</strong> ${obj.visitorName}</p>
+                            <p><strong>Casa:</strong> ${obj.casa}</p>
+                            <p><strong>Asunto:</strong> ${obj.visitorInfo || 'No especificado'}</p>
+                            <p><strong>Placa:</strong> ${obj.vehiclePlate || 'N/A'}</p>
+                        `;
+                    }
+                } else if (type === 'vehicle') {
+                    icon.textContent = '🚗';
+                    title.textContent = 'RESIDENTE IDENTIFICADO';
+                    title.style.color = 'var(--accent)';
+                    const resident = await SISDEL.getUserById(obj.userId);
+                    const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+
+                    info.innerHTML = `
+                        <p><strong>Vehículo:</strong> ${obj.brand} ${obj.model} (${obj.color})</p>
+                        <p><strong>Placa:</strong> ${obj.plate}</p>
+                        <hr style="margin:0.5rem 0; opacity:0.1;">
+                        <p><strong>Piloto:</strong> ${resident ? resident.name : 'Desconocido'}</p>
+                        ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
+                    `;
+                } else if (type === 'resident') {
+                    icon.textContent = '👤';
+                    title.textContent = 'ACCESO RESIDENTE';
+                    title.style.color = 'var(--primary-light)';
+                    const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                    info.innerHTML = `
+                        <p><strong>Nombre:</strong> ${obj.name}</p>
+                        <p><strong>Casa:</strong> ${obj.casa || 'N/A'}</p>
+                        <hr style="margin:0.5rem 0; opacity:0.1;">
+                        ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
+                    `;
+                }
+            }
+
+            document.getElementById('btnConfirmEntry').addEventListener('click', async () => {
+                if (!currentVerification) return;
+                const { obj, type } = currentVerification;
+
+                if (type === 'visit') {
+                    await SISDEL.markVisitAsEntered(obj.id);
+                    SISDEL.showToast('Ingreso de visita registrado', 'success');
+                } else {
+                    SISDEL.showToast('Ingreso registrado', 'info');
+                }
+
+                document.getElementById('modalResult').style.display = 'none';
+                await renderStats();
+                await renderVisits();
+            });
+
+            document.getElementById('btnCloseResult').addEventListener('click', () => {
+                document.getElementById('modalResult').style.display = 'none';
+            });
+
+            // --- Manual Verification ---
+            document.getElementById('formManual').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const code = document.getElementById('manualCode').value.trim();
+                if (!code) return;
+
+                // 1. Is it a Visit Code?
+                const visits = await SISDEL.getVisits(condoId);
+                const visit = visits.find(v => v.qrCode === code.toUpperCase());
+                if (visit) {
+                    await handleAccessMatch(visit, 'visit');
+                    document.getElementById('manualCode').value = '';
+                    return;
+                }
+
+                // 2. Is it a Vehicle/Marbete Code?
+                const vehicles = await SISDEL.getVehicles();
+                const vehicle = vehicles.find(v => v.marbeteCode === code.toUpperCase() && v.condominioId === condoId);
+                if (vehicle) {
+                    await handleAccessMatch(vehicle, 'vehicle');
+                    document.getElementById('manualCode').value = '';
+                    return;
+                }
+
+                // 3. Is it a Resident Access Code?
+                const users = await SISDEL.getUsers(condoId);
+                const resident = users.find(u => u.accessCode === code.toUpperCase());
+                if (resident) {
+                    await handleAccessMatch(resident, 'resident');
+                    document.getElementById('manualCode').value = '';
+                    return;
+                }
+
+                SISDEL.showToast('El código no es válido o no pertenece a este condominio', 'error');
+            });
+
+            // --- QR Scanner ---
+            let html5QrCode = null;
+            const scannerPlaceholder = document.getElementById('scannerPlaceholder');
+            const readerDiv = document.getElementById('reader');
+            const btnStart = document.getElementById('btnStartScanner');
+            const btnStop = document.getElementById('btnStopScanner');
+
+            async function startScanner() {
+                try {
+                    scannerPlaceholder.style.display = 'none';
+                    readerDiv.style.display = 'block';
+                    btnStop.style.display = 'inline-flex';
+
+                    html5QrCode = new Html5Qrcode("reader");
+                    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+                    await html5QrCode.start(
+                        { facingMode: "environment" },
+                        config,
+                        (decodedText) => {
+                            document.getElementById('manualCode').value = decodedText;
+                            document.getElementById('btnManualCheck').click();
+                            // Optional: stop after success?
+                        }
+                    );
+                } catch (err) {
+                    console.error("No se pudo iniciar la cámara:", err);
+                    SISDEL.showToast("Error al acceder a la cámara", "error");
+                    stopScanner();
+                }
+            }
+
+            async function stopScanner() {
+                if (html5QrCode) {
+                    try {
+                        await html5QrCode.stop();
+                    } catch (e) { }
+                    html5QrCode = null;
+                }
+                readerDiv.style.display = 'none';
+                btnStop.style.display = 'none';
+                scannerPlaceholder.style.display = 'block';
+            }
+
+            btnStart.addEventListener('click', startScanner);
+            btnStop.addEventListener('click', stopScanner);
+
+            await renderStats();
+            await renderVisits();
+        });
+    </script>
+</body>
+
+</html>

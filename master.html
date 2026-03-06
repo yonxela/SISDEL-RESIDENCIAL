@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISDEL - Panel Master</title>
+    <meta name="description" content="Panel de administración master de SISDEL para gestionar todos los condominios.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="bg-decor">
+        <div class="decor-1"></div>
+        <div class="decor-2"></div>
+    </div>
+
+    <div class="page-container">
+        <header class="top-bar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round" width="24" height="24">
+                        <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
+                        <circle cx="12" cy="10" r="3" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>SISDEL</h1>
+                    <p>Panel Master</p>
+                </div>
+            </div>
+            <div class="top-bar-actions">
+                <button class="btn btn-ghost btn-icon theme-toggle" id="themeToggle" title="Cambiar Tema">
+                    <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnLogout">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    Salir
+                </button>
+            </div>
+        </header>
+
+        <div class="page-content">
+            <div class="tabs" id="mainTabs">
+                <button class="tab active" data-tab="condominios" id="tabBtnCondos">🏘️ Condominios</button>
+                <button class="tab" data-tab="usuarios" id="tabBtnUsers">👥 Usuarios</button>
+                <button class="tab" data-tab="mensajes">✉️ Mensajes</button>
+            </div>
+
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Tab Content: Condominios -->
+            <div class="tab-content" id="tabCondominios">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                    <h3 style="font-size:1.25rem;">Condominios Registrados</h3>
+                    <button class="btn btn-primary btn-sm" id="btnNewCondo">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Nuevo Condominio
+                    </button>
+                </div>
+                <div id="condoList"></div>
+            </div>
+
+            <!-- Tab Content: Users -->
+            <div class="tab-content" id="tabUsuarios" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                    <h3 style="font-size:1.25rem;">Usuarios Globales</h3>
+                    <select class="form-input" id="filterCondo" style="max-width:250px;">
+                        <option value="">Todos los condominios</option>
+                    </select>
+                </div>
+                <div id="usersList"></div>
+            </div>
+
+            <!-- Tab Content: Messages -->
+            <div class="tab-content" id="tabMensajes" style="display:none;">
+                <div class="card" style="padding:2rem; margin-bottom:2rem;">
+                    <h3 style="margin-bottom:1.5rem;">✉️ Enviar Mensaje Global</h3>
+                    <form id="messageForm">
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+                            <div class="form-group">
+                                <label>Condominio Destino</label>
+                                <select class="form-input" id="msgCondo" required>
+                                    <option value="all">Todos</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Rol Destino</label>
+                                <select class="form-input" id="msgRole" required>
+                                    <option value="all">Todos</option>
+                                    <option value="admin">Administradores</option>
+                                    <option value="policia">Policías / Guardias</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Asunto</label>
+                            <input type="text" class="form-input" id="msgSubject" placeholder="Título del mensaje"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label>Mensaje</label>
+                            <textarea class="form-input" id="msgBody" placeholder="Contenido del mensaje..." rows="4"
+                                required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%;">Enviar Mensaje</button>
+                    </form>
+                </div>
+                <h3 style="margin-bottom:1rem;">Mensajes Enviados</h3>
+                <div id="sentMessagesList"></div>
+            </div>
+        </div>
+
+        <footer class="app-footer">
+            Software desarrollado por <strong>SISDEL INTERNATIONAL</strong> &copy; 2026
+        </footer>
+    </div>
+
+    <!-- Modal Condominio Detail -->
+    <div class="modal-overlay" id="modalCondoDetail" style="display:none;">
+        <div class="modal" style="max-width:500px;">
+            <div class="modal-header">
+                <h3 id="detailTitle">Detalles del Condominio</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseDetail">&times;</button>
+            </div>
+            <div class="modal-body" id="detailBody" style="padding:1.5rem;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nuevo Condominio -->
+    <div class="modal-overlay" id="modalNewCondo" style="display:none;">
+        <div class="modal" style="max-width:450px;">
+            <div class="modal-header">
+                <h3>Nuevo Condominio</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseNewCondo">&times;</button>
+            </div>
+            <form id="condoForm" style="padding:1.5rem;">
+                <div class="form-group">
+                    <label>Nombre del Condominio</label>
+                    <input type="text" class="form-input" id="newCondoName" required>
+                </div>
+                <div class="form-group">
+                    <label>Dirección</label>
+                    <input type="text" class="form-input" id="newCondoAddress">
+                </div>
+                <div class="form-group">
+                    <label>Nombre del Administrador Inicial</label>
+                    <input type="text" class="form-input" id="newAdminName" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Crear y Generar
+                    Acceso</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Editar Usuario -->
+    <div class="modal-overlay" id="modalEditUser" style="display:none;">
+        <div class="modal" style="max-width:450px;">
+            <div class="modal-header">
+                <h3>Editar Usuario</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseEditUser">&times;</button>
+            </div>
+            <form id="editUserForm" style="padding:1.5rem;">
+                <input type="hidden" id="editUserId">
+                <div class="form-group">
+                    <label>Nombre Completo</label>
+                    <input type="text" class="form-input" id="editUserName" required>
+                </div>
+                <div class="form-group">
+                    <label>Código de Acceso</label>
+                    <input type="text" class="form-input" id="editUserCode" required style="text-transform:uppercase;">
+                </div>
+                <div class="form-group">
+                    <label>Casa/Lote (Opcional)</label>
+                    <input type="text" class="form-input" id="editUserCasa">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
+                    Cambios</button>
+                <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                    <button type="button" class="btn btn-ghost" id="btnDeleteUser"
+                        style="width:100%; color:var(--danger);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                        </svg>
+                        Eliminar Usuario Definitivamente
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
+    <script src="sisdel-core.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = await SISDEL.requireAuth([SISDEL.ROLES.MASTER]);
+            if (!session) return;
+
+            // --- Theme Support ---
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon');
+            const applyTheme = (theme) => {
+                const isLight = theme === 'light';
+                document.body.classList.toggle('light-mode', isLight);
+                themeIcon.innerHTML = isLight
+                    ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
+                    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />';
+            };
+            const currentTheme = localStorage.getItem('sisdel_theme') || 'dark';
+            applyTheme(currentTheme);
+            themeToggle.addEventListener('click', () => {
+                const newTheme = document.body.classList.contains('light-mode') ? 'dark' : 'light';
+                localStorage.setItem('sisdel_theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // --- Tabs Logic ---
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = {
+                condominios: document.getElementById('tabCondominios'),
+                usuarios: document.getElementById('tabUsuarios'),
+                mensajes: document.getElementById('tabMensajes')
+            };
+            tabs.forEach(tab => {
+                tab.addEventListener('click', async () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    Object.values(tabContents).forEach(tc => tc.style.display = 'none');
+                    tabContents[tab.dataset.tab].style.display = 'block';
+                    if (tab.dataset.tab === 'usuarios') await renderUsers();
+                    if (tab.dataset.tab === 'mensajes') {
+                        if (typeof renderSentMessages === 'function') await renderSentMessages();
+                        else if (SISDEL.renderMessages) await SISDEL.renderMessages('sentMessagesList');
+                    }
+                });
+            });
+
+            // --- App Data Rendering ---
+            async function renderStats() {
+                const condos = await SISDEL.getCondominios();
+                const users = await SISDEL.getUsers();
+                const totalVecinos = users.filter(u => u.role === SISDEL.ROLES.VECINO).length;
+                const totalPolicias = users.filter(u => u.role === SISDEL.ROLES.POLICIA).length;
+
+                let todayVisits = 0;
+                for (const c of condos) {
+                    const visits = await SISDEL.getTodayVisits(c.id);
+                    todayVisits += visits.length;
+                }
+
+                document.getElementById('statsGrid').innerHTML = `
+                    <div class="stat-card"><div class="stat-value" style="color:var(--primary-light)">${condos.length}</div><div class="stat-label">Condominios</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--accent)">${totalVecinos}</div><div class="stat-label">Vecinos</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--success)">${totalPolicias}</div><div class="stat-label">Guardias</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--warning)">${todayVisits}</div><div class="stat-label">Visitas Hoy</div></div>
+                `;
+            }
+
+            async function renderCondos() {
+                const condos = await SISDEL.getCondominios();
+                const list = document.getElementById('condoList');
+                if (condos.length === 0) return list.innerHTML = '<p class="text-center text-muted">Sin condominios registrados.</p>';
+                list.innerHTML = condos.map(c => `
+                    <div class="list-item">
+                        <div class="avatar">${c.name.charAt(0)}</div>
+                        <div class="item-info">
+                            <div class="item-name">${c.name}</div>
+                            <div class="item-detail">${c.address || 'Sin dirección'}</div>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <span class="badge ${c.active ? 'badge-success' : 'badge-danger'}">${c.active ? 'Activo' : 'Inactivo'}</span>
+                            <button class="btn btn-primary btn-sm" onclick="viewCondoDetails('${c.id}')">Detalles</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            window.viewCondoDetails = async function (condoId) {
+                const condo = await SISDEL.getCondominio(condoId);
+                const users = await SISDEL.getUsers(condoId);
+                const admins = users.filter(u => u.role === SISDEL.ROLES.ADMIN);
+
+                document.getElementById('detailTitle').textContent = condo.name;
+                document.getElementById('detailBody').innerHTML = `
+                    <div style="margin-bottom:1.5rem;">
+                        <label class="text-xs text-muted">Dirección</label>
+                        <p style="font-weight:500;">${condo.address || 'N/A'}</p>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem;">
+                        <div class="card" style="padding:0.75rem; text-align:center;">
+                            <div style="font-size:1.25rem; font-weight:bold;">${users.filter(u => u.role === SISDEL.ROLES.VECINO).length}</div>
+                            <div class="text-xs text-muted">Vecinos</div>
+                        </div>
+                        <div class="card" style="padding:0.75rem; text-align:center;">
+                            <div style="font-size:1.25rem; font-weight:bold;">${users.filter(u => u.role === SISDEL.ROLES.POLICIA).length}</div>
+                            <div class="text-xs text-muted">Guardias</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:1.5rem;">
+                        <label class="text-xs text-muted">Administrador Responsable</label>
+                        ${admins.length ? admins.map(a => `<div class="list-item" style="margin-top:0.5rem; padding:0.75rem; background:var(--bg-item);">
+                            <div class="item-info">
+                                <div class="item-name">${a.name}</div>
+                                <div class="item-detail">Código: <strong>${a.accessCode}</strong></div>
+                            </div>
+                        </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
+                    </div>
+                    <button class="btn btn-primary" style="width:100%; margin-bottom:0.75rem;" onclick="goToCondoUsers('${condoId}')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        Ver Usuarios
+                    </button>
+                    <button class="btn btn-ghost" style="width:100%; color:${condo.active ? 'var(--danger)' : 'var(--success)'};" onclick="toggleCondoStatus('${condoId}')">
+                        ${condo.active ? 'Desactivar Servicio' : 'Activar Servicio'}
+                    </button>
+                `;
+                document.getElementById('modalCondoDetail').style.display = 'flex';
+            };
+
+            window.goToCondoUsers = async function (condoId) {
+                document.getElementById('modalCondoDetail').style.display = 'none';
+                document.getElementById('filterCondo').value = condoId;
+                document.getElementById('tabBtnUsers').click();
+                await renderUsers(); // Explicit call to ensure list updates
+            };
+
+            window.toggleCondoStatus = async function (id) {
+                const condo = await SISDEL.getCondominio(id);
+                if (condo.active) await SISDEL.deactivateCondominio(id);
+                else await SISDEL.activateCondominio(id);
+                SISDEL.showToast('Estado actualizado', 'info');
+                document.getElementById('modalCondoDetail').style.display = 'none';
+                await renderCondos(); await renderStats();
+            };
+
+            // --- Tab: Users Logic ---
+            window.renderUsers = async function () {
+                const condoId = document.getElementById('filterCondo').value;
+                const users = await SISDEL.getUsers(condoId);
+                const allCondos = await SISDEL.getCondominios();
+                const list = document.getElementById('usersList');
+
+                if (users.length === 0) {
+                    list.innerHTML = '<p class="text-center text-muted" style="padding:2rem;">No se encontraron usuarios.</p>';
+                    return;
+                }
+
+                list.innerHTML = users.map(u => {
+                    const condo = allCondos.find(c => c.id === u.condominioId);
+                    return `
+                        <div class="list-item">
+                            <div class="avatar">${u.name.charAt(0)}</div>
+                            <div class="item-info">
+                                <div class="item-name">
+                                    ${u.name} 
+                                    <span class="badge badge-info" style="font-size:0.6rem;">${u.role}</span>
+                                </div>
+                                <div class="item-detail">
+                                    <span class="text-xs font-bold" style="color:var(--primary-light)">${condo ? condo.name : 'SISDEL'}</span> · 
+                                    Code: ${u.accessCode} ${u.casa ? '· Casa: ' + u.casa : ''}
+                                </div>
+                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="openEditUser('${u.id}')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                                Editar
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            };
+
+            window.openEditUser = async function (userId) {
+                const user = await SISDEL.getUserById(userId);
+                if (!user) return;
+
+                document.getElementById('editUserId').value = user.id;
+                document.getElementById('editUserName').value = user.name;
+                document.getElementById('editUserCode').value = user.accessCode;
+                document.getElementById('editUserCasa').value = user.casa || '';
+
+                // Show modal
+                document.getElementById('modalEditUser').style.display = 'flex';
+
+                // Select first input text automatically
+                setTimeout(() => document.getElementById('editUserName').select(), 100);
+            };
+
+            // Auto-select text on focus for all inputs in edit modal
+            document.querySelectorAll('#editUserForm input').forEach(input => {
+                input.addEventListener('focus', () => input.select());
+            });
+
+            document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const id = document.getElementById('editUserId').value;
+                const name = document.getElementById('editUserName').value;
+                const code = document.getElementById('editUserCode').value.toUpperCase();
+                const casa = document.getElementById('editUserCasa').value;
+
+                console.log('Master: Updating user...', { id, name, accessCode: code, casa });
+                const result = await SISDEL.updateUser(id, { name, accessCode: code, casa });
+                if (result) {
+                    SISDEL.showToast('Usuario actualizado con éxito', 'success');
+                    document.getElementById('modalEditUser').style.display = 'none';
+                    await renderUsers();
+                } else {
+                    SISDEL.showToast('Error al actualizar usuario', 'danger');
+                }
+            });
+
+            document.getElementById('btnDeleteUser').addEventListener('click', async () => {
+                const id = document.getElementById('editUserId').value;
+                if (confirm('¿Está seguro de eliminar este usuario definitivamente? Esta acción es irreversible.')) {
+                    if (await SISDEL.deleteUser(id)) {
+                        SISDEL.showToast('Usuario eliminado correctamente', 'warning');
+                        document.getElementById('modalEditUser').style.display = 'none';
+                        await renderUsers();
+                        await renderStats();
+                    } else {
+                        SISDEL.showToast('No se pudo eliminar el usuario', 'danger');
+                    }
+                }
+            });
+
+            async function populateSelectors() {
+                const condos = await SISDEL.getCondominios();
+                const filter = document.getElementById('filterCondo');
+                const msgSel = document.getElementById('msgCondo');
+                const options = condos.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                filter.innerHTML = '<option value="">Todos los condominios</option>' + options;
+                msgSel.innerHTML = '<option value="all">Todos</option>' + options;
+            }
+
+            // --- Event Listeners ---
+            document.getElementById('btnNewCondo').addEventListener('click', () => document.getElementById('modalNewCondo').style.display = 'flex');
+            document.getElementById('btnCloseNewCondo').addEventListener('click', () => document.getElementById('modalNewCondo').style.display = 'none');
+            document.getElementById('btnCloseDetail').addEventListener('click', () => document.getElementById('modalCondoDetail').style.display = 'none');
+            document.getElementById('btnCloseEditUser').addEventListener('click', () => document.getElementById('modalEditUser').style.display = 'none');
+            document.getElementById('filterCondo').addEventListener('change', renderUsers);
+
+            document.getElementById('condoForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('newCondoName').value;
+                const addr = document.getElementById('newCondoAddress').value;
+                const adm = document.getElementById('newAdminName').value;
+                const c = await SISDEL.createCondominio(name, addr, '');
+                await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', '', '');
+                SISDEL.showToast('Condominio y administrador creados', 'success');
+                document.getElementById('modalNewCondo').style.display = 'none';
+                await renderCondos(); await renderStats(); await populateSelectors();
+                e.target.reset();
+            });
+
+            // Initial render
+            await renderStats();
+            await renderCondos();
+            await populateSelectors();
+        });
+    </script>
+</body>
+
+</html>

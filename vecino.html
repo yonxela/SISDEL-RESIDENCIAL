@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISDEL - Portal del Vecino</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+
+<body>
+    <div class="bg-decor">
+        <div class="decor-1"></div>
+        <div class="decor-2"></div>
+    </div>
+
+    <div class="page-container">
+        <header class="top-bar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round" width="24" height="24">
+                        <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
+                        <circle cx="12" cy="10" r="3" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1 id="condoName">Villa Ferrer</h1>
+                    <p>Portal del Residente</p>
+                </div>
+            </div>
+            <div class="top-bar-actions">
+                <button class="btn btn-ghost btn-icon theme-toggle" id="themeToggle" title="Cambiar Tema">
+                    <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
+            </div>
+        </header>
+
+        <div class="page-content">
+            <div class="welcome-hero"
+                style="text-align:left; margin-bottom:2rem; padding:1.5rem; background:var(--bg-surface); border-radius:var(--radius-lg); border:1px solid var(--border-strong);">
+                <h2 style="font-size:1.75rem; margin-bottom:0.5rem; color:var(--text-primary);">¡Hola, <span
+                        id="userName">...</span>!</h2>
+                <p style="color:var(--text-secondary);">Bienvenido a su centro de gestión residencial. Casa/Lote: <span
+                        id="userCasa" class="badge badge-info">...</span></p>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card" style="cursor:pointer;" id="cardNewVisit">
+                    <div class="stat-value" style="color:var(--primary-light)">+</div>
+                    <div class="stat-label">Registrar Visita</div>
+                    <p class="text-xs text-muted" style="margin-top:0.5rem;">Genera un código QR para su invitado</p>
+                </div>
+                <div class="stat-card" style="cursor:pointer;" id="cardNewVehicle">
+                    <div class="stat-value" style="color:var(--accent)">🚗</div>
+                    <div class="stat-label">Mi Marbete</div>
+                    <p class="text-xs text-muted" style="margin-top:0.5rem;">Solicite o vea su pase vehicular</p>
+                </div>
+            </div>
+
+            <h3 style="margin-bottom:1.25rem; font-size:1.25rem;">📋 Mis Visitas Recientes</h3>
+            <div id="visitasList"></div>
+        </div>
+
+        <footer class="app-footer">
+            SISDEL &copy; 2026 - Access Intelligence
+        </footer>
+    </div>
+
+    <!-- Modal Registrar Visita -->
+    <div class="modal-overlay" id="modalNewVisit" style="display:none;">
+        <div class="modal" style="max-width:400px;">
+            <div class="modal-header">
+                <h3>Registrar Nueva Visita</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseNewVisit">&times;</button>
+            </div>
+            <form id="visitForm" style="padding:1.5rem;">
+                <div class="form-group">
+                    <label>Nombre del Invitado</label>
+                    <input type="text" class="form-input" id="vName" placeholder="Nombre completo" required>
+                </div>
+                <div class="form-group">
+                    <label>Finalidad / Empresa</label>
+                    <input type="text" class="form-input" id="vInfo"
+                        placeholder="Ej. Familiar, Delivery, Visita técnica">
+                </div>
+                <div class="form-group">
+                    <label>Número de Placa (Opcional)</label>
+                    <input type="text" class="form-input" id="vPlate" placeholder="Ej. P-123ABC"
+                        style="text-transform:uppercase;">
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label>Fecha</label>
+                        <input type="date" class="form-input" id="vDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Hora Aprox.</label>
+                        <input type="time" class="form-input" id="vTime">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Generar Pase de
+                    Acceso</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Mi Marbete (Pases Vehiculares) -->
+    <div class="modal-overlay" id="modalMarbete" style="display:none;">
+        <div class="modal" style="max-width:450px;">
+            <div class="modal-header">
+                <h3>🚗 Mis Pases Vehiculares</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseMarbete">&times;</button>
+            </div>
+            <div style="padding:1.5rem;">
+                <div id="vehicleList" style="margin-bottom:1.5rem;"></div>
+
+                <div style="border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                    <h4 style="margin-bottom:1rem; font-size:1rem;">Registrar Nuevo Vehículo</h4>
+                    <form id="vehicleForm">
+                        <div class="form-group">
+                            <label>Placa</label>
+                            <input type="text" class="form-input" id="plate" required placeholder="Ej. P-123ABC"
+                                style="text-transform:uppercase;">
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div class="form-group">
+                                <label>Marca</label>
+                                <input type="text" class="form-input" id="brand" required placeholder="Ej. Toyota">
+                            </div>
+                            <div class="form-group">
+                                <label>Color</label>
+                                <input type="text" class="form-input" id="color" required placeholder="Ej. Blanco">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:0.5rem;">Registrar
+                            Vehículo</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para QR -->
+    <div class="modal-overlay" id="modalQR" style="display:none;">
+        <div class="modal" style="max-width:320px; text-align:center;">
+            <h3 id="modalQRTitle" style="margin-bottom:0.5rem;">Pase Digital</h3>
+            <p id="qrType" class="text-xs text-muted" style="margin-bottom:1rem;"></p>
+            <div id="qrcode"
+                style="padding:1rem; background:#fff; border-radius:12px; display:inline-block; margin-bottom:1.5rem;">
+            </div>
+            <p id="qrDetail" style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1.5rem;"></p>
+            <button class="btn btn-primary" style="width:100%;" id="btnShare">Compartir Pase</button>
+            <button class="btn btn-ghost" style="width:100%; margin-top:0.5rem;" id="btnCloseQR">Cerrar</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
+    <script src="sisdel-core.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO]);
+            if (!session) return;
+
+            document.getElementById('userName').textContent = session.userName;
+            document.getElementById('userCasa').textContent = session.userCasa || 'Pendiente';
+            document.getElementById('condoName').textContent = session.condominioName;
+
+            // --- Theme Support ---
+            const themeToggle = document.getElementById('themeToggle');
+            const themeIcon = document.getElementById('themeIcon');
+            const applyTheme = (theme) => {
+                const isLight = theme === 'light';
+                document.body.classList.toggle('light-mode', isLight);
+                themeIcon.innerHTML = isLight
+                    ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
+                    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />';
+            };
+            const currentTheme = localStorage.getItem('sisdel_theme') || 'dark';
+            applyTheme(currentTheme);
+            themeToggle.addEventListener('click', () => {
+                const newTheme = document.body.classList.contains('light-mode') ? 'dark' : 'light';
+                localStorage.setItem('sisdel_theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // --- Visits Logic ---
+            async function renderVisits() {
+                const visits = await SISDEL.getVisitsByUser(session.userId);
+                const list = document.getElementById('visitasList');
+                if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas recientes.</p>'; return; }
+                list.innerHTML = visits.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(v => `
+                    <div class="list-item">
+                        <div class="avatar">${v.visitorName.charAt(0)}</div>
+                        <div class="item-info">
+                            <div class="item-name">${v.visitorName}</div>
+                            <div class="item-detail">${SISDEL.formatDate(v.visitDate)} · Placa: ${v.vehiclePlate || 'N/A'}</div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="showQR('${v.id}', 'visit')">Ver Pase</button>
+                    </div>
+                `).join('');
+            }
+
+            // --- New Visit Handler ---
+            const modalNewVisit = document.getElementById('modalNewVisit');
+            document.getElementById('cardNewVisit').addEventListener('click', () => {
+                document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
+                modalNewVisit.style.display = 'flex';
+            });
+            document.getElementById('btnCloseNewVisit').addEventListener('click', () => modalNewVisit.style.display = 'none');
+
+            document.getElementById('visitForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('vName').value;
+                const info = document.getElementById('vInfo').value;
+                const plate = document.getElementById('vPlate').value;
+                const date = document.getElementById('vDate').value;
+                const time = document.getElementById('vTime').value;
+
+                const visit = await SISDEL.createVisit(session.condominioId, session.userId, name, info, plate, date, time, session.userCasa);
+                if (visit) {
+                    SISDEL.showToast('Pase de visita generado', 'success');
+                    modalNewVisit.style.display = 'none';
+                    e.target.reset();
+                    await renderVisits();
+                    showQR(visit.id, 'visit');
+                }
+            });
+
+            // --- Vehicles / Marbete Logic ---
+            const modalMarbete = document.getElementById('modalMarbete');
+            document.getElementById('cardNewVehicle').addEventListener('click', () => {
+                renderVehicles();
+                modalMarbete.style.display = 'flex';
+            });
+            document.getElementById('btnCloseMarbete').addEventListener('click', () => modalMarbete.style.display = 'none');
+
+            async function renderVehicles() {
+                const vehicles = await SISDEL.getVehicles(session.userId);
+                const list = document.getElementById('vehicleList');
+                if (vehicles.length === 0) { list.innerHTML = '<p class="text-center text-muted">Aún no tiene vehículos registrados.</p>'; return; }
+                list.innerHTML = vehicles.map(v => `
+                    <div class="list-item" style="background:var(--bg-item);">
+                        <div class="item-info">
+                            <div class="item-name">${v.plate} · ${v.brand}</div>
+                            <div class="item-detail">${v.color} · Marbete: <strong>${v.marbeteCode}</strong></div>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" onclick="showQR('${v.id}', 'vehicle')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </button>
+                    </div>
+                `).join('');
+            }
+
+            document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const plate = document.getElementById('plate').value;
+                const brand = document.getElementById('brand').value;
+                const color = document.getElementById('color').value;
+
+                if (await SISDEL.createVehicle(session.userId, session.condominioId, plate, brand, '', color)) {
+                    SISDEL.showToast('Vehículo registrado exitosamente', 'success');
+                    e.target.reset();
+                    await renderVehicles();
+                }
+            });
+
+            // --- QR View ---
+            window.showQR = async function (id, type) {
+                const qrcodeContainer = document.getElementById('qrcode');
+                qrcodeContainer.innerHTML = '';
+
+                let codeText, titleText, detailText, typeLabel;
+
+                if (type === 'visit') {
+                    const visits = await SISDEL.getVisitsByUser(session.userId);
+                    const v_obj = visits.find(visit => visit.id === id);
+                    if (!v_obj) return;
+                    codeText = v_obj.qrCode;
+                    titleText = v_obj.visitorName;
+                    detailText = `Visita para ${session.userCasa}. Válido: ${SISDEL.formatDate(v_obj.visitDate)}`;
+                    typeLabel = 'INVITACIÓN DIGITAL';
+                } else {
+                    const vehicles = await SISDEL.getVehicles(session.userId);
+                    const v_obj = vehicles.find(veh => veh.id === id);
+                    if (!v_obj) return;
+                    codeText = v_obj.marbeteCode;
+                    titleText = v_obj.plate;
+                    detailText = `Vehículo: ${v_obj.brand} ${v_obj.color}. Residente: ${session.userName}`;
+                    typeLabel = 'MARBETE VEHICULAR';
+                }
+
+                new QRCode(qrcodeContainer, { text: codeText, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff" });
+                document.getElementById('modalQRTitle').textContent = titleText;
+                document.getElementById('qrType').textContent = typeLabel;
+                document.getElementById('qrDetail').textContent = detailText;
+                document.getElementById('modalQR').style.display = 'flex';
+
+                // Hide other modals if open
+                modalNewVisit.style.display = 'none';
+                modalMarbete.style.display = 'none';
+            };
+
+            document.getElementById('btnCloseQR').addEventListener('click', () => document.getElementById('modalQR').style.display = 'none');
+
+            document.getElementById('btnShare').addEventListener('click', () => {
+                SISDEL.showToast('Enlace de pase copiado al portapapeles', 'success');
+            });
+
+            renderVisits();
+        });
+    </script>
+</body>
+
+</html>

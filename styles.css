@@ -117,12 +117,6 @@ body {
     flex-direction: column;
     position: relative;
     color: white;
-    animation: gentle-pan 40s ease-in-out infinite alternate;
-}
-
-@keyframes gentle-pan {
-    0% { background-position: center bottom; background-size: 110%; }
-    100% { background-position: center top; background-size: 115%; }
 }
 
 .auth-page::before {
@@ -310,6 +304,23 @@ body {
     margin-bottom: 2.5rem;
 }
 
+@keyframes floatGlow {
+    0% {
+        transform: translateY(0) scale(1);
+        box-shadow: 0 0 15px rgba(37, 99, 235, 0.2);
+    }
+
+    50% {
+        transform: translateY(-5px) scale(1.05);
+        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.6);
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+        box-shadow: 0 0 15px rgba(37, 99, 235, 0.2);
+    }
+}
+
 .security-badge {
     width: 64px;
     height: 64px;
@@ -321,6 +332,7 @@ body {
     margin: 0 auto 1.5rem;
     color: var(--primary);
     border: 1px solid rgba(37, 99, 235, 0.3);
+    animation: floatGlow 3s ease-in-out infinite;
 }
 
 .form-title {

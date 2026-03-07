@@ -223,7 +223,7 @@
 
                 // Visual feedback
                 btnSubmit.disabled = true;
-                if(loadingSpinner) loadingSpinner.style.display = 'inline-block';
+                if (loadingSpinner) loadingSpinner.style.display = 'inline-block';
 
                 try {
                     const result = await SISDEL.login(code);
@@ -237,15 +237,15 @@
                         loginCard.classList.add('shake');
                         SISDEL.showToast(result.error || 'Acceso denegado', 'error');
                         btnSubmit.disabled = false;
-                        if(loadingSpinner) loadingSpinner.style.display = 'none';
+                        if (loadingSpinner) loadingSpinner.style.display = 'none';
                         setTimeout(() => loginCard.classList.remove('shake'), 500);
                     }
-                } catch(err) {
+                } catch (err) {
                     console.error("Login Error:", err);
                     loginCard.classList.add('shake');
                     SISDEL.showToast("Error de conexión remota", 'error');
                     btnSubmit.disabled = false;
-                    if(loadingSpinner) loadingSpinner.style.display = 'none';
+                    if (loadingSpinner) loadingSpinner.style.display = 'none';
                     setTimeout(() => loginCard.classList.remove('shake'), 500);
                 }
             });

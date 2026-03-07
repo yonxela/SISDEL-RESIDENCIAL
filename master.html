@@ -461,15 +461,41 @@
 
             document.getElementById('condoForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const name = document.getElementById('newCondoName').value;
-                const addr = document.getElementById('newCondoAddress').value;
-                const adm = document.getElementById('newAdminName').value;
-                const c = await SISDEL.createCondominio(name, addr, '');
-                await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', '', '');
-                SISDEL.showToast('Condominio y administrador creados', 'success');
-                document.getElementById('modalNewCondo').style.display = 'none';
-                await renderCondos(); await renderStats(); await populateSelectors();
-                e.target.reset();
+                const btnSubmit = e.target.querySelector('button[type="submit"]');
+                try {
+                    btnSubmit.disabled = true;
+                    btnSubmit.textContent = 'Creando...';
+                    
+                    const name = document.getElementById('newCondoName').value;
+                    const addr = document.getElementById('newCondoAddress').value;
+                    const adm = document.getElementById('newAdminName').value;
+                    
+                    const c = await SISDEL.createCondominio(name, addr, '');
+                    
+                    if (!c) {
+                        SISDEL.showToast('Error en la nube al crear condominio. Revisar base de datos.', 'error');
+                        btnSubmit.disabled = false;
+                        btnSubmit.textContent = 'Crear y Generar Acceso';
+                        return;
+                    }
+                    
+                    const user = await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', '', '');
+                    if (!user) {
+                        SISDEL.showToast('Condominio creado, pero falló el administrador.', 'warning');
+                    } else {
+                        SISDEL.showToast('Condominio y administrador creados', 'success');
+                    }
+                    
+                    document.getElementById('modalNewCondo').style.display = 'none';
+                    await renderCondos(); await renderStats(); await populateSelectors();
+                    e.target.reset();
+                } catch (error) {
+                    console.error("Error inesperado al crear condominio:", error);
+                    SISDEL.showToast('Error inesperado de red.', 'error');
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = 'Crear y Generar Acceso';
+                }
             });
 
             // Initial render

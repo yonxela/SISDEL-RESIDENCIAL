@@ -329,9 +329,17 @@
                         </svg>
                         Ver Usuarios
                     </button>
-                    <button class="btn btn-ghost" style="width:100%; color:${condo.active ? 'var(--danger)' : 'var(--success)'};" onclick="toggleCondoStatus('${condoId}')">
+                    <button class="btn btn-ghost" style="width:100%; color:${condo.active ? 'var(--danger)' : 'var(--success)'}; margin-bottom:0.75rem;" onclick="toggleCondoStatus('${condoId}')">
                         ${condo.active ? 'Desactivar Servicio' : 'Activar Servicio'}
                     </button>
+                    <div style="border-top:1px solid var(--border-subtle); padding-top:0.75rem;">
+                        <button class="btn btn-ghost" style="width:100%; color:var(--danger);" onclick="deleteCondominio('${condoId}')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                            Eliminar Condominio Definitivamente
+                        </button>
+                    </div>
                 `;
                 document.getElementById('modalCondoDetail').style.display = 'flex';
             };
@@ -350,6 +358,20 @@
                 SISDEL.showToast('Estado actualizado', 'info');
                 document.getElementById('modalCondoDetail').style.display = 'none';
                 await renderCondos(); await renderStats();
+            };
+
+            window.deleteCondominio = async function (id) {
+                const condo = await SISDEL.getCondominio(id);
+                if (confirm(`¿Está seguro de eliminar el condominio "${condo.name}" definitivamente? Esto borrará también a todos los usuarios, vehículos y visitas asociados. Esta acción no se puede deshacer.`)) {
+                    const success = await SISDEL.deleteCondominio(id);
+                    if (success) {
+                        SISDEL.showToast('Condominio eliminado correctamente', 'warning');
+                        document.getElementById('modalCondoDetail').style.display = 'none';
+                        await renderCondos(); await renderStats(); await populateSelectors();
+                    } else {
+                        SISDEL.showToast('No se pudo eliminar el condominio', 'danger');
+                    }
+                }
             };
 
             // --- Tab: Users Logic ---
@@ -465,27 +487,27 @@
                 try {
                     btnSubmit.disabled = true;
                     btnSubmit.textContent = 'Creando...';
-                    
+
                     const name = document.getElementById('newCondoName').value;
                     const addr = document.getElementById('newCondoAddress').value;
                     const adm = document.getElementById('newAdminName').value;
-                    
+
                     const c = await SISDEL.createCondominio(name, addr, '');
-                    
+
                     if (!c) {
                         SISDEL.showToast('Error en la nube al crear condominio. Revisar base de datos.', 'error');
                         btnSubmit.disabled = false;
                         btnSubmit.textContent = 'Crear y Generar Acceso';
                         return;
                     }
-                    
+
                     const user = await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', '', '');
                     if (!user) {
                         SISDEL.showToast('Condominio creado, pero falló el administrador.', 'warning');
                     } else {
                         SISDEL.showToast('Condominio y administrador creados', 'success');
                     }
-                    
+
                     document.getElementById('modalNewCondo').style.display = 'none';
                     await renderCondos(); await renderStats(); await populateSelectors();
                     e.target.reset();

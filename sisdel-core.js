@@ -58,6 +58,11 @@ const SISDEL = (() => {
 
     async function deactivateCondominio(id) { return updateCondominio(id, { active: false }); }
     async function activateCondominio(id) { return updateCondominio(id, { active: true }); }
+    async function deleteCondominio(id) {
+        const { error } = await db().from('sisdel_condominios').delete().eq('id', id);
+        if (error) { console.error('deleteCondominio error:', error); return false; }
+        return true;
+    }
 
     // ══════════════════════════════════
     //  User CRUD
@@ -405,7 +410,7 @@ const SISDEL = (() => {
     // Public API
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS, MASTER_CODE,
-        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio,
+        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,

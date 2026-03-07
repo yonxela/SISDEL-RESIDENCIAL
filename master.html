@@ -339,42 +339,43 @@
                         </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
                     </div>
 
-                    <div style="margin-bottom:1.5rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
-                        <label class="text-xs text-muted" style="margin-bottom:0.75rem; display:block;">⚙️ Configuración de Accesos</label>
-                        
-                        <div class="list-item" style="padding:0.5rem 0.25rem;">
-                            <div class="item-info">
-                                <div class="item-name">Escáner QR App Garita</div>
-                                <div class="item-detail text-xs">Permite a los guardias usar celular.</div>
+                    <details style="margin-bottom:1.5rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
+                        <summary style="cursor:pointer; font-weight:600; margin-bottom:0.5rem; color:var(--text-primary); outline:none; user-select:none;">⚙️ Configuración de Accesos</summary>
+                        <div style="padding-top:0.5rem;">
+                            <div class="list-item" style="padding:0.5rem 0.25rem;">
+                                <div class="item-info">
+                                    <div class="item-name">Escáner QR App Garita</div>
+                                    <div class="item-detail text-xs">Permite a los guardias usar celular.</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasQR', this.checked)" ${condo.hasQR !== false ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasQR', this.checked)" ${condo.hasQR !== false ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        
-                        <div class="list-item" style="padding:0.5rem 0.25rem;">
-                            <div class="item-info">
-                                <div class="item-name">Apertura Manual Garita</div>
-                                <div class="item-detail text-xs">Módulo manual para buscar DPI/Códigos.</div>
+                            
+                            <div class="list-item" style="padding:0.5rem 0.25rem;">
+                                <div class="item-info">
+                                    <div class="item-name">Apertura Manual Garita</div>
+                                    <div class="item-detail text-xs">Módulo manual para buscar DPI/Códigos.</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasManual', this.checked)" ${condo.hasManual !== false ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasManual', this.checked)" ${condo.hasManual !== false ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
 
-                        <div class="list-item" style="padding:0.5rem 0.25rem;">
-                            <div class="item-info">
-                                <div class="item-name">LPR Dahua IA (Auto-Open)</div>
-                                <div class="item-detail text-xs">Cámara inteligente lectora de placas API.</div>
+                            <div class="list-item" style="padding:0.5rem 0.25rem;">
+                                <div class="item-info">
+                                    <div class="item-name">LPR Dahua IA (Auto-Open)</div>
+                                    <div class="item-detail text-xs">Cámara inteligente lectora de placas API.</div>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasLPR', this.checked)" ${condo.hasLPR === true ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
                             </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasLPR', this.checked)" ${condo.hasLPR === true ? 'checked' : ''}>
-                                <span class="toggle-slider"></span>
-                            </label>
                         </div>
-                    </div>
+                    </details>
 
                     <button class="btn btn-primary" style="width:100%; margin-bottom:0.75rem;" onclick="goToCondoUsers('${condoId}')">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

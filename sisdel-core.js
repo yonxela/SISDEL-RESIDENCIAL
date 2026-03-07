@@ -268,6 +268,7 @@ const SISDEL = (() => {
 
         const session = {
             role: user.role, userId: user.id, userName: user.name,
+            userCasa: user.casa,
             condominioId: user.condominioId, condominioName: condo.name,
             code: user.accessCode, loggedAt: new Date().toISOString()
         };

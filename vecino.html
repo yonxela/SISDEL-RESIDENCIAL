@@ -312,8 +312,25 @@
 
             document.getElementById('btnCloseQR').addEventListener('click', () => document.getElementById('modalQR').style.display = 'none');
 
-            document.getElementById('btnShare').addEventListener('click', () => {
-                SISDEL.showToast('Enlace de pase copiado al portapapeles', 'success');
+            document.getElementById('btnShare').addEventListener('click', async () => {
+                const title = document.getElementById('modalQRTitle').textContent;
+                const type = document.getElementById('qrType').textContent;
+                const detail = document.getElementById('qrDetail').textContent;
+                const shareText = `*SISDEL - ${type}*\n${title}\n${detail}\nGuarde este pase y preséntelo en la garita.`;
+
+                try {
+                    if (navigator.share) {
+                        await navigator.share({
+                            title: 'Pase de Acceso SISDEL',
+                            text: shareText
+                        });
+                    } else {
+                        await navigator.clipboard.writeText(shareText);
+                        SISDEL.showToast('Detalles del pase copiados al portapapeles', 'success');
+                    }
+                } catch (error) {
+                    console.log('Error al compartir o cancelado', error);
+                }
             });
 
             renderVisits();

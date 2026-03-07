@@ -63,26 +63,44 @@
 
         <div class="page-content">
             <!-- Section 1: Welcome Landing -->
-            <section id="welcomeSection" class="welcome-section">
-                <div class="welcome-hero">
-                    <div class="welcome-logo">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="64"
-                            height="64">
-                            <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
-                            <circle cx="12" cy="10" r="3" />
-                        </svg>
+            <section id="welcomeSection" class="welcome-section"
+                style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh;">
+                <div class="card login-card" style="text-align: center; padding: 2.5rem 2rem;">
+                    <div class="security-header" style="margin-bottom: 1.5rem;">
+                        <div class="security-badge" style="margin: 0 auto 1.5rem auto;">
+                            <!-- Icono de comunidas -->
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32"
+                                height="32" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 21h18"></path>
+                                <path d="M9 8h1"></path>
+                                <path d="M9 12h1"></path>
+                                <path d="M9 16h1"></path>
+                                <path d="M14 8h1"></path>
+                                <path d="M14 12h1"></path>
+                                <path d="M14 16h1"></path>
+                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                            </svg>
+                        </div>
+                        <h1 class="form-title"
+                            style="font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(to right, #ffffff, #a5b4fc); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
+                            SISDEL COMMUNITIES</h1>
+                        <p class="form-subtitle" style="font-size: 1rem; color: var(--text-secondary);">Portal Integral
+                            de Gestión Residencial</p>
                     </div>
-                    <h1>Seguridad e Inteligencia para su Condominio</h1>
-                    <p>La plataforma integral líder en gestión de accesos, marbetes y comunicación residencial. Moderna,
-                        segura y enfocada en su tranquilidad.</p>
+
+                    <p style="color:var(--text-secondary); font-size: 0.95rem; margin-bottom: 2rem; line-height: 1.6;">
+                        La plataforma líder en gestión de accesos, marbetes y comunicación, enfocada en la seguridad y
+                        tranquilidad de su comunidad.</p>
+
+                    <button class="btn btn-primary" id="btnGoToLogin"
+                        style="width: 100%; height: 52px; font-size: 1.1rem; justify-content: center;">
+                        Comenzar ahora
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" style="margin-left:8px;">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
                 </div>
-                <button class="btn btn-primary btn-lg" id="btnGoToLogin">
-                    Comenzar ahora
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2.5">
-                        <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                </button>
             </section>
 
             <!-- Section 2: Login Form -->

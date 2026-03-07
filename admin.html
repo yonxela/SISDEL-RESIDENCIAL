@@ -260,7 +260,13 @@
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
                             ${u.paymentStatus ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
-                            <button class="btn btn-ghost btn-icon" onclick="openEditUser('${u.id}')">✏️</button>
+                            <button class="btn btn-ghost btn-icon" style="cursor:help;" title="Nombre: ${u.name}&#10;Tel: ${u.phone || 'N/A'}&#10;Email: ${u.email || 'N/A'}&#10;Casa: ${u.casa || 'N/A'}">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                            <button class="btn btn-ghost btn-icon" onclick="openEditUser('${u.id}')" title="Editar">✏️</button>
                         </div>
                     </div>
                 `).join('');

@@ -167,6 +167,49 @@
         </div>
     </div>
 
+    <!-- Modal: User Details -->
+    <div id="modalUserDetails" class="modal-overlay" style="display:none;">
+        <div class="modal card">
+            <button class="btn-close" id="btnCloseUserDetails"
+                style="position:absolute; top:1rem; right:1rem; background:none; border:none; color:var(--text-muted); cursor:pointer;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <div class="security-header" style="margin-bottom:1.5rem;">
+                <div id="detailAvatar" class="avatar"
+                    style="margin: 0 auto 1rem; width:80px; height:80px; font-size:2rem;">U</div>
+                <h2 id="detailName" class="form-title" style="margin-bottom:0.25rem;">Nombre Usuario</h2>
+                <span id="detailRole" class="badge badge-info">Rol</span>
+            </div>
+            <div style="display:grid; gap:1.25rem; margin-top:1rem;">
+                <div class="stat-card" style="padding:1rem;">
+                    <span class="text-xs text-muted" style="text-transform:uppercase;">Condominio</span>
+                    <div id="detailCondo" class="text-lg font-bold">-</div>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+                    <div class="stat-card" style="padding:1rem;">
+                        <span class="text-xs text-muted" style="text-transform:uppercase;">Casa</span>
+                        <div id="detailCasa" class="text-lg font-bold">-</div>
+                    </div>
+                    <div class="stat-card" style="padding:1rem;">
+                        <span class="text-xs text-muted" style="text-transform:uppercase;">Código Acceso</span>
+                        <div id="detailCode" class="text-lg font-bold" style="color:var(--primary-light)">-</div>
+                    </div>
+                </div>
+                <div class="stat-card" style="padding:1rem;">
+                    <span class="text-xs text-muted" style="text-transform:uppercase;">Teléfono / WhatsApp</span>
+                    <div id="detailPhone" class="text-lg font-bold">-</div>
+                </div>
+                <div class="stat-card" style="padding:1rem;">
+                    <span class="text-xs text-muted" style="text-transform:uppercase;">Correo Electrónico</span>
+                    <div id="detailEmail" class="text-lg font-bold">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Editar Usuario -->
     <div class="modal-overlay" id="modalEditUser" style="display:none;">
         <div class="modal" style="max-width:450px;">
@@ -181,25 +224,42 @@
                     <input type="text" class="form-input" id="editUserName" required>
                 </div>
                 <div class="form-group">
-                    <label>Código de Acceso</label>
-                    <input type="text" class="form-input" id="editUserCode" required style="text-transform:uppercase;">
-                </div>
-                <div class="form-group">
-                    <label>Casa/Lote (Opcional)</label>
-                    <input type="text" class="form-input" id="editUserCasa">
-                </div>
-                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
-                    Cambios</button>
-                <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
-                    <button type="button" class="btn btn-ghost" id="btnDeleteUser"
-                        style="width:100%; color:var(--danger);">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                        </svg>
-                        Eliminar Usuario Definitivamente
-                    </button>
-                </div>
+                    <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+                        <div>
+                            <label>Código Acceso</label>
+                            <input type="text" id="editUserCode" class="form-input"
+                                style="padding-left:1rem; text-transform:uppercase;">
+                        </div>
+                        <div>
+                            <label>Casa / No.</label>
+                            <input type="text" id="editUserCasa" class="form-input" style="padding-left:1rem;">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Teléfono / WhatsApp</label>
+                        <input type="text" id="editUserPhone" class="form-input" style="padding-left:1rem;"
+                            placeholder="Ej: 55554444">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Correo Electrónico</label>
+                        <input type="email" id="editUserEmail" class="form-input" style="padding-left:1rem;"
+                            placeholder="correo@ejemplo.com">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
+                        Cambios</button>
+                    <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                        <button type="button" class="btn btn-ghost" id="btnDeleteUser"
+                            style="width:100%; color:var(--danger);">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                            Eliminar Usuario Definitivamente
+                        </button>
+                    </div>
             </form>
         </div>
     </div>
@@ -448,15 +508,38 @@
                                     Code: ${u.accessCode} ${u.casa ? '· Casa: ' + u.casa : ''}
                                 </div>
                             </div>
-                            <button class="btn btn-ghost btn-sm" onclick="openEditUser('${u.id}')">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                                Editar
-                            </button>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-ghost btn-icon btn-sm" onclick="viewUserDetails('${u.id}')" title="Ver Detalles">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                </button>
+                                <button class="btn btn-ghost btn-icon btn-sm" onclick="openEditUser('${u.id}')" title="Editar">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     `;
                 }).join('');
+            };
+
+            window.viewUserDetails = async function (userId) {
+                const user = await SISDEL.getUserById(userId);
+                if (!user) return;
+                const condo = await SISDEL.getCondominio(user.condominioId);
+
+                document.getElementById('detailAvatar').textContent = user.name.charAt(0);
+                document.getElementById('detailName').textContent = user.name;
+                document.getElementById('detailRole').textContent = user.role.toUpperCase();
+                document.getElementById('detailCondo').textContent = condo ? condo.name : 'SISDEL';
+                document.getElementById('detailCasa').textContent = user.casa || 'N/A';
+                document.getElementById('detailCode').textContent = user.accessCode;
+                document.getElementById('detailPhone').textContent = user.phone || 'No registrado';
+                document.getElementById('detailEmail').textContent = user.email || 'No registrado';
+
+                document.getElementById('modalUserDetails').style.display = 'flex';
             };
 
             window.openEditUser = async function (userId) {
@@ -467,6 +550,8 @@
                 document.getElementById('editUserName').value = user.name;
                 document.getElementById('editUserCode').value = user.accessCode;
                 document.getElementById('editUserCasa').value = user.casa || '';
+                document.getElementById('editUserPhone').value = user.phone || '';
+                document.getElementById('editUserEmail').value = user.email || '';
 
                 // Show modal
                 document.getElementById('modalEditUser').style.display = 'flex';
@@ -486,9 +571,11 @@
                 const name = document.getElementById('editUserName').value;
                 const code = document.getElementById('editUserCode').value.toUpperCase();
                 const casa = document.getElementById('editUserCasa').value;
+                const phone = document.getElementById('editUserPhone').value;
+                const email = document.getElementById('editUserEmail').value;
 
-                console.log('Master: Updating user...', { id, name, accessCode: code, casa });
-                const result = await SISDEL.updateUser(id, { name, accessCode: code, casa });
+                console.log('Master: Updating user...', { id, name, accessCode: code, casa, phone, email });
+                const result = await SISDEL.updateUser(id, { name, accessCode: code, casa, phone, email });
                 if (result) {
                     SISDEL.showToast('Usuario actualizado con éxito', 'success');
                     document.getElementById('modalEditUser').style.display = 'none';
@@ -525,6 +612,7 @@
             document.getElementById('btnNewCondo').addEventListener('click', () => document.getElementById('modalNewCondo').style.display = 'flex');
             document.getElementById('btnCloseNewCondo').addEventListener('click', () => document.getElementById('modalNewCondo').style.display = 'none');
             document.getElementById('btnCloseDetail').addEventListener('click', () => document.getElementById('modalCondoDetail').style.display = 'none');
+            document.getElementById('btnCloseDetails').addEventListener('click', () => document.getElementById('modalUserDetails').style.display = 'none');
             document.getElementById('btnCloseEditUser').addEventListener('click', () => document.getElementById('modalEditUser').style.display = 'none');
             document.getElementById('filterCondo').addEventListener('change', renderUsers);
 

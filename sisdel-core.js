@@ -44,7 +44,8 @@ const SISDEL = (() => {
 
     async function createCondominio(name, address, phone) {
         const { data, error } = await db().from('sisdel_condominios').insert([{
-            name: name.trim(), address: address || '', phone: phone || '', active: true
+            name: name.trim(), address: address || '', phone: phone || '', active: true,
+            hasQR: true, hasManual: true, hasLPR: false
         }]).select().single();
         if (error) { console.error('createCondominio error:', error); return null; }
         return data;
@@ -58,6 +59,9 @@ const SISDEL = (() => {
 
     async function deactivateCondominio(id) { return updateCondominio(id, { active: false }); }
     async function activateCondominio(id) { return updateCondominio(id, { active: true }); }
+    async function toggleCondoSetting(id, settingName, value) {
+        return updateCondominio(id, { [settingName]: value });
+    }
     async function deleteCondominio(id) {
         const { error } = await db().from('sisdel_condominios').delete().eq('id', id);
         if (error) { console.error('deleteCondominio error:', error); return false; }
@@ -415,7 +419,7 @@ const SISDEL = (() => {
     // Public API
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS, MASTER_CODE,
-        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio,
+        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,

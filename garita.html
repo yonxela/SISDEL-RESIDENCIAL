@@ -62,13 +62,22 @@
 
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-top:1.5rem;">
                 <!-- Scanner Section -->
-                <div>
-                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">📷 Control de Acceso</h3>
-                    <div class="card" style="padding:1rem; text-align:center;">
+                <div id="accessMethodsContainer">
+                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">🚗 Medios de Acceso</h3>
+
+                    <div id="sectionLPR"
+                        style="display:none; font-size:0.9rem; padding:1rem; border-left:4px solid var(--accent); background:var(--bg-item); margin-bottom:1.5rem; border-radius:8px;">
+                        <strong style="color:var(--accent);">✅ LPR Habilitado:</strong> El condominio cuenta con un
+                        sistema de cámara inteligente leyendo las placas para abrir el acceso automáticamente a
+                        residentes y visitas. No es necesario operar la puerta siempre.
+                    </div>
+
+                    <div id="sectionQR" class="card"
+                        style="padding:1rem; text-align:center; margin-bottom:1.5rem; display:none;">
                         <div id="scannerPlaceholder"
                             style="padding:2rem; background:var(--bg-item); border-radius:12px; margin-bottom:1rem;">
                             <div style="font-size:3rem; margin-bottom:1rem; opacity:0.5;">📷</div>
-                            <button class="btn btn-primary" id="btnStartScanner">Activar Cámara</button>
+                            <button class="btn btn-primary" id="btnStartScanner">Abrir Escáner QR</button>
                         </div>
                         <div id="reader"
                             style="width:100%; border-radius:12px; overflow:hidden; background:var(--bg-item); display:none;">
@@ -76,12 +85,13 @@
                         <button class="btn btn-ghost btn-sm" id="btnStopScanner"
                             style="display:none; margin-top:1rem;">Detener Cámara</button>
                     </div>
-                    <div class="card" style="margin-top:1.5rem; padding:1.5rem;">
-                        <h4 style="margin-bottom:1rem;">Manual / Directo</h4>
+
+                    <div id="sectionManual" class="card" style="padding:1.5rem; display:none;">
+                        <h4 style="margin-bottom:1rem;">Búsqueda Manual</h4>
                         <form id="formManual">
                             <div class="input-group">
                                 <input type="text" class="form-input" id="manualCode"
-                                    placeholder="Ingrese código manual" style="text-transform:uppercase;">
+                                    placeholder="Ingrese código o DPI..." style="text-transform:uppercase;">
                                 <button type="submit" class="btn btn-primary btn-sm"
                                     id="btnManualCheck">Verificar</button>
                             </div>
@@ -146,6 +156,21 @@
                 localStorage.setItem('sisdel_theme', newTheme);
                 applyTheme(newTheme);
             });
+
+            // Load Condo Settings to toggle UI elements
+            const currentCondoInfo = await SISDEL.getCondominio(condoId);
+            // Si la db no tiene configuracion, false significa que la db retornó nulo o falso. En caso nulo, asumimos manual y QR activo.
+            const hasQR = currentCondoInfo?.hasQR !== false;
+            const hasManual = currentCondoInfo?.hasManual !== false;
+            const hasLPR = currentCondoInfo?.hasLPR === true;
+
+            if (hasQR) document.getElementById('sectionQR').style.display = 'block';
+            if (hasManual) document.getElementById('sectionManual').style.display = 'block';
+            if (hasLPR) document.getElementById('sectionLPR').style.display = 'block';
+
+            if (!hasQR && !hasManual) {
+                 document.getElementById('accessMethodsContainer').innerHTML += '<div class="card" style="padding:2rem; text-align:center; opacity:0.6;">Sin controles manuales configurados.</div>';
+            }
 
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
 

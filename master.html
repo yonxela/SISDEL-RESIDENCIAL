@@ -323,6 +323,44 @@
                             </div>
                         </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
                     </div>
+
+                    <div style="margin-bottom:1.5rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
+                        <label class="text-xs text-muted" style="margin-bottom:0.75rem; display:block;">⚙️ Configuración de Accesos</label>
+                        
+                        <div class="list-item" style="padding:0.5rem 0.25rem;">
+                            <div class="item-info">
+                                <div class="item-name">Escáner QR App Garita</div>
+                                <div class="item-detail text-xs">Permite a los guardias usar celular.</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasQR', this.checked)" ${condo.hasQR !== false ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="list-item" style="padding:0.5rem 0.25rem;">
+                            <div class="item-info">
+                                <div class="item-name">Apertura Manual Garita</div>
+                                <div class="item-detail text-xs">Módulo manual para buscar DPI/Códigos.</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasManual', this.checked)" ${condo.hasManual !== false ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="list-item" style="padding:0.5rem 0.25rem;">
+                            <div class="item-info">
+                                <div class="item-name">LPR Dahua IA (Auto-Open)</div>
+                                <div class="item-detail text-xs">Cámara inteligente lectora de placas API.</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" onchange="updateCondoSetting('${condoId}', 'hasLPR', this.checked)" ${condo.hasLPR === true ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
                     <button class="btn btn-primary" style="width:100%; margin-bottom:0.75rem;" onclick="goToCondoUsers('${condoId}')">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -350,6 +388,15 @@
                 document.getElementById('tabBtnUsers').click();
                 await renderUsers(); // Explicit call to ensure list updates
             };
+
+            window.updateCondoSetting = async function (condoId, settingName, value) {
+                const res = await SISDEL.toggleCondoSetting(condoId, settingName, value);
+                if (res) {
+                    SISDEL.showToast('Configuración de acceso actualizada', 'success');
+                } else {
+                    SISDEL.showToast('Error al actualizar configuración', 'danger');
+                }
+            }
 
             window.toggleCondoStatus = async function (id) {
                 const condo = await SISDEL.getCondominio(id);

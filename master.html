@@ -188,10 +188,6 @@
                     <label>Casa/Lote (Opcional)</label>
                     <input type="text" class="form-input" id="editUserCasa">
                 </div>
-                <div class="form-group">
-                    <label>Teléfono (Opcional)</label>
-                    <input type="text" class="form-input" id="editUserPhone">
-                </div>
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
                     Cambios</button>
                 <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
@@ -205,19 +201,6 @@
                     </button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- Modal Detalles de Usuario -->
-    <div class="modal-overlay" id="modalUserDetail" style="display:none;">
-        <div class="modal" style="max-width:400px;">
-            <div class="modal-header">
-                <h3>Detalles del Usuario</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseUserDetail">&times;</button>
-            </div>
-            <div class="modal-body" id="userDetailBody" style="padding:1.5rem; color:var(--text-secondary);">
-                <!-- User Details Here -->
-            </div>
         </div>
     </div>
 
@@ -317,9 +300,15 @@
 
                 document.getElementById('detailTitle').textContent = condo.name;
                 document.getElementById('detailBody').innerHTML = `
-                    <div style="margin-bottom:1.5rem;">
-                        <label class="text-xs text-muted">Dirección</label>
-                        <p style="font-weight:500;">${condo.address || 'N/A'}</p>
+                    <div style="margin-bottom:1.5rem; display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <label class="text-xs text-muted">Dirección</label>
+                            <p style="font-weight:500;">${condo.address || 'N/A'}</p>
+                        </div>
+                        <div style="text-align:right;">
+                            <label class="text-xs text-muted">Registrado el</label>
+                            <p style="font-weight:500;" class="text-sm">${condo.createdAt ? SISDEL.formatDate(condo.createdAt) : 'N/A'}</p>
+                        </div>
                     </div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem;">
                         <div class="card" style="padding:0.75rem; text-align:center;">
@@ -336,7 +325,7 @@
                         ${admins.length ? admins.map(a => `<div class="list-item" style="margin-top:0.5rem; padding:0.75rem; background:var(--bg-item);">
                             <div class="item-info">
                                 <div class="item-name">${a.name}</div>
-                                <div class="item-detail">Código: <strong>${a.accessCode}</strong></div>
+                                <div class="item-detail">Código: <strong>${a.accessCode}</strong> &middot; Tel: ${a.phone || 'N/A'}</div>
                             </div>
                         </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
                     </div>
@@ -465,52 +454,16 @@
                                     Code: ${u.accessCode} ${u.casa ? '· Casa: ' + u.casa : ''}
                                 </div>
                             </div>
-                            <div style="display:flex; gap:0.5rem;">
-                                <button class="btn btn-ghost btn-icon btn-sm" onclick="openUserDetail('${u.id}')" title="Ver Detalles">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                        <circle cx="12" cy="12" r="3"></circle>
-                                    </svg>
-                                </button>
-                                <button class="btn btn-ghost btn-sm" onclick="openEditUser('${u.id}')">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                    </svg>
-                                    Editar
-                                </button>
-                            </div>
+                            <button class="btn btn-ghost btn-sm" onclick="openEditUser('${u.id}')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                                Editar
+                            </button>
                         </div>
                     `;
                 }).join('');
             };
-
-            window.openUserDetail = async function (userId) {
-                const user = await SISDEL.getUserById(userId);
-                if (!user) return;
-
-                const condo = allCondos.find(c => c.id === user.condominioId);
-                const condoName = condo ? condo.name : 'Desconocido';
-
-                document.getElementById('userDetailBody').innerHTML = `
-                    <div style="text-align:center; margin-bottom:1.5rem;">
-                        <div class="avatar" style="margin: 0 auto 1rem auto; width:64px; height:64px; font-size:2rem;">${user.name.charAt(0)}</div>
-                        <h4 style="color:white; font-size:1.25rem;">${user.name}</h4>
-                        <span class="badge badge-info">${user.role}</span>
-                    </div>
-                    <div style="background:var(--bg-item); padding:1rem; border-radius:var(--radius-md); font-size:0.95rem;">
-                        <p style="margin-bottom:0.5rem;"><strong>Condominio:</strong> ${condoName}</p>
-                        <p style="margin-bottom:0.5rem;"><strong>Código Acceso:</strong> ${user.accessCode}</p>
-                        <p style="margin-bottom:0.5rem;"><strong>Casa/Lote:</strong> ${user.casa || 'No asignada'}</p>
-                        <p style="margin-bottom:0.5rem;"><strong>Teléfono:</strong> <span style="color:white;">${user.phone || 'No registrado'}</span></p>
-                    </div>
-                `;
-
-                document.getElementById('modalUserDetail').style.display = 'flex';
-            };
-
-            document.getElementById('btnCloseUserDetail').addEventListener('click', () => {
-                document.getElementById('modalUserDetail').style.display = 'none';
-            });
 
             window.openEditUser = async function (userId) {
                 const user = await SISDEL.getUserById(userId);
@@ -520,7 +473,6 @@
                 document.getElementById('editUserName').value = user.name;
                 document.getElementById('editUserCode').value = user.accessCode;
                 document.getElementById('editUserCasa').value = user.casa || '';
-                document.getElementById('editUserPhone').value = user.phone || '';
 
                 // Show modal
                 document.getElementById('modalEditUser').style.display = 'flex';
@@ -540,10 +492,9 @@
                 const name = document.getElementById('editUserName').value;
                 const code = document.getElementById('editUserCode').value.toUpperCase();
                 const casa = document.getElementById('editUserCasa').value;
-                const phone = document.getElementById('editUserPhone').value;
 
-                console.log('Master: Updating user...', { id, name, accessCode: code, casa, phone });
-                const result = await SISDEL.updateUser(id, { name, accessCode: code, casa, phone });
+                console.log('Master: Updating user...', { id, name, accessCode: code, casa });
+                const result = await SISDEL.updateUser(id, { name, accessCode: code, casa });
                 if (result) {
                     SISDEL.showToast('Usuario actualizado con éxito', 'success');
                     document.getElementById('modalEditUser').style.display = 'none';

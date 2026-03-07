@@ -161,6 +161,15 @@
                     <label>Nombre del Administrador Inicial</label>
                     <input type="text" class="form-input" id="newAdminName" required>
                 </div>
+                <div class="form-group">
+                    <label>Teléfono del Administrador Inicial</label>
+                    <input type="tel" class="form-input" id="newAdminPhone" required placeholder="Ej: 5555-0000">
+                </div>
+                <div class="form-group">
+                    <label>Observaciones (Opcional)</label>
+                    <textarea class="form-input" id="newCondoObs" rows="2"
+                        placeholder="Detalles adicionales..."></textarea>
+                </div>
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Crear y Generar
                     Acceso</button>
             </form>
@@ -542,10 +551,14 @@
                     btnSubmit.textContent = 'Creando...';
 
                     const name = document.getElementById('newCondoName').value;
-                    const addr = document.getElementById('newCondoAddress').value;
+                    const addrRaw = document.getElementById('newCondoAddress').value;
                     const adm = document.getElementById('newAdminName').value;
+                    const phone = document.getElementById('newAdminPhone').value;
+                    const obs = document.getElementById('newCondoObs').value;
 
-                    const c = await SISDEL.createCondominio(name, addr, '');
+                    const finalAddr = obs ? `${addrRaw} | Obs: ${obs}` : addrRaw;
+
+                    const c = await SISDEL.createCondominio(name, finalAddr, '');
 
                     if (!c) {
                         SISDEL.showToast('Error en la nube al crear condominio. Revisar base de datos.', 'error');
@@ -554,7 +567,8 @@
                         return;
                     }
 
-                    const user = await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', '', '');
+                    // Se pasa el teléfono al usuario, los últimos parámetros de createUser son: casa, teléfono, email
+                    const user = await SISDEL.createUser(c.id, adm, SISDEL.ROLES.ADMIN, '', phone, '');
                     if (!user) {
                         SISDEL.showToast('Condominio creado, pero falló el administrador.', 'warning');
                     } else {

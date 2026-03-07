@@ -791,6 +791,50 @@ body {
     box-shadow: var(--shadow-md);
 }
 
+/* Custom Tooltip */
+.custom-tooltip {
+    position: relative;
+    display: inline-flex;
+    cursor: pointer;
+}
+
+.custom-tooltip-text {
+    visibility: hidden;
+    width: max-content;
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    text-align: left;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    position: absolute;
+    z-index: 100;
+    bottom: 125%;
+    right: 50%;
+    transform: translateX(50%);
+    opacity: 0;
+    transition: opacity 0.1s ease-in-out, visibility 0.1s;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-subtle);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.custom-tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -6px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--border-subtle) transparent transparent transparent;
+}
+
+.custom-tooltip:hover .custom-tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
 /* Footer */
 .app-footer {
     padding: 2.5rem 1rem;

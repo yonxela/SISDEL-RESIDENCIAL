@@ -336,15 +336,16 @@ const SISDEL = (() => {
 
     function formatDate(dateStr) {
         if (!dateStr) return '';
-        // Reemplazamos guiones por barras para que JS no lo interprete como UTC midnight
-        // y se asigne a la zona horaria local, evitando el desfase de un día.
-        const normalizedDate = typeof dateStr === 'string' ? dateStr.replace(/-/g, '/') : dateStr;
+        // Reemplazamos guiones por barras solo para fechas YYYY-MM-DD
+        const isISO = typeof dateStr === 'string' && dateStr.includes('T');
+        const normalizedDate = (typeof dateStr === 'string' && !isISO) ? dateStr.replace(/-/g, '/') : dateStr;
         return new Date(normalizedDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     function formatDateTime(dateStr) {
         if (!dateStr) return '';
-        const normalizedDate = typeof dateStr === 'string' ? dateStr.replace(/-/g, '/') : dateStr;
+        const isISO = typeof dateStr === 'string' && dateStr.includes('T');
+        const normalizedDate = (typeof dateStr === 'string' && !isISO) ? dateStr.replace(/-/g, '/') : dateStr;
         return new Date(normalizedDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
 

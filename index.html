@@ -171,8 +171,8 @@
     <script src="sisdel-core.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            // Seed data initially
-            await SISDEL.seedDemoData();
+            // Seed data initially (run in background to avoid blocking UI)
+            SISDEL.seedDemoData().catch(e => console.error("Error in seedDemoData:", e));
 
             const welcomeSection = document.getElementById('welcomeSection');
             const loginSection = document.getElementById('loginSection');

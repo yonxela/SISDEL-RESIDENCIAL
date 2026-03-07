@@ -117,6 +117,12 @@ body {
     flex-direction: column;
     position: relative;
     color: white;
+    animation: gentle-pan 40s ease-in-out infinite alternate;
+}
+
+@keyframes gentle-pan {
+    0% { background-position: center bottom; background-size: 110%; }
+    100% { background-position: center top; background-size: 115%; }
 }
 
 .auth-page::before {

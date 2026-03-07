@@ -331,12 +331,16 @@ const SISDEL = (() => {
 
     function formatDate(dateStr) {
         if (!dateStr) return '';
-        return new Date(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+        // Reemplazamos guiones por barras para que JS no lo interprete como UTC midnight
+        // y se asigne a la zona horaria local, evitando el desfase de un día.
+        const normalizedDate = typeof dateStr === 'string' ? dateStr.replace(/-/g, '/') : dateStr;
+        return new Date(normalizedDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     function formatDateTime(dateStr) {
         if (!dateStr) return '';
-        return new Date(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        const normalizedDate = typeof dateStr === 'string' ? dateStr.replace(/-/g, '/') : dateStr;
+        return new Date(normalizedDate).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
 
     function getRoleName(role) {

@@ -226,14 +226,40 @@
                             <div class="item-name">${v.visitorName}</div>
                             <div class="item-detail">${SISDEL.formatDate(v.visitDate)} · Placa: ${v.vehiclePlate || 'N/A'}</div>
                         </div>
-                        <button class="btn btn-primary btn-sm" onclick="showQR('${v.id}', 'visit')">Ver Pase</button>
+                        <div style="display:flex; gap:0.5rem;">
+                            <button class="btn btn-ghost btn-icon btn-sm" onclick="repeatVisit('${v.id}')" title="Reutilizar datos de visita" style="color:var(--text-secondary); background:var(--bg-item);">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="showQR('${v.id}', 'visit')">Ver Pase</button>
+                        </div>
                     </div>
                 `).join('');
             }
 
             // --- New Visit Handler ---
             const modalNewVisit = document.getElementById('modalNewVisit');
+
+            window.repeatVisit = async function (visitId) {
+                const visits = await SISDEL.getVisitsByUser(session.userId);
+                const v = visits.find(x => x.id === visitId);
+                if (!v) return;
+
+                document.getElementById('vName').value = v.visitorName;
+                document.getElementById('vInfo').value = v.info || '';
+                document.getElementById('vPlate').value = v.vehiclePlate || '';
+                document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('vTime').value = v.aproxTime || '';
+
+                modalNewVisit.style.display = 'flex';
+                SISDEL.showToast('Datos de visita cargados', 'info');
+            };
+
             document.getElementById('cardNewVisit').addEventListener('click', () => {
+                document.getElementById('visitForm').reset();
                 document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
                 modalNewVisit.style.display = 'flex';
             });

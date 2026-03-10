@@ -230,39 +230,22 @@ serve(async (req) => {
         let isAuthorized = false;
         let authReason = '';
         let isReminder = false; // New: grace period reminder for morosos
-        let isMoroso = false; // Track if the plate belongs to a moroso resident
 
         // A. Check if it's a RESIDENT's vehicle (sisdel_vehicles)
-        // Step 1: Find the vehicle by plate
         const { data: vecVehicles, error: errVec } = await supabaseClient
             .from('sisdel_vehicles')
-            .select('plate, userId')
+            .select('plate, userId, users:userId(name, active, paymentStatus, morosoSince)')
             .eq('condominioId', condominioIdReq)
             .ilike('plate', `%${plateNumber}%`);
-
-        console.log(`🔍 Vehicle search results: ${vecVehicles?.length || 0} matches, error: ${errVec?.message || 'none'}`);
 
         if (!errVec && vecVehicles && vecVehicles.length > 0) {
             const exactMatch = vecVehicles.find(v => v.plate.replace(/[^A-Za-z0-9]/g, '').toUpperCase() === plateNumber);
 
             if (exactMatch) {
-                console.log(`✅ Exact plate match found. userId: ${exactMatch.userId}`);
-
-                // Step 2: Get the owner's info from sisdel_users (separate query to avoid FK join issues)
-                // Removed morosoSince from select as it's missing in the schema
-                const { data: ownerData, error: ownerErr } = await supabaseClient
-                    .from('sisdel_users')
-                    .select('name, active, paymentStatus')
-                    .eq('id', exactMatch.userId)
-                    .single();
-
-                console.log(`👤 Owner lookup: ${ownerData?.name || 'NOT FOUND'}, paymentStatus: ${ownerData?.paymentStatus || 'NULL'}, error: ${ownerErr?.message || 'none'}`);
-
-                const owner = ownerData;
+                const owner = Array.isArray(exactMatch.users) ? exactMatch.users[0] : exactMatch.users;
                 if (owner && owner.active !== false) {
                     // Check if resident is moroso
                     if (owner.paymentStatus === 'moroso') {
-                        console.log(`🟠 Resident ${owner.name} is MOROSO`);
                         // Get condominium settings to check if reminder is enabled
                         const { data: condoSettings } = await supabaseClient
                             .from('sisdel_condominios')
@@ -272,8 +255,7 @@ serve(async (req) => {
 
                         if (condoSettings?.reminderEnabled) {
                             const graceDays = condoSettings.gracePeriodDays || 15;
-                            // Fallback to now if morosoSince is missing (since we removed it from select or it doesn't exist)
-                            const morosoSince = new Date(); 
+                            const morosoSince = owner.morosoSince ? new Date(owner.morosoSince) : new Date();
                             const now = new Date();
                             const daysSinceMoroso = Math.floor((now.getTime() - morosoSince.getTime()) / (1000 * 60 * 60 * 24));
                             const daysRemaining = graceDays - daysSinceMoroso;
@@ -286,15 +268,12 @@ serve(async (req) => {
                                 console.log(`⚠️ Reminder Access (Grace Period): ${owner.name}, ${daysRemaining} days left`);
                             } else {
                                 // Grace period expired - deny access
-                                isMoroso = true;
-                                authReason = `🟠 ${owner.name} - MOROSO (Período de gracia vencido)`;
+                                authReason = `❌ ${owner.name} - Período de gracia vencido`;
                                 console.log(`🚫 Access Denied (Grace Expired): ${owner.name}`);
                             }
                         } else {
-                            // No reminder enabled - mark as moroso denied
-                            isMoroso = true;
-                            authReason = `🟠 ${owner.name} - MOROSO (pagos pendientes)`;
-                            console.log(`⚠️ Access Denied (Moroso, no grace period): ${owner.name}`);
+                            // No reminder enabled - just deny moroso
+                            console.log("⚠️ Plate matches resident, but user is moroso (no grace period).");
                         }
                     } else {
                         // Resident is al_dia - normal access
@@ -303,7 +282,7 @@ serve(async (req) => {
                         console.log("✅ Access Authorized (Resident):", authReason);
                     }
                 } else {
-                    console.log("⚠️ Plate matches resident, but user is inactive or not found.");
+                    console.log("⚠️ Plate matches resident, but user is inactive.");
                 }
             }
         }
@@ -349,18 +328,14 @@ serve(async (req) => {
         }
 
         // Determine final status
-        // 🟢 Authorized = residente al día / visita válida
-        // 🟠 Moroso = residente con pagos pendientes (placa conocida pero moroso)
-        // 🟠 Reminder = moroso en período de gracia (acceso permitido con alerta)
-        // 🔴 Denied = placa desconocida / no registrada
-        const logStatus = isReminder ? 'Reminder' : (isAuthorized ? 'Authorized' : (isMoroso ? 'Moroso' : 'Denied'));
+        const logStatus = isReminder ? 'Reminder' : (isAuthorized ? 'Authorized' : 'Denied');
 
         // 4. Save camera log to database
         await supabaseClient.from('sisdel_camera_logs').insert([{
             condominioId: condominioIdReq,
             plate: plateNumber || 'UNKNOWN',
             status: logStatus,
-            reason: isAuthorized ? authReason : (isMoroso ? authReason : 'Placa no registrada'),
+            reason: isAuthorized ? authReason : (authReason || 'Placa no registrada'),
             rawPayload: rawData
         }]);
 
@@ -385,13 +360,12 @@ serve(async (req) => {
                 status: 200,
             })
         } else {
-            console.log(`❌ Access Denied for plate: ${plateNumber} (${isMoroso ? 'MOROSO' : 'NO REGISTRADA'})`);
+            console.log(`❌ Access Denied for plate: ${plateNumber}`);
             return new Response(JSON.stringify({
                 Command: "Close",
-                Message: isMoroso ? "Moroso" : "Denied",
-                Reason: isMoroso ? authReason : "Placa no registrada",
-                Plate: plateNumber,
-                IsMoroso: isMoroso
+                Message: "Denied",
+                Reason: "Placa no registrada",
+                Plate: plateNumber
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,

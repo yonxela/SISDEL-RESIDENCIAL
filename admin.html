@@ -151,8 +151,8 @@
                     </select>
                 </div>
                 <div class="form-group" id="groupCasa">
-                    <label>Casa o Lote</label>
-                    <input type="text" class="form-input" id="newUserCasa" placeholder="Ej. Casa 12">
+                    <label>Casa o Lote <span style="color:var(--danger);">*</span></label>
+                    <input type="text" class="form-input" id="newUserCasa" placeholder="Ej. Casa 12" required>
                 </div>
                 <div class="form-group" id="groupPlates">
                     <label>🚗 Placas de Vehículos</label>
@@ -161,8 +161,8 @@
                 </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                     <div class="form-group">
-                        <label>Teléfono (Opcional)</label>
-                        <input type="tel" class="form-input" id="newUserPhone">
+                        <label>Teléfono <span style="color:var(--danger);">*</span></label>
+                        <input type="tel" class="form-input" id="newUserPhone" required>
                     </div>
                     <div class="form-group">
                         <label>Email (Opcional)</label>
@@ -367,6 +367,20 @@
                     const email = document.getElementById('newUserEmail').value;
                     const platesRaw = document.getElementById('newUserPlates').value;
 
+                    // Validate required fields for vecino
+                    if (role === 'vecino' && !casa.trim()) {
+                        SISDEL.showToast('Casa o Lote es obligatorio para vecinos', 'warning');
+                        btnSubmit.disabled = false;
+                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
+                        return;
+                    }
+                    if (role === 'vecino' && !phone.trim()) {
+                        SISDEL.showToast('Teléfono es obligatorio para vecinos', 'warning');
+                        btnSubmit.disabled = false;
+                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
+                        return;
+                    }
+
                     const user = await SISDEL.createUser(condoId, name, role, casa, phone, email);
                     if (user) {
                         // Auto-register vehicle plates if provided
@@ -403,6 +417,8 @@
                 const isVecino = e.target.value === 'vecino';
                 document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
                 document.getElementById('groupPlates').style.display = isVecino ? 'block' : 'none';
+                document.getElementById('newUserCasa').required = isVecino;
+                document.getElementById('newUserPhone').required = isVecino;
             });
 
             // --- Edit User Logic ---

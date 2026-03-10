@@ -368,12 +368,28 @@
                             <div class="item-name">${v.plate} · ${v.brand}</div>
                             <div class="item-detail">${v.color} · Marbete: <strong>${v.marbeteCode}</strong></div>
                         </div>
-                        <button class="btn btn-ghost btn-sm" onclick="showQR('${v.id}', 'vehicle')">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        </button>
+                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                            <button class="btn btn-ghost btn-icon btn-sm" onclick="showQR('${v.id}', 'vehicle')" title="Ver Marbete/QR">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            </button>
+                            <button class="btn btn-ghost btn-icon btn-sm" onclick="deleteResidentVehicle('${v.id}')" title="Eliminar vehículo" style="color:var(--danger);">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                        </div>
                     </div>
                 `).join('');
             }
+
+            window.deleteResidentVehicle = async function(vehicleId) {
+                if (confirm('¿Está seguro de eliminar este vehículo? Se perderá el acceso mediante el marbete o la placa vinculada.')) {
+                    if (await SISDEL.deleteVehicle(vehicleId)) {
+                        SISDEL.showToast('Vehículo eliminado exitosamente', 'warning');
+                        await renderVehicles();
+                    } else {
+                        SISDEL.showToast('Error al eliminar vehículo', 'danger');
+                    }
+                }
+            };
 
             document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
                 e.preventDefault();

@@ -233,20 +233,35 @@ serve(async (req) => {
         let isMoroso = false; // Track if the plate belongs to a moroso resident
 
         // A. Check if it's a RESIDENT's vehicle (sisdel_vehicles)
+        // Step 1: Find the vehicle by plate
         const { data: vecVehicles, error: errVec } = await supabaseClient
             .from('sisdel_vehicles')
-            .select('plate, userId, users:userId(name, active, paymentStatus, morosoSince)')
+            .select('plate, userId')
             .eq('condominioId', condominioIdReq)
             .ilike('plate', `%${plateNumber}%`);
+
+        console.log(`🔍 Vehicle search results: ${vecVehicles?.length || 0} matches, error: ${errVec?.message || 'none'}`);
 
         if (!errVec && vecVehicles && vecVehicles.length > 0) {
             const exactMatch = vecVehicles.find(v => v.plate.replace(/[^A-Za-z0-9]/g, '').toUpperCase() === plateNumber);
 
             if (exactMatch) {
-                const owner = Array.isArray(exactMatch.users) ? exactMatch.users[0] : exactMatch.users;
+                console.log(`✅ Exact plate match found. userId: ${exactMatch.userId}`);
+
+                // Step 2: Get the owner's info from sisdel_users (separate query to avoid FK join issues)
+                const { data: ownerData, error: ownerErr } = await supabaseClient
+                    .from('sisdel_users')
+                    .select('name, active, paymentStatus, morosoSince')
+                    .eq('id', exactMatch.userId)
+                    .single();
+
+                console.log(`👤 Owner lookup: ${ownerData?.name || 'NOT FOUND'}, paymentStatus: ${ownerData?.paymentStatus || 'NULL'}, error: ${ownerErr?.message || 'none'}`);
+
+                const owner = ownerData;
                 if (owner && owner.active !== false) {
                     // Check if resident is moroso
                     if (owner.paymentStatus === 'moroso') {
+                        console.log(`🟠 Resident ${owner.name} is MOROSO`);
                         // Get condominium settings to check if reminder is enabled
                         const { data: condoSettings } = await supabaseClient
                             .from('sisdel_condominios')
@@ -274,10 +289,10 @@ serve(async (req) => {
                                 console.log(`🚫 Access Denied (Grace Expired): ${owner.name}`);
                             }
                         } else {
-                            // No reminder enabled - just deny moroso
+                            // No reminder enabled - mark as moroso denied
                             isMoroso = true;
                             authReason = `🟠 ${owner.name} - MOROSO (pagos pendientes)`;
-                            console.log("⚠️ Plate matches resident, but user is moroso (no grace period).");
+                            console.log(`⚠️ Access Denied (Moroso, no grace period): ${owner.name}`);
                         }
                     } else {
                         // Resident is al_dia - normal access
@@ -286,7 +301,7 @@ serve(async (req) => {
                         console.log("✅ Access Authorized (Resident):", authReason);
                     }
                 } else {
-                    console.log("⚠️ Plate matches resident, but user is inactive.");
+                    console.log("⚠️ Plate matches resident, but user is inactive or not found.");
                 }
             }
         }

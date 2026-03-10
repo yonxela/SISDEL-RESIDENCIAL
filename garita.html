@@ -446,24 +446,166 @@
                         filter: `condominioId=eq.${condoId}`
                     }, payload => {
                         addLPRLogEntry(payload.new, true);
+                        // Show fullscreen splash for EVERY detection
+                        showFullscreenSplash(payload.new);
                         if (payload.new.status === 'Authorized') {
-                            SISDEL.showToast(`🟢 Acceso Abierto: ${payload.new.plate}`, 'success');
                             renderStats();
                             renderVisits();
-                        } else if (payload.new.status === 'Reminder') {
-                            // Show prominent reminder alert for moroso in grace period
-                            showReminderAlert(payload.new);
-                            SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
-                        } else if (payload.new.status === 'Moroso') {
-                            // Show prominent moroso alert - placa conocida pero moroso
-                            showMorosoAlert(payload.new);
-                            SISDEL.showToast(`🟠 MOROSO - ACCESO DENEGADO: ${payload.new.plate}`, 'warning');
-                        } else {
-                            // No registrado
-                            SISDEL.showToast(`🔴 NO REGISTRADO: ${payload.new.plate}`, 'error');
                         }
                     })
                     .subscribe();
+
+                // ═══════════════════════════════════════════════════════
+                // FULLSCREEN SPLASH - Pantalla completa para cada detección
+                // Para que el policía vea claramente el resultado
+                // ═══════════════════════════════════════════════════════
+                function showFullscreenSplash(log) {
+                    const status = log.status;
+                    const plate = log.plate || 'DESCONOCIDO';
+                    const reason = log.reason || '';
+
+                    let config = {};
+                    if (status === 'Authorized') {
+                        config = {
+                            bg: 'linear-gradient(135deg, #064e3b, #10b981, #059669)',
+                            icon: '✅',
+                            title: 'AUTORIZADO',
+                            subtitle: 'ACCESO PERMITIDO',
+                            plateColor: '#6ee7b7',
+                            borderColor: '#10b981',
+                            autoDismiss: 8000,
+                            beepFreq: [800],
+                        };
+                    } else if (status === 'Moroso') {
+                        config = {
+                            bg: 'linear-gradient(135deg, #7c2d12, #f97316, #ea580c)',
+                            icon: '🟠',
+                            title: 'MOROSO',
+                            subtitle: 'RESIDENTE CON PAGOS PENDIENTES',
+                            plateColor: '#fed7aa',
+                            borderColor: '#f97316',
+                            autoDismiss: 15000,
+                            beepFreq: [600, 400],
+                        };
+                    } else if (status === 'Reminder') {
+                        config = {
+                            bg: 'linear-gradient(135deg, #78350f, #f59e0b, #d97706)',
+                            icon: '⚠️',
+                            title: 'MOROSO - PERÍODO DE GRACIA',
+                            subtitle: 'ACCESO PERMITIDO CON RECORDATORIO',
+                            plateColor: '#fde68a',
+                            borderColor: '#f59e0b',
+                            autoDismiss: 12000,
+                            beepFreq: [800],
+                        };
+                    } else {
+                        // Denied / Not registered
+                        config = {
+                            bg: 'linear-gradient(135deg, #7f1d1d, #ef4444, #dc2626)',
+                            icon: '⛔',
+                            title: 'NO REGISTRADO',
+                            subtitle: 'PLACA DESCONOCIDA',
+                            plateColor: '#fca5a5',
+                            borderColor: '#ef4444',
+                            autoDismiss: 10000,
+                            beepFreq: [400, 300, 400],
+                        };
+                    }
+
+                    // Create or reuse overlay
+                    let splash = document.getElementById('fullscreenSplash');
+                    if (!splash) {
+                        splash = document.createElement('div');
+                        splash.id = 'fullscreenSplash';
+                        document.body.appendChild(splash);
+                    }
+
+                    const time = new Date(log.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                    splash.style.cssText = `
+                        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                        background: ${config.bg};
+                        display: flex; align-items: center; justify-content: center;
+                        z-index: 99999;
+                        animation: fadeIn 0.3s ease;
+                        cursor: pointer;
+                    `;
+
+                    splash.innerHTML = `
+                        <div style="text-align:center; width:90%; max-width:600px; animation:slideInDown 0.4s ease;">
+                            <!-- Icono grande -->
+                            <div style="font-size:5rem; margin-bottom:0.5rem; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.3));">
+                                ${config.icon}
+                            </div>
+
+                            <!-- Titulo del estado -->
+                            <h1 style="color:white; font-size:2.5rem; font-weight:900; text-shadow:0 2px 8px rgba(0,0,0,0.4); margin:0; letter-spacing:3px;">
+                                ${config.title}
+                            </h1>
+                            <p style="color:rgba(255,255,255,0.85); font-size:1rem; margin:0.25rem 0 1.5rem 0; letter-spacing:1px;">
+                                ${config.subtitle}
+                            </p>
+
+                            <!-- Placa grande -->
+                            <div style="background:rgba(0,0,0,0.35); border:3px solid ${config.borderColor}; border-radius:16px; padding:1.5rem 2rem; margin:0 auto 1rem; display:inline-block; min-width:280px;">
+                                <div style="font-size:3.5rem; font-weight:900; letter-spacing:6px; color:${config.plateColor}; text-shadow:0 2px 4px rgba(0,0,0,0.4);">
+                                    ${plate}
+                                </div>
+                            </div>
+
+                            <!-- Razón -->
+                            <div style="color:rgba(255,255,255,0.9); font-size:1.1rem; margin:1rem 0; line-height:1.6; min-height:2rem;">
+                                ${reason}
+                            </div>
+
+                            <!-- Hora -->
+                            <div style="color:rgba(255,255,255,0.6); font-size:0.85rem; margin-top:1rem;">
+                                ${time}
+                            </div>
+
+                            <!-- Botón para cerrar -->
+                            <button onclick="document.getElementById('fullscreenSplash').style.display='none'"
+                                style="margin-top:1.5rem; background:rgba(255,255,255,0.2); color:white; border:2px solid rgba(255,255,255,0.4); padding:0.75rem 3rem; border-radius:12px; font-size:1.1rem; font-weight:bold; cursor:pointer; backdrop-filter:blur(4px); transition:background 0.2s;"
+                                onmouseover="this.style.background='rgba(255,255,255,0.35)'"
+                                onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                ✓ Entendido
+                            </button>
+                            <p style="color:rgba(255,255,255,0.4); font-size:0.75rem; margin-top:0.75rem;">
+                                Toque en cualquier parte para cerrar
+                            </p>
+                        </div>
+                    `;
+
+                    // Click anywhere to dismiss
+                    splash.onclick = (e) => {
+                        if (e.target.tagName !== 'BUTTON') {
+                            splash.style.display = 'none';
+                        }
+                    };
+
+                    // Auto-dismiss
+                    const dismissTimer = setTimeout(() => {
+                        if (splash.style.display !== 'none') {
+                            splash.style.display = 'none';
+                        }
+                    }, config.autoDismiss);
+
+                    // Audio beeps
+                    try {
+                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        config.beepFreq.forEach((freq, i) => {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.connect(gain);
+                            gain.connect(audioCtx.destination);
+                            osc.frequency.value = freq;
+                            gain.gain.value = 0.4;
+                            osc.start(audioCtx.currentTime + (i * 0.35));
+                            osc.stop(audioCtx.currentTime + (i * 0.35) + 0.25);
+                        });
+                        setTimeout(() => audioCtx.close(), 2000);
+                    } catch(e) { /* audio not supported */ }
+                }
 
                 // Reminder alert modal for morosos in grace period
                 function showReminderAlert(log) {

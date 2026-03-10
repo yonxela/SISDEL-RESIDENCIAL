@@ -545,6 +545,58 @@
             });
 
             renderVisits();
+
+            // --- Check for unread messages from admin ---
+            async function checkUnreadMessages() {
+                const allMsgs = await SISDEL.getMessages(session.condominioId);
+                const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.VECINO));
+                if (myMsgs.length === 0) return;
+
+                // Show messages as popup modal
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.style.display = 'flex';
+                overlay.id = 'msgPopupOverlay';
+                overlay.innerHTML = `
+                    <div class="modal" style="max-width:420px;">
+                        <div class="modal-header" style="background:linear-gradient(135deg, var(--primary-light), var(--accent));">
+                            <h3 style="color:white;">📬 Mensajes de Administración</h3>
+                            <span class="badge" style="background:rgba(255,255,255,0.25); color:white; font-size:0.7rem;">${myMsgs.length} nuevo(s)</span>
+                        </div>
+                        <div style="padding:1.25rem; max-height:50vh; overflow-y:auto;" id="msgPopupList"></div>
+                    </div>`;
+                document.body.appendChild(overlay);
+
+                const listEl = document.getElementById('msgPopupList');
+                myMsgs.forEach((m, idx) => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid var(--primary-light);';
+                    msgDiv.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                            <strong style="color:var(--primary-light); font-size:1rem;">${m.subject}</strong>
+                            <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
+                        </div>
+                        <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${m.body}</p>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span class="text-xs text-muted">De: ${m.fromName}</span>
+                            <button class="btn btn-primary btn-sm" id="msgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>
+                        </div>`;
+                    listEl.appendChild(msgDiv);
+
+                    document.getElementById(`msgDismiss_${idx}`).addEventListener('click', async () => {
+                        await SISDEL.markMessageRead(m.id);
+                        msgDiv.style.opacity = '0.3';
+                        msgDiv.querySelector(`#msgDismiss_${idx}`).disabled = true;
+                        msgDiv.querySelector(`#msgDismiss_${idx}`).textContent = '✓ Leído';
+                        // Check if all dismissed
+                        const remaining = listEl.querySelectorAll('button:not([disabled])');
+                        if (remaining.length === 0) {
+                            setTimeout(() => overlay.remove(), 500);
+                        }
+                    });
+                });
+            }
+            checkUnreadMessages();
         });
     </script>
 </body>

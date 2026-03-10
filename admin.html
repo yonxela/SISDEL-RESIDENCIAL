@@ -64,6 +64,7 @@
                 <button class="tab active" data-tab="vecinos">🏠 Vecinos</button>
                 <button class="tab" data-tab="policias">👮 Guardias</button>
                 <button class="tab" data-tab="admins">⚙️ Admins</button>
+                <button class="tab" data-tab="mensajes">✉️ Mensajes</button>
                 <button class="tab" data-tab="todos">📋 Todos</button>
             </div>
 
@@ -89,6 +90,34 @@
             </div>
 
             <div id="usersList"></div>
+
+            <!-- Tab Content: Mensajes -->
+            <div id="tabMensajes" style="display:none;">
+                <div class="card" style="padding:1.5rem; margin-bottom:2rem;">
+                    <h3 style="margin-bottom:1.25rem;">✉️ Enviar Mensaje</h3>
+                    <form id="msgForm">
+                        <div class="form-group">
+                            <label>Destinatario</label>
+                            <select class="form-input" id="msgTarget" required>
+                                <option value="all">📢 Todos (Vecinos + Guardias)</option>
+                                <option value="vecino">🏠 Solo Vecinos</option>
+                                <option value="policia">👮 Solo Guardias / Policías</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Asunto</label>
+                            <input type="text" class="form-input" id="msgSubject" placeholder="Título del mensaje" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Mensaje</label>
+                            <textarea class="form-input" id="msgBody" placeholder="Escriba el mensaje aquí..." rows="4" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%;">📨 Enviar Mensaje</button>
+                    </form>
+                </div>
+                <h3 style="margin-bottom:1rem;">Mensajes Enviados</h3>
+                <div id="sentMsgList"></div>
+            </div>
         </div>
 
         <footer class="app-footer">
@@ -222,7 +251,17 @@
                     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     currentTab = tab.dataset.tab;
-                    renderUsers();
+                    // Hide/show tabs
+                    document.getElementById('tabMensajes').style.display = currentTab === 'mensajes' ? 'block' : 'none';
+                    document.getElementById('usersList').style.display = currentTab === 'mensajes' ? 'none' : 'block';
+                    document.querySelector('.stats-grid').style.display = currentTab === 'mensajes' ? 'none' : '';
+                    // Hide search bar for messages tab
+                    document.getElementById('searchInput').closest('div[style]').style.display = currentTab === 'mensajes' ? 'none' : 'flex';
+                    if (currentTab === 'mensajes') {
+                        renderSentMessages();
+                    } else {
+                        renderUsers();
+                    }
                 });
             });
 
@@ -390,6 +429,61 @@
                         await renderStats();
                         await renderUsers();
                     }
+                }
+            });
+
+            // --- Messaging System ---
+            async function renderSentMessages() {
+                const msgs = await SISDEL.getMessages(condoId);
+                const list = document.getElementById('sentMsgList');
+                if (msgs.length === 0) {
+                    list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">No hay mensajes enviados.</p>';
+                    return;
+                }
+                list.innerHTML = msgs.map(m => {
+                    const targetLabel = m.toRole === 'all' ? '📢 Todos' : m.toRole === 'vecino' ? '🏠 Vecinos' : '👮 Guardias';
+                    const readBadge = m.read ? '<span class="badge" style="background:var(--success);font-size:0.55rem;">LEÍDO</span>' : '<span class="badge badge-info" style="font-size:0.55rem;">NO LEÍDO</span>';
+                    return `
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
+                        <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <strong style="color:var(--primary-light);">${m.subject}</strong>
+                                ${readBadge}
+                            </div>
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
+                                <button class="btn btn-ghost btn-icon btn-sm" onclick="deleteMsg('${m.id}')" title="Eliminar" style="color:var(--danger);">🗑️</button>
+                            </div>
+                        </div>
+                        <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">${m.body}</p>
+                        <span class="text-xs text-muted">Para: ${targetLabel} · De: ${m.fromName}</span>
+                    </div>`;
+                }).join('');
+            }
+
+            window.deleteMsg = async function(id) {
+                if (confirm('¿Eliminar este mensaje?')) {
+                    if (await SISDEL.deleteMessage(id)) {
+                        SISDEL.showToast('Mensaje eliminado', 'warning');
+                        renderSentMessages();
+                    }
+                }
+            };
+
+            document.getElementById('msgForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const target = document.getElementById('msgTarget').value;
+                const subject = document.getElementById('msgSubject').value;
+                const body = document.getElementById('msgBody').value;
+                const adminName = document.getElementById('adminName').textContent || 'Administración';
+
+                const msg = await SISDEL.createMessage(condoId, adminName, target, subject, body);
+                if (msg) {
+                    SISDEL.showToast('✅ Mensaje enviado exitosamente', 'success');
+                    document.getElementById('msgForm').reset();
+                    renderSentMessages();
+                } else {
+                    SISDEL.showToast('Error al enviar mensaje', 'danger');
                 }
             });
 

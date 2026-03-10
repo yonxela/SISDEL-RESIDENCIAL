@@ -261,6 +261,18 @@ const SISDEL = (() => {
         return data;
     }
 
+    async function markMessageRead(messageId) {
+        const { error } = await db().from('sisdel_messages').update({ read: true }).eq('id', messageId);
+        if (error) { console.error('markMessageRead error:', error); return false; }
+        return true;
+    }
+
+    async function deleteMessage(messageId) {
+        const { error } = await db().from('sisdel_messages').delete().eq('id', messageId);
+        if (error) { console.error('deleteMessage error:', error); return false; }
+        return true;
+    }
+
     // ══════════════════════════════════
     //  Auth / Session
     // ══════════════════════════════════
@@ -434,7 +446,7 @@ const SISDEL = (() => {
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
-        getMessages, createMessage,
+        getMessages, createMessage, markMessageRead, deleteMessage,
         login, getSession, logout, requireAuth,
         showToast, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };

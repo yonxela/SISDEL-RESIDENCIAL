@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/api/anpr",
+      "source": "/api/lpr",
       "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
     }
   ]

@@ -37,15 +37,20 @@ serve(async (req) => {
 
         console.log(`🚦 Plate detected by camera: [${plateNumber}]`);
 
-        // 2. Obtener el condominioId de la URL (ej: ?condominioId=1234-abcd)
+        // 2. Obtener el condominioId
         const url = new URL(req.url);
-        const condominioIdReq = url.searchParams.get('condominioId');
+        let condominioIdReq = url.searchParams.get('condominioId') || url.searchParams.get('id');
+
+        // Fallback: If not in URL, check if the camera sent it in the JSON (DeviceID field in Dahua)
+        if (!condominioIdReq) {
+            condominioIdReq = rawData?.DeviceID || rawData?.deviceID || rawData?.info?.DeviceID;
+        }
 
         if (!condominioIdReq) {
-            console.log("⚠️ Faltó el condominioId en la URL de la cámara.");
-            return new Response(JSON.stringify({ error: 'condominioId is required in URL' }), {
+            console.log("⚠️ Faltó el condominioId en la URL y en el payload de la cámara.");
+            return new Response(JSON.stringify({ error: 'condominioId is required' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
+                status: 200,
             })
         }
 

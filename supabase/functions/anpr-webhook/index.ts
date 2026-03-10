@@ -230,6 +230,7 @@ serve(async (req) => {
         let isAuthorized = false;
         let authReason = '';
         let isReminder = false; // New: grace period reminder for morosos
+        let isMoroso = false; // Track if the plate belongs to a moroso resident
 
         // A. Check if it's a RESIDENT's vehicle (sisdel_vehicles)
         const { data: vecVehicles, error: errVec } = await supabaseClient
@@ -268,11 +269,14 @@ serve(async (req) => {
                                 console.log(`⚠️ Reminder Access (Grace Period): ${owner.name}, ${daysRemaining} days left`);
                             } else {
                                 // Grace period expired - deny access
-                                authReason = `❌ ${owner.name} - Período de gracia vencido`;
+                                isMoroso = true;
+                                authReason = `🟠 ${owner.name} - MOROSO (Período de gracia vencido)`;
                                 console.log(`🚫 Access Denied (Grace Expired): ${owner.name}`);
                             }
                         } else {
                             // No reminder enabled - just deny moroso
+                            isMoroso = true;
+                            authReason = `🟠 ${owner.name} - MOROSO (pagos pendientes)`;
                             console.log("⚠️ Plate matches resident, but user is moroso (no grace period).");
                         }
                     } else {
@@ -328,14 +332,18 @@ serve(async (req) => {
         }
 
         // Determine final status
-        const logStatus = isReminder ? 'Reminder' : (isAuthorized ? 'Authorized' : 'Denied');
+        // 🟢 Authorized = residente al día / visita válida
+        // 🟠 Moroso = residente con pagos pendientes (placa conocida pero moroso)
+        // 🟠 Reminder = moroso en período de gracia (acceso permitido con alerta)
+        // 🔴 Denied = placa desconocida / no registrada
+        const logStatus = isReminder ? 'Reminder' : (isAuthorized ? 'Authorized' : (isMoroso ? 'Moroso' : 'Denied'));
 
         // 4. Save camera log to database
         await supabaseClient.from('sisdel_camera_logs').insert([{
             condominioId: condominioIdReq,
             plate: plateNumber || 'UNKNOWN',
             status: logStatus,
-            reason: isAuthorized ? authReason : (authReason || 'Placa no registrada'),
+            reason: isAuthorized ? authReason : (isMoroso ? authReason : 'Placa no registrada'),
             rawPayload: rawData
         }]);
 
@@ -360,12 +368,13 @@ serve(async (req) => {
                 status: 200,
             })
         } else {
-            console.log(`❌ Access Denied for plate: ${plateNumber}`);
+            console.log(`❌ Access Denied for plate: ${plateNumber} (${isMoroso ? 'MOROSO' : 'NO REGISTRADA'})`);
             return new Response(JSON.stringify({
                 Command: "Close",
-                Message: "Denied",
-                Reason: "Placa no registrada",
-                Plate: plateNumber
+                Message: isMoroso ? "Moroso" : "Denied",
+                Reason: isMoroso ? authReason : "Placa no registrada",
+                Plate: plateNumber,
+                IsMoroso: isMoroso
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,

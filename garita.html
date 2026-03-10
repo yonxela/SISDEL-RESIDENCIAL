@@ -447,15 +447,20 @@
                     }, payload => {
                         addLPRLogEntry(payload.new, true);
                         if (payload.new.status === 'Authorized') {
-                            SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
+                            SISDEL.showToast(`🟢 Acceso Abierto: ${payload.new.plate}`, 'success');
                             renderStats();
                             renderVisits();
                         } else if (payload.new.status === 'Reminder') {
                             // Show prominent reminder alert for moroso in grace period
                             showReminderAlert(payload.new);
                             SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
+                        } else if (payload.new.status === 'Moroso') {
+                            // Show prominent moroso alert - placa conocida pero moroso
+                            showMorosoAlert(payload.new);
+                            SISDEL.showToast(`🟠 MOROSO - ACCESO DENEGADO: ${payload.new.plate}`, 'warning');
                         } else {
-                            SISDEL.showToast(`⚠️ Placa detectada: ${payload.new.plate}`, 'info');
+                            // No registrado
+                            SISDEL.showToast(`🔴 NO REGISTRADO: ${payload.new.plate}`, 'error');
                         }
                     })
                     .subscribe();
@@ -514,24 +519,98 @@
                     } catch(e) { /* audio not supported */ }
                 }
 
+                // Moroso alert - placa conocida pero acceso DENEGADO por mora
+                function showMorosoAlert(log) {
+                    const reason = log.reason || '';
+                    
+                    let alertDiv = document.getElementById('morosoAlertOverlay');
+                    if (!alertDiv) {
+                        alertDiv = document.createElement('div');
+                        alertDiv.id = 'morosoAlertOverlay';
+                        document.body.appendChild(alertDiv);
+                    }
+                    
+                    alertDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; z-index:9999; animation:fadeIn 0.3s ease;';
+                    alertDiv.innerHTML = `
+                        <div style="background:var(--bg-card, #1a1a2e); border:3px solid #f97316; border-radius:16px; padding:2rem; max-width:420px; width:90%; text-align:center; animation:slideInDown 0.5s ease; box-shadow:0 0 40px rgba(249,115,22,0.3);">
+                            <div style="font-size:3.5rem; margin-bottom:0.5rem;">🟠</div>
+                            <h2 style="color:#f97316; margin-bottom:0.5rem; font-size:1.5rem; text-transform:uppercase;">VECINO MOROSO</h2>
+                            <div style="background:rgba(249,115,22,0.15); border:1px solid rgba(249,115,22,0.3); border-radius:12px; padding:1rem; margin:1rem 0;">
+                                <div style="font-size:2.2rem; font-weight:bold; letter-spacing:3px; color:#f97316;">${log.plate}</div>
+                                <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
+                            </div>
+                            <div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); border-radius:8px; padding:0.75rem; margin-bottom:1rem;">
+                                <p style="font-size:0.9rem; color:#ef4444; font-weight:bold; margin:0;">⛔ ACCESO DENEGADO</p>
+                                <p style="font-size:0.8rem; opacity:0.9; margin:0.25rem 0 0 0; color:var(--text-secondary);">Este residente tiene pagos pendientes y no tiene acceso autorizado.</p>
+                            </div>
+                            <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">
+                                La placa pertenece a un residente con estado de <strong style="color:#f97316;">MOROSO</strong>.<br>
+                                <strong>Infórmele que debe ponerse al día con sus pagos.</strong>
+                            </p>
+                            <button onclick="document.getElementById('morosoAlertOverlay').style.display='none'" 
+                                style="background:#f97316; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; width:100%;">
+                                ✅ Entendido
+                            </button>
+                        </div>
+                    `;
+
+                    // Auto-dismiss after 20 seconds
+                    setTimeout(() => {
+                        if (alertDiv.style.display !== 'none') {
+                            alertDiv.style.display = 'none';
+                        }
+                    }, 20000);
+
+                    // Audio alert - double beep for moroso (different from reminder)
+                    try {
+                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        const playBeep = (freq, delay) => {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.connect(gain);
+                            gain.connect(audioCtx.destination);
+                            osc.frequency.value = freq;
+                            gain.gain.value = 0.4;
+                            osc.start(audioCtx.currentTime + delay);
+                            osc.stop(audioCtx.currentTime + delay + 0.3);
+                        };
+                        playBeep(600, 0);
+                        playBeep(400, 0.4);
+                        setTimeout(() => audioCtx.close(), 1500);
+                    } catch(e) { /* audio not supported */ }
+                }
+
                 function addLPRLogEntry(log, animate) {
                     lprEmpty.style.display = 'none';
                     const time = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                     const isAuth = log.status === 'Authorized';
                     const isReminder = log.status === 'Reminder';
+                    const isMoroso = log.status === 'Moroso';
 
                     let badgeClass = 'badge-danger';
-                    let badgeText = 'DENEGADO';
-                    let bgColor = 'transparent';
+                    let badgeText = '🔴 NO REGISTRADO';
+                    let bgColor = 'rgba(239, 68, 68, 0.06)';
+                    let plateColor = 'var(--danger)';
+                    let borderLeft = '4px solid var(--danger)';
 
                     if (isAuth) {
                         badgeClass = 'badge-success';
-                        badgeText = 'AUTORIZADO';
+                        badgeText = '🟢 AUTORIZADO';
                         bgColor = 'rgba(16, 185, 129, 0.05)';
+                        plateColor = 'var(--success)';
+                        borderLeft = '4px solid var(--success)';
                     } else if (isReminder) {
                         badgeClass = 'badge-warning';
                         badgeText = '⚠️ RECORDATORIO';
                         bgColor = 'rgba(245, 158, 11, 0.1)';
+                        plateColor = '#f59e0b';
+                        borderLeft = '4px solid #f59e0b';
+                    } else if (isMoroso) {
+                        badgeClass = '';
+                        badgeText = '🟠 MOROSO';
+                        bgColor = 'rgba(249, 115, 22, 0.12)';
+                        plateColor = '#f97316';
+                        borderLeft = '4px solid #f97316';
                     }
 
                     const entry = document.createElement('div');
@@ -539,16 +618,16 @@
                     entry.style.padding = '1rem';
                     entry.style.borderBottom = '1px solid var(--border-color)';
                     entry.style.background = bgColor;
-                    if (isReminder) entry.style.borderLeft = '4px solid #f59e0b';
+                    entry.style.borderLeft = borderLeft;
 
                     entry.innerHTML = `
                         <div style="flex:1;">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <strong style="font-size:1.1rem; letter-spacing:1px; color:${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${log.plate}</strong>
+                                <strong style="font-size:1.1rem; letter-spacing:1px; color:${plateColor};">${log.plate}</strong>
                                 <span style="font-size:0.75rem; opacity:0.6;">${time}</span>
                             </div>
                             <div style="font-size:0.85rem; margin-top:0.25rem;">
-                                <span class="badge ${badgeClass}" style="font-size:0.7rem;">
+                                <span class="badge ${badgeClass}" style="font-size:0.7rem;${isMoroso ? 'background:rgba(249,115,22,0.2); color:#f97316; border:1px solid #f97316;' : ''}">
                                     ${badgeText}
                                 </span>
                                 <span style="margin-left:0.5rem; opacity:0.8;">${log.reason || ''}</span>

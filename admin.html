@@ -120,6 +120,11 @@
                     <label>Casa o Lote</label>
                     <input type="text" class="form-input" id="newUserCasa" placeholder="Ej. Casa 12">
                 </div>
+                <div class="form-group" id="groupPlates">
+                    <label>🚗 Placas de Vehículos</label>
+                    <input type="text" class="form-input" id="newUserPlates" placeholder="Ej. P123ABC, M456DEF" style="text-transform:uppercase;">
+                    <p class="text-xs text-muted" style="margin-top:0.25rem;">Separe múltiples placas con coma (,). Se registrarán automáticamente.</p>
+                </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                     <div class="form-group">
                         <label>Teléfono (Opcional)</label>
@@ -291,27 +296,54 @@
 
             newUserForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const name = document.getElementById('newUserName').value;
-                const role = document.getElementById('newUserRole').value;
-                const casa = document.getElementById('newUserCasa').value;
-                const phone = document.getElementById('newUserPhone').value;
-                const email = document.getElementById('newUserEmail').value;
+                const btnSubmit = newUserForm.querySelector('button[type="submit"]');
+                btnSubmit.disabled = true;
+                btnSubmit.textContent = 'Creando...';
 
-                const user = await SISDEL.createUser(condoId, name, role, casa, phone, email);
-                if (user) {
-                    SISDEL.showToast(`Usuario ${name} creado. Código: ${user.accessCode}`, 'success');
-                    modalNewUser.style.display = 'none';
-                    newUserForm.reset();
-                    await renderStats();
-                    await renderUsers();
-                } else {
-                    SISDEL.showToast('Error al crear usuario', 'danger');
+                try {
+                    const name = document.getElementById('newUserName').value;
+                    const role = document.getElementById('newUserRole').value;
+                    const casa = document.getElementById('newUserCasa').value;
+                    const phone = document.getElementById('newUserPhone').value;
+                    const email = document.getElementById('newUserEmail').value;
+                    const platesRaw = document.getElementById('newUserPlates').value;
+
+                    const user = await SISDEL.createUser(condoId, name, role, casa, phone, email);
+                    if (user) {
+                        // Auto-register vehicle plates if provided
+                        let plateCount = 0;
+                        if (platesRaw && role === 'vecino') {
+                            const plates = platesRaw.split(',').map(p => p.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(p => p.length > 0);
+                            for (const plate of plates) {
+                                const vehicle = await SISDEL.createVehicle(user.id, condoId, plate, '', '', '');
+                                if (vehicle) plateCount++;
+                            }
+                        }
+
+                        let msg = `✅ ${name} creado. Código: ${user.accessCode}`;
+                        if (plateCount > 0) msg += ` | ${plateCount} vehículo(s) registrado(s)`;
+                        SISDEL.showToast(msg, 'success');
+                        modalNewUser.style.display = 'none';
+                        newUserForm.reset();
+                        await renderStats();
+                        await renderUsers();
+                    } else {
+                        SISDEL.showToast('Error al crear usuario', 'danger');
+                    }
+                } catch (err) {
+                    console.error('Error creating user:', err);
+                    SISDEL.showToast('Error inesperado', 'danger');
+                } finally {
+                    btnSubmit.disabled = false;
+                    btnSubmit.textContent = 'Crear Usuario y Generar Código';
                 }
             });
 
             // Handle role change to show/hide house input
             document.getElementById('newUserRole').addEventListener('change', (e) => {
-                document.getElementById('groupCasa').style.display = e.target.value === 'vecino' ? 'block' : 'none';
+                const isVecino = e.target.value === 'vecino';
+                document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
+                document.getElementById('groupPlates').style.display = isVecino ? 'block' : 'none';
             });
 
             // --- Edit User Logic ---

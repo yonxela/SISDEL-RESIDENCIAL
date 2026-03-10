@@ -232,6 +232,13 @@
                 welcomeSection.style.display = 'flex';
             });
 
+            // Allow Enter key to advance from welcome screen
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && welcomeSection.style.display !== 'none') {
+                    btnGoToLogin.click();
+                }
+            });
+
             // --- Auth Logic ---
             loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();

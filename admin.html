@@ -205,6 +205,17 @@
                         <option value="moroso">Moroso</option>
                     </select>
                 </div>
+
+                <!-- Vehicle Plates Section (only for vecinos) -->
+                <div class="form-group" id="editGroupPlates" style="display:none;">
+                    <label>🚗 Vehículos Registrados</label>
+                    <div id="editPlatesList" style="margin-bottom:0.5rem;"></div>
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="text" class="form-input" id="editNewPlate" placeholder="Agregar placa (ej. P123ABC)" style="text-transform:uppercase; flex:1;">
+                        <button type="button" class="btn btn-primary btn-sm" id="btnAddPlate" style="white-space:nowrap;">+ Agregar</button>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
                     Cambios</button>
                 <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
@@ -435,8 +446,68 @@
                 document.getElementById('editUserCasa').value = user.casa || '';
                 document.getElementById('editUserPayment').value = user.paymentStatus || 'al_dia';
                 document.getElementById('editUserPayment').parentElement.style.display = user.role === 'vecino' ? 'block' : 'none';
+                
+                // Show plates section only for vecinos
+                const platesSection = document.getElementById('editGroupPlates');
+                platesSection.style.display = user.role === 'vecino' ? 'block' : 'none';
+                if (user.role === 'vecino') {
+                    await renderEditPlates(user.id);
+                }
+                
                 modalEditUser.style.display = 'flex';
             };
+
+            // Render plates in edit modal
+            async function renderEditPlates(userId) {
+                const vehicles = await SISDEL.getVehicles(userId);
+                const list = document.getElementById('editPlatesList');
+                if (vehicles.length === 0) {
+                    list.innerHTML = '<p class="text-xs text-muted" style="padding:0.5rem 0;">Sin vehículos registrados.</p>';
+                    return;
+                }
+                list.innerHTML = vehicles.map(v => `
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:0.4rem 0.75rem; background:var(--bg-item); border-radius:8px; margin-bottom:0.35rem;">
+                        <span style="font-weight:600; font-family:monospace; letter-spacing:1px;">🚗 ${v.plate}</span>
+                        <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick="removePlate('${v.id}')" title="Eliminar placa" style="color:var(--danger); font-size:1rem;">×</button>
+                    </div>
+                `).join('');
+            }
+
+            // Delete plate
+            window.removePlate = async function(vehicleId) {
+                if (confirm('¿Eliminar este vehículo?')) {
+                    if (await SISDEL.deleteVehicle(vehicleId)) {
+                        SISDEL.showToast('Vehículo eliminado', 'warning');
+                        const userId = document.getElementById('editUserId').value;
+                        await renderEditPlates(userId);
+                    }
+                }
+            };
+
+            // Add plate
+            document.getElementById('btnAddPlate').addEventListener('click', async () => {
+                const input = document.getElementById('editNewPlate');
+                const plate = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (!plate) {
+                    SISDEL.showToast('Ingrese una placa válida', 'warning');
+                    return;
+                }
+                const userId = document.getElementById('editUserId').value;
+                const vehicle = await SISDEL.createVehicle(userId, condoId, plate, '', '', '');
+                if (vehicle) {
+                    SISDEL.showToast(`Placa ${plate} agregada`, 'success');
+                    input.value = '';
+                    await renderEditPlates(userId);
+                }
+            });
+
+            // Allow Enter key to add plate
+            document.getElementById('editNewPlate').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    document.getElementById('btnAddPlate').click();
+                }
+            });
 
             btnCloseEditUser.addEventListener('click', () => modalEditUser.style.display = 'none');
 

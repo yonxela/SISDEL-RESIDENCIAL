@@ -41,6 +41,13 @@
                         <circle id="sunCircle" cx="12" cy="12" r="5" style="display:none;" />
                     </svg>
                 </button>
+                <button class="btn btn-ghost btn-sm" id="btnMessages" title="Mensajes" style="position:relative;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                        <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    ✉️
+                </button>
                 <span id="adminName" class="badge badge-info" style="font-size:0.7rem;"></span>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -64,7 +71,6 @@
                 <button class="tab active" data-tab="vecinos">🏠 Vecinos</button>
                 <button class="tab" data-tab="policias">👮 Guardias</button>
                 <button class="tab" data-tab="admins">⚙️ Admins</button>
-                <button class="tab" data-tab="mensajes">✉️ Mensajes</button>
                 <button class="tab" data-tab="todos">📋 Todos</button>
             </div>
 
@@ -243,6 +249,20 @@
             // --- App Logic ---
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
 
+            // Messages button toggles to messages view
+            let showingMessages = false;
+            document.getElementById('btnMessages').addEventListener('click', () => {
+                showingMessages = !showingMessages;
+                document.getElementById('tabMensajes').style.display = showingMessages ? 'block' : 'none';
+                document.getElementById('usersList').style.display = showingMessages ? 'none' : 'block';
+                document.querySelector('.stats-grid').style.display = showingMessages ? 'none' : '';
+                document.getElementById('searchInput').closest('div[style]').style.display = showingMessages ? 'none' : 'flex';
+                document.getElementById('mainTabs').style.display = showingMessages ? 'none' : '';
+                document.getElementById('btnMessages').style.background = showingMessages ? 'var(--primary-light)' : '';
+                document.getElementById('btnMessages').style.color = showingMessages ? 'white' : '';
+                if (showingMessages) renderSentMessages();
+            });
+
             let currentTab = 'vecinos';
             let searchQuery = '';
 
@@ -251,17 +271,18 @@
                     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     currentTab = tab.dataset.tab;
-                    // Hide/show tabs
-                    document.getElementById('tabMensajes').style.display = currentTab === 'mensajes' ? 'block' : 'none';
-                    document.getElementById('usersList').style.display = currentTab === 'mensajes' ? 'none' : 'block';
-                    document.querySelector('.stats-grid').style.display = currentTab === 'mensajes' ? 'none' : '';
-                    // Hide search bar for messages tab
-                    document.getElementById('searchInput').closest('div[style]').style.display = currentTab === 'mensajes' ? 'none' : 'flex';
-                    if (currentTab === 'mensajes') {
-                        renderSentMessages();
-                    } else {
-                        renderUsers();
+                    // If returning from messages view
+                    if (showingMessages) {
+                        showingMessages = false;
+                        document.getElementById('tabMensajes').style.display = 'none';
+                        document.getElementById('usersList').style.display = 'block';
+                        document.querySelector('.stats-grid').style.display = '';
+                        document.getElementById('searchInput').closest('div[style]').style.display = 'flex';
+                        document.getElementById('mainTabs').style.display = '';
+                        document.getElementById('btnMessages').style.background = '';
+                        document.getElementById('btnMessages').style.color = '';
                     }
+                    renderUsers();
                 });
             });
 

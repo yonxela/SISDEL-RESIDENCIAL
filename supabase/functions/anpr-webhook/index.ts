@@ -24,7 +24,18 @@ serve(async (req) => {
         let plateNumber = rawData?.PlateNumber ||
             rawData?.Events?.[0]?.PlateNumber ||
             rawData?.plate ||
-            rawData?.info?.PlateNumber || '';
+            rawData?.info?.PlateNumber ||
+            '';
+
+        // Si no se encontró en campos estándar, intentar extraer de PicName (modelo Dahua específico)
+        if (!plateNumber && rawData?.PicName) {
+            // Ejemplo: P642DPH-20260310114824-plate.jpg
+            const parts = rawData.PicName.split('-');
+            if (parts.length > 0 && parts[0].length >= 5) {
+                plateNumber = parts[0];
+                console.log(`🔎 Extraída placa del PicName: ${plateNumber}`);
+            }
+        }
 
         // Clean the plate: remove hyphens, spaces, and make uppercase (e.g., "P-123 ABC" -> "P123ABC")
         plateNumber = plateNumber ? plateNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';

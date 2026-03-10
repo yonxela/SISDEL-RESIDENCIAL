@@ -361,7 +361,11 @@
             const btnCloseNewUser = document.getElementById('btnCloseNewUser');
             const newUserForm = document.getElementById('newUserForm');
 
-            btnNewUser.addEventListener('click', () => modalNewUser.style.display = 'flex');
+            btnNewUser.addEventListener('click', () => {
+                newUserForm.reset();
+                syncNewUserFields(); // Ensure fields match default role (vecino)
+                modalNewUser.style.display = 'flex';
+            });
             btnCloseNewUser.addEventListener('click', () => modalNewUser.style.display = 'none');
 
             newUserForm.addEventListener('submit', async (e) => {
@@ -423,14 +427,17 @@
                 }
             });
 
-            // Handle role change to show/hide house input
-            document.getElementById('newUserRole').addEventListener('change', (e) => {
-                const isVecino = e.target.value === 'vecino';
+            function syncNewUserFields() {
+                const role = document.getElementById('newUserRole').value;
+                const isVecino = role === 'vecino';
                 document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
                 document.getElementById('groupPlates').style.display = isVecino ? 'block' : 'none';
                 document.getElementById('newUserCasa').required = isVecino;
                 document.getElementById('newUserPhone').required = isVecino;
-            });
+            }
+
+            // Handle role change to show/hide house input
+            document.getElementById('newUserRole').addEventListener('change', syncNewUserFields);
 
             // --- Edit User Logic ---
             const modalEditUser = document.getElementById('modalEditUser');

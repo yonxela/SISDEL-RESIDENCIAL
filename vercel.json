@@ -15,6 +15,10 @@
     {
       "source": "/LAPI/:path*",
       "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+    },
+    {
+      "source": "/NotificationInfo/:path*",
+      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
     }
   ]
 }

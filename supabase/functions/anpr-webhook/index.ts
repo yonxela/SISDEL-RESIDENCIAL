@@ -14,52 +14,183 @@ serve(async (req) => {
     }
 
     try {
-        // 1. Get the request payload from the Dahua camera
-        const rawData = await req.json()
+        const contentType = req.headers.get('content-type') || '';
+        console.log(`📥 Request received - Method: ${req.method}, Content-Type: ${contentType}`);
+        console.log(`📥 URL: ${req.url}`);
 
-        console.log("📥 Raw payload from Dahua ANPR:", JSON.stringify(rawData));
+        // Log all headers for debugging
+        const headerObj: Record<string, string> = {};
+        req.headers.forEach((value, key) => {
+            headerObj[key] = value;
+        });
+        console.log("📥 Headers:", JSON.stringify(headerObj));
 
-        // Dahua ITC413 specific JSON structure adaptation (will be adjusted after first real test)
-        // Often it comes inside an "Events" array or directly as "PlateNumber"
-        let plateNumber = rawData?.PlateNumber ||
-            rawData?.Events?.[0]?.PlateNumber ||
-            rawData?.plate ||
-            rawData?.info?.PlateNumber ||
-            '';
+        let rawData: any = {};
+        let plateNumber = '';
 
-        // Si no se encontró en campos estándar, intentar extraer de PicName (modelo Dahua específico)
-        if (!plateNumber && rawData?.PicName) {
-            // Ejemplo: P642DPH-20260310114824-plate.jpg
-            const parts = rawData.PicName.split('-');
-            if (parts.length > 0 && parts[0].length >= 5) {
-                plateNumber = parts[0];
-                console.log(`🔎 Extraída placa del PicName: ${plateNumber}`);
+        // ============================================
+        // PARSE REQUEST BODY - Handle multiple formats
+        // ============================================
+
+        if (contentType.includes('multipart/form-data')) {
+            // ITMS/Dahua sends multipart with JSON metadata + images
+            console.log("📦 Parsing as multipart/form-data (ITMS Dahua format)...");
+            try {
+                const formData = await req.formData();
+                // Log all form fields
+                for (const [key, value] of formData.entries()) {
+                    if (value instanceof File) {
+                        console.log(`  📎 File field: ${key}, name: ${value.name}, size: ${value.size}, type: ${value.type}`);
+                        // Try to extract plate from filename
+                        // Dahua format: P642DPH-20260310114824-plate.jpg
+                        if (value.name && !plateNumber) {
+                            const parts = value.name.split('-');
+                            if (parts.length > 0 && parts[0].length >= 5) {
+                                plateNumber = parts[0];
+                                console.log(`  🔎 Extracted plate from filename: ${plateNumber}`);
+                            }
+                        }
+                    } else {
+                        const strVal = String(value);
+                        console.log(`  📝 Text field: ${key} = ${strVal.substring(0, 500)}`);
+                        // Try to parse JSON fields
+                        try {
+                            const jsonVal = JSON.parse(strVal);
+                            rawData = { ...rawData, ...jsonVal };
+                            // Extract plate from JSON field
+                            if (jsonVal?.PlateNumber) plateNumber = jsonVal.PlateNumber;
+                            if (jsonVal?.plate) plateNumber = jsonVal.plate;
+                            if (jsonVal?.TrafficCar?.PlateNumber) plateNumber = jsonVal.TrafficCar.PlateNumber;
+                            if (jsonVal?.info?.PlateNumber) plateNumber = jsonVal.info.PlateNumber;
+                        } catch {
+                            // Not JSON, store as raw field
+                            rawData[key] = strVal;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("⚠️ Failed to parse multipart, trying raw text...", e.message);
+                const text = await req.text();
+                console.log("📝 Raw body (first 1000 chars):", text.substring(0, 1000));
+                rawData = { rawText: text };
+            }
+
+        } else if (contentType.includes('application/json')) {
+            // Standard JSON POST
+            console.log("📦 Parsing as JSON...");
+            rawData = await req.json();
+            console.log("📥 JSON payload:", JSON.stringify(rawData).substring(0, 2000));
+
+        } else if (contentType.includes('application/x-www-form-urlencoded')) {
+            // URL-encoded form data
+            console.log("📦 Parsing as URL-encoded form...");
+            const formData = await req.formData();
+            for (const [key, value] of formData.entries()) {
+                rawData[key] = String(value);
+                console.log(`  📝 Field: ${key} = ${String(value).substring(0, 500)}`);
+            }
+
+        } else if (contentType.includes('text/') || contentType.includes('xml')) {
+            // Text or XML payload
+            console.log("📦 Parsing as text/XML...");
+            const text = await req.text();
+            console.log("📝 Text body (first 1000 chars):", text.substring(0, 1000));
+            rawData = { rawText: text };
+            // Try to extract plate from XML or text
+            const plateMatch = text.match(/<PlateNumber>(.*?)<\/PlateNumber>/i) ||
+                               text.match(/<plate>(.*?)<\/plate>/i) ||
+                               text.match(/"PlateNumber"\s*:\s*"(.*?)"/i);
+            if (plateMatch) {
+                plateNumber = plateMatch[1];
+                console.log(`🔎 Extracted plate from text/XML: ${plateNumber}`);
+            }
+
+        } else {
+            // Unknown content type - try JSON first, then text
+            console.log(`📦 Unknown content-type: '${contentType}', trying to parse...`);
+            const bodyText = await req.text();
+            console.log("📝 Raw body (first 1000 chars):", bodyText.substring(0, 1000));
+            
+            if (bodyText.trim()) {
+                try {
+                    rawData = JSON.parse(bodyText);
+                    console.log("✅ Successfully parsed as JSON");
+                } catch {
+                    rawData = { rawText: bodyText };
+                    console.log("ℹ️ Stored as raw text");
+                }
+            } else {
+                console.log("⚠️ Empty body received");
+                rawData = { emptyBody: true };
             }
         }
 
-        // Clean the plate: remove hyphens, spaces, and make uppercase (e.g., "P-123 ABC" -> "P123ABC")
+        // ============================================
+        // EXTRACT PLATE NUMBER from parsed data
+        // ============================================
+        if (!plateNumber) {
+            // Try all known Dahua JSON structures - including ITMS format
+            plateNumber = rawData?.PlateNumber ||
+                rawData?.Picture?.Plate?.PlateNumber ||  // ← Dahua ITMS format!
+                rawData?.Events?.[0]?.PlateNumber ||
+                rawData?.plate ||
+                rawData?.info?.PlateNumber ||
+                rawData?.TrafficCar?.PlateNumber ||
+                rawData?.trafficCar?.plateNumber ||
+                rawData?.AlarmInfoPlate?.plateNumber ||
+                rawData?.VehicleInfo?.PlateNumber ||
+                '';
+        }
+
+        // Try to extract from PicName if available (multiple locations)
+        if (!plateNumber) {
+            const picName = rawData?.PicName || rawData?.Picture?.CutoutPic?.PicName || '';
+            if (picName) {
+                const parts = picName.split('-');
+                if (parts.length > 0 && parts[0].length >= 5) {
+                    plateNumber = parts[0];
+                    console.log(`🔎 Extracted plate from PicName: ${plateNumber}`);
+                }
+            }
+        }
+
+        // Clean the plate: remove hyphens, spaces, and make uppercase
         plateNumber = plateNumber ? plateNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
 
         if (!plateNumber) {
             console.log("⚠️ No plate detected in payload, but responding 200 to keep camera happy.");
-            // We still log it just in case
             plateNumber = "NOPLATE";
         }
 
         console.log(`🚦 Plate detected by camera: [${plateNumber}]`);
 
-        // 2. Obtener el condominioId
+        // 2. Get condominioId
         const url = new URL(req.url);
         let condominioIdReq = url.searchParams.get('condominioId') || url.searchParams.get('id');
 
-        // Fallback: If not in URL, check if the camera sent it in the JSON (DeviceID field in Dahua)
+        // Fallback: If not in URL, check if the camera sent it in the JSON
         if (!condominioIdReq) {
-            condominioIdReq = rawData?.DeviceID || rawData?.deviceID || rawData?.info?.DeviceID;
+            condominioIdReq = rawData?.DeviceID || 
+                rawData?.deviceID || 
+                rawData?.info?.DeviceID ||
+                rawData?.Picture?.SnapInfo?.DeviceID;  // ← Dahua ITMS format!
         }
 
         if (!condominioIdReq) {
-            console.log("⚠️ Faltó el condominioId en la URL y en el payload de la cámara.");
-            return new Response(JSON.stringify({ error: 'condominioId is required' }), {
+            console.log("⚠️ Missing condominioId in URL and camera payload.");
+            // Still log the event even without condominioId for debugging
+            const supabaseClient = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            await supabaseClient.from('sisdel_camera_logs').insert([{
+                plate: plateNumber || 'UNKNOWN',
+                status: 'Error',
+                reason: 'Missing condominioId',
+                rawPayload: rawData
+            }]);
+
+            return new Response(JSON.stringify({ error: 'condominioId is required, but event was logged' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,
             })
@@ -68,24 +199,45 @@ serve(async (req) => {
         // 3. Connect to Supabase to verify the plate
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '' // Used to bypass RLS in the edge function safely
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
+
+        // ============================================
+        // DEDUPLICATION: Skip if same plate was logged in last 30 seconds
+        // Dahua cameras send 3+ notifications per detection event
+        // ============================================
+        const thirtySecsAgo = new Date(Date.now() - 30000).toISOString();
+        const { data: recentLogs } = await supabaseClient
+            .from('sisdel_camera_logs')
+            .select('id')
+            .eq('condominioId', condominioIdReq)
+            .eq('plate', plateNumber)
+            .gte('createdAt', thirtySecsAgo)
+            .limit(1);
+
+        if (recentLogs && recentLogs.length > 0) {
+            console.log(`⏭️ Duplicate skipped: ${plateNumber} was already logged within 30s`);
+            return new Response(JSON.stringify({
+                Command: "OK",
+                Message: "Duplicate skipped",
+                Plate: plateNumber
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            })
+        }
 
         let isAuthorized = false;
         let authReason = '';
 
         // A. Check if it's a RESIDENT's vehicle (sisdel_vehicles)
-        // We use ilike and % to find partial matches, ignoring the hyphen in DB (e.g. DB: "P-123ABC", Camera: "P123ABC")
-        const sqlLikePlate = `%${plateNumber.replace('P', 'P%').replace('M', 'M%').replace('C', 'C%')}%`; // basic logic to handle GT plates formatting flexibly
-
         const { data: vecVehicles, error: errVec } = await supabaseClient
             .from('sisdel_vehicles')
             .select('plate, users:userId(name, active)')
-            .eq('condominioId', condominioIdReq) // FILTRAR POR CONDOMINIO
-            .ilike('plate', `%${plateNumber}%`); // Basic matching for now
+            .eq('condominioId', condominioIdReq)
+            .ilike('plate', `%${plateNumber}%`);
 
         if (!errVec && vecVehicles && vecVehicles.length > 0) {
-            // Find if the exact alphanumeric sequence matches (ignoring symbols)
             const exactMatch = vecVehicles.find(v => v.plate.replace(/[^A-Za-z0-9]/g, '').toUpperCase() === plateNumber);
 
             if (exactMatch) {
@@ -104,16 +256,13 @@ serve(async (req) => {
         let visitIdToUpdate = null;
 
         if (!isAuthorized) {
-            // Note: Deno Edge Functions run in UTC, we should adjust to local time (Guatemala UTC-6) if strict date matters.
-            // For simplicity, we just check pending visits. A robust system would check the `visitDate`.
             const { data: visVehicles, error: errVis } = await supabaseClient
                 .from('sisdel_visits')
                 .select('id, visitorName, vehiclePlate, status')
-                .eq('condominioId', condominioIdReq) // FILTRAR POR CONDOMINIO
+                .eq('condominioId', condominioIdReq)
                 .eq('status', 'pending');
 
             if (!errVis && visVehicles && visVehicles.length > 0) {
-                // Find a visit where the clean plate matches the camera's clean plate
                 const validVisit = visVehicles.find(v => {
                     if (!v.vehiclePlate) return false;
                     const cleanVisitPlate = v.vehiclePlate.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -129,7 +278,7 @@ serve(async (req) => {
             }
         }
 
-        // 4. Guardar el historial de la cámara en la base de datos
+        // 4. Save camera log to database
         await supabaseClient.from('sisdel_camera_logs').insert([{
             condominioId: condominioIdReq,
             plate: plateNumber || 'UNKNOWN',
@@ -138,12 +287,8 @@ serve(async (req) => {
             rawPayload: rawData
         }]);
 
-        // 5. Responder a la cámara
-        // A veces la cámara espera un JSON para activar el relé, 
-        // o si está configurada para abrir con un HTTP 200 OK.
-
+        // 5. Respond to the camera
         if (isAuthorized) {
-            // Mark visit as entered if applicable
             if (visitIdToUpdate) {
                 await supabaseClient
                     .from('sisdel_visits')
@@ -153,10 +298,8 @@ serve(async (req) => {
                 console.log(`📝 Visit ${visitIdToUpdate} marked as entered.`);
             }
 
-            // Return success response to camera
-            // Depending on Dahua firmware, returning 200 OK might be enough to trigger the "Alarm Out" if configured to do so on successful POST.
             return new Response(JSON.stringify({
-                Command: "Open", // Some firmwares look for this
+                Command: "Open",
                 Message: "Authorized",
                 Reason: authReason,
                 Plate: plateNumber
@@ -166,7 +309,6 @@ serve(async (req) => {
             })
         } else {
             console.log(`❌ Access Denied for plate: ${plateNumber}`);
-            // Return 200 OK even for denied, so Dahua doesn't throw HTTP errors internally
             return new Response(JSON.stringify({
                 Command: "Close",
                 Message: "Denied",
@@ -180,7 +322,24 @@ serve(async (req) => {
 
     } catch (error) {
         console.error("❌ Catch Error in ANPR webhook:", error.message);
-        // Return 200 OK so the camera doesn't freeze its sending loop
+        console.error("❌ Stack:", error.stack);
+
+        // Try to log the error even if main processing failed
+        try {
+            const supabaseClient = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            await supabaseClient.from('sisdel_camera_logs').insert([{
+                plate: 'ERROR',
+                status: 'Error',
+                reason: error.message,
+                rawPayload: { error: error.message, stack: error.stack }
+            }]);
+        } catch (logError) {
+            console.error("❌ Failed to log error:", logError.message);
+        }
+
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 200,

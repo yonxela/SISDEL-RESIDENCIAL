@@ -106,10 +106,12 @@
 
                     <!-- Monitor LPR Realtime -->
                     <div id="lprMonitorContainer" style="margin-top:2rem; display:none;">
-                        <h3 style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
+                        <h3
+                            style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
                             <span class="pulse-icon"></span> Monitor Cámara LPR
                         </h3>
-                        <div id="lprLogsList" class="card" style="padding:0; overflow:hidden; border-radius:12px; max-height:400px; overflow-y:auto;">
+                        <div id="lprLogsList" class="card"
+                            style="padding:0; overflow:hidden; border-radius:12px; max-height:400px; overflow-y:auto;">
                             <div style="padding:2rem; text-align:center; opacity:0.5;" id="lprEmptyState">
                                 Esperando lecturas de la cámara...
                             </div>
@@ -181,7 +183,7 @@
             if (hasLPR) document.getElementById('sectionLPR').style.display = 'block';
 
             if (!hasQR && !hasManual) {
-                 document.getElementById('accessMethodsContainer').innerHTML += '<div class="card" style="padding:2rem; text-align:center; opacity:0.6;">Sin controles manuales configurados.</div>';
+                document.getElementById('accessMethodsContainer').innerHTML += '<div class="card" style="padding:2rem; text-align:center; opacity:0.6;">Sin controles manuales configurados.</div>';
             }
 
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
@@ -424,21 +426,24 @@
                 const { data: initialLogs } = await window.supabaseDb
                     .from('sisdel_camera_logs')
                     .select('*')
+                    .eq('condominioId', condoId)
                     .order('createdAt', { ascending: false })
                     .limit(5);
 
                 if (initialLogs && initialLogs.length > 0) {
                     lprEmpty.style.display = 'none';
+                    // The list needs to be reversed back so we append them in correct chronological order at initial render
                     initialLogs.forEach(log => addLPRLogEntry(log, false));
                 }
 
                 // Subscribe to NEW logs
                 window.supabaseDb
                     .channel('lpr-changes')
-                    .on('postgres_changes', { 
-                        event: 'INSERT', 
-                        schema: 'public', 
-                        table: 'sisdel_camera_logs' 
+                    .on('postgres_changes', {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'sisdel_camera_logs',
+                        filter: `condominioId=eq.${condoId}`
                     }, payload => {
                         addLPRLogEntry(payload.new, true);
                         if (payload.new.status === 'Authorized') {
@@ -455,13 +460,13 @@
                     lprEmpty.style.display = 'none';
                     const time = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                     const isAuth = log.status === 'Authorized';
-                    
+
                     const entry = document.createElement('div');
                     entry.className = `list-item ${animate ? 'new-log-entry' : ''}`;
                     entry.style.padding = '1rem';
                     entry.style.borderBottom = '1px solid var(--border-color)';
                     entry.style.background = isAuth ? 'rgba(16, 185, 129, 0.05)' : 'transparent';
-                    
+
                     entry.innerHTML = `
                         <div style="flex:1;">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -501,21 +506,48 @@
             box-shadow: 0 0 0 rgba(239, 68, 68, 0.4);
             animation: pulse-red 2s infinite;
         }
+
         @keyframes pulse-red {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
         }
+
         .new-log-entry {
             animation: slideInDown 0.5s ease-out, highlightNew 2s ease-out;
         }
+
         @keyframes highlightNew {
-            0% { background-color: var(--accent-alpha); }
-            100% { background-color: transparent; }
+            0% {
+                background-color: var(--accent-alpha);
+            }
+
+            100% {
+                background-color: transparent;
+            }
         }
+
         @keyframes slideInDown {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
         }
     </style>
 </body>

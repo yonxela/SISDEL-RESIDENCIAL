@@ -27,19 +27,29 @@ serve(async (req) => {
             rawData?.info?.PlateNumber || '';
 
         // Clean the plate: remove hyphens, spaces, and make uppercase (e.g., "P-123 ABC" -> "P123ABC")
-        plateNumber = plateNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        plateNumber = plateNumber ? plateNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
 
         if (!plateNumber) {
-            console.log("⚠️ No plate detected in payload:", JSON.stringify(rawData));
-            return new Response(JSON.stringify({ error: 'No plate detected in payload' }), {
+            console.log("⚠️ No plate detected in payload, but responding 200 to keep camera happy.");
+            // We still log it just in case
+            plateNumber = "NOPLATE";
+        }
+
+        console.log(`🚦 Plate detected by camera: [${plateNumber}]`);
+
+        // 2. Obtener el condominioId de la URL (ej: ?condominioId=1234-abcd)
+        const url = new URL(req.url);
+        const condominioIdReq = url.searchParams.get('condominioId');
+
+        if (!condominioIdReq) {
+            console.log("⚠️ Faltó el condominioId en la URL de la cámara.");
+            return new Response(JSON.stringify({ error: 'condominioId is required in URL' }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,
             })
         }
 
-        console.log(`🚦 Plate detected by camera: [${plateNumber}]`);
-
-        // 2. Connect to Supabase to verify the plate
+        // 3. Connect to Supabase to verify the plate
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '' // Used to bypass RLS in the edge function safely
@@ -55,6 +65,7 @@ serve(async (req) => {
         const { data: vecVehicles, error: errVec } = await supabaseClient
             .from('sisdel_vehicles')
             .select('plate, users:userId(name, active)')
+            .eq('condominioId', condominioIdReq) // FILTRAR POR CONDOMINIO
             .ilike('plate', `%${plateNumber}%`); // Basic matching for now
 
         if (!errVec && vecVehicles && vecVehicles.length > 0) {
@@ -82,6 +93,7 @@ serve(async (req) => {
             const { data: visVehicles, error: errVis } = await supabaseClient
                 .from('sisdel_visits')
                 .select('id, visitorName, vehiclePlate, status')
+                .eq('condominioId', condominioIdReq) // FILTRAR POR CONDOMINIO
                 .eq('status', 'pending');
 
             if (!errVis && visVehicles && visVehicles.length > 0) {
@@ -101,15 +113,16 @@ serve(async (req) => {
             }
         }
 
-        // 3. Guardar el historial de la cámara en la base de datos
+        // 4. Guardar el historial de la cámara en la base de datos
         await supabaseClient.from('sisdel_camera_logs').insert([{
+            condominioId: condominioIdReq,
             plate: plateNumber || 'UNKNOWN',
             status: isAuthorized ? 'Authorized' : 'Denied',
             reason: isAuthorized ? authReason : 'Placa no registrada',
             rawPayload: rawData
         }]);
 
-        // 4. Responder a la cámara
+        // 5. Responder a la cámara
         // A veces la cámara espera un JSON para activar el relé, 
         // o si está configurada para abrir con un HTTP 200 OK.
 
@@ -137,8 +150,7 @@ serve(async (req) => {
             })
         } else {
             console.log(`❌ Access Denied for plate: ${plateNumber}`);
-            // Return 403 Forbidden or 200 with "Denied" payload depending on what Dahua expects to NOT open.
-            // Often 200 OK with a specific payload is safer so the camera doesn't log unending HTTP errors.
+            // Return 200 OK even for denied, so Dahua doesn't throw HTTP errors internally
             return new Response(JSON.stringify({
                 Command: "Close",
                 Message: "Denied",
@@ -146,15 +158,16 @@ serve(async (req) => {
                 Plate: plateNumber
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 403, // Using 403 explicitly tells the camera "forbidden"
+                status: 200,
             })
         }
 
     } catch (error) {
         console.error("❌ Catch Error in ANPR webhook:", error.message);
+        // Return 200 OK so the camera doesn't freeze its sending loop
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 500,
+            status: 200,
         })
     }
 })

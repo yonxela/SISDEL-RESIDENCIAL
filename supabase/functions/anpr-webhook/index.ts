@@ -249,9 +249,10 @@ serve(async (req) => {
                 console.log(`✅ Exact plate match found. userId: ${exactMatch.userId}`);
 
                 // Step 2: Get the owner's info from sisdel_users (separate query to avoid FK join issues)
+                // Removed morosoSince from select as it's missing in the schema
                 const { data: ownerData, error: ownerErr } = await supabaseClient
                     .from('sisdel_users')
-                    .select('name, active, paymentStatus, morosoSince')
+                    .select('name, active, paymentStatus')
                     .eq('id', exactMatch.userId)
                     .single();
 
@@ -271,7 +272,8 @@ serve(async (req) => {
 
                         if (condoSettings?.reminderEnabled) {
                             const graceDays = condoSettings.gracePeriodDays || 15;
-                            const morosoSince = owner.morosoSince ? new Date(owner.morosoSince) : new Date();
+                            // Fallback to now if morosoSince is missing (since we removed it from select or it doesn't exist)
+                            const morosoSince = new Date(); 
                             const now = new Date();
                             const daysSinceMoroso = Math.floor((now.getTime() - morosoSince.getTime()) / (1000 * 60 * 60 * 24));
                             const daysRemaining = graceDays - daysSinceMoroso;

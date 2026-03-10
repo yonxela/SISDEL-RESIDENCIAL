@@ -88,4 +88,17 @@ CREATE TABLE public.sisdel_messages (
 -- ALTER TABLE public.condominios ENABLE ROW LEVEL SECURITY;
 -- CREATE POLICY "Enable full access for all users" ON public.condominios FOR ALL USING (true) WITH CHECK (true);
 --
+--
 -- (Repeat for users, visits, vehicles and messages inside the Supabase Auth Policies dashboard).
+
+-- 6. Table: sisdel_camera_logs
+CREATE TABLE public.sisdel_camera_logs (
+  id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
+  "condominioId" text NULL,
+  plate character varying NULL,
+  status character varying NULL, -- 'Authorized', 'Denied', 'Error', 'Unknown'
+  reason text NULL,
+  "rawPayload" jsonb NULL, -- Para guardar todo lo que envía la cámara
+  "createdAt" timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT sisdel_camera_logs_pkey PRIMARY KEY (id)
+);

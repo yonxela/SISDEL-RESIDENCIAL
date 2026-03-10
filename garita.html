@@ -103,6 +103,18 @@
                 <div>
                     <h3 style="margin-bottom:1rem; font-size:1.25rem;">📅 Visitas del Día</h3>
                     <div id="todayVisitsList"></div>
+
+                    <!-- Monitor LPR Realtime -->
+                    <div id="lprMonitorContainer" style="margin-top:2rem; display:none;">
+                        <h3 style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
+                            <span class="pulse-icon"></span> Monitor Cámara LPR
+                        </h3>
+                        <div id="lprLogsList" class="card" style="padding:0; overflow:hidden; border-radius:12px; max-height:400px; overflow-y:auto;">
+                            <div style="padding:2rem; text-align:center; opacity:0.5;" id="lprEmptyState">
+                                Esperando lecturas de la cámara...
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -401,8 +413,111 @@
 
             await renderStats();
             await renderVisits();
+
+            // --- Realtime LPR Monitor ---
+            if (hasLPR) {
+                document.getElementById('lprMonitorContainer').style.display = 'block';
+                const lprList = document.getElementById('lprLogsList');
+                const lprEmpty = document.getElementById('lprEmptyState');
+
+                // Load last 5 logs initially
+                const { data: initialLogs } = await window.supabaseDb
+                    .from('sisdel_camera_logs')
+                    .select('*')
+                    .order('createdAt', { ascending: false })
+                    .limit(5);
+
+                if (initialLogs && initialLogs.length > 0) {
+                    lprEmpty.style.display = 'none';
+                    initialLogs.forEach(log => addLPRLogEntry(log, false));
+                }
+
+                // Subscribe to NEW logs
+                window.supabaseDb
+                    .channel('lpr-changes')
+                    .on('postgres_changes', { 
+                        event: 'INSERT', 
+                        schema: 'public', 
+                        table: 'sisdel_camera_logs' 
+                    }, payload => {
+                        addLPRLogEntry(payload.new, true);
+                        if (payload.new.status === 'Authorized') {
+                            SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
+                            renderStats();
+                            renderVisits();
+                        } else {
+                            SISDEL.showToast(`⚠️ Placa detectada: ${payload.new.plate}`, 'info');
+                        }
+                    })
+                    .subscribe();
+
+                function addLPRLogEntry(log, animate) {
+                    lprEmpty.style.display = 'none';
+                    const time = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    const isAuth = log.status === 'Authorized';
+                    
+                    const entry = document.createElement('div');
+                    entry.className = `list-item ${animate ? 'new-log-entry' : ''}`;
+                    entry.style.padding = '1rem';
+                    entry.style.borderBottom = '1px solid var(--border-color)';
+                    entry.style.background = isAuth ? 'rgba(16, 185, 129, 0.05)' : 'transparent';
+                    
+                    entry.innerHTML = `
+                        <div style="flex:1;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                <strong style="font-size:1.1rem; letter-spacing:1px; color:var(--primary-light);">${log.plate}</strong>
+                                <span style="font-size:0.75rem; opacity:0.6;">${time}</span>
+                            </div>
+                            <div style="font-size:0.85rem; margin-top:0.25rem;">
+                                <span class="badge ${isAuth ? 'badge-success' : 'badge-danger'}" style="font-size:0.7rem;">
+                                    ${isAuth ? 'AUTORIZADO' : 'DENEGADO'}
+                                </span>
+                                <span style="margin-left:0.5rem; opacity:0.8;">${log.reason || ''}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    if (lprList.firstChild) {
+                        lprList.insertBefore(entry, lprList.firstChild);
+                    } else {
+                        lprList.appendChild(entry);
+                    }
+
+                    // Keep only last 10
+                    if (lprList.children.length > 11) { // +1 for empty state placeholder hidden
+                        lprList.removeChild(lprList.lastChild);
+                    }
+                }
+            }
         });
     </script>
+    <style>
+        .pulse-icon {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #ef4444;
+            border-radius: 50%;
+            box-shadow: 0 0 0 rgba(239, 68, 68, 0.4);
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .new-log-entry {
+            animation: slideInDown 0.5s ease-out, highlightNew 2s ease-out;
+        }
+        @keyframes highlightNew {
+            0% { background-color: var(--accent-alpha); }
+            100% { background-color: transparent; }
+        }
+        @keyframes slideInDown {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
 </body>
 
 </html>

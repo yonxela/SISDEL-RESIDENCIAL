@@ -101,10 +101,17 @@ serve(async (req) => {
             }
         }
 
-        // 3. Optional: Trigger barrier opening directly from Supabase (if camera is listening via HTTP GET/CGI)
-        // Sometimes the camera expects a JSON response to trigger the relay, 
-        // or we might need to send a CGI command BACK to the camera's IP (if it has a public IP/port forwarded, which is rare).
-        // Usually, Dahua ITC can be configured to open the barrier IF the HTTP POST returns a specific status code (like 200 OK).
+        // 3. Guardar el historial de la cámara en la base de datos
+        await supabaseClient.from('sisdel_camera_logs').insert([{
+            plate: plateNumber || 'UNKNOWN',
+            status: isAuthorized ? 'Authorized' : 'Denied',
+            reason: isAuthorized ? authReason : 'Placa no registrada',
+            rawPayload: rawData
+        }]);
+
+        // 4. Responder a la cámara
+        // A veces la cámara espera un JSON para activar el relé, 
+        // o si está configurada para abrir con un HTTP 200 OK.
 
         if (isAuthorized) {
             // Mark visit as entered if applicable

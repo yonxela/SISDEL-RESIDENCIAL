@@ -229,11 +229,12 @@ serve(async (req) => {
 
         let isAuthorized = false;
         let authReason = '';
+        let isReminder = false; // New: grace period reminder for morosos
 
         // A. Check if it's a RESIDENT's vehicle (sisdel_vehicles)
         const { data: vecVehicles, error: errVec } = await supabaseClient
             .from('sisdel_vehicles')
-            .select('plate, users:userId(name, active)')
+            .select('plate, userId, users:userId(name, active, paymentStatus, morosoSince)')
             .eq('condominioId', condominioIdReq)
             .ilike('plate', `%${plateNumber}%`);
 
@@ -243,9 +244,43 @@ serve(async (req) => {
             if (exactMatch) {
                 const owner = Array.isArray(exactMatch.users) ? exactMatch.users[0] : exactMatch.users;
                 if (owner && owner.active !== false) {
-                    isAuthorized = true;
-                    authReason = `Vecino permanente: ${owner.name}`;
-                    console.log("✅ Access Authorized (Resident):", authReason);
+                    // Check if resident is moroso
+                    if (owner.paymentStatus === 'moroso') {
+                        // Get condominium settings to check if reminder is enabled
+                        const { data: condoSettings } = await supabaseClient
+                            .from('sisdel_condominios')
+                            .select('reminderEnabled, gracePeriodDays')
+                            .eq('id', condominioIdReq)
+                            .single();
+
+                        if (condoSettings?.reminderEnabled) {
+                            const graceDays = condoSettings.gracePeriodDays || 15;
+                            const morosoSince = owner.morosoSince ? new Date(owner.morosoSince) : new Date();
+                            const now = new Date();
+                            const daysSinceMoroso = Math.floor((now.getTime() - morosoSince.getTime()) / (1000 * 60 * 60 * 24));
+                            const daysRemaining = graceDays - daysSinceMoroso;
+
+                            if (daysRemaining > 0) {
+                                // Still in grace period - allow access but mark as reminder
+                                isAuthorized = true; // Allow access
+                                isReminder = true;
+                                authReason = `⚠️ ${owner.name} - MOROSO (${daysRemaining} días restantes para pagar)`;
+                                console.log(`⚠️ Reminder Access (Grace Period): ${owner.name}, ${daysRemaining} days left`);
+                            } else {
+                                // Grace period expired - deny access
+                                authReason = `❌ ${owner.name} - Período de gracia vencido`;
+                                console.log(`🚫 Access Denied (Grace Expired): ${owner.name}`);
+                            }
+                        } else {
+                            // No reminder enabled - just deny moroso
+                            console.log("⚠️ Plate matches resident, but user is moroso (no grace period).");
+                        }
+                    } else {
+                        // Resident is al_dia - normal access
+                        isAuthorized = true;
+                        authReason = `Vecino permanente: ${owner.name}`;
+                        console.log("✅ Access Authorized (Resident):", authReason);
+                    }
                 } else {
                     console.log("⚠️ Plate matches resident, but user is inactive.");
                 }
@@ -278,12 +313,15 @@ serve(async (req) => {
             }
         }
 
+        // Determine final status
+        const logStatus = isReminder ? 'Reminder' : (isAuthorized ? 'Authorized' : 'Denied');
+
         // 4. Save camera log to database
         await supabaseClient.from('sisdel_camera_logs').insert([{
             condominioId: condominioIdReq,
             plate: plateNumber || 'UNKNOWN',
-            status: isAuthorized ? 'Authorized' : 'Denied',
-            reason: isAuthorized ? authReason : 'Placa no registrada',
+            status: logStatus,
+            reason: isAuthorized ? authReason : (authReason || 'Placa no registrada'),
             rawPayload: rawData
         }]);
 

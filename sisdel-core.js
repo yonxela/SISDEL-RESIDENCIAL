@@ -120,6 +120,16 @@ const SISDEL = (() => {
 
     async function updateUser(userId, updates) {
         delete updates.id;
+        // Auto-track morosoSince date when payment status changes
+        if (updates.paymentStatus === PAYMENT_STATUS.MOROSO) {
+            // Only set morosoSince if not already set
+            const currentUser = await getUserById(userId);
+            if (currentUser && !currentUser.morosoSince) {
+                updates.morosoSince = new Date().toISOString();
+            }
+        } else if (updates.paymentStatus === PAYMENT_STATUS.AL_DIA) {
+            updates.morosoSince = null; // Clear when payment is made
+        }
         const { data, error } = await db().from('sisdel_users').update(updates).eq('id', userId).select().single();
         if (error) { console.error('updateUser error:', error); return null; }
         return data;

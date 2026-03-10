@@ -450,32 +450,106 @@
                             SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
                             renderStats();
                             renderVisits();
+                        } else if (payload.new.status === 'Reminder') {
+                            // Show prominent reminder alert for moroso in grace period
+                            showReminderAlert(payload.new);
+                            SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
                         } else {
                             SISDEL.showToast(`⚠️ Placa detectada: ${payload.new.plate}`, 'info');
                         }
                     })
                     .subscribe();
 
+                // Reminder alert modal for morosos in grace period
+                function showReminderAlert(log) {
+                    // Parse grace info from reason field
+                    const reason = log.reason || '';
+                    
+                    // Create overlay alert
+                    let alertDiv = document.getElementById('reminderAlertOverlay');
+                    if (!alertDiv) {
+                        alertDiv = document.createElement('div');
+                        alertDiv.id = 'reminderAlertOverlay';
+                        document.body.appendChild(alertDiv);
+                    }
+                    
+                    alertDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:9999; animation:fadeIn 0.3s ease;';
+                    alertDiv.innerHTML = `
+                        <div style="background:var(--bg-card, #1a1a2e); border:3px solid #f59e0b; border-radius:16px; padding:2rem; max-width:420px; width:90%; text-align:center; animation:slideInDown 0.5s ease;">
+                            <div style="font-size:3.5rem; margin-bottom:0.5rem;">⚠️</div>
+                            <h2 style="color:#f59e0b; margin-bottom:0.5rem; font-size:1.4rem;">RECORDATORIO DE PAGO</h2>
+                            <div style="background:rgba(245,158,11,0.1); border-radius:12px; padding:1rem; margin:1rem 0;">
+                                <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${log.plate}</div>
+                                <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
+                            </div>
+                            <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">
+                                Este vecino tiene pagos pendientes. Se le permite el acceso durante el período de gracia.<br>
+                                <strong>Infórmele amablemente sobre su estado de mora.</strong>
+                            </p>
+                            <button onclick="document.getElementById('reminderAlertOverlay').style.display='none'" 
+                                style="background:#f59e0b; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; width:100%;">
+                                ✅ Entendido
+                            </button>
+                        </div>
+                    `;
+
+                    // Auto-dismiss after 15 seconds
+                    setTimeout(() => {
+                        if (alertDiv.style.display !== 'none') {
+                            alertDiv.style.display = 'none';
+                        }
+                    }, 15000);
+
+                    // Audio beep to alert guard
+                    try {
+                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.frequency.value = 800;
+                        gain.gain.value = 0.3;
+                        osc.start();
+                        setTimeout(() => { osc.stop(); audioCtx.close(); }, 500);
+                    } catch(e) { /* audio not supported */ }
+                }
+
                 function addLPRLogEntry(log, animate) {
                     lprEmpty.style.display = 'none';
                     const time = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                     const isAuth = log.status === 'Authorized';
+                    const isReminder = log.status === 'Reminder';
+
+                    let badgeClass = 'badge-danger';
+                    let badgeText = 'DENEGADO';
+                    let bgColor = 'transparent';
+
+                    if (isAuth) {
+                        badgeClass = 'badge-success';
+                        badgeText = 'AUTORIZADO';
+                        bgColor = 'rgba(16, 185, 129, 0.05)';
+                    } else if (isReminder) {
+                        badgeClass = 'badge-warning';
+                        badgeText = '⚠️ RECORDATORIO';
+                        bgColor = 'rgba(245, 158, 11, 0.1)';
+                    }
 
                     const entry = document.createElement('div');
                     entry.className = `list-item ${animate ? 'new-log-entry' : ''}`;
                     entry.style.padding = '1rem';
                     entry.style.borderBottom = '1px solid var(--border-color)';
-                    entry.style.background = isAuth ? 'rgba(16, 185, 129, 0.05)' : 'transparent';
+                    entry.style.background = bgColor;
+                    if (isReminder) entry.style.borderLeft = '4px solid #f59e0b';
 
                     entry.innerHTML = `
                         <div style="flex:1;">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <strong style="font-size:1.1rem; letter-spacing:1px; color:var(--primary-light);">${log.plate}</strong>
+                                <strong style="font-size:1.1rem; letter-spacing:1px; color:${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${log.plate}</strong>
                                 <span style="font-size:0.75rem; opacity:0.6;">${time}</span>
                             </div>
                             <div style="font-size:0.85rem; margin-top:0.25rem;">
-                                <span class="badge ${isAuth ? 'badge-success' : 'badge-danger'}" style="font-size:0.7rem;">
-                                    ${isAuth ? 'AUTORIZADO' : 'DENEGADO'}
+                                <span class="badge ${badgeClass}" style="font-size:0.7rem;">
+                                    ${badgeText}
                                 </span>
                                 <span style="margin-left:0.5rem; opacity:0.8;">${log.reason || ''}</span>
                             </div>

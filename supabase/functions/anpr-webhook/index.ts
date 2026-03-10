@@ -287,27 +287,41 @@ serve(async (req) => {
             }
         }
 
-        // B. Check if it's an expected VISIT for TODAY (sisdel_visits)
+        // B. Check if it's an expected VISIT for TODAY or TEMPORAL visit (sisdel_visits)
         let visitIdToUpdate = null;
 
         if (!isAuthorized) {
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            // B1. Check normal pending visits
             const { data: visVehicles, error: errVis } = await supabaseClient
                 .from('sisdel_visits')
-                .select('id, visitorName, vehiclePlate, status')
+                .select('id, visitorName, vehiclePlate, status, visitType, endDate')
                 .eq('condominioId', condominioIdReq)
-                .eq('status', 'pending');
+                .in('status', ['pending', 'entered']);
 
             if (!errVis && visVehicles && visVehicles.length > 0) {
                 const validVisit = visVehicles.find(v => {
                     if (!v.vehiclePlate) return false;
                     const cleanVisitPlate = v.vehiclePlate.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-                    return cleanVisitPlate.includes(plateNumber) || plateNumber.includes(cleanVisitPlate);
+                    const plateMatch = cleanVisitPlate.includes(plateNumber) || plateNumber.includes(cleanVisitPlate);
+                    if (!plateMatch) return false;
+
+                    // For temporal visits, check if within date range
+                    if (v.visitType === 'temporal' && v.endDate) {
+                        return todayStr <= v.endDate; // Still valid
+                    }
+                    // For normal visits, only pending ones
+                    return v.status === 'pending';
                 });
 
                 if (validVisit) {
                     isAuthorized = true;
-                    visitIdToUpdate = validVisit.id;
-                    authReason = `Visita programada: ${validVisit.visitorName}`;
+                    visitIdToUpdate = validVisit.status === 'pending' ? validVisit.id : null;
+                    const isTemp = validVisit.visitType === 'temporal';
+                    authReason = isTemp 
+                        ? `Vecino temporal: ${validVisit.visitorName} (hasta ${validVisit.endDate})`
+                        : `Visita programada: ${validVisit.visitorName}`;
                     console.log("✅ Access Authorized (Visit):", authReason);
                 }
             }

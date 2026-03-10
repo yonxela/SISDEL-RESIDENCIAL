@@ -105,6 +105,22 @@
                         <input type="time" class="form-input" id="vTime">
                     </div>
                 </div>
+
+                <!-- Visita Larga / Vecino Temporal -->
+                <div style="margin-top:0.75rem; padding:0.75rem; background:var(--bg-item, rgba(255,255,255,0.05)); border-radius:8px;">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:500;">
+                        <input type="checkbox" id="vExtended" style="width:18px; height:18px; accent-color:var(--primary-light);">
+                        <span>📅 Visita Larga / Vecino Temporal</span>
+                    </label>
+                    <div id="extendedOptions" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-subtle);">
+                        <p class="text-xs text-muted" style="margin-bottom:0.5rem; line-height:1.4;">El invitado tendrá acceso permitido hasta la fecha indicada. Ideal para familiares, trabajadores o inquilinos temporales.</p>
+                        <div class="form-group">
+                            <label>🗓️ Fecha de fin de acceso</label>
+                            <input type="date" class="form-input" id="vEndDate" style="border-left:4px solid var(--primary-light);">
+                        </div>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Generar Pase de
                     Acceso</button>
             </form>
@@ -219,12 +235,23 @@
                 const visits = await SISDEL.getVisitsByUser(session.userId);
                 const list = document.getElementById('visitasList');
                 if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas recientes.</p>'; return; }
-                list.innerHTML = visits.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(v => `
-                    <div class="list-item">
-                        <div class="avatar">${v.visitorName.charAt(0)}</div>
+                list.innerHTML = visits.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(v => {
+                    const isExtended = v.visitType === 'temporal';
+                    const isExpired = isExtended && v.endDate && new Date(v.endDate) < new Date(new Date().toISOString().split('T')[0]);
+                    let dateInfo = SISDEL.formatDate(v.visitDate);
+                    if (isExtended && v.endDate) {
+                        dateInfo += ` → ${SISDEL.formatDate(v.endDate)}`;
+                    }
+                    return `
+                    <div class="list-item" style="${isExpired ? 'opacity:0.5;' : ''}">
+                        <div class="avatar" style="${isExtended ? 'background:var(--primary-light);' : ''}">${isExtended ? '📅' : v.visitorName.charAt(0)}</div>
                         <div class="item-info">
-                            <div class="item-name">${v.visitorName}</div>
-                            <div class="item-detail">${SISDEL.formatDate(v.visitDate)} · Placa: ${v.vehiclePlate || 'N/A'}</div>
+                            <div class="item-name">
+                                ${v.visitorName}
+                                ${isExtended ? '<span class="badge badge-info" style="font-size:0.6rem; margin-left:0.25rem;">TEMPORAL</span>' : ''}
+                                ${isExpired ? '<span class="badge badge-danger" style="font-size:0.6rem; margin-left:0.25rem;">VENCIDO</span>' : ''}
+                            </div>
+                            <div class="item-detail">${dateInfo} · Placa: ${v.vehiclePlate || 'N/A'}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem;">
                             <button class="btn btn-ghost btn-icon btn-sm" onclick="repeatVisit('${v.id}')" title="Reutilizar datos de visita" style="color:var(--text-secondary); background:var(--bg-item);">
@@ -237,7 +264,7 @@
                             <button class="btn btn-primary btn-sm" onclick="showQR('${v.id}', 'visit')">Ver Pase</button>
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             }
 
             // --- New Visit Handler ---
@@ -261,9 +288,34 @@
             document.getElementById('cardNewVisit').addEventListener('click', () => {
                 document.getElementById('visitForm').reset();
                 document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('extendedOptions').style.display = 'none';
                 modalNewVisit.style.display = 'flex';
             });
             document.getElementById('btnCloseNewVisit').addEventListener('click', () => modalNewVisit.style.display = 'none');
+
+            // Toggle extended visit options
+            document.getElementById('vExtended').addEventListener('change', (e) => {
+                const opts = document.getElementById('extendedOptions');
+                opts.style.display = e.target.checked ? 'block' : 'none';
+                if (e.target.checked) {
+                    // Default end date: 7 days from start
+                    const startDate = document.getElementById('vDate').value || new Date().toISOString().split('T')[0];
+                    const endDefault = new Date(startDate);
+                    endDefault.setDate(endDefault.getDate() + 7);
+                    document.getElementById('vEndDate').value = endDefault.toISOString().split('T')[0];
+                    document.getElementById('vEndDate').min = startDate;
+                }
+            });
+
+            // Update end date min when start date changes
+            document.getElementById('vDate').addEventListener('change', () => {
+                const startDate = document.getElementById('vDate').value;
+                const endDateInput = document.getElementById('vEndDate');
+                if (endDateInput) endDateInput.min = startDate;
+                if (endDateInput.value && endDateInput.value < startDate) {
+                    endDateInput.value = startDate;
+                }
+            });
 
             document.getElementById('visitForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -272,12 +324,27 @@
                 const plate = document.getElementById('vPlate').value;
                 const date = document.getElementById('vDate').value;
                 const time = document.getElementById('vTime').value;
+                const isExtended = document.getElementById('vExtended').checked;
+                const endDate = isExtended ? document.getElementById('vEndDate').value : null;
+
+                if (isExtended && !endDate) {
+                    SISDEL.showToast('Seleccione la fecha de fin de acceso', 'warning');
+                    return;
+                }
 
                 const visit = await SISDEL.createVisit(session.condominioId, session.userId, name, info, plate, date, time, session.userCasa);
                 if (visit) {
-                    SISDEL.showToast('Pase de visita generado', 'success');
+                    // Update with extended visit fields
+                    if (isExtended && endDate) {
+                        await SISDEL.updateVisit(visit.id, {
+                            visitType: 'temporal',
+                            endDate: endDate
+                        });
+                    }
+                    SISDEL.showToast(isExtended ? '📅 Acceso temporal generado' : 'Pase de visita generado', 'success');
                     modalNewVisit.style.display = 'none';
                     e.target.reset();
+                    document.getElementById('extendedOptions').style.display = 'none';
                     await renderVisits();
                     showQR(visit.id, 'visit');
                 }

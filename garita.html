@@ -103,19 +103,19 @@
                 <div>
                     <h3 style="margin-bottom:1rem; font-size:1.25rem;">📅 Visitas del Día</h3>
                     <div id="todayVisitsList"></div>
+                </div>
+            </div>
 
-                    <!-- Monitor LPR Realtime -->
-                    <div id="lprMonitorContainer" style="margin-top:2rem; display:none;">
-                        <h3
-                            style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
-                            <span class="pulse-icon"></span> Monitor Cámara LPR
-                        </h3>
-                        <div id="lprLogsList" class="card"
-                            style="padding:0; overflow:hidden; border-radius:12px; max-height:400px; overflow-y:auto;">
-                            <div style="padding:2rem; text-align:center; opacity:0.5;" id="lprEmptyState">
-                                Esperando lecturas de la cámara...
-                            </div>
-                        </div>
+            <!-- Unified Access History (Full Width, Always visible) -->
+            <div id="historyMonitorContainer" style="margin-top:2.5rem;">
+                <h3
+                    style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
+                    <span class="pulse-icon"></span> Historial de Últimos Vehículos Registrados
+                </h3>
+                <div id="historyLogsList" class="card"
+                    style="padding:0; overflow:hidden; border-radius:12px; max-height:380px; overflow-y:auto;">
+                    <div style="padding:2rem; text-align:center; opacity:0.5;" id="historyEmptyState">
+                        No hay registros de ingresos para hoy.
                     </div>
                 </div>
             </div>
@@ -235,7 +235,10 @@
                         <div class="avatar">${v.visitorName.charAt(0)}</div>
                         <div class="item-info">
                             <div class="item-name">${v.visitorName}</div>
-                            <div class="item-detail">${v.visitTime || 'Todo el día'} · Casa: ${v.casa || 'N/A'}</div>
+                            <div class="item-detail">
+                                <strong>Placa:</strong> ${v.vehiclePlate || 'N/A'} <br>
+                                ${v.visitTime || 'Todo el día'} · Casa: ${v.casa || 'N/A'}
+                            </div>
                         </div>
                         <div>
                             ${v.status === SISDEL.VISIT_STATUS.ENTERED
@@ -351,6 +354,7 @@
                 document.getElementById('modalResult').style.display = 'none';
                 await renderStats();
                 await renderVisits();
+                await renderHistory();
             });
 
             document.getElementById('btnCloseResult').addEventListener('click', () => {
@@ -465,43 +469,120 @@
             await renderStats();
             await renderVisits();
 
-            // --- Realtime LPR Monitor ---
-            if (hasLPR) {
-                document.getElementById('lprMonitorContainer').style.display = 'block';
-                const lprList = document.getElementById('lprLogsList');
-                const lprEmpty = document.getElementById('lprEmptyState');
+            // --- Unified History Monitor ---
+            const historyList = document.getElementById('historyLogsList');
+            const historyEmpty = document.getElementById('historyEmptyState');
 
-                // Load last 5 logs initially
-                const { data: initialLogs } = await window.supabaseDb
-                    .from('sisdel_camera_logs')
-                    .select('*')
-                    .eq('condominioId', condoId)
-                    .order('createdAt', { ascending: false })
-                    .limit(5);
+            async function renderHistory() {
+                try {
+                    // 1. Fetch Camera/LPR Logs (Today)
+                    const today = new Date().toISOString().split('T')[0];
+                    const { data: cameraLogs } = await window.supabaseDb
+                        .from('sisdel_camera_logs')
+                        .select('*')
+                        .eq('condominioId', condoId)
+                        .gte('createdAt', today)
+                        .order('createdAt', { ascending: false })
+                        .limit(15);
 
-                if (initialLogs && initialLogs.length > 0) {
-                    lprEmpty.style.display = 'none';
-                    // The list needs to be reversed back so we append them in correct chronological order at initial render
-                    initialLogs.forEach(log => addLPRLogEntry(log, false));
+                    // 2. Fetch Entered Visits (Today)
+                    const visits = await SISDEL.getTodayVisits(condoId);
+                    const enteredVisits = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED && v.enteredAt);
+
+                    // 3. Merge and Sort
+                    const allEntries = [];
+
+                    if (cameraLogs) {
+                        cameraLogs.forEach(log => allEntries.push({
+                            type: 'camera',
+                            plate: log.plate,
+                            time: new Date(log.createdAt),
+                            status: log.status,
+                            reason: log.reason,
+                            id: log.id
+                        }));
+                    }
+
+                    enteredVisits.forEach(v => allEntries.push({
+                        type: 'manual',
+                        plate: v.vehiclePlate || 'SIN PLACA',
+                        time: new Date(v.enteredAt),
+                        status: 'Authorized',
+                        reason: `Visita: ${v.visitorName}`,
+                        id: v.id
+                    }));
+
+                    allEntries.sort((a, b) => b.time - a.time);
+
+                    if (allEntries.length === 0) {
+                        historyEmpty.style.display = 'block';
+                        historyList.innerHTML = '';
+                        historyList.appendChild(historyEmpty);
+                        return;
+                    }
+
+                    historyEmpty.style.display = 'none';
+                    historyList.innerHTML = allEntries.map(entry => {
+                        const timeStr = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const isAuth = entry.status === 'Authorized';
+                        const isReminder = entry.status === 'Reminder';
+                        
+                        let badgeClass = 'badge-danger';
+                        let badgeText = 'DENEGADO';
+                        let bgColor = 'transparent';
+
+                        if (isAuth) {
+                            badgeClass = 'badge-success';
+                            badgeText = entry.type === 'camera' ? 'CÁMARA LPR' : 'MANUAL/QR';
+                            bgColor = 'rgba(16, 185, 129, 0.05)';
+                        } else if (isReminder) {
+                            badgeClass = 'badge-warning';
+                            badgeText = 'RECORDATORIO';
+                            bgColor = 'rgba(245, 158, 11, 0.1)';
+                        }
+
+                        return `
+                            <div class="list-item" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: ${bgColor}; margin-bottom: 0; border-radius: 0; border: none; border-bottom: 1px solid var(--border-subtle);">
+                                <div style="flex:1;">
+                                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                        <strong style="font-size:1.1rem; letter-spacing:1px; color: ${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${entry.plate}</strong>
+                                        <span style="font-size:0.75rem; opacity:0.6;">${timeStr}</span>
+                                    </div>
+                                    <div style="font-size:0.85rem; margin-top:0.25rem;">
+                                        <span class="badge ${badgeClass}" style="font-size:0.7rem;">
+                                            ${badgeText}
+                                        </span>
+                                        <span style="margin-left:0.5rem; opacity:0.8;">${entry.reason || ''}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } catch (e) {
+                    console.error("Error rendering history:", e);
                 }
+            }
 
+            // Realtime monitoring for new logs (if LPR enabled)
+            if (hasLPR) {
                 // Subscribe to NEW logs
                 window.supabaseDb
-                    .channel('lpr-changes')
+                    .channel('lpr-changes-history')
                     .on('postgres_changes', {
                         event: 'INSERT',
                         schema: 'public',
                         table: 'sisdel_camera_logs',
                         filter: `condominioId=eq.${condoId}`
                     }, payload => {
-                        addLPRLogEntry(payload.new, true);
+                        // Refresh history
+                        renderHistory();
+                        
                         if (payload.new.status === 'Authorized') {
                             SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
                             showBigStatusScreen('success', 'AL DÍA', `Placa: ${payload.new.plate}`);
                             renderStats();
                             renderVisits();
                         } else if (payload.new.status === 'Reminder') {
-                            // Show prominent reminder alert for moroso in grace period
                             showReminderAlert(payload.new);
                             showBigStatusScreen('warning', 'MOROSO', `Placa: ${payload.new.plate}`);
                             SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
@@ -511,115 +592,41 @@
                         }
                     })
                     .subscribe();
-
-                // Reminder alert modal for morosos in grace period
-                function showReminderAlert(log) {
-                    // Parse grace info from reason field
-                    const reason = log.reason || '';
-                    
-                    // Create overlay alert
-                    let alertDiv = document.getElementById('reminderAlertOverlay');
-                    if (!alertDiv) {
-                        alertDiv = document.createElement('div');
-                        alertDiv.id = 'reminderAlertOverlay';
-                        document.body.appendChild(alertDiv);
-                    }
-                    
-                    alertDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:9999; animation:fadeIn 0.3s ease;';
-                    alertDiv.innerHTML = `
-                        <div style="background:var(--bg-card, #1a1a2e); border:3px solid #f59e0b; border-radius:16px; padding:2rem; max-width:420px; width:90%; text-align:center; animation:slideInDown 0.5s ease;">
-                            <div style="font-size:3.5rem; margin-bottom:0.5rem;">⚠️</div>
-                            <h2 style="color:#f59e0b; margin-bottom:0.5rem; font-size:1.4rem;">RECORDATORIO DE PAGO</h2>
-                            <div style="background:rgba(245,158,11,0.1); border-radius:12px; padding:1rem; margin:1rem 0;">
-                                <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${log.plate}</div>
-                                <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
-                            </div>
-                            <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">
-                                Este vecino tiene pagos pendientes. Se le permite el acceso durante el período de gracia.<br>
-                                <strong>Infórmele amablemente sobre su estado de mora.</strong>
-                            </p>
-                            <button onclick="document.getElementById('reminderAlertOverlay').style.display='none'" 
-                                style="background:#f59e0b; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; width:100%;">
-                                ✅ Entendido
-                            </button>
-                        </div>
-                    `;
-
-                    // Auto-dismiss after 15 seconds
-                    setTimeout(() => {
-                        if (alertDiv.style.display !== 'none') {
-                            alertDiv.style.display = 'none';
-                        }
-                    }, 15000);
-
-                    // Audio beep to alert guard
-                    try {
-                        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                        const osc = audioCtx.createOscillator();
-                        const gain = audioCtx.createGain();
-                        osc.connect(gain);
-                        gain.connect(audioCtx.destination);
-                        osc.frequency.value = 800;
-                        gain.gain.value = 0.3;
-                        osc.start();
-                        setTimeout(() => { osc.stop(); audioCtx.close(); }, 500);
-                    } catch(e) { /* audio not supported */ }
-                }
-
-                function addLPRLogEntry(log, animate) {
-                    lprEmpty.style.display = 'none';
-                    const time = new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    const isAuth = log.status === 'Authorized';
-                    const isReminder = log.status === 'Reminder';
-
-                    let badgeClass = 'badge-danger';
-                    let badgeText = 'DENEGADO';
-                    let bgColor = 'transparent';
-
-                    if (isAuth) {
-                        badgeClass = 'badge-success';
-                        badgeText = 'AUTORIZADO';
-                        bgColor = 'rgba(16, 185, 129, 0.05)';
-                    } else if (isReminder) {
-                        badgeClass = 'badge-warning';
-                        badgeText = '⚠️ RECORDATORIO';
-                        bgColor = 'rgba(245, 158, 11, 0.1)';
-                    }
-
-                    const entry = document.createElement('div');
-                    entry.className = `list-item ${animate ? 'new-log-entry' : ''}`;
-                    entry.style.padding = '1rem';
-                    entry.style.borderBottom = '1px solid var(--border-color)';
-                    entry.style.background = bgColor;
-                    if (isReminder) entry.style.borderLeft = '4px solid #f59e0b';
-
-                    entry.innerHTML = `
-                        <div style="flex:1;">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <strong style="font-size:1.1rem; letter-spacing:1px; color:${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${log.plate}</strong>
-                                <span style="font-size:0.75rem; opacity:0.6;">${time}</span>
-                            </div>
-                            <div style="font-size:0.85rem; margin-top:0.25rem;">
-                                <span class="badge ${badgeClass}" style="font-size:0.7rem;">
-                                    ${badgeText}
-                                </span>
-                                <span style="margin-left:0.5rem; opacity:0.8;">${log.reason || ''}</span>
-                            </div>
-                        </div>
-                    `;
-
-                    if (lprList.firstChild) {
-                        lprList.insertBefore(entry, lprList.firstChild);
-                    } else {
-                        lprList.appendChild(entry);
-                    }
-
-                    // Keep only last 10
-                    if (lprList.children.length > 11) { // +1 for empty state placeholder hidden
-                        lprList.removeChild(lprList.lastChild);
-                    }
-                }
             }
+
+            // Reminder alert modal function adapted
+            function showReminderAlert(log) {
+                const reason = log.reason || '';
+                let alertDiv = document.getElementById('reminderAlertOverlay');
+                if (!alertDiv) {
+                    alertDiv = document.createElement('div');
+                    alertDiv.id = 'reminderAlertOverlay';
+                    document.body.appendChild(alertDiv);
+                }
+                alertDiv.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:9999; animation:fadeIn 0.3s ease;';
+                alertDiv.innerHTML = `
+                    <div style="background:var(--bg-card, #1e293b); border:3px solid #f59e0b; border-radius:16px; padding:2rem; max-width:420px; width:90%; text-align:center; animation:slideInDown 0.5s ease; color:white;">
+                        <div style="font-size:3.5rem; margin-bottom:0.5rem;">⚠️</div>
+                        <h2 style="color:#f59e0b; margin-bottom:0.5rem; font-size:1.4rem;">RECORDATORIO DE PAGO</h2>
+                        <div style="background:rgba(245,158,11,0.1); border-radius:12px; padding:1rem; margin:1rem 0;">
+                            <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${log.plate}</div>
+                            <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
+                        </div>
+                        <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">
+                            Este vecino tiene pagos pendientes. Se le permite el acceso durante el período de gracia.<br>
+                            <strong>Infórmele amablemente sobre su estado de mora.</strong>
+                        </p>
+                        <button onclick="document.getElementById('reminderAlertOverlay').style.display='none'" 
+                            style="background:#f59e0b; color:#000; border:none; padding:0.75rem 2rem; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; width:100%;">
+                            ✅ Entendido
+                        </button>
+                    </div>
+                `;
+                setTimeout(() => { if (alertDiv.style.display !== 'none') alertDiv.style.display = 'none'; }, 15000);
+            }
+
+            // Initial load
+            renderHistory();
 
             // --- Check for unread messages from admin ---
             (async function checkUnreadMessages() {

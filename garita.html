@@ -142,6 +142,13 @@
         </div>
     </div>
 
+    <!-- Big Status Splash Screen -->
+    <div id="bigStatusScreen" class="big-status-overlay hide-splash">
+        <div class="big-status-icon" id="bigStatusIcon"></div>
+        <h1 id="bigStatusTitle"></h1>
+        <p id="bigStatusSubtitle"></p>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-client.js"></script>
     <script src="sisdel-core.js"></script>
@@ -171,12 +178,17 @@
                 applyTheme(newTheme);
             });
 
-            // Load Condo Settings to toggle UI elements
-            const currentCondoInfo = await SISDEL.getCondominio(condoId);
-            // Si la db no tiene configuracion, false significa que la db retornó nulo o falso. En caso nulo, asumimos manual y QR activo.
-            const hasQR = currentCondoInfo?.hasQR !== false;
-            const hasManual = currentCondoInfo?.hasManual !== false;
-            const hasLPR = currentCondoInfo?.hasLPR === true;
+            // Load Condo Settings
+            let hasQR = true, hasManual = true, hasLPR = true;
+            try {
+                const currentCondoInfo = await SISDEL.getCondominio(condoId);
+                console.log("Condo Info:", currentCondoInfo);
+                if (currentCondoInfo) {
+                    hasQR = currentCondoInfo.hasQR !== false;
+                    hasManual = currentCondoInfo.hasManual !== false;
+                    hasLPR = currentCondoInfo.hasLPR !== false;
+                }
+            } catch(e) { console.error("Error loading condo settings:", e); }
 
             if (hasQR) document.getElementById('sectionQR').style.display = 'block';
             if (hasManual) document.getElementById('sectionManual').style.display = 'block';
@@ -271,6 +283,7 @@
                             <p class="text-xs">El residente ${resident.name} tiene pagos pendientes. No se permite el ingreso de visitas.</p>
                         `;
                         btnConfirm.style.display = 'none';
+                        showBigStatusScreen('warning', 'MOROSO', `Visita para: ${obj.casa}`);
                     } else {
                         icon.textContent = '✅';
                         title.textContent = 'ACCESO PERMITIDO';
@@ -281,6 +294,7 @@
                             <p><strong>Asunto:</strong> ${obj.visitorInfo || 'No especificado'}</p>
                             <p><strong>Placa:</strong> ${obj.vehiclePlate || 'N/A'}</p>
                         `;
+                        showBigStatusScreen('success', 'AL DÍA', `Visita: ${obj.visitorName}`);
                     }
                 } else if (type === 'vehicle') {
                     icon.textContent = '🚗';
@@ -296,6 +310,13 @@
                         <p><strong>Piloto:</strong> ${resident ? resident.name : 'Desconocido'}</p>
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
+                    
+                    if (isMoroso) {
+                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${obj.plate}`);
+                    } else {
+                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${obj.plate}`);
+                    }
+
                 } else if (type === 'resident') {
                     icon.textContent = '👤';
                     title.textContent = 'ACCESO RESIDENTE';
@@ -307,6 +328,12 @@
                         <hr style="margin:0.5rem 0; opacity:0.1;">
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
+                    
+                    if (isMoroso) {
+                        showBigStatusScreen('warning', 'MOROSO', `Vecino: ${obj.name}`);
+                    } else {
+                        showBigStatusScreen('success', 'AL DÍA', `Vecino: ${obj.name}`);
+                    }
                 }
             }
 
@@ -330,10 +357,8 @@
                 document.getElementById('modalResult').style.display = 'none';
             });
 
-            // --- Manual Verification ---
-            document.getElementById('formManual').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const code = document.getElementById('manualCode').value.trim();
+            // --- Verification Logic for Input Codes ---
+            async function processCode(code) {
                 if (!code) return;
 
                 // 1. Is it a Visit Code?
@@ -364,6 +389,14 @@
                 }
 
                 SISDEL.showToast('El código no es válido o no pertenece a este condominio', 'error');
+                showBigStatusScreen('error', 'INVÁLIDO', 'No registrado');
+            }
+
+            // --- Manual Verification Submit ---
+            document.getElementById('formManual').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const code = document.getElementById('manualCode').value.trim();
+                await processCode(code);
             });
 
             // --- QR Scanner ---
@@ -386,25 +419,41 @@
                         { facingMode: "environment" },
                         config,
                         (decodedText) => {
-                            document.getElementById('manualCode').value = decodedText;
-                            document.getElementById('btnManualCheck').click();
-                            // Optional: stop after success?
+                            setTimeout(async () => {
+                                console.log("QR Scanned:", decodedText);
+                                try {
+                                    await stopScanner();
+                                    const inputManual = document.getElementById('manualCode');
+                                    if (inputManual) {
+                                        inputManual.value = decodedText;
+                                        await processCode(decodedText.trim());
+                                    } else {
+                                        // fallback if UI is different
+                                        await processCode(decodedText.trim());
+                                    }
+                                } catch(e) {
+                                    console.error("Error in QR callback:", e);
+                                    await processCode(decodedText.trim()); // try anyway
+                                }
+                            }, 100);
                         }
                     );
                 } catch (err) {
                     console.error("No se pudo iniciar la cámara:", err);
                     SISDEL.showToast("Error al acceder a la cámara", "error");
-                    stopScanner();
+                    try { await stopScanner(); } catch (e) {}
                 }
             }
 
             async function stopScanner() {
-                if (html5QrCode) {
+                if (html5QrCode && html5QrCode.isScanning) {
                     try {
                         await html5QrCode.stop();
-                    } catch (e) { }
-                    html5QrCode = null;
+                    } catch (e) {
+                        console.error("Error deteniendo scanner:", e);
+                    }
                 }
+                html5QrCode = null;
                 readerDiv.style.display = 'none';
                 btnStop.style.display = 'none';
                 scannerPlaceholder.style.display = 'block';
@@ -448,13 +497,16 @@
                         addLPRLogEntry(payload.new, true);
                         if (payload.new.status === 'Authorized') {
                             SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
+                            showBigStatusScreen('success', 'AL DÍA', `Placa: ${payload.new.plate}`);
                             renderStats();
                             renderVisits();
                         } else if (payload.new.status === 'Reminder') {
                             // Show prominent reminder alert for moroso in grace period
                             showReminderAlert(payload.new);
+                            showBigStatusScreen('warning', 'MOROSO', `Placa: ${payload.new.plate}`);
                             SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
                         } else {
+                            showBigStatusScreen('error', 'NO REGISTRADO', `Placa: ${payload.new.plate}`);
                             SISDEL.showToast(`⚠️ Placa detectada: ${payload.new.plate}`, 'info');
                         }
                     })
@@ -568,55 +620,103 @@
                     }
                 }
             }
+
+            // --- Check for unread messages from admin ---
+            (async function checkUnreadMessages() {
+                try {
+                    const allMsgs = await SISDEL.getMessages(condoId);
+                    const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.POLICIA));
+                    if (myMsgs.length === 0) return;
+
+                    const overlay = document.createElement('div');
+                    overlay.className = 'modal-overlay';
+                    overlay.style.display = 'flex';
+                    overlay.innerHTML = `
+                        <div class="modal" style="max-width:420px;">
+                            <div class="modal-header" style="background:linear-gradient(135deg, #f59e0b, #ef4444);">
+                                <h3 style="color:white;">📬 Mensajes de Administración</h3>
+                                <span class="badge" style="background:rgba(255,255,255,0.25); color:white; font-size:0.7rem;">${myMsgs.length} nuevo(s)</span>
+                            </div>
+                            <div style="padding:1.25rem; max-height:50vh; overflow-y:auto;" id="gMsgPopupList"></div>
+                        </div>`;
+                    document.body.appendChild(overlay);
+
+                    const listEl = document.getElementById('gMsgPopupList');
+                    myMsgs.forEach((m, idx) => {
+                        const msgDiv = document.createElement('div');
+                        msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid #f59e0b;';
+                        msgDiv.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                                <strong style="color:#f59e0b; font-size:1rem;">${m.subject}</strong>
+                                <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
+                            </div>
+                            <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${m.body}</p>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span class="text-xs text-muted">De: ${m.fromName}</span>
+                                <button class="btn btn-primary btn-sm" id="gMsgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>
+                            </div>`;
+                        listEl.appendChild(msgDiv);
+
+                        document.getElementById(`gMsgDismiss_${idx}`).addEventListener('click', async () => {
+                            await SISDEL.markMessageRead(m.id);
+                            msgDiv.style.opacity = '0.3';
+                            msgDiv.querySelector(`#gMsgDismiss_${idx}`).disabled = true;
+                            msgDiv.querySelector(`#gMsgDismiss_${idx}`).textContent = '✓ Leído';
+                            const remaining = listEl.querySelectorAll('button:not([disabled])');
+                            if (remaining.length === 0) {
+                                setTimeout(() => overlay.remove(), 500);
+                            }
+                        });
+                    });
+                } catch(e) { console.error("Error checkUnreadMessages:", e); }
+            })();
         });
 
-        // --- Check for unread messages from admin ---
-        (async function checkUnreadMessages() {
-            const allMsgs = await SISDEL.getMessages(condoId);
-            const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.POLICIA));
-            if (myMsgs.length === 0) return;
+        // --- Global Big Status Splash Screen Logic ---
+        let bigStatusTimeout;
 
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
+        function showBigStatusScreen(type, title, subtitle) {
+            console.log("showBigStatusScreen:", type, title);
+            const overlay = document.getElementById('bigStatusScreen');
+            const iconEl = document.getElementById('bigStatusIcon');
+            const titleEl = document.getElementById('bigStatusTitle');
+            const subtitleEl = document.getElementById('bigStatusSubtitle');
+
+            if (!overlay) return;
+
+            // Clear previous timeout and classes
+            if (bigStatusTimeout) clearTimeout(bigStatusTimeout);
+            overlay.className = 'big-status-overlay hide-splash';
+
+            // Set content based on type
+            if (type === 'success') {
+                iconEl.textContent = '✅';
+                overlay.classList.add('status-success');
+            } else if (type === 'warning') {
+                iconEl.textContent = '⚠️';
+                overlay.classList.add('status-warning');
+            } else if (type === 'error') {
+                iconEl.textContent = '⛔';
+                overlay.classList.add('status-error');
+            }
+
+            titleEl.textContent = title;
+            subtitleEl.textContent = subtitle || '';
+
+            // Show it forcefully
             overlay.style.display = 'flex';
-            overlay.innerHTML = `
-                <div class="modal" style="max-width:420px;">
-                    <div class="modal-header" style="background:linear-gradient(135deg, #f59e0b, #ef4444);">
-                        <h3 style="color:white;">📬 Mensajes de Administración</h3>
-                        <span class="badge" style="background:rgba(255,255,255,0.25); color:white; font-size:0.7rem;">${myMsgs.length} nuevo(s)</span>
-                    </div>
-                    <div style="padding:1.25rem; max-height:50vh; overflow-y:auto;" id="gMsgPopupList"></div>
-                </div>`;
-            document.body.appendChild(overlay);
+            overlay.classList.remove('hide-splash');
 
-            const listEl = document.getElementById('gMsgPopupList');
-            myMsgs.forEach((m, idx) => {
-                const msgDiv = document.createElement('div');
-                msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid #f59e0b;';
-                msgDiv.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                        <strong style="color:#f59e0b; font-size:1rem;">${m.subject}</strong>
-                        <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
-                    </div>
-                    <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${m.body}</p>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span class="text-xs text-muted">De: ${m.fromName}</span>
-                        <button class="btn btn-primary btn-sm" id="gMsgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>
-                    </div>`;
-                listEl.appendChild(msgDiv);
-
-                document.getElementById(`gMsgDismiss_${idx}`).addEventListener('click', async () => {
-                    await SISDEL.markMessageRead(m.id);
-                    msgDiv.style.opacity = '0.3';
-                    msgDiv.querySelector(`#gMsgDismiss_${idx}`).disabled = true;
-                    msgDiv.querySelector(`#gMsgDismiss_${idx}`).textContent = '✓ Leído';
-                    const remaining = listEl.querySelectorAll('button:not([disabled])');
-                    if (remaining.length === 0) {
-                        setTimeout(() => overlay.remove(), 500);
+            // Auto-hide after 3.5 seconds
+            bigStatusTimeout = setTimeout(() => {
+                overlay.classList.add('hide-splash');
+                setTimeout(() => {
+                    if (overlay.classList.contains('hide-splash')) {
+                        overlay.style.display = 'none';
                     }
-                });
-            });
-        })();
+                }, 500); // Wait for transition
+            }, 3500);
+        }
     </script>
     <style>
         .pulse-icon {
@@ -669,6 +769,76 @@
             to {
                 transform: translateY(0);
                 opacity: 1;
+            }
+        }
+
+        /* --- Big Status Screen --- */
+        .big-status-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 999999; /* Ensure it's over modals */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            animation: splashFadeIn 0.3s ease-out;
+            color: #ffffff;
+            opacity: 1;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .big-status-overlay.hide-splash {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .big-status-overlay h1 {
+            font-size: 6rem;
+            font-weight: 900;
+            letter-spacing: -2px;
+            margin-bottom: 1rem;
+            text-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            line-height: 1.1;
+        }
+
+        .big-status-overlay p {
+            font-size: 2.5rem;
+            font-weight: 600;
+            opacity: 0.9;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .big-status-icon {
+            font-size: 8rem;
+            margin-bottom: 2rem;
+            filter: drop-shadow(0 4px 15px rgba(0,0,0,0.5));
+        }
+
+        /* Background Colors based on status */
+        .status-success {
+            background-color: #10b981; /* Emerald Green */
+        }
+
+        .status-warning {
+            background-color: #f59e0b; /* Amber Orange */
+        }
+
+        .status-error {
+            background-color: #ef4444; /* Red */
+        }
+
+        @keyframes splashFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(1.05);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
             }
         }
     </style>

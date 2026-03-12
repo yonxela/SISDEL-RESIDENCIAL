@@ -346,9 +346,44 @@
 
                 if (type === 'visit') {
                     await SISDEL.markVisitAsEntered(obj.id);
+                    // También registrar en camera_logs para que aparezca en historial
+                    if (obj.vehiclePlate) {
+                        const resident = await SISDEL.getUserById(obj.userId);
+                        const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                        await window.supabaseDb.from('sisdel_camera_logs').insert([{
+                            condominioId: condoId,
+                            plate: obj.vehiclePlate.toUpperCase(),
+                            status: isMoroso ? 'Reminder' : 'Authorized',
+                            reason: `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`,
+                            createdAt: new Date().toISOString()
+                        }]);
+                    }
                     SISDEL.showToast('Ingreso de visita registrado', 'success');
-                } else {
-                    SISDEL.showToast('Ingreso registrado', 'info');
+
+                } else if (type === 'vehicle') {
+                    // Registrar ingreso de vehículo (marbete QR) en camera_logs
+                    const resident = await SISDEL.getUserById(obj.userId);
+                    const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                    await window.supabaseDb.from('sisdel_camera_logs').insert([{
+                        condominioId: condoId,
+                        plate: obj.plate.toUpperCase(),
+                        status: isMoroso ? 'Reminder' : 'Authorized',
+                        reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})${resident ? ' — ' + resident.name : ''}`.trim(),
+                        createdAt: new Date().toISOString()
+                    }]);
+                    SISDEL.showToast('Ingreso de vehículo registrado', 'success');
+
+                } else if (type === 'resident') {
+                    // Registrar ingreso de residente por código QR en camera_logs
+                    const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                    await window.supabaseDb.from('sisdel_camera_logs').insert([{
+                        condominioId: condoId,
+                        plate: `RESIDENTE`,
+                        status: isMoroso ? 'Reminder' : 'Authorized',
+                        reason: `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}`,
+                        createdAt: new Date().toISOString()
+                    }]);
+                    SISDEL.showToast('Ingreso de residente registrado', 'success');
                 }
 
                 document.getElementById('modalResult').style.display = 'none';

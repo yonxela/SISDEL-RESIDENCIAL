@@ -165,7 +165,8 @@ const SISDEL = (() => {
     }
 
     async function getTodayVisits(condominioId) {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         let query = db().from('sisdel_visits').select('*').eq('visitDate', todayStr);
         if (condominioId) query = query.eq('condominioId', condominioId);
         const { data, error } = await query;
@@ -180,9 +181,12 @@ const SISDEL = (() => {
             timeFormatted = timeFormatted + ":00"; // Supabase time format requires seconds
         }
 
+        const localNow = new Date();
+        const localToday = `${localNow.getFullYear()}-${String(localNow.getMonth() + 1).padStart(2, '0')}-${String(localNow.getDate()).padStart(2, '0')}`;
+
         const { data, error } = await db().from('sisdel_visits').insert([{
             condominioId, userId, visitorName: visitorName.trim(), visitorInfo: visitorInfo || '',
-            vehiclePlate: (vehiclePlate || '').toUpperCase(), visitDate: visitDate || new Date().toISOString().split('T')[0],
+            vehiclePlate: (vehiclePlate || '').toUpperCase(), visitDate: visitDate || localToday,
             visitTime: timeFormatted || null, casa: casa || '', qrCode: visitCode, status: VISIT_STATUS.PENDING
         }]).select().single();
 

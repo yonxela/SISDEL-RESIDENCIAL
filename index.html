@@ -132,7 +132,7 @@
                                             d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
                                     </svg>
                                 </span>
-                                <input type="text" id="accessCode" class="form-input" maxlength="6"
+                                <input type="text" id="accessCode" class="form-input" maxlength="12"
                                     placeholder="Enter security code" required autocomplete="off"
                                     style="text-transform: uppercase; background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1); padding-left: 3.5rem;">
                             </div>
@@ -184,14 +184,14 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-client.js"></script>
-    <script src="sisdel-core.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
+    <script src="firebase-client.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20260929"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            // Seed data initially (run in background to avoid blocking UI)
-            SISDEL.seedDemoData().catch(e => console.error("Error in seedDemoData:", e));
-
             const welcomeSection = document.getElementById('welcomeSection');
             const loginSection = document.getElementById('loginSection');
             const btnGoToLogin = document.getElementById('btnGoToLogin');

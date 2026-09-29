@@ -1,60 +1,187 @@
 /* ═══════════════════════════════════════════════════════════════
-   SISDEL Core Cloud - Supabase Async Version
+   SISDEL Core Cloud - Firebase (Firestore + Auth + Functions)
+   Datos aislados por condominio: condominios/{condoId}/...
    ═══════════════════════════════════════════════════════════════ */
 
 const SISDEL = (() => {
     // ── Constants ──
-    const MASTER_CODE = '1122';
     const STORAGE_KEYS = { session: 'sisdel_session' };
 
     const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia' };
     const PAYMENT_STATUS = { AL_DIA: 'al_dia', MOROSO: 'moroso' };
     const VISIT_STATUS = { PENDING: 'pending', ENTERED: 'entered', COMPLETED: 'completed' };
 
+    const COL = {
+        condos: 'condominios', users: 'usuarios', visits: 'visitas', vehicles: 'vehiculos',
+        messages: 'mensajes', cameraLogs: 'camera_logs',
+        globalMessages: 'mensajes_globales', codes: 'codigos'
+    };
+
+    // Las lecturas van siempre al servidor: si no hay conexion se avisa, no se muestra una lista vacia
+    const SERVER = { source: 'server' };
+    const BATCH_SIZE = 400;
+
     // ── Database Helper ──
-    function db() {
-        if (!window.supabaseDb) throw new Error("Supabase client not initialized or loaded.");
-        return window.supabaseDb;
+    function services() {
+        if (!window.sisdelFirebase) throw new Error('Firebase client not initialized or loaded.');
+        return window.sisdelFirebase;
+    }
+    function db() { return services().db; }
+    function condoRef(condominioId) { return db().collection(COL.condos).doc(condominioId); }
+    function sub(condominioId, name) { return condoRef(condominioId).collection(name); }
+
+    let authReadyPromise = null;
+    function authReady() {
+        if (!authReadyPromise) {
+            authReadyPromise = new Promise((resolve) => {
+                const unsubscribe = services().auth.onAuthStateChanged((user) => { unsubscribe(); resolve(user); });
+            });
+        }
+        return authReadyPromise;
     }
 
     // ── Tools ──
+    function nowIso() { return new Date().toISOString(); }
+
+    function localToday() {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    function normalizePlate(plate) { return String(plate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); }
+
+    function normalizeCode(code) { return String(code || '').trim().toUpperCase(); }
+
+    function isSafeCode(code) { return !!code && code.length <= 64 && !code.includes('/') && code !== '.' && code !== '..'; }
+
+    function uniqueSuffix() { return Math.random().toString(36).slice(2, 4).toUpperCase(); }
+
+    // Primera letra sin acentos. Si no es letra o numero se usa X
+    function initial(text) {
+        const letter = String(text || '').trim().normalize('NFD').replace(/[̀-ͯ]/g, '').charAt(0).toUpperCase();
+        return /^[A-Z0-9]$/.test(letter) ? letter : 'X';
+    }
+
     function generateAccessCode(condominioName, userName) {
-        const letter1 = (condominioName || 'X').charAt(0).toUpperCase();
-        const letter2 = (userName || 'X').charAt(0).toUpperCase();
         const numbers = String(Math.floor(100 + Math.random() * 900));
-        return letter1 + letter2 + numbers;
+        return initial(condominioName) + initial(userName) + numbers;
     }
 
     function isValidCodeFormat(code) { return /^[A-Z]{2}\d{3}$/i.test(code); }
+
+    function byCreatedDesc(a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); }
+
+    // Cache de referencias: permite operar por id sin saber el condominio
+    const refCache = new Map();
+    function toObj(kind, doc) {
+        refCache.set(`${kind}:${doc.id}`, doc.ref);
+        return { ...doc.data(), id: doc.id };
+    }
+
+    function sessionCondoId() {
+        const session = getSession();
+        return session && session.condominioId ? session.condominioId : null;
+    }
+    function sessionRole() {
+        const session = getSession();
+        return session ? session.role : null;
+    }
+    function isMasterSession() { return sessionRole() === ROLES.MASTER; }
+
+    // Ubica un documento por id. El master no tiene condominio fijo: se busca en todos
+    async function findRef(kind, id) {
+        if (!id) return null;
+        const key = `${kind}:${id}`;
+        if (refCache.has(key)) return refCache.get(key);
+
+        const condominioId = sessionCondoId();
+        if (condominioId) {
+            if (kind !== COL.messages) return sub(condominioId, kind).doc(id);
+            const local = await sub(condominioId, kind).doc(id).get(SERVER).catch(() => null);
+            return local && local.exists ? local.ref : db().collection(COL.globalMessages).doc(id);
+        }
+
+        if (kind === COL.messages) {
+            const global = await db().collection(COL.globalMessages).doc(id).get(SERVER);
+            if (global.exists) return global.ref;
+        }
+        const condos = await db().collection(COL.condos).get(SERVER);
+        for (const condo of condos.docs) {
+            const snap = await condo.ref.collection(kind).doc(id).get(SERVER);
+            if (snap.exists) { refCache.set(key, snap.ref); return snap.ref; }
+        }
+        return null;
+    }
+
+    async function commitInChunks(refs, action) {
+        for (let i = 0; i < refs.length; i += BATCH_SIZE) {
+            const batch = db().batch();
+            refs.slice(i, i + BATCH_SIZE).forEach((ref) => action(batch, ref));
+            await batch.commit();
+        }
+    }
+
+    // ── Errores visibles: nunca confundir "sin conexion" con "sin datos" ──
+    let lastErrorToast = 0;
+    function reportError(context, error) {
+        console.error(`${context} error:`, error);
+        const code = String((error && error.code) || '');
+        const message = String((error && error.message) || '');
+        const now = Date.now();
+        if (now - lastErrorToast < 6000) return;
+
+        if (code.includes('unavailable') || code.includes('deadline-exceeded') || /offline|network/i.test(message)) {
+            lastErrorToast = now;
+            showToast('Sin conexión a la base de datos. Revise su internet.', 'error');
+        } else if (code.includes('permission-denied') || code.includes('unauthenticated')) {
+            lastErrorToast = now;
+            showToast('Sesión vencida o sin permisos. Vuelva a iniciar sesión.', 'warning');
+        }
+    }
 
     // ══════════════════════════════════
     //  Condominio CRUD
     // ══════════════════════════════════
     async function getCondominios() {
-        const { data, error } = await db().from('sisdel_condominios').select('*').order('createdAt', { ascending: false });
-        if (error) { console.error('getCondominios error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const snap = await db().collection(COL.condos).get(SERVER);
+            return snap.docs.map((d) => toObj(COL.condos, d)).sort(byCreatedDesc);
+        } catch (error) { reportError('getCondominios', error); return []; }
     }
 
     async function getCondominio(id) {
-        const { data, error } = await db().from('sisdel_condominios').select('*').eq('id', id).single();
-        if (error) { console.error('getCondominio error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            if (!id) return null;
+            const snap = await condoRef(id).get(SERVER);
+            return snap.exists ? toObj(COL.condos, snap) : null;
+        } catch (error) { reportError('getCondominio', error); return null; }
     }
 
     async function createCondominio(name, address, phone) {
-        const { data, error } = await db().from('sisdel_condominios').insert([{
-            name: name.trim(), address: address || '', phone: phone || '', active: true,
-            hasQR: true, hasManual: true, hasLPR: false
-        }]).select().single();
-        if (error) { console.error('createCondominio error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const ref = db().collection(COL.condos).doc();
+            const data = {
+                id: ref.id, name: name.trim(), address: address || '', phone: phone || '', active: true,
+                hasQR: true, hasManual: true, hasLPR: false,
+                reminderEnabled: false, gracePeriodDays: 15,
+                serviceExpiry: null, createdAt: nowIso()
+            };
+            await ref.set(data);
+            return data;
+        } catch (error) { reportError('createCondominio', error); return null; }
     }
 
     async function updateCondominio(id, updates) {
-        const { data, error } = await db().from('sisdel_condominios').update(updates).eq('id', id).select().single();
-        if (error) { console.error('updateCondominio error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const changes = { ...updates };
+            delete changes.id;
+            await condoRef(id).update(changes);
+            return await getCondominio(id);
+        } catch (error) { reportError('updateCondominio', error); return null; }
     }
 
     async function deactivateCondominio(id) { return updateCondominio(id, { active: false }); }
@@ -62,272 +189,501 @@ const SISDEL = (() => {
     async function toggleCondoSetting(id, settingName, value) {
         return updateCondominio(id, { [settingName]: value });
     }
+
+    // El borrado en cascada (usuarios, visitas, vehiculos, etc.) lo hace el servidor
     async function deleteCondominio(id) {
-        const { error } = await db().from('sisdel_condominios').delete().eq('id', id);
-        if (error) { console.error('deleteCondominio error:', error); return false; }
-        return true;
+        try {
+            await authReady();
+            await services().functions.httpsCallable('deleteCondominio', { timeout: 300000 })({ condominioId: id });
+            return true;
+        } catch (error) { reportError('deleteCondominio', error); return false; }
+    }
+
+    // ══════════════════════════════════
+    //  Codigos de acceso (coleccion aparte: guardias y vecinos no pueden leerlos)
+    // ══════════════════════════════════
+    function canReadCodes() { return [ROLES.MASTER, ROLES.ADMIN].includes(sessionRole()); }
+
+    // Mapa userId -> codigo. Devuelve null si el rol no puede ver codigos
+    async function codesByUser(condominioId) {
+        if (!canReadCodes()) return null;
+        const scope = condominioId || sessionCondoId();
+        let query = db().collection(COL.codes);
+        if (scope) query = query.where('condominioId', '==', scope);
+        const snap = await query.get(SERVER);
+        const map = new Map();
+        snap.docs.forEach((d) => map.set(d.data().userId, d.id));
+        return map;
+    }
+
+    async function codeDocsOfUser(condominioId, userId) {
+        const snap = await db().collection(COL.codes)
+            .where('condominioId', '==', condominioId)
+            .where('userId', '==', userId)
+            .get(SERVER);
+        return snap.docs;
     }
 
     // ══════════════════════════════════
     //  User CRUD
     // ══════════════════════════════════
     async function getUsers(condominioId) {
-        let query = db().from('sisdel_users').select('*').order('createdAt', { ascending: false });
-        if (condominioId) query = query.eq('condominioId', condominioId);
-        const { data, error } = await query;
-        if (error) { console.error('getUsers error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const scope = condominioId || sessionCondoId();
+            const query = scope ? sub(scope, COL.users) : db().collectionGroup(COL.users);
+            const [snap, codes] = await Promise.all([query.get(SERVER), codesByUser(scope)]);
+            const users = snap.docs.map((d) => toObj(COL.users, d)).sort(byCreatedDesc);
+            if (codes) users.forEach((u) => { u.accessCode = codes.get(u.id) || ''; });
+            return users;
+        } catch (error) { reportError('getUsers', error); return []; }
     }
 
     async function getUserByCode(code) {
-        const { data, error } = await db().from('sisdel_users').select('*').eq('accessCode', code.toUpperCase()).maybeSingle();
-        if (error) { console.error('getUserByCode error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const normalized = normalizeCode(code);
+            if (!isSafeCode(normalized)) return null;
+
+            if (isMasterSession()) {
+                const codeSnap = await db().collection(COL.codes).doc(normalized).get(SERVER);
+                if (!codeSnap.exists) return null;
+                const { condominioId, userId } = codeSnap.data();
+                const userSnap = await sub(condominioId, COL.users).doc(userId).get(SERVER);
+                return userSnap.exists ? { ...toObj(COL.users, userSnap), accessCode: normalized } : null;
+            }
+
+            // Garita y admin: lo valida el servidor sin exponer la lista de codigos
+            const result = await services().functions.httpsCallable('verifyAccessCode')({ code: normalized });
+            return (result.data && result.data.user) || null;
+        } catch (error) { reportError('getUserByCode', error); return null; }
     }
 
     async function getUserById(id) {
-        const { data, error } = await db().from('sisdel_users').select('*').eq('id', id).single();
-        if (error) { console.error('getUserById error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const ref = await findRef(COL.users, id);
+            if (!ref) return null;
+            const snap = await ref.get(SERVER);
+            if (!snap.exists) return null;
+            const user = toObj(COL.users, snap);
+            if (canReadCodes()) {
+                const codes = await codeDocsOfUser(user.condominioId, user.id);
+                user.accessCode = codes.length ? codes[0].id : '';
+            }
+            return user;
+        } catch (error) { reportError('getUserById', error); return null; }
     }
 
     async function createUser(condominioId, name, role, casa, phone, email) {
-        const condo = await getCondominio(condominioId);
-        if (!condo) return null;
+        try {
+            await authReady();
+            const condo = await getCondominio(condominioId);
+            if (!condo) return null;
 
-        let finalCode = generateAccessCode(condo.name, name);
-        let isUnique = false;
+            const userRef = sub(condominioId, COL.users).doc();
+            const user = {
+                id: userRef.id, condominioId, name: name.trim(), role,
+                casa: casa || '', phone: phone || '', email: email || '',
+                paymentStatus: role === ROLES.VECINO ? PAYMENT_STATUS.AL_DIA : null,
+                morosoSince: null, active: true, createdAt: nowIso()
+            };
 
-        while (!isUnique) {
-            const { count, error } = await db().from('sisdel_users').select('*', { count: 'exact', head: true }).eq('accessCode', finalCode);
-            if (error) { console.error('Validation error:', error); return null; }
-            if (count === 0) {
-                isUnique = true;
-            } else {
-                finalCode = generateAccessCode(condo.name, name);
+            // El codigo es el id del documento: si ya existe, la escritura se rechaza y se prueba otro
+            let lastError = null;
+            for (let attempt = 0; attempt < 12; attempt++) {
+                const accessCode = generateAccessCode(condo.name, name);
+                const batch = db().batch();
+                batch.set(db().collection(COL.codes).doc(accessCode), {
+                    condominioId, userId: userRef.id, role, createdAt: nowIso()
+                });
+                batch.set(userRef, user);
+                try {
+                    await batch.commit();
+                    refCache.set(`${COL.users}:${userRef.id}`, userRef);
+                    return { ...user, accessCode };
+                } catch (error) {
+                    if (error.code !== 'permission-denied') throw error;
+                    lastError = error;
+                }
             }
-        }
-
-        const { data, error } = await db().from('sisdel_users').insert([{
-            condominioId, name: name.trim(), role, accessCode: finalCode,
-            casa: casa || '', phone: phone || '', email: email || '',
-            paymentStatus: role === ROLES.VECINO ? PAYMENT_STATUS.AL_DIA : null, active: true
-        }]).select().single();
-
-        if (error) { console.error('createUser error:', error); return null; }
-        return data;
+            throw lastError;
+        } catch (error) { reportError('createUser', error); return null; }
     }
 
     async function updateUser(userId, updates) {
-        delete updates.id;
-        // Auto-track morosoSince date when payment status changes
-        if (updates.paymentStatus === PAYMENT_STATUS.MOROSO) {
-            // Only set morosoSince if not already set
-            const currentUser = await getUserById(userId);
-            if (currentUser && !currentUser.morosoSince) {
-                updates.morosoSince = new Date().toISOString();
+        try {
+            await authReady();
+            const ref = await findRef(COL.users, userId);
+            if (!ref) return null;
+            const snap = await ref.get(SERVER);
+            if (!snap.exists) return null;
+            const current = toObj(COL.users, snap);
+
+            const changes = { ...updates };
+            delete changes.id;
+            delete changes.condominioId;
+            const requestedCode = changes.accessCode !== undefined ? normalizeCode(changes.accessCode) : null;
+            delete changes.accessCode;
+
+            // Auto-track morosoSince date when payment status changes
+            if (changes.paymentStatus === PAYMENT_STATUS.MOROSO) {
+                if (!current.morosoSince) changes.morosoSince = nowIso();
+            } else if (changes.paymentStatus === PAYMENT_STATUS.AL_DIA) {
+                changes.morosoSince = null; // Clear when payment is made
             }
-        } else if (updates.paymentStatus === PAYMENT_STATUS.AL_DIA) {
-            updates.morosoSince = null; // Clear when payment is made
-        }
-        const { data, error } = await db().from('sisdel_users').update(updates).eq('id', userId).select().single();
-        if (error) { console.error('updateUser error:', error); return null; }
-        return data;
+
+            const batch = db().batch();
+            let accessCode;
+            let codeChanged = false;
+            if (canReadCodes()) {
+                const codeDocs = await codeDocsOfUser(current.condominioId, userId);
+                accessCode = codeDocs.length ? codeDocs[0].id : '';
+                if (requestedCode && requestedCode !== accessCode) {
+                    if (!isSafeCode(requestedCode)) return null;
+                    codeDocs.forEach((d) => batch.delete(d.ref));
+                    batch.set(db().collection(COL.codes).doc(requestedCode), {
+                        condominioId: current.condominioId, userId, role: current.role, createdAt: nowIso()
+                    });
+                    accessCode = requestedCode;
+                    codeChanged = true;
+                }
+            }
+            batch.update(ref, changes);
+            try {
+                await batch.commit();
+            } catch (error) {
+                // Un codigo ocupado rechaza la escritura completa
+                if (codeChanged && error.code === 'permission-denied') {
+                    console.error('updateUser: codigo en uso', requestedCode);
+                    showToast('Ese código ya está en uso por otro usuario', 'warning');
+                    return null;
+                }
+                throw error;
+            }
+
+            const updated = { ...current, ...changes };
+            if (accessCode !== undefined) updated.accessCode = accessCode;
+            return updated;
+        } catch (error) { reportError('updateUser', error); return null; }
     }
 
+    // Elimina al usuario con su codigo, vehiculos y visitas
     async function deleteUser(userId) {
-        const { error } = await db().from('sisdel_users').delete().eq('id', userId);
-        if (error) { console.error('deleteUser error:', error); return false; }
-        return true;
+        try {
+            await authReady();
+            const ref = await findRef(COL.users, userId);
+            if (!ref) return false;
+            const condominioId = ref.parent.parent.id;
+            const [codes, vehicles, visits] = await Promise.all([
+                codeDocsOfUser(condominioId, userId),
+                sub(condominioId, COL.vehicles).where('userId', '==', userId).get(SERVER),
+                sub(condominioId, COL.visits).where('userId', '==', userId).get(SERVER)
+            ]);
+            const refs = [...codes, ...vehicles.docs, ...visits.docs].map((d) => d.ref);
+            refs.push(ref);
+            await commitInChunks(refs, (batch, docRef) => batch.delete(docRef));
+            refCache.delete(`${COL.users}:${userId}`);
+            return true;
+        } catch (error) { reportError('deleteUser', error); return false; }
     }
 
     async function getUsersByPaymentStatus(condominioId, status) {
-        const { data, error } = await db().from('sisdel_users').select('*').eq('condominioId', condominioId).eq('paymentStatus', status);
-        if (error) { console.error('getUsersByPaymentStatus error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const snap = await sub(condominioId, COL.users).where('paymentStatus', '==', status).get(SERVER);
+            return snap.docs.map((d) => toObj(COL.users, d));
+        } catch (error) { reportError('getUsersByPaymentStatus', error); return []; }
     }
 
     // ══════════════════════════════════
     //  Visit CRUD
     // ══════════════════════════════════
+    // Ejecuta una consulta en un condominio, o en todos si el master no indica uno
+    async function queryAcrossCondos(kind, condominioId, build) {
+        const scope = condominioId || sessionCondoId();
+        if (scope) {
+            const snap = await build(sub(scope, kind)).get(SERVER);
+            return snap.docs.map((d) => toObj(kind, d));
+        }
+        const condos = await db().collection(COL.condos).get(SERVER);
+        const results = await Promise.all(condos.docs.map((c) => build(c.ref.collection(kind)).get(SERVER)));
+        return results.flatMap((snap) => snap.docs.map((d) => toObj(kind, d)));
+    }
+
     async function getVisits(condominioId) {
-        let query = db().from('sisdel_visits').select('*').order('createdAt', { ascending: false });
-        if (condominioId) query = query.eq('condominioId', condominioId);
-        const { data, error } = await query;
-        if (error) { console.error('getVisits error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const visits = await queryAcrossCondos(COL.visits, condominioId, (q) => q);
+            return visits.sort(byCreatedDesc);
+        } catch (error) { reportError('getVisits', error); return []; }
     }
 
     async function getVisitsByUser(userId) {
-        const { data, error } = await db().from('sisdel_visits').select('*').eq('userId', userId).order('createdAt', { ascending: false });
-        if (error) { console.error('getVisitsByUser error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const visits = await queryAcrossCondos(COL.visits, null, (q) => q.where('userId', '==', userId));
+            return visits.sort(byCreatedDesc);
+        } catch (error) { reportError('getVisitsByUser', error); return []; }
     }
 
     async function getTodayVisits(condominioId) {
-        const now = new Date();
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        let query = db().from('sisdel_visits').select('*').eq('visitDate', todayStr);
-        if (condominioId) query = query.eq('condominioId', condominioId);
-        const { data, error } = await query;
-        if (error) { console.error('getTodayVisits error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const today = localToday();
+            return await queryAcrossCondos(COL.visits, condominioId, (q) => q.where('visitDate', '==', today));
+        } catch (error) { reportError('getTodayVisits', error); return []; }
     }
 
     async function createVisit(condominioId, userId, visitorName, visitorInfo, vehiclePlate, visitDate, visitTime, casa) {
-        const visitCode = 'VIS' + Date.now().toString(36).toUpperCase();
-        let timeFormatted = visitTime;
-        if (timeFormatted && timeFormatted.length === 5) {
-            timeFormatted = timeFormatted + ":00"; // Supabase time format requires seconds
-        }
+        try {
+            await authReady();
+            const visitCode = 'VIS' + Date.now().toString(36).toUpperCase() + uniqueSuffix();
+            let timeFormatted = visitTime;
+            if (timeFormatted && timeFormatted.length === 5) timeFormatted = timeFormatted + ':00';
 
-        const localNow = new Date();
-        const localToday = `${localNow.getFullYear()}-${String(localNow.getMonth() + 1).padStart(2, '0')}-${String(localNow.getDate()).padStart(2, '0')}`;
-
-        const { data, error } = await db().from('sisdel_visits').insert([{
-            condominioId, userId, visitorName: visitorName.trim(), visitorInfo: visitorInfo || '',
-            vehiclePlate: (vehiclePlate || '').toUpperCase(), visitDate: visitDate || localToday,
-            visitTime: timeFormatted || null, casa: casa || '', qrCode: visitCode, status: VISIT_STATUS.PENDING
-        }]).select().single();
-
-        if (error) { console.error('createVisit error:', error); return null; }
-        return data;
+            const ref = sub(condominioId, COL.visits).doc();
+            const plate = (vehiclePlate || '').toUpperCase();
+            const data = {
+                id: ref.id, condominioId, userId, visitorName: visitorName.trim(), visitorInfo: visitorInfo || '',
+                vehiclePlate: plate, plateNorm: normalizePlate(plate),
+                visitDate: visitDate || localToday(), visitTime: timeFormatted || null,
+                casa: casa || '', qrCode: visitCode, status: VISIT_STATUS.PENDING,
+                visitType: null, endDate: null, enteredAt: null, createdAt: nowIso()
+            };
+            await ref.set(data);
+            refCache.set(`${COL.visits}:${ref.id}`, ref);
+            return data;
+        } catch (error) { reportError('createVisit', error); return null; }
     }
 
     async function updateVisit(visitId, updates) {
-        delete updates.id;
-        const { data, error } = await db().from('sisdel_visits').update(updates).eq('id', visitId).select().single();
-        if (error) { console.error('updateVisit error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const ref = await findRef(COL.visits, visitId);
+            if (!ref) return null;
+            const changes = { ...updates };
+            delete changes.id;
+            if (changes.vehiclePlate !== undefined) {
+                changes.vehiclePlate = String(changes.vehiclePlate || '').toUpperCase();
+                changes.plateNorm = normalizePlate(changes.vehiclePlate);
+            }
+            await ref.update(changes);
+            const snap = await ref.get(SERVER);
+            return snap.exists ? toObj(COL.visits, snap) : null;
+        } catch (error) { reportError('updateVisit', error); return null; }
     }
 
     async function getVisitByQR(qrCode) {
-        const { data, error } = await db().from('sisdel_visits').select('*').eq('qrCode', qrCode).maybeSingle();
-        if (error) { console.error('getVisitByQR error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const code = normalizeCode(qrCode);
+            if (!code) return null;
+            const found = await queryAcrossCondos(COL.visits, null, (q) => q.where('qrCode', '==', code).limit(1));
+            return found[0] || null;
+        } catch (error) { reportError('getVisitByQR', error); return null; }
     }
 
     async function markVisitAsEntered(visitId) {
-        return updateVisit(visitId, { status: VISIT_STATUS.ENTERED, enteredAt: new Date().toISOString() });
+        return updateVisit(visitId, { status: VISIT_STATUS.ENTERED, enteredAt: nowIso() });
     }
 
     // ══════════════════════════════════
     //  Vehicle / Marbete
     // ══════════════════════════════════
     async function getVehicles(userId) {
-        let query = db().from('sisdel_vehicles').select('*');
-        if (userId) query = query.eq('userId', userId);
-        const { data, error } = await query;
-        if (error) { console.error('getVehicles error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            return await queryAcrossCondos(COL.vehicles, null, (q) => (userId ? q.where('userId', '==', userId) : q));
+        } catch (error) { reportError('getVehicles', error); return []; }
     }
 
     async function createVehicle(userId, condominioId, plate, brand, model, color) {
-        const marbeteCode = 'MAR' + Date.now().toString(36).toUpperCase();
-        const { data, error } = await db().from('sisdel_vehicles').insert([{
-            condominioId, userId, plate: (plate || '').toUpperCase(),
-            brand: brand || '', model: model || '', color: color || '', marbeteCode
-        }]).select().single();
-        if (error) { console.error('createVehicle error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const marbeteCode = 'MAR' + Date.now().toString(36).toUpperCase() + uniqueSuffix();
+            const ref = sub(condominioId, COL.vehicles).doc();
+            const cleanPlate = (plate || '').toUpperCase();
+            const data = {
+                id: ref.id, condominioId, userId, plate: cleanPlate, plateNorm: normalizePlate(cleanPlate),
+                brand: brand || '', model: model || '', color: color || '', marbeteCode, createdAt: nowIso()
+            };
+            await ref.set(data);
+            refCache.set(`${COL.vehicles}:${ref.id}`, ref);
+            return data;
+        } catch (error) { reportError('createVehicle', error); return null; }
     }
 
     async function getVehicleByQR(qrCode) {
-        const { data, error } = await db().from('sisdel_vehicles').select('*').eq('marbeteCode', qrCode).maybeSingle();
-        if (error) { console.error('getVehicleByQR error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const code = normalizeCode(qrCode);
+            if (!code) return null;
+            const found = await queryAcrossCondos(COL.vehicles, null, (q) => q.where('marbeteCode', '==', code).limit(1));
+            return found[0] || null;
+        } catch (error) { reportError('getVehicleByQR', error); return null; }
     }
 
     async function deleteVehicle(vehicleId) {
-        const { error } = await db().from('sisdel_vehicles').delete().eq('id', vehicleId);
-        if (error) console.error('deleteVehicle error:', error);
+        try {
+            await authReady();
+            const ref = await findRef(COL.vehicles, vehicleId);
+            if (!ref) return false;
+            await ref.delete();
+            refCache.delete(`${COL.vehicles}:${vehicleId}`);
+            return true;
+        } catch (error) { reportError('deleteVehicle', error); return false; }
     }
 
     // ══════════════════════════════════
     //  Messages
     // ══════════════════════════════════
     async function getMessages(condominioId) {
-        let query = db().from('sisdel_messages').select('*').order('createdAt', { ascending: false });
-        if (condominioId) {
-            query = query.or(`condominioId.eq.${condominioId},condominioId.eq.all`);
-        }
-        const { data, error } = await query;
-        if (error) { console.error('getMessages error:', error); return []; }
-        return data || [];
+        try {
+            await authReady();
+            const role = sessionRole();
+            const scope = condominioId || sessionCondoId();
+            const seesAll = [ROLES.MASTER, ROLES.ADMIN].includes(role);
+            const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
+
+            const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
+            const [localSnap, globalSnap] = await Promise.all([
+                local.get(SERVER),
+                filter(db().collection(COL.globalMessages)).get(SERVER)
+            ]);
+            return [...localSnap.docs, ...globalSnap.docs].map((d) => toObj(COL.messages, d)).sort(byCreatedDesc);
+        } catch (error) { reportError('getMessages', error); return []; }
     }
 
     async function createMessage(condominioId, fromName, toRole, subject, body) {
-        const { data, error } = await db().from('sisdel_messages').insert([{
-            condominioId: condominioId || 'all', fromName: fromName || 'SISDEL',
-            toRole: toRole || 'all', subject: subject || '', body, read: false
-        }]).select().single();
-        if (error) { console.error('createMessage error:', error); return null; }
-        return data;
+        try {
+            await authReady();
+            const isGlobal = !condominioId || condominioId === 'all';
+            const ref = isGlobal
+                ? db().collection(COL.globalMessages).doc()
+                : sub(condominioId, COL.messages).doc();
+            const data = {
+                id: ref.id, condominioId: isGlobal ? 'all' : condominioId, fromName: fromName || 'SISDEL',
+                toRole: toRole || 'all', subject: subject || '', body, read: false, createdAt: nowIso()
+            };
+            await ref.set(data);
+            refCache.set(`${COL.messages}:${ref.id}`, ref);
+            return data;
+        } catch (error) { reportError('createMessage', error); return null; }
     }
 
     async function markMessageRead(messageId) {
-        const { error } = await db().from('sisdel_messages').update({ read: true }).eq('id', messageId);
-        if (error) { console.error('markMessageRead error:', error); return false; }
-        return true;
+        try {
+            await authReady();
+            const ref = await findRef(COL.messages, messageId);
+            if (!ref) return false;
+            await ref.update({ read: true });
+            return true;
+        } catch (error) { reportError('markMessageRead', error); return false; }
     }
 
     async function deleteMessage(messageId) {
-        const { error } = await db().from('sisdel_messages').delete().eq('id', messageId);
-        if (error) { console.error('deleteMessage error:', error); return false; }
-        return true;
+        try {
+            await authReady();
+            const ref = await findRef(COL.messages, messageId);
+            if (!ref) return false;
+            await ref.delete();
+            refCache.delete(`${COL.messages}:${messageId}`);
+            return true;
+        } catch (error) { reportError('deleteMessage', error); return false; }
+    }
+
+    // ══════════════════════════════════
+    //  Camera logs (historial de garita y camara LPR)
+    // ══════════════════════════════════
+    async function createCameraLog(condominioId, plate, status, reason) {
+        try {
+            await authReady();
+            const ref = sub(condominioId, COL.cameraLogs).doc();
+            const data = {
+                id: ref.id, condominioId, plate: String(plate || '').toUpperCase(),
+                status, reason: reason || '', createdAt: nowIso()
+            };
+            await ref.set(data);
+            return data;
+        } catch (error) { reportError('createCameraLog', error); return null; }
+    }
+
+    async function getCameraLogsToday(condominioId, max = 15) {
+        try {
+            await authReady();
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+            const snap = await sub(condominioId, COL.cameraLogs)
+                .where('createdAt', '>=', startOfDay)
+                .orderBy('createdAt', 'desc')
+                .limit(max)
+                .get(SERVER);
+            return snap.docs.map((d) => toObj(COL.cameraLogs, d));
+        } catch (error) { reportError('getCameraLogsToday', error); return []; }
+    }
+
+    // Avisa en tiempo real cada registro nuevo. Devuelve la funcion para dejar de escuchar
+    function subscribeCameraLogs(condominioId, onLog) {
+        let firstSnapshot = true;
+        return sub(condominioId, COL.cameraLogs)
+            .orderBy('createdAt', 'desc')
+            .limit(5)
+            .onSnapshot((snap) => {
+                // La primera respuesta trae el historial existente: no son eventos nuevos
+                if (firstSnapshot) { firstSnapshot = false; return; }
+                snap.docChanges().forEach((change) => {
+                    if (change.type === 'added') onLog(toObj(COL.cameraLogs, change.doc));
+                });
+            }, (error) => reportError('subscribeCameraLogs', error));
     }
 
     // ══════════════════════════════════
     //  Auth / Session
     // ══════════════════════════════════
     async function login(code) {
-        const trimmed = code.trim().toUpperCase();
+        const trimmed = normalizeCode(code);
+        const { auth, functions } = services();
 
-        if (trimmed === MASTER_CODE) {
-            const session = { role: ROLES.MASTER, code: MASTER_CODE, loggedAt: new Date().toISOString() };
-            sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-            return { success: true, role: ROLES.MASTER, redirect: 'master.html' };
-        }
+        const result = await functions.httpsCallable('login')({ code: trimmed });
+        const data = result.data || {};
+        if (!data.success) return { success: false, error: data.error || 'Código de acceso no válido' };
 
-        const user = await getUserByCode(trimmed);
-        if (!user) return { success: false, error: 'Código de acceso no válido' };
+        // La sesion vive solo en esta pestana, igual que sessionStorage
+        await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+        await auth.signInWithCustomToken(data.token);
 
-        const condo = await getCondominio(user.condominioId);
-        if (!condo || !condo.active) return { success: false, error: 'El condominio no está activo' };
-        if (!user.active) return { success: false, error: 'Usuario inactivo. Contacte al administrador.' };
-
-        const session = {
-            role: user.role, userId: user.id, userName: user.name,
-            userCasa: user.casa,
-            condominioId: user.condominioId, condominioName: condo.name,
-            code: user.accessCode, loggedAt: new Date().toISOString()
-        };
+        const session = { ...data.session, loggedAt: nowIso() };
         sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
 
-        let redirect;
-        switch (user.role) {
-            case ROLES.ADMIN: redirect = 'admin.html'; break;
-            case ROLES.VECINO: redirect = 'vecino.html'; break;
-            case ROLES.POLICIA: redirect = 'garita.html'; break;
-            default: redirect = 'index.html';
-        }
-
-        return { success: true, role: user.role, redirect, user };
+        return { success: true, role: data.role, redirect: data.redirect, user: data.user };
     }
 
     function getSession() {
         try { return JSON.parse(sessionStorage.getItem(STORAGE_KEYS.session)); } catch { return null; }
     }
 
+    function clearSession() { sessionStorage.removeItem(STORAGE_KEYS.session); }
+
     function logout() {
-        sessionStorage.removeItem(STORAGE_KEYS.session);
-        window.location.href = 'index.html';
+        clearSession();
+        const leave = () => { window.location.href = 'index.html'; };
+        try { services().auth.signOut().then(leave, leave); } catch { leave(); }
     }
 
     async function requireAuth(allowedRoles) {
         const session = getSession();
         if (!session) { window.location.href = 'index.html'; return null; }
         if (allowedRoles && !allowedRoles.includes(session.role)) { window.location.href = 'index.html'; return null; }
+
+        // La sesion guardada debe coincidir con el usuario autenticado en Firebase
+        const user = await authReady();
+        const expectedUid = session.role === ROLES.MASTER ? 'master' : session.userId;
+        if (!user || user.uid !== expectedUid) {
+            clearSession();
+            window.location.href = 'index.html';
+            return null;
+        }
         return session;
     }
 
@@ -388,69 +744,18 @@ const SISDEL = (() => {
 
     function confirmDialog(message) { return confirm(message); }
 
-    // Seed Demo Data
-    async function seedDemoData() {
-        const existing = await getCondominios();
-        if (existing && existing.length > 0) return;
-
-        console.log('🚀 Seeding rich demo data to Supabase...');
-
-        // 1. Condominios
-        const condo1 = await createCondominio('Villa Ferrer', 'Km 14.5 Carretera al Salvador', '2222-3333');
-        const condo2 = await createCondominio('Residencial Los Olivos', 'Zona 16, Ciudad de Guatemala', '4444-5555');
-
-        if (!condo1 || !condo2) return;
-
-        // 2. Usuarios - Villa Ferrer
-        await createUser(condo1.id, 'Fernando López', ROLES.ADMIN, '', '5555-1234', 'admin1@villaferrer.com');
-        const v1_1 = await createUser(condo1.id, 'Ana García', ROLES.VECINO, 'Casa 12', '5555-5678', 'ana@mail.com');
-        const v1_2 = await createUser(condo1.id, 'Carlos Martínez', ROLES.VECINO, 'Casa 5', '5555-9012', '');
-        const v1_3 = await createUser(condo1.id, 'María Rodríguez', ROLES.VECINO, 'Casa 23', '5555-3456', '');
-        const p1_1 = await createUser(condo1.id, 'Pedro Ramírez', ROLES.POLICIA, '', '5555-7890', '');
-
-        // 3. Usuarios - Los Olivos
-        await createUser(condo2.id, 'Lucía Méndez', ROLES.ADMIN, '', '5555-0001', 'lucia@olivos.com');
-        const v2_1 = await createUser(condo2.id, 'Juan Pérez', ROLES.VECINO, 'Lote 45', '5555-0002', '');
-        const p2_1 = await createUser(condo2.id, 'Ramiro Sosa', ROLES.POLICIA, '', '5555-0003', '');
-
-        // 4. Estados de Pago y Detalles
-        await updateUser(v1_3.id, { paymentStatus: PAYMENT_STATUS.MOROSO });
-        await updateUser(v2_1.id, { paymentStatus: PAYMENT_STATUS.MOROSO });
-
-        // 5. Vehículos
-        await createVehicle(v1_1.id, condo1.id, 'P-987XYZ', 'Toyota', 'Corolla', 'Blanco');
-        await createVehicle(v1_2.id, condo1.id, 'M-111BBB', 'Yamaha', 'R6', 'Negro');
-        await createVehicle(v2_1.id, condo2.id, 'P-555AAA', 'Honda', 'Civic', 'Gris');
-
-        // 6. Visitas (Hoy y Recientes)
-        const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-        // Villa Ferrer Visitas
-        await createVisit(condo1.id, v1_1.id, 'Roberto Herrera', 'Plomero', 'P-123ABC', today, '10:00:00', 'Casa 12');
-        const visit2 = await createVisit(condo1.id, v1_2.id, 'Luis Pérez', 'Familiar', 'M-456DEF', today, '14:30:00', 'Casa 5');
-        await markVisitAsEntered(visit2.id); // Esta ya ingresó
-
-        await createVisit(condo1.id, v1_1.id, 'Sonia Valle', 'Delivery Pizza', 'P-888GGG', yesterday, '19:00:00', 'Casa 12');
-
-        // Los Olivos Visitas
-        await createVisit(condo2.id, v2_1.id, 'Instalador Internet', 'Claro', 'P-000WWW', today, '09:00:00', 'Lote 45');
-
-        // 7. Mensajes Globales
-        await createMessage('all', 'SISDEL Central', 'all', 'Mantenimiento del Sistema', 'Estimados usuarios, el sistema estará en mantenimiento el domingo a las 2:00 AM.');
-        await createMessage(condo1.id, 'Administración Villa Ferrer', ROLES.POLICIA, 'Revisión de Cámaras', 'Por favor reportar cualquier fallo en el domo de la entrada principal.');
-
-        console.log('✅ Rich Demo data successfully seeded to Supabase.');
-    }
+    // Los datos de demostracion ya no se siembran desde el navegador
+    async function seedDemoData() { return; }
 
     // Public API
     return {
-        ROLES, PAYMENT_STATUS, VISIT_STATUS, MASTER_CODE,
+        ROLES, PAYMENT_STATUS, VISIT_STATUS,
         getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,
+        createCameraLog, getCameraLogsToday, subscribeCameraLogs,
         login, getSession, logout, requireAuth,
         showToast, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };

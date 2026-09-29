@@ -149,9 +149,12 @@
         <p id="bigStatusSubtitle"></p>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-client.js"></script>
-    <script src="sisdel-core.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
+    <script src="firebase-client.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20260929"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.POLICIA, SISDEL.ROLES.ADMIN]);
@@ -350,13 +353,12 @@
                     if (obj.vehiclePlate) {
                         const resident = await SISDEL.getUserById(obj.userId);
                         const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                        await window.supabaseDb.from('sisdel_camera_logs').insert([{
-                            condominioId: condoId,
-                            plate: obj.vehiclePlate.toUpperCase(),
-                            status: isMoroso ? 'Reminder' : 'Authorized',
-                            reason: `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`,
-                            createdAt: new Date().toISOString()
-                        }]);
+                        await SISDEL.createCameraLog(
+                            condoId,
+                            obj.vehiclePlate,
+                            isMoroso ? 'Reminder' : 'Authorized',
+                            `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`
+                        );
                     }
                     SISDEL.showToast('Ingreso de visita registrado', 'success');
 
@@ -364,25 +366,23 @@
                     // Registrar ingreso de vehículo (marbete QR) en camera_logs
                     const resident = await SISDEL.getUserById(obj.userId);
                     const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                    await window.supabaseDb.from('sisdel_camera_logs').insert([{
-                        condominioId: condoId,
-                        plate: obj.plate.toUpperCase(),
-                        status: isMoroso ? 'Reminder' : 'Authorized',
-                        reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})${resident ? ' — ' + resident.name : ''}`.trim(),
-                        createdAt: new Date().toISOString()
-                    }]);
+                    await SISDEL.createCameraLog(
+                        condoId,
+                        obj.plate,
+                        isMoroso ? 'Reminder' : 'Authorized',
+                        `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})${resident ? ' — ' + resident.name : ''}`.trim()
+                    );
                     SISDEL.showToast('Ingreso de vehículo registrado', 'success');
 
                 } else if (type === 'resident') {
                     // Registrar ingreso de residente por código QR en camera_logs
                     const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                    await window.supabaseDb.from('sisdel_camera_logs').insert([{
-                        condominioId: condoId,
-                        plate: `RESIDENTE`,
-                        status: isMoroso ? 'Reminder' : 'Authorized',
-                        reason: `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}`,
-                        createdAt: new Date().toISOString()
-                    }]);
+                    await SISDEL.createCameraLog(
+                        condoId,
+                        'RESIDENTE',
+                        isMoroso ? 'Reminder' : 'Authorized',
+                        `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}`
+                    );
                     SISDEL.showToast('Ingreso de residente registrado', 'success');
                 }
 
@@ -401,8 +401,7 @@
                 if (!code) return;
 
                 // 1. Is it a Visit Code?
-                const visits = await SISDEL.getVisits(condoId);
-                const visit = visits.find(v => v.qrCode === code.toUpperCase());
+                const visit = await SISDEL.getVisitByQR(code);
                 if (visit) {
                     await handleAccessMatch(visit, 'visit');
                     document.getElementById('manualCode').value = '';
@@ -410,17 +409,15 @@
                 }
 
                 // 2. Is it a Vehicle/Marbete Code?
-                const vehicles = await SISDEL.getVehicles();
-                const vehicle = vehicles.find(v => v.marbeteCode === code.toUpperCase() && v.condominioId === condoId);
-                if (vehicle) {
+                const vehicle = await SISDEL.getVehicleByQR(code);
+                if (vehicle && vehicle.condominioId === condoId) {
                     await handleAccessMatch(vehicle, 'vehicle');
                     document.getElementById('manualCode').value = '';
                     return;
                 }
 
-                // 3. Is it a Resident Access Code?
-                const users = await SISDEL.getUsers(condoId);
-                const resident = users.find(u => u.accessCode === code.toUpperCase());
+                // 3. Is it a Resident Access Code? (lo valida el servidor)
+                const resident = await SISDEL.getUserByCode(code);
                 if (resident) {
                     await handleAccessMatch(resident, 'resident');
                     document.getElementById('manualCode').value = '';
@@ -511,15 +508,7 @@
             async function renderHistory() {
                 try {
                     // 1. Fetch Camera/LPR Logs (Today)
-                    const now = new Date();
-                    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    const { data: cameraLogs } = await window.supabaseDb
-                        .from('sisdel_camera_logs')
-                        .select('*')
-                        .eq('condominioId', condoId)
-                        .gte('createdAt', today)
-                        .order('createdAt', { ascending: false })
-                        .limit(15);
+                    const cameraLogs = await SISDEL.getCameraLogsToday(condoId, 15);
 
                     // 2. Fetch Entered Visits (Today)
                     const visits = await SISDEL.getTodayVisits(condoId);
@@ -602,32 +591,24 @@
             // Realtime monitoring for new logs (if LPR enabled)
             if (hasLPR) {
                 // Subscribe to NEW logs
-                window.supabaseDb
-                    .channel('lpr-changes-history')
-                    .on('postgres_changes', {
-                        event: 'INSERT',
-                        schema: 'public',
-                        table: 'sisdel_camera_logs',
-                        filter: `condominioId=eq.${condoId}`
-                    }, payload => {
-                        // Refresh history
-                        renderHistory();
-                        
-                        if (payload.new.status === 'Authorized') {
-                            SISDEL.showToast(`🚗 Acceso Abierto: ${payload.new.plate}`, 'success');
-                            showBigStatusScreen('success', 'AL DÍA', `Placa: ${payload.new.plate}`);
-                            renderStats();
-                            renderVisits();
-                        } else if (payload.new.status === 'Reminder') {
-                            showReminderAlert(payload.new);
-                            showBigStatusScreen('warning', 'MOROSO', `Placa: ${payload.new.plate}`);
-                            SISDEL.showToast(`⚠️ MOROSO EN PERÍODO DE GRACIA: ${payload.new.plate}`, 'warning');
-                        } else {
-                            showBigStatusScreen('error', 'NO REGISTRADO', `Placa: ${payload.new.plate}`);
-                            SISDEL.showToast(`⚠️ Placa detectada: ${payload.new.plate}`, 'info');
-                        }
-                    })
-                    .subscribe();
+                SISDEL.subscribeCameraLogs(condoId, (log) => {
+                    // Refresh history
+                    renderHistory();
+
+                    if (log.status === 'Authorized') {
+                        SISDEL.showToast(`Acceso Abierto: ${log.plate}`, 'success');
+                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${log.plate}`);
+                        renderStats();
+                        renderVisits();
+                    } else if (log.status === 'Reminder') {
+                        showReminderAlert(log);
+                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${log.plate}`);
+                        SISDEL.showToast(`MOROSO EN PERÍODO DE GRACIA: ${log.plate}`, 'warning');
+                    } else {
+                        showBigStatusScreen('error', 'NO REGISTRADO', `Placa: ${log.plate}`);
+                        SISDEL.showToast(`Placa detectada: ${log.plate}`, 'info');
+                    }
+                });
             }
 
             // Reminder alert modal function adapted

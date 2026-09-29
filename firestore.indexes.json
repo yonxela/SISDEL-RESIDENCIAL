@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "visitas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "visitDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "visitas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visitType", "order": "ASCENDING" },
+        { "fieldPath": "endDate", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

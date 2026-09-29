@@ -1,0 +1,153 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════
+// SISDEL Comunities - Reglas de seguridad
+// Datos aislados por condominio: condominios/{condoId}/...
+// El login entrega un token con: role y condominioId.
+// El rol y el estado activo se leen SIEMPRE del documento del usuario,
+// asi un usuario eliminado o desactivado pierde acceso de inmediato.
+// ═══════════════════════════════════════════════════════════════
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Identidad ──
+    function signedIn() { return request.auth != null; }
+    function isMaster() { return signedIn() && request.auth.token.get('role', '') == 'master'; }
+    function inCondo(condoId) { return signedIn() && request.auth.token.get('condominioId', '') == condoId; }
+
+    function memberDoc(condoId) {
+      return get(/databases/$(database)/documents/condominios/$(condoId)/usuarios/$(request.auth.uid)).data;
+    }
+    function condoDoc(condoId) {
+      return get(/databases/$(database)/documents/condominios/$(condoId)).data;
+    }
+
+    // Miembro vigente: pertenece al condominio, sigue activo y el condominio tiene servicio
+    function isMember(condoId) {
+      return inCondo(condoId)
+        && condoDoc(condoId).get('active', false) == true
+        && memberDoc(condoId).get('active', true) != false;
+    }
+    function memberRole(condoId) { return memberDoc(condoId).get('role', ''); }
+    function isAdmin(condoId) { return isMember(condoId) && memberRole(condoId) == 'admin'; }
+    function isGuard(condoId) { return isMember(condoId) && memberRole(condoId) == 'policia'; }
+    function isResident(condoId) { return isMember(condoId) && memberRole(condoId) == 'vecino'; }
+    function isStaff(condoId) { return isMember(condoId) && memberRole(condoId) in ['admin', 'policia']; }
+
+    function isOwner() { return resource.data.userId == request.auth.uid; }
+    function willOwn(condoId) {
+      return request.resource.data.userId == request.auth.uid
+        && request.resource.data.condominioId == condoId;
+    }
+    function onlyChanges(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // ── Datos privados del sistema: solo el servidor (Admin SDK) ──
+    match /_privado/{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Codigos de acceso: indice unico codigo -> usuario ──
+    // No se guardan dentro del usuario para que guardias y vecinos no puedan leerlos.
+    match /codigos/{code} {
+      allow read: if isMaster() || isAdmin(resource.data.condominioId);
+      allow create: if isMaster()
+        || (isAdmin(request.resource.data.condominioId)
+            && request.resource.data.role in ['vecino', 'policia', 'admin']);
+      // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
+      allow update: if false;
+      allow delete: if isMaster() || isAdmin(resource.data.condominioId);
+    }
+
+    // ── Mensajes para todos los condominios ──
+    match /mensajes_globales/{msgId} {
+      allow read: if isMaster() || isMember(request.auth.token.get('condominioId', ''));
+      allow create, delete: if isMaster();
+      allow update: if isMaster()
+        || (isMember(request.auth.token.get('condominioId', '')) && onlyChanges(['read']));
+    }
+
+    // ── Lecturas de camara sin condominio valido ──
+    match /camera_logs_huerfanos/{logId} {
+      allow read, delete: if isMaster();
+      allow create, update: if false;
+    }
+
+    // ── Consultas globales del master ──
+    match /{path=**}/usuarios/{docId} { allow read: if isMaster(); }
+    match /{path=**}/visitas/{docId} { allow read: if isMaster(); }
+    match /{path=**}/vehiculos/{docId} { allow read: if isMaster(); }
+    match /{path=**}/mensajes/{docId} { allow read: if isMaster(); }
+    match /{path=**}/camera_logs/{docId} { allow read: if isMaster(); }
+
+    // ── Condominios ──
+    match /condominios/{condoId} {
+      allow read: if isMaster() || isMember(condoId);
+      allow write: if isMaster();
+
+      match /usuarios/{userId} {
+        function validUser() {
+          return request.resource.data.condominioId == condoId
+            && request.resource.data.role in ['vecino', 'policia', 'admin']
+            && !('accessCode' in request.resource.data);
+        }
+        allow read: if isMaster()
+          || isStaff(condoId)
+          || (isResident(condoId) && request.auth.uid == userId);
+        allow create, update: if isMaster() || (isAdmin(condoId) && validUser());
+        allow delete: if isMaster() || isAdmin(condoId);
+      }
+
+      match /visitas/{visitId} {
+        allow read: if isMaster()
+          || isStaff(condoId)
+          || (isResident(condoId) && isOwner());
+        allow create: if isMaster()
+          || isAdmin(condoId)
+          || (isResident(condoId) && willOwn(condoId));
+        allow update: if isMaster()
+          || isAdmin(condoId)
+          || (isGuard(condoId) && onlyChanges(['status', 'enteredAt']))
+          || (isResident(condoId) && isOwner() && willOwn(condoId));
+        allow delete: if isMaster()
+          || isAdmin(condoId)
+          || (isResident(condoId) && isOwner());
+      }
+
+      match /vehiculos/{vehicleId} {
+        allow read: if isMaster()
+          || isStaff(condoId)
+          || (isResident(condoId) && isOwner());
+        allow create: if isMaster()
+          || (isAdmin(condoId) && request.resource.data.condominioId == condoId)
+          || (isResident(condoId) && willOwn(condoId));
+        allow update: if isMaster() || isAdmin(condoId);
+        allow delete: if isMaster()
+          || isAdmin(condoId)
+          || (isResident(condoId) && isOwner());
+      }
+
+      match /mensajes/{msgId} {
+        allow read: if isMaster()
+          || isAdmin(condoId)
+          || (isMember(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
+        allow create: if isMaster()
+          || (isAdmin(condoId) && request.resource.data.condominioId == condoId);
+        allow update: if isMaster()
+          || isAdmin(condoId)
+          || (isMember(condoId)
+              && resource.data.toRole in ['all', memberRole(condoId)]
+              && onlyChanges(['read']));
+        allow delete: if isMaster() || isAdmin(condoId);
+      }
+
+      match /camera_logs/{logId} {
+        allow read: if isMaster() || isStaff(condoId);
+        allow create: if isStaff(condoId) && request.resource.data.condominioId == condoId;
+        allow update: if false;
+        allow delete: if isMaster() || isAdmin(condoId);
+      }
+    }
+  }
+}

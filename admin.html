@@ -226,9 +226,12 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-client.js"></script>
-    <script src="sisdel-core.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
+    <script src="firebase-client.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20260929"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.ADMIN]);

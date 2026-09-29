@@ -1,0 +1,59 @@
+{
+  "_nota": "Datos de prueba SOLO para los emuladores locales. No son credenciales reales.",
+  "masterCode": "MDEV01",
+  "condominios": [
+    {
+      "id": "condo-villa-ferrer", "name": "Villa Ferrer", "address": "Km 14.5 Carretera al Salvador",
+      "active": true, "hasQR": true, "hasManual": true, "hasLPR": true,
+      "reminderEnabled": true, "gracePeriodDays": 15,
+      "usuarios": [
+        { "id": "u-fernando", "code": "VF100", "name": "Fernando López", "role": "admin", "phone": "5555-1234" },
+        { "id": "u-ana", "code": "VA101", "name": "Ana García", "role": "vecino", "casa": "Casa 12", "phone": "5555-5678", "paymentStatus": "al_dia" },
+        { "id": "u-maria", "code": "VM102", "name": "María Rodríguez", "role": "vecino", "casa": "Casa 23", "phone": "5555-3456", "paymentStatus": "moroso", "morosoDaysAgo": 3 },
+        { "id": "u-pedro", "code": "VP103", "name": "Pedro Ramírez", "role": "policia", "phone": "5555-7890" }
+      ],
+      "vehiculos": [
+        { "id": "veh-ana-1", "userId": "u-ana", "plate": "P-987XYZ", "brand": "Toyota", "model": "Corolla", "color": "Blanco", "marbeteCode": "MARTEST1" },
+        { "id": "veh-ana-2", "userId": "u-ana", "plate": "P-222BBB", "brand": "Mazda", "model": "3", "color": "Rojo", "marbeteCode": "MARTEST2" },
+        { "id": "veh-maria-1", "userId": "u-maria", "plate": "P-111MOR", "brand": "Honda", "model": "Fit", "color": "Gris", "marbeteCode": "MARTEST3" }
+      ],
+      "visitas": [
+        { "id": "vis-hoy", "userId": "u-ana", "visitorName": "Roberto Herrera", "visitorInfo": "Plomero", "vehiclePlate": "P-123ABC", "dayOffset": 0, "visitTime": "10:00:00", "casa": "Casa 12", "qrCode": "VISTEST1", "status": "pending" },
+        { "id": "vis-temporal", "userId": "u-ana", "visitorName": "Luis Pérez", "visitorInfo": "Familiar", "vehiclePlate": "M-456DEF", "dayOffset": -2, "casa": "Casa 12", "qrCode": "VISTEST2", "status": "entered", "visitType": "temporal", "endOffset": 5 },
+        { "id": "vis-vieja", "userId": "u-ana", "visitorName": "Visita Vieja", "visitorInfo": "", "vehiclePlate": "P-999OLD", "dayOffset": -40, "casa": "Casa 12", "qrCode": "VISTEST3", "status": "pending" },
+        { "id": "vis-maria", "userId": "u-maria", "visitorName": "Invitado de María", "visitorInfo": "", "vehiclePlate": "P-333MAR", "dayOffset": 0, "casa": "Casa 23", "qrCode": "VISTEST4", "status": "pending" }
+      ],
+      "mensajes": [
+        { "id": "msg-guardias", "fromName": "Administración Villa Ferrer", "toRole": "policia", "subject": "Revisión de cámaras", "body": "Reportar cualquier fallo en el domo de la entrada." },
+        { "id": "msg-vecinos", "fromName": "Administración Villa Ferrer", "toRole": "vecino", "subject": "Corte de agua", "body": "El sábado habrá corte de agua de 8 a 12." }
+      ]
+    },
+    {
+      "id": "condo-los-olivos", "name": "Residencial Los Olivos", "address": "Zona 16, Ciudad de Guatemala",
+      "active": true, "hasQR": true, "hasManual": true, "hasLPR": false,
+      "reminderEnabled": false, "gracePeriodDays": 15,
+      "usuarios": [
+        { "id": "u-lucia", "code": "LL200", "name": "Lucía Méndez", "role": "admin", "phone": "5555-0001" },
+        { "id": "u-juan", "code": "LJ201", "name": "Juan Pérez", "role": "vecino", "casa": "Lote 45", "phone": "5555-0002", "paymentStatus": "moroso", "morosoDaysAgo": 1 },
+        { "id": "u-ramiro", "code": "LR202", "name": "Ramiro Sosa", "role": "policia", "phone": "5555-0003" }
+      ],
+      "vehiculos": [
+        { "id": "veh-juan-1", "userId": "u-juan", "plate": "P-555AAA", "brand": "Honda", "model": "Civic", "color": "Gris", "marbeteCode": "MARTEST4" }
+      ],
+      "visitas": [],
+      "mensajes": []
+    },
+    {
+      "id": "condo-inactivo", "name": "Condominio Sin Servicio", "address": "Zona 1",
+      "active": false, "hasQR": true, "hasManual": true, "hasLPR": false,
+      "reminderEnabled": false, "gracePeriodDays": 15,
+      "usuarios": [
+        { "id": "u-carlos", "code": "CC300", "name": "Carlos Inactivo", "role": "admin", "phone": "5555-0009" }
+      ],
+      "vehiculos": [], "visitas": [], "mensajes": []
+    }
+  ],
+  "mensajesGlobales": [
+    { "id": "msg-global", "fromName": "SISDEL Central", "toRole": "all", "subject": "Mantenimiento del sistema", "body": "El sistema estará en mantenimiento el domingo a las 2:00 AM." }
+  ]
+}

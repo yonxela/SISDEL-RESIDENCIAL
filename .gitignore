@@ -1,0 +1,11 @@
+node_modules/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+*.local
+.DS_Store
+# Respaldos de datos: nunca al repo (es publico)
+exports/
+*.backup.json

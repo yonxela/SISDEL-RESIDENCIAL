@@ -1,0 +1,60 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", ".git", "firebase-debug.log", "firebase-debug.*.log", "*.local"]
+    }
+  ],
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "functions/**",
+      "scripts/**",
+      "supabase/**",
+      "tests/**",
+      "*.sql",
+      "*.md",
+      "*.log",
+      "firestore.rules",
+      "firestore.indexes.json",
+      "vercel.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "rewrites": [
+      { "source": "/api/lpr", "function": { "functionId": "anprWebhook", "region": "us-central1" } },
+      { "source": "/api/anpr", "function": { "functionId": "anprWebhook", "region": "us-central1" } },
+      { "source": "/api/lpr/**", "function": { "functionId": "anprWebhook", "region": "us-central1" } },
+      { "source": "/LAPI/**", "function": { "functionId": "anprWebhook", "region": "us-central1" } },
+      { "source": "/NotificationInfo/**", "function": { "functionId": "anprWebhook", "region": "us-central1" } }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|css)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "hosting": { "port": 5050 },
+    "ui": { "enabled": true, "port": 4000 },
+    "singleProjectMode": true
+  }
+}

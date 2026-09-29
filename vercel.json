@@ -2,23 +2,23 @@
   "rewrites": [
     {
       "source": "/api/lpr",
-      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+      "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     },
     {
       "source": "/api/anpr",
-      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+      "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     },
     {
       "source": "/api/lpr/:path*",
-      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+      "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     },
     {
       "source": "/LAPI/:path*",
-      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+      "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     },
     {
       "source": "/NotificationInfo/:path*",
-      "destination": "https://rxrodfskmvldozpznyrp.supabase.co/functions/v1/anpr-webhook"
+      "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     }
   ]
 }

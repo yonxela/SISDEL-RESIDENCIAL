@@ -18,6 +18,7 @@ Estructura de datos y archivos: ver README.md.
 - Comentarios y textos en espanol; variables y funciones en ingles. Sin emojis en codigo ni interfaces: iconos SVG.
 - Una tarea = una sesion = un worktree propio. Nunca dos sesiones sobre la misma carpeta.
 - Deploy siempre desde `main` y de a uno a la vez: commit -> ff a main -> push (Vercel publica el front) -> `firebase deploy --only ...` desde el checkout de main.
+- Trabajan dos personas en PCs distintas: antes de empezar una tarea y antes de cada `firebase deploy`, `git pull --ff-only` en main. Nunca publicar algo que no este en origin/main: un deploy desde un checkout viejo revierte en produccion las reglas o funciones del otro. Avisarse antes de publicar reglas o funciones.
 - Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (107 pruebas).
 - Cuando cambia sisdel-core.js, subir la version en los HTML (`sisdel-core.js?v=AAAAMMDD`).
 - El repo es PUBLICO: nunca subir respaldos, codigos de acceso ni llaves. Los respaldos van fuera del repo.

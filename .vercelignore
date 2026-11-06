@@ -1,0 +1,17 @@
+# Vercel solo debe publicar las paginas y sus recursos
+functions
+scripts
+supabase
+tests
+node_modules
+*.md
+*.log
+*.sql
+firebase.json
+firestore.rules
+firestore.indexes.json
+.firebaserc
+.gitignore
+.vercelignore
+package.json
+package-lock.json

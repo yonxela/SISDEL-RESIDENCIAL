@@ -149,5 +149,16 @@ service cloud.firestore {
         allow delete: if isMaster() || isAdmin(condoId);
       }
     }
+
+    // ── Diagnostico de carga: cada usuario escribe sus tiempos, solo el master los lee ──
+    match /_diag/{entryId} {
+      allow read, delete: if isMaster();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['page', 'at', 'uid', 'role', 'condominioId', 'ms', 'net', 'ua'])
+        && request.resource.data.page is string
+        && request.resource.data.ua is string && request.resource.data.ua.size() <= 200;
+      allow update: if false;
+    }
+
   }
 }

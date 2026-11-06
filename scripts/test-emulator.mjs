@@ -273,7 +273,8 @@ async function run() {
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');
     let blocked = null;
-    for (let i = 0; i < 12; i++) {
+    // El limite es 30 intentos por IP cada 15 minutos (todo un condominio comparte la IP)
+    for (let i = 0; i < 32; i++) {
         const attempt = await httpsCallable(nobody.functions, 'login')({ code: `ZZ${100 + i}` });
         if (/Demasiados intentos/.test(attempt.data.error || '')) { blocked = i; break; }
     }

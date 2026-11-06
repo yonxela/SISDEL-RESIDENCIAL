@@ -5,7 +5,7 @@
 
 const SISDEL = (() => {
     // ── Constants ──
-    const STORAGE_KEYS = { session: 'sisdel_session' };
+    const STORAGE_KEYS = { session: 'sisdel_session', loginTiming: 'sisdel_login_timing' };
 
     const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia' };
     const PAYMENT_STATUS = { AL_DIA: 'al_dia', MOROSO: 'moroso' };
@@ -31,13 +31,29 @@ const SISDEL = (() => {
     function sub(condominioId, name) { return condoRef(condominioId).collection(name); }
 
     let authReadyPromise = null;
+    let authReadyMs = null; // cuanto tardo en restaurarse la sesion (diagnostico)
     function authReady() {
         if (!authReadyPromise) {
             authReadyPromise = new Promise((resolve) => {
-                const unsubscribe = services().auth.onAuthStateChanged((user) => { unsubscribe(); resolve(user); });
+                const unsubscribe = services().auth.onAuthStateChanged((user) => {
+                    unsubscribe();
+                    authReadyMs = Math.round(performance.now());
+                    resolve(user);
+                });
             });
         }
         return authReadyPromise;
+    }
+
+    // Si la misma consulta ya esta en curso se comparte: las paginas piden lo mismo varias veces al cargar.
+    // Cada llamador recibe su propia copia de la lista para que nadie altere la de otro.
+    const inFlight = new Map();
+    function shared(key, run) {
+        if (!inFlight.has(key)) {
+            const promise = Promise.resolve().then(run).finally(() => inFlight.delete(key));
+            inFlight.set(key, promise);
+        }
+        return inFlight.get(key).then((result) => (Array.isArray(result) ? result.slice() : result));
     }
 
     // ── Tools ──
@@ -142,21 +158,25 @@ const SISDEL = (() => {
     // ══════════════════════════════════
     //  Condominio CRUD
     // ══════════════════════════════════
-    async function getCondominios() {
-        try {
-            await authReady();
-            const snap = await db().collection(COL.condos).get(SERVER);
-            return snap.docs.map((d) => toObj(COL.condos, d)).sort(byCreatedDesc);
-        } catch (error) { reportError('getCondominios', error); return []; }
+    function getCondominios() {
+        return shared('condos', async () => {
+            try {
+                await authReady();
+                const snap = await db().collection(COL.condos).get(SERVER);
+                return snap.docs.map((d) => toObj(COL.condos, d)).sort(byCreatedDesc);
+            } catch (error) { reportError('getCondominios', error); return []; }
+        });
     }
 
-    async function getCondominio(id) {
-        try {
-            await authReady();
-            if (!id) return null;
-            const snap = await condoRef(id).get(SERVER);
-            return snap.exists ? toObj(COL.condos, snap) : null;
-        } catch (error) { reportError('getCondominio', error); return null; }
+    function getCondominio(id) {
+        return shared(`condo:${id || ''}`, async () => {
+            try {
+                await authReady();
+                if (!id) return null;
+                const snap = await condoRef(id).get(SERVER);
+                return snap.exists ? toObj(COL.condos, snap) : null;
+            } catch (error) { reportError('getCondominio', error); return null; }
+        });
     }
 
     async function createCondominio(name, address, phone) {
@@ -227,16 +247,18 @@ const SISDEL = (() => {
     // ══════════════════════════════════
     //  User CRUD
     // ══════════════════════════════════
-    async function getUsers(condominioId) {
-        try {
-            await authReady();
-            const scope = condominioId || sessionCondoId();
-            const query = scope ? sub(scope, COL.users) : db().collectionGroup(COL.users);
-            const [snap, codes] = await Promise.all([query.get(SERVER), codesByUser(scope)]);
-            const users = snap.docs.map((d) => toObj(COL.users, d)).sort(byCreatedDesc);
-            if (codes) users.forEach((u) => { u.accessCode = codes.get(u.id) || ''; });
-            return users;
-        } catch (error) { reportError('getUsers', error); return []; }
+    function getUsers(condominioId) {
+        const scope = condominioId || sessionCondoId();
+        return shared(`users:${scope || ''}`, async () => {
+            try {
+                await authReady();
+                const query = scope ? sub(scope, COL.users) : db().collectionGroup(COL.users);
+                const [snap, codes] = await Promise.all([query.get(SERVER), codesByUser(scope)]);
+                const users = snap.docs.map((d) => toObj(COL.users, d)).sort(byCreatedDesc);
+                if (codes) users.forEach((u) => { u.accessCode = codes.get(u.id) || ''; });
+                return users;
+            } catch (error) { reportError('getUsers', error); return []; }
+        });
     }
 
     async function getUserByCode(code) {
@@ -427,12 +449,14 @@ const SISDEL = (() => {
         } catch (error) { reportError('getVisitsByUser', error); return []; }
     }
 
-    async function getTodayVisits(condominioId) {
-        try {
-            await authReady();
-            const today = localToday();
-            return await queryAcrossCondos(COL.visits, condominioId, (q) => q.where('visitDate', '==', today));
-        } catch (error) { reportError('getTodayVisits', error); return []; }
+    function getTodayVisits(condominioId) {
+        return shared(`todayVisits:${condominioId || sessionCondoId() || ''}`, async () => {
+            try {
+                await authReady();
+                const today = localToday();
+                return await queryAcrossCondos(COL.visits, condominioId, (q) => q.where('visitDate', '==', today));
+            } catch (error) { reportError('getTodayVisits', error); return []; }
+        });
     }
 
     async function createVisit(condominioId, userId, visitorName, visitorInfo, vehiclePlate, visitDate, visitTime, casa) {
@@ -538,21 +562,23 @@ const SISDEL = (() => {
     // ══════════════════════════════════
     //  Messages
     // ══════════════════════════════════
-    async function getMessages(condominioId) {
-        try {
-            await authReady();
-            const role = sessionRole();
-            const scope = condominioId || sessionCondoId();
-            const seesAll = [ROLES.MASTER, ROLES.ADMIN].includes(role);
-            const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
+    function getMessages(condominioId) {
+        return shared(`messages:${condominioId || sessionCondoId() || ''}`, async () => {
+            try {
+                await authReady();
+                const role = sessionRole();
+                const scope = condominioId || sessionCondoId();
+                const seesAll = [ROLES.MASTER, ROLES.ADMIN].includes(role);
+                const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
 
-            const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
-            const [localSnap, globalSnap] = await Promise.all([
-                local.get(SERVER),
-                filter(db().collection(COL.globalMessages)).get(SERVER)
-            ]);
-            return [...localSnap.docs, ...globalSnap.docs].map((d) => toObj(COL.messages, d)).sort(byCreatedDesc);
-        } catch (error) { reportError('getMessages', error); return []; }
+                const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
+                const [localSnap, globalSnap] = await Promise.all([
+                    local.get(SERVER),
+                    filter(db().collection(COL.globalMessages)).get(SERVER)
+                ]);
+                return [...localSnap.docs, ...globalSnap.docs].map((d) => toObj(COL.messages, d)).sort(byCreatedDesc);
+            } catch (error) { reportError('getMessages', error); return []; }
+        });
     }
 
     async function createMessage(condominioId, fromName, toRole, subject, body) {
@@ -644,8 +670,10 @@ const SISDEL = (() => {
     async function login(code) {
         const trimmed = normalizeCode(code);
         const { auth, functions } = services();
+        const startedAt = performance.now();
 
         const result = await functions.httpsCallable('login')({ code: trimmed });
+        const callableMs = Math.round(performance.now() - startedAt);
         const data = result.data || {};
         if (!data.success) return { success: false, error: data.error || 'Código de acceso no válido' };
 
@@ -655,6 +683,10 @@ const SISDEL = (() => {
 
         const session = { ...data.session, loggedAt: nowIso() };
         sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
+        // Tiempos del login; la siguiente pagina los reporta junto con su propia carga
+        sessionStorage.setItem(STORAGE_KEYS.loginTiming, JSON.stringify({
+            callable: callableMs, signIn: Math.round(performance.now() - startedAt) - callableMs
+        }));
 
         return { success: true, role: data.role, redirect: data.redirect, user: data.user };
     }
@@ -747,6 +779,39 @@ const SISDEL = (() => {
     // Los datos de demostracion ya no se siembran desde el navegador
     async function seedDemoData() { return; }
 
+    // ── Diagnostico: cuanto tarda cada pagina en quedar lista, medido en el navegador del usuario ──
+    // Se guarda en la coleccion _diag (solo la lee el master). Nunca debe afectar a la pagina.
+    function reportPageLoad(page) {
+        try {
+            const nav = performance.getEntriesByType('navigation')[0];
+            const conn = navigator.connection || {};
+            const session = getSession() || {};
+            let loginTiming = null;
+            try { loginTiming = JSON.parse(sessionStorage.getItem(STORAGE_KEYS.loginTiming)); } catch { /* sin datos */ }
+            sessionStorage.removeItem(STORAGE_KEYS.loginTiming);
+            const user = services().auth.currentUser;
+            db().collection('_diag').add({
+                page,
+                at: nowIso(),
+                uid: user ? user.uid : null,
+                role: session.role || null,
+                condominioId: session.condominioId || null,
+                ms: {
+                    total: Math.round(performance.now()),
+                    domReady: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
+                    authReady: authReadyMs,
+                    login: loginTiming
+                },
+                net: {
+                    type: conn.effectiveType || null,
+                    rtt: typeof conn.rtt === 'number' ? conn.rtt : null,
+                    downlink: typeof conn.downlink === 'number' ? conn.downlink : null
+                },
+                ua: String(navigator.userAgent).slice(0, 200)
+            }).catch((error) => console.warn('diag', error));
+        } catch (error) { console.warn('diag', error); }
+    }
+
     // Public API
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
@@ -756,7 +821,7 @@ const SISDEL = (() => {
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,
         createCameraLog, getCameraLogsToday, subscribeCameraLogs,
-        login, getSession, logout, requireAuth,
+        login, getSession, logout, requireAuth, reportPageLoad,
         showToast, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };
 })();

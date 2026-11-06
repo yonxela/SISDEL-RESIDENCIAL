@@ -154,7 +154,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20261105"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.POLICIA, SISDEL.ROLES.ADMIN]);
@@ -498,8 +498,8 @@
             btnStart.addEventListener('click', startScanner);
             btnStop.addEventListener('click', stopScanner);
 
-            await renderStats();
-            await renderVisits();
+            // Todo se carga a la vez; la pagina no espera una consulta para lanzar la siguiente
+            const initialLoad = Promise.all([renderStats(), renderVisits()]);
 
             // --- Unified History Monitor ---
             const historyList = document.getElementById('historyLogsList');
@@ -643,7 +643,7 @@
             }
 
             // Initial load
-            renderHistory();
+            Promise.all([initialLoad, renderHistory()]).then(() => SISDEL.reportPageLoad('garita'));
 
             // --- Check for unread messages from admin ---
             (async function checkUnreadMessages() {

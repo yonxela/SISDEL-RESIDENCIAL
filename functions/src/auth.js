@@ -1,10 +1,12 @@
 // Login por codigo de acceso y verificacion de codigos en garita
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { logger } = require('firebase-functions/v2');
 const { db, auth } = require('./firebase');
 const { ROLES, normalizeCode, sha256, safeEqual, clientIp } = require('./util');
 const rateLimit = require('./rateLimit');
 
-const LOGIN_LIMIT = { max: 10, windowMs: 15 * 60 * 1000 };
+// Todo un condominio suele salir por la misma IP publica: el limite es compartido, por eso es amplio
+const LOGIN_LIMIT = { max: 30, windowMs: 15 * 60 * 1000 };
 const VERIFY_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
 
 const REDIRECTS = {
@@ -41,10 +43,14 @@ async function findUserByCode(code) {
 
 const login = onCall(async (request) => {
     const code = normalizeCode(request.data?.code);
-    if (!code) return { success: false, error: 'Código de acceso no válido' };
-
     const ip = clientIp(request.rawRequest);
+    // Bitacora de intentos (nunca el codigo): sirve para ver por que alguien no puede entrar
+    const log = (outcome, extra = {}) => logger.info('login', { outcome, ip, codeLength: code.length, ...extra });
+
+    if (!code) { log('empty'); return { success: false, error: 'Código de acceso no válido' }; }
+
     if (await rateLimit.isBlocked('login', ip, LOGIN_LIMIT)) {
+        log('blocked');
         return { success: false, error: 'Demasiados intentos. Espere 15 minutos e intente de nuevo.' };
     }
 
@@ -52,6 +58,7 @@ const login = onCall(async (request) => {
     if (await isMasterCode(code)) {
         const token = await auth.createCustomToken('master', { role: ROLES.MASTER });
         await rateLimit.reset('login', ip);
+        log('ok', { role: ROLES.MASTER });
         return {
             success: true, token, role: ROLES.MASTER, redirect: REDIRECTS[ROLES.MASTER],
             session: { role: ROLES.MASTER }
@@ -62,14 +69,22 @@ const login = onCall(async (request) => {
     const found = await findUserByCode(code);
     if (!found || !REDIRECTS[found.user.role] || found.user.role === ROLES.MASTER) {
         await rateLimit.hit('login', ip, LOGIN_LIMIT);
+        log(found ? 'bad_role' : 'not_found');
         return { success: false, error: 'Código de acceso no válido' };
     }
     const { user, condo } = found;
-    if (!condo || condo.active !== true) return { success: false, error: 'El condominio no está activo' };
-    if (user.active === false) return { success: false, error: 'Usuario inactivo. Contacte al administrador.' };
+    if (!condo || condo.active !== true) {
+        log('condo_inactive', { condominioId: user.condominioId });
+        return { success: false, error: 'El condominio no está activo' };
+    }
+    if (user.active === false) {
+        log('user_inactive', { condominioId: user.condominioId, userId: user.id });
+        return { success: false, error: 'Usuario inactivo. Contacte al administrador.' };
+    }
 
     const token = await auth.createCustomToken(user.id, { role: user.role, condominioId: user.condominioId });
     await rateLimit.reset('login', ip);
+    log('ok', { role: user.role, condominioId: user.condominioId, userId: user.id });
 
     return {
         success: true, token, role: user.role, redirect: REDIRECTS[user.role],

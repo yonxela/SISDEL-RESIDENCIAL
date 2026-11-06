@@ -110,7 +110,7 @@ body {
 
 /* Auth Page Theme */
 .auth-page {
-    background: url('bg-login.png') no-repeat center center fixed;
+    background: url('bg-login.jpg') no-repeat center center fixed;
     background-size: cover;
     min-height: 100vh;
     display: flex;

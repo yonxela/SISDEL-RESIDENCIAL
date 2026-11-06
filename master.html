@@ -218,7 +218,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20261105"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.MASTER]);
@@ -267,16 +267,13 @@
 
             // --- App Data Rendering ---
             async function renderStats() {
-                const condos = await SISDEL.getCondominios();
-                const users = await SISDEL.getUsers();
+                const [condos, users] = await Promise.all([SISDEL.getCondominios(), SISDEL.getUsers()]);
                 const totalVecinos = users.filter(u => u.role === SISDEL.ROLES.VECINO).length;
                 const totalPolicias = users.filter(u => u.role === SISDEL.ROLES.POLICIA).length;
 
-                let todayVisits = 0;
-                for (const c of condos) {
-                    const visits = await SISDEL.getTodayVisits(c.id);
-                    todayVisits += visits.length;
-                }
+                // Las visitas de todos los condominios se consultan a la vez, no una por una
+                const visitsPerCondo = await Promise.all(condos.map(c => SISDEL.getTodayVisits(c.id)));
+                const todayVisits = visitsPerCondo.reduce((sum, visits) => sum + visits.length, 0);
 
                 document.getElementById('statsGrid').innerHTML = `
                     <div class="stat-card"><div class="stat-value" style="color:var(--primary-light)">${condos.length}</div><div class="stat-label">Condominios</div></div>
@@ -629,9 +626,8 @@
             });
 
             // Initial render
-            await renderStats();
-            await renderCondos();
-            await populateSelectors();
+            await Promise.all([renderStats(), renderCondos(), populateSelectors()]);
+            SISDEL.reportPageLoad('master');
         });
     </script>
 </body>

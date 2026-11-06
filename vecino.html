@@ -203,7 +203,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20261105"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO]);
@@ -563,7 +563,7 @@
                 btn.disabled = false;
             });
 
-            renderVisits();
+            renderVisits().then(() => SISDEL.reportPageLoad('vecino'));
 
             // --- Check for unread messages from admin ---
             async function checkUnreadMessages() {

@@ -24,7 +24,9 @@ Estructura de datos y archivos: ver README.md.
 - Al terminar cambios en una pagina, abrir el link para que el usuario pruebe.
 
 ## Requisitos en una PC nueva
-- `node` 22 o mas, `firebase-tools`, `gcloud` y `gh`.
+- `node` 22 o mas, `firebase-tools`, `gcloud`, `gh` y Java 21 o mas (lo piden los emuladores).
+- En Mac con Homebrew: `brew install node gh firebase-cli openjdk@21` y `brew install --cask gcloud-cli`. `openjdk@21` no queda en el PATH: agregar `$(brew --prefix openjdk@21)/bin` en `~/.zprofile`.
+- En este repo, `git config user.email` con el correo noreply de GitHub (el repo es publico y el correo de cada commit queda visible).
 - Entrar con una cuenta de Google con acceso al proyecto: `firebase login` y `gcloud auth login`. Para los scripts de `scripts/` tambien `gcloud auth application-default login`.
 - `npm ci` dentro de `functions/` y dentro de `scripts/`.
 - Si node se cuelga al importar firebase-admin, o el emulador dice "Timeout after 10000" al cargar functions: `rm -rf node_modules && npm ci` en esa carpeta.

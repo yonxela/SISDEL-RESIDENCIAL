@@ -12,6 +12,7 @@ Estructura de datos y archivos: ver README.md.
 - Backend: Firebase, proyecto `sisdel-datacenter` (Firestore, Auth, Functions en us-central1, Hosting espejo en sisdel-datacenter.web.app). Plan Blaze con la cuenta de facturacion "Garita.app" y alerta de 5 USD al mes.
 - La camara envia a garita.app/api/lpr; Vercel lo reenvia a la Cloud Function `anprWebhook` (ver vercel.json).
 - El sistema anterior (Supabase) ya no se usa; sus datos se importaron el 2026-11-05.
+- Acceso: GitHub `yonxela` (dueno) y `SisdelNir` (colaborador con push). Firebase: yonxela es Owner; la cuenta del papa de Yonathan es Editor + Cloud Run Admin (publica todo, no cambia permisos ni facturacion). Vercel publica los commits de cualquier colaborador porque el repo es publico.
 
 ## Reglas de trabajo
 - Comentarios y textos en espanol; variables y funciones en ingles. Sin emojis en codigo ni interfaces: iconos SVG.

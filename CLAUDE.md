@@ -38,6 +38,3 @@ Estructura de datos y archivos: ver README.md.
 - `scripts/migrate-supabase.mjs`: importacion del sistema anterior (ya hecha).
 - Coleccion `_diag`: cada pagina guarda cuanto tardo en cargar (login, sesion, datos, red, navegador). Solo el master la lee; se consulta con el admin SDK desde `scripts/` para diagnosticar lentitud.
 - Bitacora de logins en Cloud Logging: servicio `login`, campo `jsonPayload.outcome` (ok, not_found, blocked, condo_inactive, user_inactive).
-
-## Pendientes conocidos
-- Cambiar el codigo master: tiene 4 caracteres y quedo visible en el historial del repo.

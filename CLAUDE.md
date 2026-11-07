@@ -34,7 +34,7 @@ Estructura de datos y archivos: ver README.md.
 - Puertos de emuladores: auth 9099, functions 5001, firestore 8080, hosting 5050, UI 4000.
 
 ## Herramientas y diagnostico
-- `scripts/set-master-code.mjs`: cambia el codigo master (solo se guarda su hash en `_privado/auth`).
+- `scripts/set-master-code.mjs --target=prod --generate` (con `GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter`): genera un codigo master nuevo, guarda solo su hash en `_privado/auth`, cierra las sesiones master abiertas y muestra el codigo una sola vez. Lo corre una persona en su terminal: el modo automatico de Claude no deja escribir credenciales en produccion.
 - `scripts/migrate-supabase.mjs`: importacion del sistema anterior (ya hecha).
 - Coleccion `_diag`: cada pagina guarda cuanto tardo en cargar (login, sesion, datos, red, navegador). Solo el master la lee; se consulta con el admin SDK desde `scripts/` para diagnosticar lentitud.
 - Bitacora de logins en Cloud Logging: servicio `login`, campo `jsonPayload.outcome` (ok, not_found, blocked, condo_inactive, user_inactive).

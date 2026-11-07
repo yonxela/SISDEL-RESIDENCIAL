@@ -5,10 +5,10 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
 import {
     getFirestore, connectFirestoreEmulator, collection, collectionGroup, doc, getDoc, getDocs,
-    setDoc, updateDoc, deleteDoc, writeBatch, query, where
+    setDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy
 } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { PROJECT_ID, EMULATOR, localDate } from './lib.mjs';
+import { PROJECT_ID, EMULATOR, localDate, isoDaysAgo } from './lib.mjs';
 
 const seed = JSON.parse(fs.readFileSync(new URL('./dev-seed.json', import.meta.url), 'utf8'));
 const WEBHOOK = `http://${EMULATOR.functions[0]}:${EMULATOR.functions[1]}/${PROJECT_ID}/us-central1/anprWebhook`;
@@ -89,6 +89,8 @@ async function run() {
     const ana = await loginAs('VA101');
     equal('vecino entra', [ana.login.role, ana.login.session.userCasa], ['vecino', 'Casa 12']);
     equal('el login no devuelve datos de otros', Object.keys(ana.login.user).sort(), ['casa', 'condominioId', 'id', 'name', 'role']);
+    const auditor = await loginAs('VS104');
+    equal('auditor entra a su panel', [auditor.login.role, auditor.login.redirect], ['auditor', 'auditor.html']);
 
     // ───────── Sin sesion / anonimo ─────────
     console.log('\nSin sesion');
@@ -109,7 +111,7 @@ async function run() {
     });
     await allowed('master lista todos los usuarios', async () => {
         const snap = await getDocs(collectionGroup(master.db, 'usuarios'));
-        if (snap.size !== 8) throw new Error(`esperaba 8, hay ${snap.size}`);
+        if (snap.size !== 9) throw new Error(`esperaba 9, hay ${snap.size}`);
     });
     await allowed('master lee codigos', () => getDocs(collection(master.db, 'codigos')));
     await allowed('master cambia ajustes de condominio', () => updateDoc(doc(master.db, `condominios/${B}`), { hasLPR: true }));
@@ -131,6 +133,12 @@ async function run() {
         const batch = writeBatch(admin.db);
         batch.set(doc(admin.db, 'codigos/VN555'), { condominioId: A, userId: 'u-nuevo', role: 'vecino', createdAt: newUser.createdAt });
         batch.set(doc(admin.db, `condominios/${A}/usuarios/u-nuevo`), newUser);
+        return batch.commit();
+    });
+    await allowed('admin crea un auditor', () => {
+        const batch = writeBatch(admin.db);
+        batch.set(doc(admin.db, 'codigos/VA556'), { condominioId: A, userId: 'u-auditor2', role: 'auditor', createdAt: newUser.createdAt });
+        batch.set(doc(admin.db, `condominios/${A}/usuarios/u-auditor2`), { ...newUser, id: 'u-auditor2', name: 'Auditor Nuevo', role: 'auditor', casa: '', paymentStatus: null });
         return batch.commit();
     });
     await denied('codigo ocupado rechaza la escritura', () => setDoc(doc(admin.db, 'codigos/VA101'), { condominioId: A, userId: 'u-nuevo', role: 'vecino', createdAt: newUser.createdAt }));
@@ -193,6 +201,7 @@ async function run() {
     });
     await denied('vecino no lee mensajes de guardias', () => getDoc(doc(ana.db, `condominios/${A}/mensajes/msg-guardias`)));
     await allowed('vecino lee mensajes globales', () => getDocs(collection(ana.db, 'mensajes_globales')));
+    await allowed('vecino marca mensaje global leido', () => updateDoc(doc(ana.db, 'mensajes_globales/msg-global'), { read: true }));
     await allowed('vecino marca mensaje leido', () => updateDoc(doc(ana.db, `condominios/${A}/mensajes/msg-vecinos`), { read: true }));
     await denied('vecino no edita el texto del mensaje', () => updateDoc(doc(ana.db, `condominios/${A}/mensajes/msg-vecinos`), { body: 'hackeado' }));
     await denied('vecino no se cambia el estado de pago', () => updateDoc(doc(ana.db, `condominios/${A}/usuarios/u-ana`), { paymentStatus: 'al_dia' }));
@@ -249,6 +258,51 @@ async function run() {
     equal('la visita queda marcada como ingresada', visitSnap.data().status, 'entered');
     const orphans = await getDocs(collection(master.db, 'camera_logs_huerfanos'));
     equal('lecturas sin condominio quedan para el master', orphans.size, 2);
+
+    // ───────── Auditor: lee todo su condominio, no escribe nada ─────────
+    console.log('\nAuditor de Villa Ferrer');
+    const tomorrowIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await allowed('auditor lee su condominio', () => getDoc(doc(auditor.db, `condominios/${A}`)));
+    await allowed('auditor lee todos los usuarios', async () => {
+        const snap = await getDocs(collection(auditor.db, `condominios/${A}/usuarios`));
+        if (snap.size < 5) throw new Error(`esperaba 5 o mas, hay ${snap.size}`);
+    });
+    await allowed('auditor lee todas las visitas', () => getDocs(collection(auditor.db, `condominios/${A}/visitas`)));
+    await allowed('auditor lee visitas por rango de fechas', () => getDocs(query(collection(auditor.db, `condominios/${A}/visitas`),
+        where('visitDate', '>=', localDate(-30)), where('visitDate', '<=', localDate(0)))));
+    await allowed('auditor lee todos los vehiculos', () => getDocs(collection(auditor.db, `condominios/${A}/vehiculos`)));
+    await allowed('auditor lee el historial de accesos por rango', async () => {
+        const snap = await getDocs(query(collection(auditor.db, `condominios/${A}/camera_logs`),
+            where('createdAt', '>=', isoDaysAgo(1)), where('createdAt', '<', tomorrowIso), orderBy('createdAt', 'desc')));
+        if (snap.size === 0) throw new Error('el historial vino vacio');
+    });
+    await allowed('auditor lee todos los mensajes del condominio', async () => {
+        const snap = await getDocs(collection(auditor.db, `condominios/${A}/mensajes`));
+        if (snap.size < 3) throw new Error(`esperaba 3 o mas, hay ${snap.size}`);
+    });
+    await allowed('auditor lee mensajes globales', () => getDocs(collection(auditor.db, 'mensajes_globales')));
+    await denied('auditor no lee codigos de acceso', () => getDocs(query(collection(auditor.db, 'codigos'), where('condominioId', '==', A))));
+    await denied('auditor no lee un codigo puntual', () => getDoc(doc(auditor.db, 'codigos/VF100')));
+    await denied('auditor no lee otro condominio', () => getDocs(collection(auditor.db, `condominios/${B}/usuarios`)));
+    await denied('auditor no usa consultas globales', () => getDocs(collectionGroup(auditor.db, 'usuarios')));
+    await denied('auditor no crea usuarios', () => setDoc(doc(auditor.db, `condominios/${A}/usuarios/u-malo`), { ...newUser, id: 'u-malo' }));
+    await denied('auditor no edita usuarios', () => updateDoc(doc(auditor.db, `condominios/${A}/usuarios/u-maria`), { paymentStatus: 'al_dia' }));
+    await denied('auditor no se edita a si mismo', () => updateDoc(doc(auditor.db, `condominios/${A}/usuarios/u-sofia`), { role: 'admin' }));
+    await denied('auditor no elimina usuarios', () => deleteDoc(doc(auditor.db, `condominios/${A}/usuarios/u-maria`)));
+    await denied('auditor no crea codigos', () => setDoc(doc(auditor.db, 'codigos/VZ999'), { condominioId: A, userId: 'u-sofia', role: 'admin', createdAt: new Date().toISOString() }));
+    await denied('auditor no crea visitas', () => setDoc(doc(auditor.db, `condominios/${A}/visitas/vis-aud`), { ...visit, id: 'vis-aud', userId: 'u-sofia' }));
+    await denied('auditor no marca ingresos', () => updateDoc(doc(auditor.db, `condominios/${A}/visitas/vis-vieja`), { status: 'entered', enteredAt: new Date().toISOString() }));
+    await denied('auditor no elimina visitas', () => deleteDoc(doc(auditor.db, `condominios/${A}/visitas/vis-vieja`)));
+    await denied('auditor no registra vehiculos', () => setDoc(doc(auditor.db, `condominios/${A}/vehiculos/veh-aud`), { id: 'veh-aud', condominioId: A, userId: 'u-sofia', plate: 'P-000AUD', plateNorm: 'P000AUD', brand: '', model: '', color: '', marbeteCode: 'MARAUD1', createdAt: new Date().toISOString() }));
+    await denied('auditor no elimina vehiculos', () => deleteDoc(doc(auditor.db, `condominios/${A}/vehiculos/veh-ana-1`)));
+    await denied('auditor no escribe historial', () => setDoc(doc(auditor.db, `condominios/${A}/camera_logs/log-aud`), { id: 'log-aud', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: new Date().toISOString() }));
+    await denied('auditor no borra historial', () => deleteDoc(doc(auditor.db, `condominios/${A}/camera_logs/log-manual`)));
+    await denied('auditor no envia mensajes', () => setDoc(doc(auditor.db, `condominios/${A}/mensajes/msg-aud`), { id: 'msg-aud', condominioId: A, fromName: 'Auditor', toRole: 'all', subject: 'x', body: 'x', read: false, createdAt: new Date().toISOString() }));
+    await denied('auditor no marca mensajes como leidos', () => updateDoc(doc(auditor.db, `condominios/${A}/mensajes/msg-test`), { read: true }));
+    await denied('auditor no marca mensajes globales', () => updateDoc(doc(auditor.db, 'mensajes_globales/msg-global'), { read: false }));
+    await denied('auditor no edita su condominio', () => updateDoc(doc(auditor.db, `condominios/${A}`), { hasLPR: false }));
+    await denied('auditor no usa la verificacion de garita', () => httpsCallable(auditor.functions, 'verifyAccessCode')({ code: 'VF100' }));
+    await denied('auditor no elimina condominios', () => httpsCallable(auditor.functions, 'deleteCondominio')({ condominioId: B }));
 
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');

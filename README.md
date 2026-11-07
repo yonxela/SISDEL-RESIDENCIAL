@@ -2,6 +2,16 @@
 
 Control de acceso para condominios: panel master, administrador, vecino y garita con cámara LPR.
 
+## Roles
+
+| Rol | Página | Alcance |
+| --- | --- | --- |
+| `master` | `master.html` | Todos los condominios. |
+| `admin` | `admin.html` | Su condominio: usuarios, códigos, vehículos, visitas y mensajes. |
+| `policia` | `garita.html` | Verifica códigos y QR, registra ingresos. |
+| `vecino` | `vecino.html` | Sus visitas, vehículos y mensajes. |
+| `auditor` | `auditor.html` | Lee todo su condominio menos los códigos de acceso; no puede escribir. Reportes por rango de fechas con exportación CSV e impresión. |
+
 ## Stack
 
 - **Frontend:** HTML + Vanilla JS, sin build. SDK de Firebase por CDN.

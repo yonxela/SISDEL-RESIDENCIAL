@@ -7,7 +7,7 @@ const SISDEL = (() => {
     // ── Constants ──
     const STORAGE_KEYS = { session: 'sisdel_session', loginTiming: 'sisdel_login_timing' };
 
-    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia' };
+    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor' };
     const PAYMENT_STATUS = { AL_DIA: 'al_dia', MOROSO: 'moroso' };
     const VISIT_STATUS = { PENDING: 'pending', ENTERED: 'entered', COMPLETED: 'completed' };
 
@@ -449,6 +449,16 @@ const SISDEL = (() => {
         } catch (error) { reportError('getVisitsByUser', error); return []; }
     }
 
+    // Visitas con fecha (YYYY-MM-DD) dentro del rango, ambos extremos incluidos
+    async function getVisitsBetween(condominioId, fromDate, toDate) {
+        try {
+            await authReady();
+            const visits = await queryAcrossCondos(COL.visits, condominioId,
+                (q) => q.where('visitDate', '>=', fromDate).where('visitDate', '<=', toDate));
+            return visits.sort(byCreatedDesc);
+        } catch (error) { reportError('getVisitsBetween', error); return null; }
+    }
+
     function getTodayVisits(condominioId) {
         return shared(`todayVisits:${condominioId || sessionCondoId() || ''}`, async () => {
             try {
@@ -568,7 +578,7 @@ const SISDEL = (() => {
                 await authReady();
                 const role = sessionRole();
                 const scope = condominioId || sessionCondoId();
-                const seesAll = [ROLES.MASTER, ROLES.ADMIN].includes(role);
+                const seesAll = [ROLES.MASTER, ROLES.ADMIN, ROLES.AUDITOR].includes(role);
                 const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
 
                 const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
@@ -647,6 +657,21 @@ const SISDEL = (() => {
                 .get(SERVER);
             return snap.docs.map((d) => toObj(COL.cameraLogs, d));
         } catch (error) { reportError('getCameraLogsToday', error); return []; }
+    }
+
+    // Registros entre dos instantes ISO [desde, hasta), del mas nuevo al mas viejo.
+    // Devuelve null si la consulta falla, para no confundir un error con "sin registros"
+    async function getCameraLogsBetween(condominioId, fromIso, toIso, max = 5000) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, COL.cameraLogs)
+                .where('createdAt', '>=', fromIso)
+                .where('createdAt', '<', toIso)
+                .orderBy('createdAt', 'desc')
+                .limit(max)
+                .get(SERVER);
+            return snap.docs.map((d) => toObj(COL.cameraLogs, d));
+        } catch (error) { reportError('getCameraLogsBetween', error); return null; }
     }
 
     // Avisa en tiempo real cada registro nuevo. Devuelve la funcion para dejar de escuchar
@@ -764,7 +789,7 @@ const SISDEL = (() => {
     }
 
     function getRoleName(role) {
-        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.MASTER]: 'Master' };
+        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.AUDITOR]: 'Auditor', [ROLES.MASTER]: 'Master' };
         return names[role] || role;
     }
 
@@ -817,10 +842,10 @@ const SISDEL = (() => {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
         getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
-        getVisits, getVisitsByUser, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
+        getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,
-        createCameraLog, getCameraLogsToday, subscribeCameraLogs,
+        createCameraLog, getCameraLogsToday, getCameraLogsBetween, subscribeCameraLogs,
         login, getSession, logout, requireAuth, reportPageLoad,
         showToast, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };

@@ -13,7 +13,8 @@ const REDIRECTS = {
     [ROLES.MASTER]: 'master.html',
     [ROLES.ADMIN]: 'admin.html',
     [ROLES.VECINO]: 'vecino.html',
-    [ROLES.POLICIA]: 'garita.html'
+    [ROLES.POLICIA]: 'garita.html',
+    [ROLES.AUDITOR]: 'auditor.html'
 };
 
 async function isMasterCode(code) {

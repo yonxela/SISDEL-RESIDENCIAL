@@ -3,8 +3,9 @@
 Instrucciones para cualquier sesion de Claude Code en este repo, en cualquier PC.
 
 ## Que es
-Control de acceso para condominios (garita.app): paneles master, admin, vecino y garita, con camara LPR.
-Multi-empresa: el rol `master` ve todo; `admin`, `policia` y `vecino` solo su condominio.
+Control de acceso para condominios (garita.app): paneles master, admin, vecino, garita y auditor, con camara LPR.
+Multi-empresa: el rol `master` ve todo; `admin`, `policia`, `vecino` y `auditor` solo su condominio.
+El `auditor` lo crea el admin: lee todo su condominio (menos los codigos de acceso), no escribe nada y tiene reportes con exportacion CSV.
 Estructura de datos y archivos: ver README.md.
 
 ## Infraestructura
@@ -19,7 +20,7 @@ Estructura de datos y archivos: ver README.md.
 - Una tarea = una sesion = un worktree propio. Nunca dos sesiones sobre la misma carpeta.
 - Deploy siempre desde `main` y de a uno a la vez: commit -> ff a main -> push (Vercel publica el front) -> `firebase deploy --only ...` desde el checkout de main.
 - Trabajan dos personas en PCs distintas: antes de empezar una tarea y antes de cada `firebase deploy`, `git pull --ff-only` en main. Nunca publicar algo que no este en origin/main: un deploy desde un checkout viejo revierte en produccion las reglas o funciones del otro. Avisarse antes de publicar reglas o funciones.
-- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (107 pruebas).
+- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (140 pruebas).
 - Cuando cambia sisdel-core.js, subir la version en los HTML (`sisdel-core.js?v=AAAAMMDD`).
 - El repo es PUBLICO: nunca subir respaldos, codigos de acceso ni llaves. Los respaldos van fuera del repo.
 - Al terminar cambios en una pagina, abrir el link para que el usuario pruebe.

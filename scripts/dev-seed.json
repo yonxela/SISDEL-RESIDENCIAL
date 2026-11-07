@@ -10,7 +10,8 @@
         { "id": "u-fernando", "code": "VF100", "name": "Fernando López", "role": "admin", "phone": "5555-1234" },
         { "id": "u-ana", "code": "VA101", "name": "Ana García", "role": "vecino", "casa": "Casa 12", "phone": "5555-5678", "paymentStatus": "al_dia" },
         { "id": "u-maria", "code": "VM102", "name": "María Rodríguez", "role": "vecino", "casa": "Casa 23", "phone": "5555-3456", "paymentStatus": "moroso", "morosoDaysAgo": 3 },
-        { "id": "u-pedro", "code": "VP103", "name": "Pedro Ramírez", "role": "policia", "phone": "5555-7890" }
+        { "id": "u-pedro", "code": "VP103", "name": "Pedro Ramírez", "role": "policia", "phone": "5555-7890" },
+        { "id": "u-sofia", "code": "VS104", "name": "Sofía Castillo", "role": "auditor", "phone": "5555-2468" }
       ],
       "vehiculos": [
         { "id": "veh-ana-1", "userId": "u-ana", "plate": "P-987XYZ", "brand": "Toyota", "model": "Corolla", "color": "Blanco", "marbeteCode": "MARTEST1" },

@@ -4,6 +4,7 @@ rules_version = '2';
 // SISDEL Comunities - Reglas de seguridad
 // Datos aislados por condominio: condominios/{condoId}/...
 // El login entrega un token con: role y condominioId.
+// Roles: master (todo), admin, policia, vecino y auditor (solo lectura).
 // El rol y el estado activo se leen SIEMPRE del documento del usuario,
 // asi un usuario eliminado o desactivado pierde acceso de inmediato.
 // ═══════════════════════════════════════════════════════════════
@@ -33,6 +34,9 @@ service cloud.firestore {
     function isGuard(condoId) { return isMember(condoId) && memberRole(condoId) == 'policia'; }
     function isResident(condoId) { return isMember(condoId) && memberRole(condoId) == 'vecino'; }
     function isStaff(condoId) { return isMember(condoId) && memberRole(condoId) in ['admin', 'policia']; }
+    // Auditor: lee todo su condominio (sin codigos de acceso) y no escribe nada
+    function isAuditor(condoId) { return isMember(condoId) && memberRole(condoId) == 'auditor'; }
+    function notAuditor(condoId) { return memberRole(condoId) != 'auditor'; }
 
     function isOwner() { return resource.data.userId == request.auth.uid; }
     function willOwn(condoId) {
@@ -54,7 +58,7 @@ service cloud.firestore {
       allow read: if isMaster() || isAdmin(resource.data.condominioId);
       allow create: if isMaster()
         || (isAdmin(request.resource.data.condominioId)
-            && request.resource.data.role in ['vecino', 'policia', 'admin']);
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor']);
       // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
       allow update: if false;
       allow delete: if isMaster() || isAdmin(resource.data.condominioId);
@@ -65,7 +69,9 @@ service cloud.firestore {
       allow read: if isMaster() || isMember(request.auth.token.get('condominioId', ''));
       allow create, delete: if isMaster();
       allow update: if isMaster()
-        || (isMember(request.auth.token.get('condominioId', '')) && onlyChanges(['read']));
+        || (isMember(request.auth.token.get('condominioId', ''))
+            && notAuditor(request.auth.token.get('condominioId', ''))
+            && onlyChanges(['read']));
     }
 
     // ── Lecturas de camara sin condominio valido ──
@@ -89,11 +95,12 @@ service cloud.firestore {
       match /usuarios/{userId} {
         function validUser() {
           return request.resource.data.condominioId == condoId
-            && request.resource.data.role in ['vecino', 'policia', 'admin']
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor']
             && !('accessCode' in request.resource.data);
         }
         allow read: if isMaster()
           || isStaff(condoId)
+          || isAuditor(condoId)
           || (isResident(condoId) && request.auth.uid == userId);
         allow create, update: if isMaster() || (isAdmin(condoId) && validUser());
         allow delete: if isMaster() || isAdmin(condoId);
@@ -102,6 +109,7 @@ service cloud.firestore {
       match /visitas/{visitId} {
         allow read: if isMaster()
           || isStaff(condoId)
+          || isAuditor(condoId)
           || (isResident(condoId) && isOwner());
         allow create: if isMaster()
           || isAdmin(condoId)
@@ -118,6 +126,7 @@ service cloud.firestore {
       match /vehiculos/{vehicleId} {
         allow read: if isMaster()
           || isStaff(condoId)
+          || isAuditor(condoId)
           || (isResident(condoId) && isOwner());
         allow create: if isMaster()
           || (isAdmin(condoId) && request.resource.data.condominioId == condoId)
@@ -131,19 +140,21 @@ service cloud.firestore {
       match /mensajes/{msgId} {
         allow read: if isMaster()
           || isAdmin(condoId)
+          || isAuditor(condoId)
           || (isMember(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
         allow create: if isMaster()
           || (isAdmin(condoId) && request.resource.data.condominioId == condoId);
         allow update: if isMaster()
           || isAdmin(condoId)
           || (isMember(condoId)
+              && notAuditor(condoId)
               && resource.data.toRole in ['all', memberRole(condoId)]
               && onlyChanges(['read']));
         allow delete: if isMaster() || isAdmin(condoId);
       }
 
       match /camera_logs/{logId} {
-        allow read: if isMaster() || isStaff(condoId);
+        allow read: if isMaster() || isStaff(condoId) || isAuditor(condoId);
         allow create: if isStaff(condoId) && request.resource.data.condominioId == condoId;
         allow update: if false;
         allow delete: if isMaster() || isAdmin(condoId);

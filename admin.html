@@ -87,7 +87,7 @@
                             <line x1="21" y1="21" x2="16.65" y2="16.65" />
                         </svg>
                     </span>
-                    <input type="text" class="form-input" id="searchInput" placeholder="Buscar por nombre o casa...">
+                    <input type="text" class="form-input" id="searchInput" placeholder="Buscar por nombre, casa o cargo...">
                 </div>
                 <button class="btn btn-primary btn-sm" id="btnNewUser">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -214,6 +214,12 @@
                 <div class="form-group">
                     <label>Cargo o puesto</label>
                     <input type="text" class="form-input" id="editUserCargo" maxlength="60">
+                </div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:0.5rem; font-weight:500;">
+                        <input type="checkbox" id="editUserActive"> Usuario activo
+                    </label>
+                    <p class="text-xs text-muted" style="margin-top:0.25rem;" id="editUserActiveHelp">Si se desactiva, no puede entrar hasta que se vuelva a activar.</p>
                 </div>
                 <div class="form-group">
                     <label>Estado de Pago</label>
@@ -425,7 +431,7 @@
                 const targetRole = roleMap[currentTab];
                 let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
                 if (searchQuery) {
-                    filtered = filtered.filter(u => u.name.toLowerCase().includes(searchQuery) || (u.casa || '').toLowerCase().includes(searchQuery));
+                    filtered = filtered.filter(u => u.name.toLowerCase().includes(searchQuery) || (u.casa || '').toLowerCase().includes(searchQuery) || (u.cargo || '').toLowerCase().includes(searchQuery));
                 }
                 const list = document.getElementById('usersList');
                 if (filtered.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin resultados.</p>'; return; }
@@ -438,6 +444,7 @@
                             <div class="item-detail">${esc(SISDEL.getRoleName(u.role))} ${u.cargo ? '· ' + esc(u.cargo) : ''} ${u.casa ? '· ' + esc(u.casa) : ''}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
+                            ${u.active === false ? '<span class="badge badge-danger">Inactivo</span>' : ''}
                             ${privilegeBadge(u)}
                             ${u.paymentStatus ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
                             <div class="custom-tooltip">
@@ -583,6 +590,11 @@
                     // syncNewUserFields(true) conserva la lista de plantillas: se vuelve a marcar la elegida
                     document.getElementById('newUserTemplate').value = template.id;
                 }
+                // La ayuda describe la plantilla elegida
+                if (template) {
+                    document.getElementById('newUserTemplateHelp').textContent =
+                        (template.description ? template.description + ' ' : '') + `Incluye ${(template.claves || []).length} privilegios.`;
+                }
             });
 
             // Abre el editor de privilegios de un usuario (recien creado o de la lista)
@@ -613,9 +625,17 @@
                     ? 'El código es generado por el sistema.' : 'Su usuario no tiene permiso para ver códigos de acceso.';
                 document.getElementById('editUserCasa').value = user.casa || '';
                 document.getElementById('editUserCargo').value = user.cargo || '';
+                document.getElementById('editUserActive').checked = user.active !== false;
                 // Cada acción aparece solo si este usuario puede hacerla
                 const editable = canEditUser(user);
                 editUserForm.querySelectorAll('input:not([type=hidden]):not(#editUserCode), select').forEach((el) => { el.disabled = !editable; });
+                // Nadie se desactiva a si mismo
+                if (user.id === session.userId) {
+                    document.getElementById('editUserActive').disabled = true;
+                    document.getElementById('editUserActiveHelp').textContent = 'No puede desactivar su propio usuario.';
+                } else {
+                    document.getElementById('editUserActiveHelp').textContent = 'Si se desactiva, no puede entrar hasta que se vuelva a activar.';
+                }
                 document.getElementById('btnSaveEdit').style.display = editable ? '' : 'none';
                 document.getElementById('btnEditPrivileges').style.display = canSeePrivileges(user) ? '' : 'none';
                 document.getElementById('btnEditPrivileges').textContent = caps.privilegios && user.id !== session.userId ? 'Privilegios de este usuario…' : 'Ver mis privilegios…';
@@ -703,7 +723,8 @@
                 const updates = {
                     name: document.getElementById('editUserName').value,
                     casa: document.getElementById('editUserCasa').value,
-                    cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60)
+                    cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60),
+                    active: document.getElementById('editUserActive').checked
                 };
                 if (!moraAutomatica) updates.paymentStatus = document.getElementById('editUserPayment').value;
                 if (await SISDEL.updateUser(id, updates)) {

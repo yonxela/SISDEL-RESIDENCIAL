@@ -4,6 +4,7 @@
 // usuario sin privilegios asignados conserve exactamente el acceso que su rol tenia antes.
 // Uso: node test-privilegios.mjs (tambien corre con npm test).
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -148,6 +149,134 @@ for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', '
 yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(read('admin.html')));
 yes('el servidor pide garita.operar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.operar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));
+
+// ───────── Sintaxis de las paginas y modulos ─────────
+console.log('\nSintaxis');
+const syntaxOk = (name, code) => { try { new vm.Script(code, { filename: name }); return true; } catch (e) { console.log(`    ${name}: ${e.message}`); return false; } };
+for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'rondin/js/sisdel-api.js', 'finanzas-sync.js', 'panico-alertas.js', 'rondas-core.js']) {
+    yes(`${file} no tiene errores de sintaxis`, syntaxOk(file, read(file)));
+}
+for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html']) {
+    const inline = [...read(file).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+    yes(`${file}: sus scripts no tienen errores de sintaxis`, inline.length > 0 && inline.every((code, i) => syntaxOk(`${file}#${i}`, code)));
+}
+yes('master.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(read('master.html')));
+
+// ───────── Nucleo de SISDEL (sisdel-core.js) con un navegador y una base simulados ─────────
+console.log('\nNucleo de SISDEL');
+const CONDO = 'condo-1';
+function makeCore({ session, authUid, docs = {}, failWith = null }) {
+    const store = new Map();
+    if (session) store.set('sisdel_session', JSON.stringify(session));
+    const updates = [];
+    const sessionStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+    const window = { location: { href: '' }, SisdelPrivilegios: P };
+    const authUser = authUid ? { uid: authUid } : null;
+    const docRef = (path) => ({
+        id: path.split('/').pop(), parent: { parent: { id: CONDO } },
+        get: async () => {
+            if (failWith) throw failWith;
+            return docs[path] ? { exists: true, id: path.split('/').pop(), data: () => docs[path], ref: docRef(path) } : { exists: false };
+        },
+        update: async (changes) => { updates.push({ path, changes }); },
+        collection: (name) => ({ doc: (id) => docRef(`${path}/${name}/${id}`) })
+    });
+    window.sisdelFirebase = {
+        auth: { onAuthStateChanged: (cb) => { Promise.resolve().then(() => cb(authUser)); return () => {}; }, currentUser: authUser },
+        db: { collection: (name) => ({ doc: (id) => docRef(`${name}/${id}`) }) }
+    };
+    const ctx = vm.createContext({
+        window, sessionStorage, localStorage: {}, performance: { now: () => 0 }, console: { log() {}, warn() {}, error() {} }, setTimeout,
+        firebase: { firestore: { FieldValue: { delete: () => '__borrar__' } } }
+    });
+    vm.runInContext(read('sisdel-core.js'), ctx);
+    return { SISDEL: vm.runInContext('SISDEL', ctx), window, store, updates };
+}
+const sess = (role, privilegios = {}, extra = {}) => ({ role, userId: 'u1', userName: 'Prueba', condominioId: CONDO, condominioName: 'Condo', privilegios, ...extra });
+const userDoc = (role, privilegios, extra = {}) => ({ [`condominios/${CONDO}/usuarios/u1`]: { role, name: 'Prueba', active: true, ...(privilegios ? { privilegios } : {}), ...extra } });
+
+let core = makeCore({ session: sess('policia') });
+yes('SISDEL expone el catalogo', core.SISDEL.PRIV === P);
+yes('un guardia puede operar la garita', core.SISDEL.can('garita.operar'));
+yes('un guardia no ve las finanzas', !core.SISDEL.can('finanzas.ver'));
+equal('inicio del guardia', core.SISDEL.homePage(), 'garita.html');
+equal('otros paneles del guardia', core.SISDEL.otherPanels('garita.html').map((p) => p.page), ['rondin/']);
+yes('canAny', core.SISDEL.canAny(['finanzas.ver', 'garita.camara']));
+core = makeCore({ session: sess('operador', secOverrides) });
+yes('la secretaria puede crear usuarios', core.SISDEL.can('usuarios.crear'));
+yes('la secretaria no asigna privilegios', !core.SISDEL.can('usuarios.privilegios'));
+equal('inicio de la secretaria', core.SISDEL.homePage(), 'admin.html');
+equal('privilegios efectivos de la secretaria (cantidad)', Object.values(core.SISDEL.effectivePrivileges()).filter(Boolean).length, secretaria.claves.length);
+core = makeCore({ session: { role: 'master' } });
+yes('el master lo puede todo', core.SISDEL.can('usuarios.privilegios') && core.SISDEL.can('finanzas.usar'));
+equal('inicio del master', core.SISDEL.homePage(), 'master.html');
+equal('el master no tiene paneles de condominio', core.SISDEL.otherPanels('x'), []);
+core = makeCore({ session: null });
+yes('sin sesion no puede nada', !core.SISDEL.can('usuarios.ver'));
+equal('sin sesion el inicio es el login', core.SISDEL.homePage(), 'index.html');
+
+// requireAuth: lee de nuevo el usuario, aplica los privilegios vigentes y manda a cada quien a su pagina
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia') });
+let result = await core.SISDEL.requireAuth([], 'garita.html');
+yes('el guardia entra a la garita', result && result.role === 'policia' && core.window.location.href === '');
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia', { 'garita.operar': false }) });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('si el administrador le quito la garita, lo manda a rondas', [result, core.window.location.href], [null, 'rondin/']);
+equal('la sesion guarda los privilegios nuevos', JSON.parse(core.store.get('sisdel_session')).privilegios, { 'garita.operar': false });
+core = makeCore({ session: sess('operador'), authUid: 'u1', docs: userDoc('operador', secOverrides) });
+result = await core.SISDEL.requireAuth([], 'admin.html');
+yes('un operador con privilegios entra aunque su sesion no los trajera', result && core.SISDEL.can('usuarios.crear'));
+core = makeCore({ session: sess('operador', secOverrides), authUid: 'u1', docs: userDoc('operador', secOverrides) });
+result = await core.SISDEL.requireAuth([], 'finanzas.html');
+equal('la secretaria no entra a finanzas: va a su panel', [result, core.window.location.href], [null, 'admin.html']);
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia', { 'garita.operar': false, 'rondas.patrullar': false }) });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('sin ninguna pagina a la que ir, vuelve al login', [result, core.window.location.href], [null, 'index.html']);
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia', undefined, { active: false }) });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('un usuario desactivado sale', [result, core.window.location.href, core.store.has('sisdel_session')], [null, 'index.html', false]);
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: {} });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('un usuario eliminado sale', [result, core.window.location.href], [null, 'index.html']);
+core = makeCore({ session: sess('policia'), authUid: 'otro', docs: userDoc('policia') });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('la sesion debe coincidir con el usuario de Firebase', [result, core.window.location.href], [null, 'index.html']);
+core = makeCore({ session: null, authUid: null });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('sin sesion va al login', [result, core.window.location.href], [null, 'index.html']);
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia'), failWith: { code: 'unavailable', message: 'offline' } });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+yes('sin conexion se sigue con los privilegios del login', result && core.window.location.href === '');
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia'), failWith: { code: 'permission-denied', message: 'x' } });
+result = await core.SISDEL.requireAuth([], 'garita.html');
+equal('si ya no tiene permiso (usuario o condominio inactivo) sale', [result, core.window.location.href], [null, 'index.html']);
+core = makeCore({ session: { role: 'master' }, authUid: 'master' });
+result = await core.SISDEL.requireAuth([core.SISDEL.ROLES.MASTER]);
+yes('el master entra a su panel', result && result.role === 'master');
+core = makeCore({ session: { role: 'master' }, authUid: 'master' });
+result = await core.SISDEL.requireAuth([], 'admin.html');
+equal('el master no entra a paginas de condominio', [result, core.window.location.href], [null, 'master.html']);
+core = makeCore({ session: sess('vecino'), authUid: 'u1', docs: userDoc('vecino') });
+result = await core.SISDEL.requireAuth([core.SISDEL.ROLES.MASTER]);
+equal('master.html (solo por rol) no deja entrar a un vecino', [result, core.window.location.href], [null, 'index.html']);
+
+// refreshAccess
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia') });
+equal('sin cambios', await core.SISDEL.refreshAccess(), { ok: true, changed: false });
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia', { 'finanzas.ver': true }) });
+equal('con cambios', await core.SISDEL.refreshAccess(), { ok: true, changed: true });
+core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('supervisor') });
+equal('un cambio de rol tambien cuenta', (await core.SISDEL.refreshAccess()).changed, true);
+core = makeCore({ session: sess('operador', { 'usuarios.ver': true }), authUid: 'u1', docs: userDoc('operador', { 'usuarios.ver': true, 'no.existe': true, 'garita.operar': 'si' }) });
+equal('las claves invalidas del documento se descartan', (await core.SISDEL.refreshAccess()).changed, false);
+
+// setUserAccess
+core = makeCore({ session: sess('admin'), authUid: 'u1', docs: userDoc('admin') });
+equal('setUserAccess guarda solo claves validas y recorta el cargo', await core.SISDEL.setUserAccess('u1', { privilegios: { 'finanzas.ver': true, basura: true }, cargo: '  Contadora  ' }), true);
+equal('lo que se escribio', [core.updates[0].changes.privilegios, core.updates[0].changes.cargo, typeof core.updates[0].changes.updatedAt], [{ 'finanzas.ver': true }, 'Contadora', 'string']);
+await core.SISDEL.setUserAccess('u1', { privilegios: {} });
+equal('sin diferencias se borra el campo (vuelve a los del rol)', core.updates[1].changes.privilegios, '__borrar__');
+equal('si no se indica el cargo no se toca', 'cargo' in core.updates[1].changes, false);
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));

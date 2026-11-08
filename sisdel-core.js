@@ -345,6 +345,8 @@ const SISDEL = (() => {
             const changes = { ...updates };
             delete changes.id;
             delete changes.condominioId;
+            // Sello del cambio: el Sistema Financiero lo usa para saber que version del vecino es la mas nueva
+            changes.updatedAt = nowIso();
             const requestedCode = changes.accessCode !== undefined ? normalizeCode(changes.accessCode) : null;
             delete changes.accessCode;
 
@@ -408,6 +410,15 @@ const SISDEL = (() => {
             refCache.delete(`${COL.users}:${userId}`);
             return true;
         } catch (error) { reportError('deleteUser', error); return false; }
+    }
+
+    // true si el vecino tiene cargos o pagos en el Sistema Financiero (no conviene eliminarlo)
+    async function hasFinanceMovements(condominioId, userId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_movimientos').where('resiId', '==', userId).limit(1).get(SERVER);
+            return !snap.empty;
+        } catch (error) { console.warn('hasFinanceMovements', error); return false; }
     }
 
     async function getUsersByPaymentStatus(condominioId, status) {
@@ -722,8 +733,20 @@ const SISDEL = (() => {
 
     function clearSession() { sessionStorage.removeItem(STORAGE_KEYS.session); }
 
+    // Copia local del Sistema Financiero (OIKOS guarda en localStorage con prefijo oikos_).
+    // Los datos viven en Firestore: al salir se borra la copia del equipo, salvo que tenga
+    // cambios que todavia no subieron (marca sisdel_fin_pendiente_*; ver finanzas-sync.js).
+    function clearFinanceCache() {
+        try {
+            const keys = Object.keys(localStorage);
+            if (keys.some((k) => k.startsWith('sisdel_fin_pendiente_'))) return;
+            keys.filter((k) => k.startsWith('oikos_')).forEach((k) => localStorage.removeItem(k));
+        } catch { /* sin acceso a localStorage */ }
+    }
+
     function logout() {
         clearSession();
+        clearFinanceCache();
         const leave = () => { window.location.href = 'index.html'; };
         try { services().auth.signOut().then(leave, leave); } catch { leave(); }
     }
@@ -841,7 +864,7 @@ const SISDEL = (() => {
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
         getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
-        getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
+        getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,

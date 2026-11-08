@@ -159,6 +159,32 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if isMaster() || isAdmin(condoId);
       }
+
+      // ── Sistema Financiero (OIKOS, ver finanzas-sync.js) ──
+      // Lo edita el admin; el master y el auditor solo leen. Nunca se borra:
+      // OIKOS anula con deleted:true para que la anulacion llegue a todos los equipos.
+      function canReadFinance() { return isMaster() || isAdmin(condoId) || isAuditor(condoId); }
+      function validFinanceItem() {
+        return 'id' in request.resource.data
+          && (!('receiptImg' in request.resource.data)
+              || request.resource.data.receiptImg == null
+              || (request.resource.data.receiptImg is string && request.resource.data.receiptImg.size() < 900000));
+      }
+      match /finanzas_residentes/{docId} {
+        allow read: if canReadFinance();
+        allow create, update: if isAdmin(condoId) && validFinanceItem();
+        allow delete: if false;
+      }
+      match /finanzas_movimientos/{docId} {
+        allow read: if canReadFinance();
+        allow create, update: if isAdmin(condoId) && validFinanceItem();
+        allow delete: if false;
+      }
+      match /finanzas_config/{docId} {
+        allow read: if canReadFinance();
+        allow create, update: if isAdmin(condoId) && docId == 'oikos_settings';
+        allow delete: if false;
+      }
     }
 
     // ── Diagnostico de carga: cada usuario escribe sus tiempos, solo el master los lee ──

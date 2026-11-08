@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SISDEL - Sistema Financiero</title>
+    <meta name="description" content="Sistema Financiero del condominio: cuotas, ingresos, egresos y reportes.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* La pagina es solo un marco: barra de SISDEL arriba y el Sistema Financiero (OIKOS) debajo */
+        html, body { height: 100%; }
+        body { min-height: 0; overflow: hidden; }
+        .fin-bar {
+            display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+            padding: 0.6rem 1rem; border-bottom: 1px solid var(--border-strong);
+            background: var(--bg-surface-solid); flex-wrap: wrap;
+        }
+        .fin-brand { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+        .fin-brand .brand-icon { width: 34px; height: 34px; flex-shrink: 0; }
+        .fin-brand h1 { font-size: 1rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fin-brand p { font-size: 0.72rem; color: var(--text-muted); }
+        .fin-actions { display: flex; align-items: center; gap: 0.5rem; }
+        .btn-sm { padding: 0.5rem 0.9rem; font-size: 0.85rem; }
+
+        .sync-pill {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            padding: 0.3rem 0.7rem; border-radius: var(--radius-full);
+            font-size: 0.72rem; font-weight: 700; background: var(--bg-item); color: var(--text-secondary);
+        }
+        .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+        .sync-pill[data-state="ok"] .sync-dot { background: var(--success); }
+        .sync-pill[data-state="saving"] .sync-dot, .sync-pill[data-state="loading"] .sync-dot { background: var(--warning); }
+        .sync-pill[data-state="error"] .sync-dot, .sync-pill[data-state="denied"] .sync-dot, .sync-pill[data-state="offline"] .sync-dot { background: var(--danger); }
+
+        .fin-banner {
+            display: none; align-items: center; justify-content: center; gap: 0.75rem;
+            padding: 0.5rem 1rem; background: var(--info-bg); color: var(--info);
+            font-size: 0.85rem; font-weight: 600; flex-wrap: wrap;
+        }
+        .fin-banner.show { display: flex; }
+
+        .fin-frame { flex: 1; min-height: 0; position: relative; background: #0f172a; }
+        .fin-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+        .fin-message {
+            position: absolute; inset: 0; display: flex; flex-direction: column; gap: 1rem;
+            align-items: center; justify-content: center; text-align: center; padding: 1.5rem;
+            color: #cbd5e1; font-size: 0.95rem;
+        }
+
+        @media (max-width: 640px) {
+            .label-wide { display: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="fin-bar">
+        <div class="fin-brand">
+            <div class="brand-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                    <line x1="12" y1="1" x2="12" y2="23" />
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                </svg>
+            </div>
+            <div>
+                <h1 id="condoName">Sistema Financiero</h1>
+                <p>Sistema Financiero</p>
+            </div>
+        </div>
+        <div class="fin-actions">
+            <span class="sync-pill" id="syncPill" data-state="loading" title="Estado de la copia en la nube">
+                <span class="sync-dot"></span><span id="syncText">Cargando</span>
+            </span>
+            <button class="btn btn-ghost btn-sm" id="btnBack" title="Volver al panel de administración">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12" />
+                    <polyline points="12 19 5 12 12 5" />
+                </svg>
+                <span class="label-wide">Volver al panel</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="fin-banner" id="remoteBanner">
+        <span>Otro usuario hizo cambios en el Sistema Financiero.</span>
+        <button class="btn btn-primary btn-sm" id="btnReload">Actualizar</button>
+    </div>
+
+    <main class="fin-frame" id="frameBox">
+        <div class="fin-message" id="frameMessage">Cargando datos financieros...</div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
+    <script src="firebase-client.js?v=20260929"></script>
+    <script src="sisdel-core.js?v=20261107"></script>
+    <script src="finanzas-sync.js?v=20261107"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const session = await SISDEL.requireAuth([SISDEL.ROLES.ADMIN]);
+            if (!session) return;
+
+            const condoId = session.condominioId;
+            document.getElementById('condoName').textContent = session.condominioName || 'Sistema Financiero';
+
+            const STATUS_TEXT = {
+                loading: 'Cargando', ok: 'Guardado en la nube', saving: 'Guardando...',
+                offline: 'Sin conexión', error: 'Error al guardar, reintentando', denied: 'Sin permisos'
+            };
+            const pill = document.getElementById('syncPill');
+            function setStatus(state) {
+                pill.dataset.state = state;
+                document.getElementById('syncText').textContent = STATUS_TEXT[state] || state;
+                if (state === 'denied') SISDEL.showToast('La sesión venció o ya no tiene permisos. Vuelva a iniciar sesión.', 'warning');
+            }
+
+            const frameBox = document.getElementById('frameBox');
+            const message = document.getElementById('frameMessage');
+            let iframe = null;
+
+            // OIKOS se abre con el condominio en la URL: su bloque de entrada salta el login
+            // propio y aterriza en el panel del condominio (ver finanzas/index.html).
+            function mountOikos() {
+                if (iframe) iframe.remove();
+                const params = new URLSearchParams({
+                    msid: condoId,
+                    msname: session.condominioName || 'Condominio',
+                    msdirector: session.userName || 'Administrador'
+                });
+                iframe = document.createElement('iframe');
+                iframe.title = 'Sistema Financiero';
+                iframe.src = `finanzas/index.html?${params.toString()}`;
+                // Mismo aislamiento que en MULTISYS: sin allow-top-navigation, OIKOS no puede navegar esta pagina
+                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-forms allow-modals');
+                message.style.display = 'none';
+                frameBox.appendChild(iframe);
+            }
+
+            const banner = document.getElementById('remoteBanner');
+            const sync = SisdelFinanzas.start(condoId, {
+                onStatus: setStatus,
+                // Un residente agregado en OIKOS es un vecino nuevo de SISDEL, con su codigo de acceso
+                newAccessCode: (name) => SISDEL.generateAccessCode(session.condominioName || '', name),
+                onResidentCreated: (name, code) => {
+                    SISDEL.showToast(`${name} quedó registrado como vecino en SISDEL. Código de acceso: ${code}`, 'success');
+                },
+                onRemoteChange: (kind) => {
+                    if (!iframe) return;
+                    // OIKOS vacio una lista (p. ej. "Borrar todo"): se restauro desde la nube y se recarga
+                    if (kind === 'restored') {
+                        SISDEL.showToast('Los datos financieros se conservan en la nube y se restauraron.', 'info');
+                        mountOikos();
+                        return;
+                    }
+                    banner.classList.add('show');
+                }
+            });
+
+            try {
+                await sync.ready;
+                mountOikos();
+            } catch (error) {
+                console.error('Sistema Financiero: no se pudo cargar', error);
+                setStatus('error');
+                const offline = navigator.onLine === false || String(error && error.message) === 'timeout';
+                const denied = String(error && error.code || '').includes('permission-denied');
+                message.innerHTML = '';
+                const text = document.createElement('p');
+                text.textContent = denied
+                    ? 'Sin permisos para el Sistema Financiero. Vuelva a iniciar sesión.'
+                    : offline
+                        ? 'Sin conexión: el Sistema Financiero necesita internet para abrir.'
+                        : 'No se pudieron cargar los datos financieros.';
+                const retry = document.createElement('button');
+                retry.className = 'btn btn-primary btn-sm';
+                retry.textContent = 'Reintentar';
+                retry.addEventListener('click', () => window.location.reload());
+                message.append(text, retry);
+                return;
+            }
+
+            document.getElementById('btnReload').addEventListener('click', async () => {
+                banner.classList.remove('show');
+                await sync.waitIdle(5000);
+                mountOikos();
+            });
+
+            async function leave(action) {
+                setStatus('saving');
+                const saved = await sync.waitIdle(10000);
+                if (!saved && !confirm('Hay cambios que todavía no se guardaron en la nube. Quedan en este equipo y se subirán la próxima vez que abra el Sistema Financiero.\n\n¿Salir de todos modos?')) {
+                    return;
+                }
+                action();
+            }
+
+            document.getElementById('btnBack').addEventListener('click', () => leave(() => { window.location.href = 'admin.html'; }));
+
+            // "Cerrar sesión" dentro de OIKOS: OIKOS ya borro el sessionStorage (que comparte
+            // con esta pagina, incluida la sesion de SISDEL), asi que se cierra la sesion completa.
+            window.addEventListener('message', (event) => {
+                if (event.origin !== window.location.origin || !iframe || event.source !== iframe.contentWindow) return;
+                if (!event.data || event.data.type !== 'multisys:oikos-logout') return;
+                leave(() => SISDEL.logout());
+            });
+
+            window.addEventListener('beforeunload', (event) => {
+                if (sync.hasPending()) { event.preventDefault(); event.returnValue = ''; }
+            });
+            // Si el navegador restaura la pagina desde su cache al volver atras, se recarga completa
+            window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });
+
+            SISDEL.reportPageLoad('finanzas');
+        });
+    </script>
+</body>
+
+</html>

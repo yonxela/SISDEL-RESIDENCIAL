@@ -304,6 +304,53 @@ async function run() {
     await denied('auditor no usa la verificacion de garita', () => httpsCallable(auditor.functions, 'verifyAccessCode')({ code: 'VF100' }));
     await denied('auditor no elimina condominios', () => httpsCallable(auditor.functions, 'deleteCondominio')({ condominioId: B }));
 
+    // ───────── Sistema Financiero (OIKOS) ─────────
+    console.log('\nSistema Financiero');
+    // Una sola base de vecinos: finanzas_residentes guarda solo los datos financieros del vecino (mismo id)
+    const finRes = { id: 'u-ana', dpi: '1234567890101', lot: '', notes: 'Paga por transferencia', feeFrom: '2026-11', updated_at: new Date().toISOString() };
+    const finTx = { id: 'fee_u-ana_2026-11', date: new Date().toISOString(), type: 'charge', kind: 'fee', period: '2026-11', amount: 500, concept: 'Cuota - Noviembre 2026', resiId: 'u-ana', auto: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    const finRef = (col, id) => (c) => doc(c.db, `condominios/${A}/${col}/${id}`);
+    await allowed('admin guarda los datos financieros de un vecino', () => setDoc(finRef('finanzas_residentes', finRes.id)(admin), finRes));
+    await allowed('admin edita el vecino desde finanzas', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { phone: '+50255555678', updatedAt: new Date().toISOString() }));
+    await allowed('residente nuevo en finanzas crea el vecino con su codigo', () => {
+        const batch = writeBatch(admin.db);
+        const now = new Date().toISOString();
+        batch.set(doc(admin.db, 'codigos/VF777'), { condominioId: A, userId: '1731000000000', role: 'vecino', createdAt: now });
+        batch.set(doc(admin.db, `condominios/${A}/usuarios/1731000000000`), { id: '1731000000000', condominioId: A, name: 'Vecino Desde Finanzas', role: 'vecino', casa: '013', phone: '', email: '', paymentStatus: 'al_dia', morosoSince: null, active: true, createdAt: now, updatedAt: now });
+        batch.set(finRef('finanzas_residentes', '1731000000000')(admin), { id: '1731000000000', dpi: '999', createdAt: now, updated_at: now });
+        return batch.commit();
+    });
+    equal('el vecino creado desde finanzas puede entrar', (await httpsCallable(nobody.functions, 'login')({ code: 'VF777' })).data.role, 'vecino');
+    await allowed('admin registra un cargo', () => setDoc(finRef('finanzas_movimientos', finTx.id)(admin), finTx));
+    await allowed('admin registra un pago con comprobante', () => setDoc(finRef('finanzas_movimientos', '1730000000099')(admin), { id: '1730000000099', type: 'income', amount: 500, concept: 'Cuota', resiId: finRes.id, receiptNum: 'AG-0001', receiptImg: 'data:image/jpeg;base64,AAAA', date: new Date().toISOString(), updated_at: new Date().toISOString() }));
+    await allowed('admin anula un movimiento', () => setDoc(finRef('finanzas_movimientos', finTx.id)(admin), { ...finTx, deleted: true, updated_at: new Date().toISOString() }));
+    await denied('admin no borra movimientos', () => deleteDoc(finRef('finanzas_movimientos', finTx.id)(admin)));
+    await denied('movimiento sin id es rechazado', () => setDoc(finRef('finanzas_movimientos', 'sin-id')(admin), { type: 'income', amount: 1 }));
+    await denied('comprobante demasiado grande es rechazado', () => setDoc(finRef('finanzas_movimientos', 'grande')(admin), { id: 'grande', type: 'income', amount: 1, receiptImg: 'x'.repeat(950000) }));
+    await allowed('admin guarda la configuracion', () => setDoc(finRef('finanzas_config', 'oikos_settings')(admin), { currency: 'GTQ', fee: 500, chargeDay: 1, updated_at: new Date().toISOString() }));
+    await denied('configuracion con otro nombre es rechazada', () => setDoc(finRef('finanzas_config', 'otra')(admin), { currency: 'GTQ' }));
+    await allowed('admin lee el sistema financiero', async () => {
+        const snap = await getDocs(collection(admin.db, `condominios/${A}/finanzas_movimientos`));
+        if (snap.size !== 2) throw new Error(`esperaba 2, hay ${snap.size}`);
+    });
+    await allowed('auditor lee el sistema financiero', async () => {
+        await getDocs(collection(auditor.db, `condominios/${A}/finanzas_residentes`));
+        await getDocs(collection(auditor.db, `condominios/${A}/finanzas_movimientos`));
+        await getDoc(finRef('finanzas_config', 'oikos_settings')(auditor));
+    });
+    await denied('auditor no escribe en el sistema financiero', () => setDoc(finRef('finanzas_movimientos', 'aud-1')(auditor), { id: 'aud-1', type: 'income', amount: 1 }));
+    await denied('auditor no cambia la configuracion financiera', () => setDoc(finRef('finanzas_config', 'oikos_settings')(auditor), { currency: 'USD' }));
+    await allowed('master lee el sistema financiero', () => getDocs(collection(master.db, `condominios/${A}/finanzas_movimientos`)));
+    await denied('master no escribe en el sistema financiero', () => setDoc(finRef('finanzas_movimientos', 'mas-1')(master), { id: 'mas-1', type: 'income', amount: 1 }));
+    await denied('guardia no lee el sistema financiero', () => getDocs(collection(guard.db, `condominios/${A}/finanzas_movimientos`)));
+    await denied('guardia no ve el DPI ni las notas de los vecinos', () => getDoc(finRef('finanzas_residentes', 'u-ana')(guard)));
+    await denied('vecino no lee el sistema financiero', () => getDocs(collection(ana.db, `condominios/${A}/finanzas_residentes`)));
+    await denied('vecino no ve su propio registro financiero', () => getDoc(finRef('finanzas_residentes', finRes.id)(ana)));
+    const luciaFin = await loginAs('LL200');
+    await denied('admin de otro condominio no lee', () => getDocs(collection(luciaFin.db, `condominios/${A}/finanzas_movimientos`)));
+    await denied('admin de otro condominio no escribe', () => setDoc(finRef('finanzas_movimientos', 'ajeno')(luciaFin), { id: 'ajeno', type: 'income', amount: 1 }));
+    await allowed('admin de otro condominio usa el suyo', () => setDoc(doc(luciaFin.db, `condominios/${B}/finanzas_config/oikos_settings`), { currency: 'GTQ' }));
+
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');
     await allowed('admin desactiva a un vecino', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-nuevo`), { active: false }));

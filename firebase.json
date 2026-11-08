@@ -35,6 +35,9 @@
       "package.json",
       "package-lock.json"
     ],
+    "redirects": [
+      { "source": "/login", "destination": "/index.html", "type": 302 }
+    ],
     "rewrites": [
       { "source": "/api/lpr", "function": { "functionId": "anprWebhook", "region": "us-central1" } },
       { "source": "/api/anpr", "function": { "functionId": "anprWebhook", "region": "us-central1" } },

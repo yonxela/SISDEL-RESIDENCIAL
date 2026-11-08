@@ -6,6 +6,7 @@ Instrucciones para cualquier sesion de Claude Code en este repo, en cualquier PC
 Control de acceso para condominios (garita.app): paneles master, admin, vecino, garita y auditor, con camara LPR.
 Multi-empresa: el rol `master` ve todo; `admin`, `policia`, `vecino` y `auditor` solo su condominio.
 El `auditor` lo crea el admin: lee todo su condominio (menos los codigos de acceso), no escribe nada y tiene reportes con exportacion CSV.
+Sistema Financiero (finanzas.html): es OIKOS, traido de MULTISYS. Ver la seccion "Sistema Financiero" abajo.
 Estructura de datos y archivos: ver README.md.
 
 ## Infraestructura
@@ -20,10 +21,17 @@ Estructura de datos y archivos: ver README.md.
 - Una tarea = una sesion = un worktree propio. Nunca dos sesiones sobre la misma carpeta.
 - Deploy siempre desde `main` y de a uno a la vez: commit -> ff a main -> push (Vercel publica el front) -> `firebase deploy --only ...` desde el checkout de main.
 - Trabajan dos personas en PCs distintas: antes de empezar una tarea y antes de cada `firebase deploy`, `git pull --ff-only` en main. Nunca publicar algo que no este en origin/main: un deploy desde un checkout viejo revierte en produccion las reglas o funciones del otro. Avisarse antes de publicar reglas o funciones.
-- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (140 pruebas).
+- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (203 pruebas: 38 de la sincronizacion financiera, sin emuladores, y 165 contra los emuladores).
 - Cuando cambia sisdel-core.js, subir la version en los HTML (`sisdel-core.js?v=AAAAMMDD`).
 - El repo es PUBLICO: nunca subir respaldos, codigos de acceso ni llaves. Los respaldos van fuera del repo.
 - Al terminar cambios en una pagina, abrir el link para que el usuario pruebe.
+
+## Sistema Financiero (OIKOS)
+- `finanzas/` es una copia SIN MODIFICAR de `apps/web/public/admin-finance/` de MULTISYS (index.html + vendor/). No se edita aqui: si cambia en MULTISYS, se vuelve a copiar entero. Es la excepcion a la regla de emojis e iconos SVG.
+- `finanzas.html` lo abre en un iframe con `?msid=<condoId>&msname=&msdirector=`; el bloque de entrada de OIKOS salta su login propio.
+- `finanzas-sync.js` conecta el localStorage de OIKOS con Firestore. Una sola base de vecinos: los residentes de OIKOS son los vecinos de SISDEL (nombre, casa y telefono en `usuarios`); DPI, lote, notas y finiquito en `finanzas_residentes/{mismo id}`, que solo leen admin, auditor y master. Movimientos en `finanzas_movimientos`, configuracion en `finanzas_config/oikos_settings`.
+- Nada se borra (OIKOS anula con `deleted: true`). Cada vecino se cobra desde el mes en que entra al sistema (`feeFrom`), y un condominio nuevo arranca en quetzales y cobro manual.
+- Pendiente (Fase 3): que la mora calculada por OIKOS marque `paymentStatus` del vecino (afecta la camara LPR).
 
 ## Requisitos en una PC nueva
 - `node` 22 o mas, `firebase-tools`, `gcloud`, `gh` y Java 21 o mas (lo piden los emuladores).

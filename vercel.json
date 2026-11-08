@@ -20,5 +20,12 @@
       "source": "/NotificationInfo/:path*",
       "destination": "https://us-central1-sisdel-datacenter.cloudfunctions.net/anprWebhook"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/login",
+      "destination": "/index.html",
+      "permanent": false
+    }
   ]
 }

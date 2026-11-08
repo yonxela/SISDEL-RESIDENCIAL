@@ -862,3 +862,31 @@ body {
         padding: 2rem 1.5rem;
     }
 }
+/* Barra superior en celular: los botones bajan a otra linea en vez de salirse de la pantalla */
+@media (max-width: 640px) {
+    .top-bar {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+
+    .top-bar-actions {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* Pestanas: se desplazan de lado en vez de salirse de la pantalla */
+    .tabs {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab {
+        flex: 1 0 auto;
+        white-space: nowrap;
+        padding: 0.75rem 1rem;
+    }
+}

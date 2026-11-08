@@ -45,7 +45,7 @@ Estructura de datos y archivos: ver README.md.
 - Logica pura en `rondas-logic.js` (puntaje: % de puntos obligatorios, completa desde 80 %, igual que RONDIN); datos en `rondas-core.js`; colecciones `rondas_*` por condominio (ver README).
 - Un punto se marca por GPS (dentro del radio) o con su codigo impreso (pestaña Rutas, "Codigos para imprimir"). Las visitas no se editan ni se borran.
 - Boton de panico: vecinos (vecino.html, mantener 2 s) y guardias (rondin.html) crean `alertas_panico`; `panico-alertas.js` las muestra con sonido en garita, rondin, rondas y admin. `onPanicCreated` avisa por WhatsApp a la central, al admin y supervisores y a los contactos de emergencia del vecino (`emergencia/{userId}`, hasta 5).
-- WhatsApp: UltraMsg (principal) y Meta (respaldo), claves en `_privado/whatsapp`. Las carga una persona con `cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node set-whatsapp.mjs --target=prod` (sin claves, la alerta queda registrada como "WhatsApp sin configurar"). En el emulador el proveedor es "simulado".
+- WhatsApp: UltraMsg (principal) y Meta (respaldo), claves en `_privado/whatsapp`. Las carga una persona con `cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node set-whatsapp.mjs --target=prod` (sin claves, la alerta queda registrada como "WhatsApp sin configurar"). Con `--probar` verifica las claves con el proveedor sin enviar mensajes; con `--ver` muestra que esta configurado. En el emulador el proveedor es "simulado".
 - `dailyRondas` (03:00 de Guatemala) cierra turnos de mas de 16 h y rondas de mas de 6 h, y borra posiciones de mas de 30 dias.
 
 ## Requisitos en una PC nueva

@@ -1,0 +1,14 @@
+{
+  "name": "SISDEL RONDÍN",
+  "short_name": "RONDÍN",
+  "description": "Control Inteligente de Rondas de Seguridad",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "../favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

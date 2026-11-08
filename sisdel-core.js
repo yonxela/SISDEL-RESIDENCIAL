@@ -297,7 +297,9 @@ const SISDEL = (() => {
         } catch (error) { reportError('getUserById', error); return null; }
     }
 
-    async function createUser(condominioId, name, role, casa, phone, email) {
+    // preferredCode: codigo que propone la pantalla (RONDIN muestra el codigo del guardia antes de guardarlo);
+    // si no es valido o ya esta ocupado se genera uno nuevo
+    async function createUser(condominioId, name, role, casa, phone, email, preferredCode) {
         try {
             await authReady();
             const condo = await getCondominio(condominioId);
@@ -313,8 +315,9 @@ const SISDEL = (() => {
 
             // El codigo es el id del documento: si ya existe, la escritura se rechaza y se prueba otro
             let lastError = null;
+            const proposed = normalizeCode(preferredCode);
             for (let attempt = 0; attempt < 12; attempt++) {
-                const accessCode = generateAccessCode(condo.name, name);
+                const accessCode = attempt === 0 && /^[A-Z0-9]{4,8}$/.test(proposed) ? proposed : generateAccessCode(condo.name, name);
                 const batch = db().batch();
                 batch.set(db().collection(COL.codes).doc(accessCode), {
                     condominioId, userId: userRef.id, role, createdAt: nowIso()

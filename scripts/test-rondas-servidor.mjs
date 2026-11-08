@@ -39,17 +39,27 @@ rec = A.recipientsFor({ alert: { ...vecino, lat: null, lng: null }, condoName: '
 equal('sin central ni contactos: nadie', rec.length, 0);
 equal('sin GPS lo dice', /Ubicacion no disponible/.test(A.familyMessage({ ...vecino, lat: null }, 'X')), true);
 
-console.log('\nLimpieza diaria');
+console.log('\nLimpieza diaria (formato de RONDIN: fechas AAAA-MM-DD HH:MM:SS en UTC)');
 const now = Date.parse('2026-11-08T12:00:00Z');
-const h = (n) => new Date(now - n * 3600 * 1000).toISOString();
-equal('turno de 17 h abierto se cierra', M.isStaleShift({ status: 'ACTIVE', startedAt: h(17) }, now), true);
-equal('turno de 10 h sigue', M.isStaleShift({ status: 'ACTIVE', startedAt: h(10) }, now), false);
-equal('turno ya cerrado no se toca', M.isStaleShift({ status: 'CLOSED', startedAt: h(40) }, now), false);
-equal('ronda de 7 h en curso se cierra', M.isStaleRound({ status: 'IN_PROGRESS', startedAt: h(7) }, now), true);
-equal('posicion de 2 dias se borra', M.isStaleLive({ at: h(48) }, now), true);
-equal('historial: corte a 30 dias', M.historyCutoff(now), '2026-10-09T12:00:00.000Z');
-equal('ronda cerrada sola: puntaje con lo marcado', M.closingScore({ visited: ['a', 'b', 'b'], totalCheckpoints: 4 }), { score: 50, status: 'INCOMPLETE' });
-equal('ronda cerrada sola con todo marcado: completa', M.closingScore({ visited: ['a', 'b', 'c'], totalCheckpoints: 3 }), { score: 100, status: 'COMPLETED' });
+const h = (n) => M.sqlTime(now - n * 3600 * 1000);
+equal('fecha de RONDIN a milisegundos', M.toMs('2026-11-08 12:00:00'), now);
+equal('fecha ISO tambien se entiende', M.toMs('2026-11-08T12:00:00.000Z'), now);
+equal('turno de 17 h abierto se cierra', M.isStaleShift({ status: 'ACTIVE', actual_start: h(17) }, now), true);
+equal('turno de 10 h sigue', M.isStaleShift({ status: 'ACTIVE', actual_start: h(10) }, now), false);
+equal('turno sin check-in usa la hora programada', M.isStaleShift({ status: 'ACTIVE', actual_start: null, scheduled_start: h(20) }, now), true);
+equal('turno ya cerrado no se toca', M.isStaleShift({ status: 'COMPLETED', actual_start: h(40) }, now), false);
+equal('ronda de 7 h en curso se cierra', M.isStaleRound({ status: 'IN_PROGRESS', started_at: h(7) }, now), true);
+equal('ronda de 2 h sigue', M.isStaleRound({ status: 'IN_PROGRESS', started_at: h(2) }, now), false);
+equal('posicion de 2 dias se borra', M.isStaleLive({ timestamp: h(48) }, now), true);
+equal('posicion de hace 1 h se queda', M.isStaleLive({ timestamp: h(1) }, now), false);
+equal('historial: corte a 30 dias', M.historyCutoff(now), '2026-10-09 12:00:00');
+equal('alertas: corte a 90 dias', M.alertCutoff(now), '2026-08-10 12:00:00');
+const cps = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'x', is_mandatory: 0 }];
+equal('ronda cerrada sola: puntaje con lo marcado', M.closingScore(cps, [{ checkpoint_id: 'a' }, { checkpoint_id: 'b' }, { checkpoint_id: 'b' }]), { score: 50, status: 'INCOMPLETE' });
+equal('los puntos opcionales no cuentan', M.closingScore(cps, [{ checkpoint_id: 'a' }, { checkpoint_id: 'b' }, { checkpoint_id: 'c' }, { checkpoint_id: 'x' }]), { score: 75, status: 'INCOMPLETE' });
+equal('las visitas sospechosas no cuentan', M.closingScore(cps, ['a', 'b', 'c', 'd'].map((id) => ({ checkpoint_id: id, status: id === 'd' ? 'SUSPICIOUS' : 'VALID' }))), { score: 75, status: 'INCOMPLETE' });
+equal('desde 80 % la ronda queda completa', M.closingScore(cps.slice(0, 4).concat({ id: 'e' }), ['a', 'b', 'c', 'd'].map((id) => ({ checkpoint_id: id }))), { score: 80, status: 'COMPLETED' });
+equal('ruta sin puntos: incompleta', M.closingScore([], []), { score: 0, status: 'INCOMPLETE' });
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));

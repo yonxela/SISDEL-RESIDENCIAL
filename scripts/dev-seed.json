@@ -15,18 +15,20 @@
         { "id": "u-samuel", "code": "VO105", "name": "Samuel Ortiz", "role": "supervisor", "phone": "5555-1357" }
       ],
       "rondas": {
+        "config": { "neighbor_panic_enabled": 1, "country": "GT", "language": "es" },
         "rutas": [
-          { "id": "ruta-perimetro", "name": "Perímetro principal", "color": "#3B82F6",
-            "config": { "roundsPerShift": 4, "maxMinutes": 45, "sequential": false },
+          { "id": "ruta-perimetro", "route_code": "R-001", "name": "Perímetro principal", "color": "#3B82F6", "description": "Recorrido por el perímetro del condominio", "estimated_duration_min": 30,
             "checkpoints": [
-              { "id": "cp-garita", "name": "Garita principal", "lat": 14.5420, "lng": -90.4530, "radius": 25, "order": 1, "mandatory": true, "active": true, "code": "GAR234" },
-              { "id": "cp-parque", "name": "Parque central", "lat": 14.5426, "lng": -90.4524, "radius": 25, "order": 2, "mandatory": true, "active": true, "code": "PAR567" },
-              { "id": "cp-muro", "name": "Muro norte", "lat": 14.5431, "lng": -90.4533, "radius": 25, "order": 3, "mandatory": true, "active": true, "code": "MUR892" }
+              { "id": "cp-garita", "name": "Garita principal", "latitude": 14.5420, "longitude": -90.4530, "radius_meters": 25, "checkpoint_order": 1, "is_mandatory": 1 },
+              { "id": "cp-parque", "name": "Parque central", "latitude": 14.5426, "longitude": -90.4524, "radius_meters": 25, "checkpoint_order": 2, "is_mandatory": 1 },
+              { "id": "cp-muro", "name": "Muro norte", "latitude": 14.5431, "longitude": -90.4533, "radius_meters": 25, "checkpoint_order": 3, "is_mandatory": 1 }
             ] }
         ],
         "asignaciones": [
-          { "id": "asig-pedro", "routeId": "ruta-perimetro", "routeName": "Perímetro principal", "guardId": "u-pedro", "guardName": "Pedro Ramírez",
-            "shiftType": "24H", "hourStart": "00:00", "hourEnd": "23:59", "startOffset": -1, "endOffset": 30 }
+          { "id": "asig-pedro", "route_id": "ruta-perimetro", "guard_id": "u-pedro", "shift_type": "12H_DIA", "hour_start": "06:00", "hour_end": "18:00", "startOffset": -1, "endOffset": 30 }
+        ],
+        "personal": [
+          { "id": "u-pedro", "document_id": "1234567890101", "supervisor_id": "u-samuel", "profile": { "blood_type": "O+", "age": "34", "gender": "Masculino", "address": "Zona 18", "emergency_contact": "Rosa Ramírez 5555-3333", "academic_degree": "Secundaria", "allergies": "Ninguna" } }
         ],
         "emergencia": [
           { "userId": "u-ana", "contacts": [ { "name": "Luis García", "phone": "5555-1111" }, { "name": "Marta García", "phone": "5555-2222" } ] }

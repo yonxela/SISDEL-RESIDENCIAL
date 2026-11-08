@@ -7,7 +7,7 @@ Control de acceso para condominios (garita.app): paneles master, admin, vecino, 
 Multi-empresa: el rol `master` ve todo; `admin`, `policia`, `vecino`, `auditor` y `supervisor` solo su condominio.
 El `auditor` lo crea el admin: lee todo su condominio (menos los codigos de acceso), no escribe nada y tiene reportes con exportacion CSV.
 Sistema Financiero (finanzas.html): es OIKOS, traido de MULTISYS. Ver la seccion "Sistema Financiero" abajo.
-Rondas (rondas.html y rondin.html): traido de SISDEL RONDIN. Ver la seccion "Rondas" abajo.
+Rondas (rondin/): es SISDEL RONDIN con su mismo diseno. Ver la seccion "Rondas" abajo.
 Estructura de datos y archivos: ver README.md.
 
 ## Infraestructura
@@ -22,7 +22,7 @@ Estructura de datos y archivos: ver README.md.
 - Una tarea = una sesion = un worktree propio. Nunca dos sesiones sobre la misma carpeta.
 - Deploy siempre desde `main` y de a uno a la vez: commit -> ff a main -> push (Vercel publica el front) -> `firebase deploy --only ...` desde el checkout de main.
 - Trabajan dos personas en PCs distintas: antes de empezar una tarea y antes de cada `firebase deploy`, `git pull --ff-only` en main. Nunca publicar algo que no este en origin/main: un deploy desde un checkout viejo revierte en produccion las reglas o funciones del otro. Avisarse antes de publicar reglas o funciones.
-- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (362 pruebas: 121 sin emuladores (sincronizacion financiera, mora, logica de rondas y avisos) y 241 contra los emuladores).
+- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (376 pruebas: 94 sin emuladores (sincronizacion financiera, mora, avisos de panico y limpieza de rondas) y 282 contra los emuladores).
 - Cuando cambia sisdel-core.js, subir la version en los HTML (`sisdel-core.js?v=AAAAMMDD`).
 - El repo es PUBLICO: nunca subir respaldos, codigos de acceso ni llaves. Los respaldos van fuera del repo.
 - Al terminar cambios en una pagina, abrir el link para que el usuario pruebe.
@@ -38,15 +38,15 @@ Estructura de datos y archivos: ver README.md.
   - Se recalcula al registrar o anular un cargo o pago (`onFinanceMovement`), al cambiar cuota/dia/gracia/modo (`onFinanceSettings`) y cada dia a las 05:00 de Guatemala (`dailyFinance`, que tambien crea las cuotas del mes en modo automatico, con el mismo id que OIKOS: fee_<vecino>_<AAAA-MM>).
   - `mora.js` replica funciones de OIKOS; si se vuelve a copiar OIKOS desde MULTISYS, revisar que sigan iguales.
 
-## Rondas (traido de SISDEL RONDIN)
-- RONDIN era un servidor aparte (Express + SQLite en Render). Aqui se rehizo sobre la misma base de SISDEL: los guardias son los usuarios `policia`, los vecinos los de siempre. Las pipas y los drones de RONDIN quedaron fuera.
-- `supervisor`: rol nuevo que maneja guardias y rutas (entra a rondas.html). El director general usa el admin y la pestaña Reportes. El auditor ve rondas.html en solo lectura.
-- Paginas: `rondas.html` (panel: en vivo, rutas en mapa, asignaciones, rondas, incidentes, alertas, reportes) y `rondin.html` (app del guardia en el celular; funciona sin señal y guarda al volver). Mapas con Leaflet + OpenStreetMap (CDN unpkg).
-- Logica pura en `rondas-logic.js` (puntaje: % de puntos obligatorios, completa desde 80 %, igual que RONDIN); datos en `rondas-core.js`; colecciones `rondas_*` por condominio (ver README).
-- Un punto se marca por GPS (dentro del radio) o con su codigo impreso (pestaña Rutas, "Codigos para imprimir"). Las visitas no se editan ni se borran.
-- Boton de panico: vecinos (vecino.html, mantener 2 s) y guardias (rondin.html) crean `alertas_panico`; `panico-alertas.js` las muestra con sonido en garita, rondin, rondas y admin. `onPanicCreated` avisa por WhatsApp a la central, al admin y supervisores y a los contactos de emergencia del vecino (`emergencia/{userId}`, hasta 5).
+## Rondas: SISDEL RONDIN (rondin/)
+- Es el programa RONDIN con su mismo diseno y opciones: `rondin/index.html`, `rondin/css/style.css`, `rondin/js/app.js` e `i18n.js` son copias SIN MODIFICAR de `RONDIN/public` (como OIKOS: si cambia RONDIN, se vuelven a copiar y se revisa que sus llamadas `/api/...` sigan existiendo en el adaptador). Es la excepcion a la regla de emojis e iconos SVG. Las pipas quedaron fuera; Rondin Air (drones) esta incluido.
+- `rondin/js/sisdel-api.js` reemplaza al servidor de RONDIN (Express + SQLite en Render): define `API`, un `io()` sobre Firestore (tiempo real) y atiende los `fetch('/api/...')`. Responde las mismas rutas con los datos de SISDEL.
+- Una sola base: empresa = condominio; guardias = `policia`, supervisores = `supervisor`, director general = `admin` (el `auditor` ve lo mismo en solo lectura); el PIN de RONDIN es el codigo de acceso de SISDEL. Vecinos = los de SISDEL: DPI en `finanzas_residentes.dpi` (el del Sistema Financiero), familiares en `emergencia/{userId}`. Un vecino creado en RONDIN entra al Sistema Financiero desde ese mes (`feeFrom`).
+- Datos propios con el formato de RONDIN (`company_id`, `guard_id`, fechas `AAAA-MM-DD HH:MM:SS` en UTC): `rondas_rutas` (con sus puntos), `rondas_asignaciones`, `rondas_turnos`, `rondas_rondas`, `rondas_visitas`, `rondas_ubicaciones`, `rondas_en_vivo`, `rondas_incidentes`, `rondas_alertas` (panel de alertas), `rondas_fotos`, `rondas_personal` (expediente del guardia), `rondas_config/general`, `rondas_drones`.
+- El supervisor registra guardias (solo `policia`) y ve sus codigos; no ve los de los demas. `rondas.html` y `rondin.html` solo redirigen a `rondin/`.
+- Boton de panico: guardias (RONDIN) y vecinos (RONDIN o vecino.html) crean `alertas_panico`. En vecino.html el boton aparece solo si RONDIN > Configuracion > "Vecinos usaran boton de panico" esta activo. `panico-alertas.js` (con `rondas-core.js`, que quedo solo para panico y contactos) los muestra en garita y admin; RONDIN tiene su propia alarma. `onPanicCreated` avisa por WhatsApp a la central, al admin y supervisores y a los familiares del vecino (hasta 5).
 - WhatsApp: UltraMsg (principal) y Meta (respaldo), claves en `_privado/whatsapp`. Las carga una persona con `cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node set-whatsapp.mjs --target=prod` (sin claves, la alerta queda registrada como "WhatsApp sin configurar"). Con `--probar` verifica las claves con el proveedor sin enviar mensajes; con `--ver` muestra que esta configurado. En el emulador el proveedor es "simulado".
-- `dailyRondas` (03:00 de Guatemala) cierra turnos de mas de 16 h y rondas de mas de 6 h, y borra posiciones de mas de 30 dias.
+- `dailyRondas` (03:00 de Guatemala) cierra turnos de mas de 16 h y rondas de mas de 6 h (con su puntaje: % de puntos obligatorios, completa desde 80 %, igual que RONDIN) y borra posiciones de mas de 30 dias y alertas del panel de mas de 90.
 
 ## Requisitos en una PC nueva
 - `node` 22 o mas, `firebase-tools`, `gcloud`, `gh` y Java 21 o mas (lo piden los emuladores).

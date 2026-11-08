@@ -414,69 +414,130 @@ async function run() {
     // ───────── Rondas (traido de SISDEL RONDIN) ─────────
     console.log('\nRondas');
     const sup = await loginAs('VO105');
-    equal('supervisor entra al panel de rondas', [sup.login.role, sup.login.redirect], ['supervisor', 'rondas.html']);
+    equal('supervisor entra al panel de rondas', [sup.login.role, sup.login.redirect], ['supervisor', 'rondin/']);
     const rref = (c, col, id) => doc(c.db, `condominios/${A}/${col}/${id}`);
     const rcol = (c, col) => collection(c.db, `condominios/${A}/${col}`);
     const ts = () => new Date().toISOString();
+    // Formato de SISDEL RONDIN (rondin/js/sisdel-api.js): company_id, guard_id..., fechas 'AAAA-MM-DD HH:MM:SS'
+    const sqlTs = () => ts().replace('T', ' ').slice(0, 19);
+
+    await allowed('el vecino lee la configuracion de RONDIN', () => getDoc(rref(ana, 'rondas_config', 'general')));
+    equal('el boton de panico de vecinos viene activado en el seed', (await getDoc(rref(ana, 'rondas_config', 'general'))).data().neighbor_panic_enabled, 1);
+    await allowed('el supervisor cambia la configuracion de RONDIN', () => setDoc(rref(sup, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 1, updated_at: sqlTs() }, { merge: true }));
+    await denied('el guardia no cambia la configuracion', () => setDoc(rref(guard, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 0 }, { merge: true }));
+    await denied('el auditor no cambia la configuracion', () => setDoc(rref(auditor, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 0 }, { merge: true }));
+    await denied('otra configuracion distinta de general es rechazada', () => setDoc(rref(admin, 'rondas_config', 'otra'), { company_id: A }));
+
     const rutaTest = {
-        id: 'ruta-test', condominioId: A, name: 'Ruta de prueba', status: 'ACTIVE', color: '#3B82F6',
-        checkpoints: [{ id: 'cp1', name: 'Punto 1', lat: 14.5, lng: -90.4, radius: 25, order: 1, mandatory: true, active: true, code: 'ABC234' }],
-        config: { roundsPerShift: 2, maxMinutes: 30, sequential: false }
+        id: 'ruta-test', company_id: A, name: 'Ruta de prueba', status: 'ACTIVE', color: '#3B82F6', route_code: 'R-900',
+        checkpoints: [{ id: 'cp1', route_id: 'ruta-test', name: 'Punto 1', latitude: 14.5, longitude: -90.4, radius_meters: 25, checkpoint_order: 1, is_mandatory: 1, status: 'ACTIVE' }],
+        round_config: null, created_at: sqlTs(), updated_at: sqlTs()
     };
     await allowed('supervisor crea una ruta', () => setDoc(rref(sup, 'rondas_rutas', 'ruta-test'), rutaTest));
     await allowed('admin edita la ruta', () => updateDoc(rref(admin, 'rondas_rutas', 'ruta-test'), { name: 'Ruta de prueba 2' }));
     await denied('guardia no crea rutas', () => setDoc(rref(guard, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala' }));
     await denied('auditor no crea rutas', () => setDoc(rref(auditor, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala' }));
-    await denied('ruta marcada de otro condominio es rechazada', () => setDoc(rref(sup, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala', condominioId: B }));
+    await denied('ruta marcada de otro condominio es rechazada', () => setDoc(rref(sup, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala', company_id: B }));
     await allowed('guardia ve las rutas', () => getDocs(rcol(guard, 'rondas_rutas')));
     await allowed('auditor ve las rutas', () => getDocs(rcol(auditor, 'rondas_rutas')));
     await denied('vecino no ve las rutas', () => getDocs(rcol(ana, 'rondas_rutas')));
     await denied('admin de otro condominio no ve las rutas', () => getDocs(rcol(luciaFin, 'rondas_rutas')));
 
     await allowed('guardia ve sus asignaciones', async () => {
-        const snap = await getDocs(query(rcol(guard, 'rondas_asignaciones'), where('guardId', '==', 'u-pedro')));
+        const snap = await getDocs(query(rcol(guard, 'rondas_asignaciones'), where('guard_id', '==', 'u-pedro')));
         if (snap.size !== 1) throw new Error(`esperaba 1, hay ${snap.size}`);
     });
     await denied('guardia no ve las asignaciones de todos', () => getDocs(rcol(guard, 'rondas_asignaciones')));
-    const asig = { id: 'asig-test', condominioId: A, routeId: 'ruta-test', guardId: 'u-pedro', guardName: 'Pedro', dateStart: localDate(0), dateEnd: localDate(5), hourStart: '08:00', hourEnd: '20:00', status: 'ACTIVE' };
+    const asig = { id: 'asig-test', company_id: A, route_id: 'ruta-test', guard_id: 'u-pedro', shift_type: '12H_DIA', date_start: localDate(40), date_end: localDate(45), hour_start: '08:00', hour_end: '20:00', status: 'ACTIVE', created_at: sqlTs() };
     await allowed('supervisor asigna una ruta', () => setDoc(rref(sup, 'rondas_asignaciones', 'asig-test'), asig));
     await denied('guardia no se asigna rutas', () => setDoc(rref(guard, 'rondas_asignaciones', 'asig-mala'), { ...asig, id: 'asig-mala' }));
+    await allowed('supervisor quita la asignacion', () => deleteDoc(rref(sup, 'rondas_asignaciones', 'asig-test')));
 
-    const turno = { id: 'turno-test', condominioId: A, guardId: 'u-pedro', guardName: 'Pedro', routeId: 'ruta-test', routeName: 'Ruta', startedAt: ts(), status: 'ACTIVE', rounds: 0 };
-    await allowed('guardia inicia su turno', () => setDoc(rref(guard, 'rondas_turnos', 'turno-test'), turno));
-    await denied('guardia no inicia turno a nombre de otro', () => setDoc(rref(guard, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guardId: 'u-otro' }));
-    await denied('vecino no inicia turnos', () => setDoc(rref(ana, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guardId: 'u-ana' }));
-    await allowed('guardia lee su turno activo', () => getDocs(query(rcol(guard, 'rondas_turnos'), where('guardId', '==', 'u-pedro'), where('status', '==', 'ACTIVE'))));
-    const ronda = { id: 'ronda-test', condominioId: A, shiftId: 'turno-test', routeId: 'ruta-test', guardId: 'u-pedro', number: 1, startedAt: ts(), visited: [], totalCheckpoints: 1, status: 'IN_PROGRESS' };
+    const turno = { id: 'turno-test', company_id: A, guard_id: 'u-pedro', supervisor_id: 'u-pedro', route_id: 'ruta-test', scheduled_start: sqlTs(), scheduled_end: null, actual_start: null, status: 'SCHEDULED', created_at: sqlTs() };
+    await allowed('guardia crea su turno', () => setDoc(rref(guard, 'rondas_turnos', 'turno-test'), turno));
+    await denied('guardia no crea turno a nombre de otro', () => setDoc(rref(guard, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guard_id: 'u-otro' }));
+    await denied('vecino no crea turnos', () => setDoc(rref(ana, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guard_id: 'u-ana' }));
+    await allowed('guardia hace check-in en su turno', () => updateDoc(rref(guard, 'rondas_turnos', 'turno-test'), { actual_start: sqlTs(), checkin_lat: 14.5, checkin_lng: -90.4, status: 'ACTIVE' }));
+    await denied('guardia no pasa su turno a otro', () => updateDoc(rref(guard, 'rondas_turnos', 'turno-test'), { guard_id: 'u-otro' }));
+    await allowed('guardia lee su turno activo', () => getDocs(query(rcol(guard, 'rondas_turnos'), where('guard_id', '==', 'u-pedro'), where('status', '==', 'ACTIVE'))));
+    await denied('guardia no lee los turnos de todos', () => getDocs(rcol(guard, 'rondas_turnos')));
+    const ronda = { id: 'ronda-test', company_id: A, shift_id: 'turno-test', route_id: 'ruta-test', guard_id: 'u-pedro', round_number: 1, started_at: sqlTs(), completed_at: null, score: 0, status: 'IN_PROGRESS', created_at: sqlTs() };
     await allowed('guardia inicia una ronda', () => setDoc(rref(guard, 'rondas_rondas', 'ronda-test'), ronda));
-    const visita = { id: 'visita-test', condominioId: A, roundId: 'ronda-test', shiftId: 'turno-test', routeId: 'ruta-test', checkpointId: 'cp1', guardId: 'u-pedro', at: ts(), lat: 14.5, lng: -90.4, distance: 3, method: 'GPS', status: 'VALID' };
+    await denied('una ronda nueva no nace completada', () => setDoc(rref(guard, 'rondas_rondas', 'ronda-mala'), { ...ronda, id: 'ronda-mala', status: 'COMPLETED' }));
+    const visita = { id: 'visita-test', company_id: A, round_id: 'ronda-test', shift_id: 'turno-test', route_id: 'ruta-test', checkpoint_id: 'cp1', checkpoint_name: 'Punto 1', guard_id: 'u-pedro', guard_name: 'Pedro', arrived_at: sqlTs(), latitude: 14.5, longitude: -90.4, distance_to_checkpoint: 3, status: 'VALID', created_at: sqlTs() };
     await allowed('guardia marca un punto', () => setDoc(rref(guard, 'rondas_visitas', 'visita-test'), visita));
-    await denied('un punto marcado no se puede cambiar', () => updateDoc(rref(guard, 'rondas_visitas', 'visita-test'), { distance: 1 }));
+    await denied('guardia no marca puntos a nombre de otro', () => setDoc(rref(guard, 'rondas_visitas', 'visita-mala'), { ...visita, id: 'visita-mala', guard_id: 'u-otro' }));
+    await denied('un punto marcado no se puede cambiar', () => updateDoc(rref(guard, 'rondas_visitas', 'visita-test'), { distance_to_checkpoint: 1 }));
     await denied('un punto marcado no se puede borrar', () => deleteDoc(rref(sup, 'rondas_visitas', 'visita-test')));
-    await allowed('guardia termina la ronda', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { status: 'COMPLETED', score: 100, completedAt: ts() }));
-    await denied('guardia no pasa la ronda a otro guardia', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { guardId: 'u-otro' }));
-    await allowed('supervisor ve los puntos de la ronda', () => getDocs(query(rcol(sup, 'rondas_visitas'), where('roundId', '==', 'ronda-test'))));
+    await allowed('guardia busca su visita reciente al punto', () => getDocs(query(rcol(guard, 'rondas_visitas'), where('guard_id', '==', 'u-pedro'), where('checkpoint_id', '==', 'cp1'))));
+    await allowed('guardia termina la ronda', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { status: 'COMPLETED', score: 100, completed_at: sqlTs() }));
+    await denied('guardia no pasa la ronda a otro guardia', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { guard_id: 'u-otro' }));
+    await allowed('supervisor ve las visitas de la ruta por fecha', () => getDocs(query(rcol(sup, 'rondas_visitas'), where('route_id', '==', 'ruta-test'), where('arrived_at', '>=', '2020-01-01 00:00:00'))));
     await allowed('auditor ve las rondas', () => getDocs(rcol(auditor, 'rondas_rondas')));
     await denied('guardia no ve las rondas de todos', () => getDocs(rcol(guard, 'rondas_rondas')));
-    await allowed('supervisor cierra el turno', () => updateDoc(rref(sup, 'rondas_turnos', 'turno-test'), { status: 'CLOSED', endedAt: ts() }));
+    await allowed('guardia hace check-out', () => updateDoc(rref(guard, 'rondas_turnos', 'turno-test'), { actual_end: sqlTs(), status: 'COMPLETED' }));
+    await allowed('supervisor corrige el turno', () => updateDoc(rref(sup, 'rondas_turnos', 'turno-test'), { notes: 'Revisado' }));
 
-    await allowed('guardia publica su posicion', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-pedro'), { guardId: 'u-pedro', condominioId: A, shiftId: 'turno-test', lat: 14.5, lng: -90.4, at: ts() }));
-    await denied('guardia no publica la posicion de otro', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-otro'), { guardId: 'u-otro', condominioId: A, lat: 1, lng: 1, at: ts() }));
+    const posicion = { user_id: 'u-pedro', company_id: A, name: 'Pedro', role: 'GUARDIA', shift_id: 'turno-test', latitude: 14.5, longitude: -90.4, battery_level: 100, timestamp: sqlTs() };
+    await allowed('guardia publica su posicion', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-pedro'), posicion));
+    await denied('guardia no publica la posicion de otro', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-otro'), { ...posicion, user_id: 'u-otro' }));
     await allowed('supervisor ve las posiciones en vivo', () => getDocs(rcol(sup, 'rondas_en_vivo')));
     await denied('vecino no ve las posiciones de los guardias', () => getDocs(rcol(ana, 'rondas_en_vivo')));
-    await allowed('guardia guarda su historial de posiciones', () => setDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), { guardId: 'u-pedro', condominioId: A, shiftId: 'turno-test', lat: 14.5, lng: -90.4, at: ts() }));
-    await denied('el historial de posiciones no se edita', () => updateDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), { lat: 0 }));
+    await allowed('guardia guarda su historial de posiciones', () => setDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), posicion));
+    await denied('el historial de posiciones no se edita', () => updateDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), { latitude: 0 }));
+    await allowed('guardia borra su posicion al terminar el turno', () => deleteDoc(rref(guard, 'rondas_en_vivo', 'u-pedro')));
 
-    const incidente = { id: 'inc-test', condominioId: A, reportedBy: 'u-pedro', reporterName: 'Pedro', type: 'Robo', severity: 'HIGH', title: 'Prueba', description: '', status: 'OPEN', photoIds: [], createdAt: ts() };
+    const incidente = { id: 'inc-test', company_id: A, reported_by: 'u-pedro', reporter_name: 'Pedro', incident_type: 'ROBBERY', severity: 'HIGH', title: 'Prueba', description: '', photos: '[]', status: 'OPEN', created_at: sqlTs() };
     await allowed('guardia reporta un incidente', () => setDoc(rref(guard, 'rondas_incidentes', 'inc-test'), incidente));
-    await denied('vecino no reporta incidentes de ronda', () => setDoc(rref(ana, 'rondas_incidentes', 'inc-malo'), { ...incidente, id: 'inc-malo', reportedBy: 'u-ana' }));
+    await denied('vecino no reporta incidentes de ronda', () => setDoc(rref(ana, 'rondas_incidentes', 'inc-malo'), { ...incidente, id: 'inc-malo', reported_by: 'u-ana' }));
+    await denied('guardia no reporta a nombre de otro', () => setDoc(rref(guard, 'rondas_incidentes', 'inc-malo'), { ...incidente, id: 'inc-malo', reported_by: 'u-otro' }));
     await denied('guardia no resuelve incidentes', () => updateDoc(rref(guard, 'rondas_incidentes', 'inc-test'), { status: 'RESOLVED' }));
-    await allowed('supervisor resuelve el incidente', () => updateDoc(rref(sup, 'rondas_incidentes', 'inc-test'), { status: 'RESOLVED', resolvedBy: 'u-samuel', resolvedAt: ts(), resolution: 'Revisado' }));
-    const foto = { id: 'foto-test', condominioId: A, data: 'data:image/jpeg;base64,AAAA', kind: 'incidente', refId: 'inc-test', by: 'u-pedro', createdAt: ts() };
+    await allowed('supervisor resuelve el incidente', () => updateDoc(rref(sup, 'rondas_incidentes', 'inc-test'), { status: 'RESOLVED', resolved_by: 'u-samuel', resolved_at: sqlTs() }));
+    await allowed('la garita ve los incidentes', () => getDocs(rcol(guard, 'rondas_incidentes')));
+    const foto = { id: 'foto-test', company_id: A, data: 'data:image/jpeg;base64,AAAA', kind: 'checkin', ref_id: 'turno-test', by: 'u-pedro', created_at: sqlTs() };
     await allowed('guardia sube una foto', () => setDoc(rref(guard, 'rondas_fotos', 'foto-test'), foto));
     await denied('foto demasiado grande es rechazada', () => setDoc(rref(guard, 'rondas_fotos', 'foto-grande'), { ...foto, id: 'foto-grande', data: 'x'.repeat(950000) }));
     await allowed('auditor ve la foto', () => getDoc(rref(auditor, 'rondas_fotos', 'foto-test')));
     await denied('vecino no ve fotos de rondas', () => getDoc(rref(ana, 'rondas_fotos', 'foto-test')));
+
+    const alerta = { id: 'al-test', company_id: A, alert_type: 'INFO', category: 'CHECKPOINT_VISIT', title: 'Punto visitado: Punto 1', message: '', source_user_id: 'u-pedro', acknowledged: 0, acknowledged_by: null, acknowledged_at: null, created_at: sqlTs() };
+    await allowed('guardia deja una alerta en el panel', () => setDoc(rref(guard, 'rondas_alertas', 'al-test'), alerta));
+    await denied('guardia no deja alertas a nombre de otro', () => setDoc(rref(guard, 'rondas_alertas', 'al-mala'), { ...alerta, id: 'al-mala', source_user_id: 'u-otro' }));
+    await denied('una alerta nueva no nace atendida', () => setDoc(rref(guard, 'rondas_alertas', 'al-mala'), { ...alerta, id: 'al-mala', acknowledged: 1 }));
+    await denied('guardia no ve el panel de alertas', () => getDocs(rcol(guard, 'rondas_alertas')));
+    await allowed('auditor ve las alertas del panel', () => getDocs(rcol(auditor, 'rondas_alertas')));
+    await denied('auditor no atiende alertas del panel', () => updateDoc(rref(auditor, 'rondas_alertas', 'al-test'), { acknowledged: 1, acknowledged_by: 'u-sofia', acknowledged_at: sqlTs() }));
+    await denied('supervisor no cambia el texto de la alerta', () => updateDoc(rref(sup, 'rondas_alertas', 'al-test'), { title: 'otro' }));
+    await allowed('supervisor atiende la alerta', () => updateDoc(rref(sup, 'rondas_alertas', 'al-test'), { acknowledged: 1, acknowledged_by: 'u-samuel', acknowledged_at: sqlTs() }));
+    await allowed('admin borra la alerta', () => deleteDoc(rref(admin, 'rondas_alertas', 'al-test')));
+
+    const dron = { id: 'dron-test', company_id: A, name: 'Dron 1', model: 'X', status: 'ACTIVE', battery_level: 100, created_at: sqlTs() };
+    await allowed('admin registra un dron de Rondin Air', () => setDoc(rref(admin, 'rondas_drones', 'dron-test'), dron));
+    await denied('guardia no registra drones', () => setDoc(rref(guard, 'rondas_drones', 'dron-malo'), { ...dron, id: 'dron-malo' }));
+    await allowed('supervisor despacha el dron', () => updateDoc(rref(sup, 'rondas_drones', 'dron-test'), { status: 'DISPATCHED' }));
+    await allowed('auditor ve los drones', () => getDocs(rcol(auditor, 'rondas_drones')));
+
+    // Guardias y supervisores: una sola persona en SISDEL (usuarios + codigos) con su expediente en rondas_personal
+    await allowed('auditor ve el expediente de guardias', () => getDoc(rref(auditor, 'rondas_personal', 'u-pedro')));
+    await denied('guardia no ve expedientes', () => getDoc(rref(guard, 'rondas_personal', 'u-pedro')));
+    await allowed('supervisor asigna un guardia a su cargo', () => setDoc(rref(sup, 'rondas_personal', 'u-pedro'), { id: 'u-pedro', company_id: A, supervisor_id: 'u-samuel', updated_at: sqlTs() }, { merge: true }));
+    await denied('el auditor no edita expedientes', () => setDoc(rref(auditor, 'rondas_personal', 'u-pedro'), { id: 'u-pedro', company_id: A, supervisor_id: null }, { merge: true }));
+    const nuevoGuardia = (c, userId, code, role = 'policia') => {
+        const b = writeBatch(c.db);
+        b.set(doc(c.db, `codigos/${code}`), { condominioId: A, userId, role, createdAt: ts() });
+        b.set(rref(c, 'usuarios', userId), { id: userId, condominioId: A, name: 'Guardia Nuevo', role, casa: '', phone: '', email: '', paymentStatus: null, morosoSince: null, active: true, createdAt: ts() });
+        return b.commit();
+    };
+    await allowed('supervisor registra un guardia con su codigo', () => nuevoGuardia(sup, 'u-guardia-nuevo', 'VGTEST1'));
+    await denied('supervisor no registra administradores', () => nuevoGuardia(sup, 'u-admin-falso', 'VGTEST2', 'admin'));
+    await denied('supervisor no crea un codigo para un usuario que ya existe', () => setDoc(doc(sup.db, 'codigos/VGTEST3'), { condominioId: A, userId: 'u-fernando', role: 'policia', createdAt: ts() }));
+    await denied('supervisor no crea un codigo extra para otro guardia', () => setDoc(doc(sup.db, 'codigos/VGTEST4'), { condominioId: A, userId: 'u-pedro', role: 'policia', createdAt: ts() }));
+    await allowed('supervisor ve los codigos de los guardias', () => getDocs(query(collection(sup.db, 'codigos'), where('condominioId', '==', A), where('role', '==', 'policia'))));
+    await denied('supervisor no ve los codigos de los vecinos', () => getDocs(query(collection(sup.db, 'codigos'), where('condominioId', '==', A))));
+    {
+        const nuevo = await loginAs('VGTEST1');
+        equal('el guardia nuevo entra con su codigo a la garita', [nuevo.login.success, nuevo.login.role], [true, 'policia']);
+    }
 
     console.log('\nAlertas de panico');
     const maria = await loginAs('VM102');

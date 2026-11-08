@@ -15,6 +15,14 @@
         { "fieldPath": "visitType", "order": "ASCENDING" },
         { "fieldPath": "endDate", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "rondas_visitas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "route_id", "order": "ASCENDING" },
+        { "fieldPath": "arrived_at", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

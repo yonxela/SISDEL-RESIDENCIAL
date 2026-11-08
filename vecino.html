@@ -62,7 +62,7 @@
             </div>
 
             <!-- Boton de panico: avisa a la garita, la administracion y sus contactos de emergencia -->
-            <div class="panic-card">
+            <div class="panic-card" id="panicCard" style="display:none;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.75rem;">
                     <div>
                         <h3 style="font-size:1.1rem;">Emergencia</h3>
@@ -247,9 +247,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108"></script>
-    <script src="rondas-logic.js?v=20261108"></script>
-    <script src="rondas-core.js?v=20261108"></script>
+    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO]);
@@ -281,6 +280,10 @@
 
             // --- Boton de panico ---
             SisdelRondas.init(session);
+            // El boton de panico del vecino se activa en RONDIN > Configuracion ("Vecinos usaran boton de panico")
+            SisdelRondas.neighborPanicEnabled().then((enabled) => {
+                document.getElementById('panicCard').style.display = enabled ? 'block' : 'none';
+            });
             const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const panicBtn = document.getElementById('btnPanicHold');
             const panicFill = document.getElementById('panicFill');

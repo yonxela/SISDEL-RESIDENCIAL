@@ -59,13 +59,30 @@ async function run() {
         for (const m of mensajes) {
             batch.set(condoRef.collection('mensajes').doc(m.id), { ...m, condominioId: condo.id, read: false, createdAt: now });
         }
+        // Rondas con el formato de SISDEL RONDIN (ver rondin/js/sisdel-api.js): fechas 'AAAA-MM-DD HH:MM:SS' UTC
+        const sqlNow = now.replace('T', ' ').slice(0, 19);
+        if (rondas && rondas.config) {
+            batch.set(condoRef.collection('rondas_config').doc('general'), { ...rondas.config, company_id: condo.id, updated_at: sqlNow });
+        }
         for (const r of (rondas && rondas.rutas) || []) {
-            batch.set(condoRef.collection('rondas_rutas').doc(r.id), { ...r, condominioId: condo.id, status: 'ACTIVE', createdAt: now, updatedAt: now });
+            const checkpoints = r.checkpoints.map((c) => ({
+                description: null, checkpoint_type: 'GPS', nfc_tag_id: null, qr_code: null, required_evidence: 'none',
+                min_stay_seconds: 0, max_stay_seconds: 300, risk_level: 'LOW', status: 'ACTIVE', created_at: sqlNow, ...c, route_id: r.id
+            }));
+            batch.set(condoRef.collection('rondas_rutas').doc(r.id), {
+                geojson_path: null, round_config: null, created_by: null, ...r, checkpoints,
+                company_id: condo.id, status: 'ACTIVE', created_at: sqlNow, updated_at: sqlNow
+            });
         }
         for (const a of (rondas && rondas.asignaciones) || []) {
             const { startOffset, endOffset, ...data } = a;
             batch.set(condoRef.collection('rondas_asignaciones').doc(a.id), {
-                ...data, condominioId: condo.id, dateStart: localDate(startOffset), dateEnd: localDate(endOffset), status: 'ACTIVE', createdAt: now
+                ...data, company_id: condo.id, date_start: localDate(startOffset), date_end: localDate(endOffset), status: 'ACTIVE', created_at: sqlNow
+            });
+        }
+        for (const person of (rondas && rondas.personal) || []) {
+            batch.set(condoRef.collection('rondas_personal').doc(person.id), {
+                ...person, profile: JSON.stringify(person.profile || {}), company_id: condo.id, updated_at: sqlNow
             });
         }
         for (const e of (rondas && rondas.emergencia) || []) {

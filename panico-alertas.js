@@ -3,7 +3,7 @@
    ───────────────────────────────────────────────────────────────
    Barra roja fija arriba con cada alerta sin resolver (vecinos y guardias),
    sonido al llegar una nueva y botones para atender y resolver.
-   La usan garita.html, rondin.html y rondas.html.
+   La usan garita.html y admin.html (RONDIN tiene su propia alarma de panico).
    Requiere rondas-core.js (SisdelRondas ya inicializado).
    ═══════════════════════════════════════════════════════════════ */
 

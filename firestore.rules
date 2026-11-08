@@ -58,13 +58,23 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Codigo para un guardia que el supervisor crea en la misma escritura (no puede apuntar a otro usuario)
+    function newGuardCode() {
+      let userPath = /databases/$(database)/documents/condominios/$(request.resource.data.condominioId)/usuarios/$(request.resource.data.userId);
+      return request.resource.data.role == 'policia'
+        && !exists(userPath)
+        && getAfter(userPath).data.role == 'policia';
+    }
+
     // ── Codigos de acceso: indice unico codigo -> usuario ──
     // No se guardan dentro del usuario para que guardias y vecinos no puedan leerlos.
     match /codigos/{code} {
-      allow read: if isMaster() || isAdmin(resource.data.condominioId);
+      allow read: if isMaster() || isAdmin(resource.data.condominioId)
+        || (isSupervisor(resource.data.condominioId) && resource.data.role == 'policia');
       allow create: if isMaster()
         || (isAdmin(request.resource.data.condominioId)
-            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor']);
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor'])
+        || (isSupervisor(request.resource.data.condominioId) && newGuardCode());
       // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
       allow update: if false;
       allow delete: if isMaster() || isAdmin(resource.data.condominioId);
@@ -115,7 +125,8 @@ service cloud.firestore {
           || isAuditor(condoId)
           || isSupervisor(condoId)
           || (isResident(condoId) && request.auth.uid == userId);
-        allow create: if isMaster() || (isAdmin(condoId) && validUser());
+        allow create: if isMaster() || (isAdmin(condoId) && validUser())
+          || (isSupervisor(condoId) && validUser() && request.resource.data.role == 'policia');
         allow update: if isMaster() || (isAdmin(condoId) && validUser() && paymentByHand());
         allow delete: if isMaster() || isAdmin(condoId);
       }
@@ -194,70 +205,99 @@ service cloud.firestore {
         allow create, update: if isAdmin(condoId) && validFinanceItem();
         allow delete: if false;
       }
-      // ── Rondas (traido de SISDEL RONDIN) ──
+      // ── Rondas: SISDEL RONDIN sobre la base de SISDEL (ver rondin/js/sisdel-api.js) ──
+      // Los campos conservan el formato de RONDIN: company_id = condominio, guard_id/user_id = usuario.
+      function sameCompany() { return request.resource.data.company_id == condoId; }
       function sameCondo() { return request.resource.data.condominioId == condoId; }
-      function ownGuard() { return request.resource.data.guardId == request.auth.uid; }
       function canSeeRondas() { return canManageRondas(condoId) || isAuditor(condoId); }
+      function patrols() { return isPatroller(condoId) || canManageRondas(condoId); }
+      function setsOwn(field) { return request.resource.data.get(field, '') == request.auth.uid; }
+      function wasOwn(field) { return resource.data.get(field, '') == request.auth.uid; }
+      function keeps(field) { return request.resource.data.get(field, null) == resource.data.get(field, null); }
 
+      // Configuracion de RONDIN (boton de panico de vecinos, pais, logo): la leen todos los del condominio
+      match /rondas_config/{docId} {
+        allow read: if isMaster() || isMember(condoId);
+        allow create, update: if canManageRondas(condoId) && docId == 'general' && sameCompany();
+        allow delete: if false;
+      }
+      // Expediente del guardia o supervisor (DPI, tipo de sangre, supervisor asignado); el resto vive en usuarios
+      match /rondas_personal/{userId} {
+        allow read: if canSeeRondas();
+        allow create, update: if canManageRondas(condoId) && sameCompany() && request.resource.data.id == userId;
+        allow delete: if isAdmin(condoId);
+      }
       // Rutas con sus puntos de control: las ven quienes patrullan
       match /rondas_rutas/{routeId} {
         allow read: if canSeeRondas() || isPatroller(condoId);
-        allow create, update: if canManageRondas(condoId) && sameCondo();
+        allow create, update: if canManageRondas(condoId) && sameCompany();
         allow delete: if canManageRondas(condoId);
       }
-      // Que guardia patrulla que ruta y en que horario
+      // Que guardia patrulla que ruta y en que fechas
       match /rondas_asignaciones/{assignmentId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
-        allow create, update: if canManageRondas(condoId) && sameCondo();
+        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create, update: if canManageRondas(condoId) && sameCompany();
         allow delete: if canManageRondas(condoId);
       }
-      // Turnos y rondas: cada guardia escribe los suyos; el supervisor puede cerrarlos
+      // Turnos y rondas: cada guardia escribe los suyos; el supervisor tambien puede crearlos o cerrarlos
       match /rondas_turnos/{shiftId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
-        allow create: if isPatroller(condoId) && sameCondo() && ownGuard() && request.resource.data.status == 'ACTIVE';
-        allow update: if (isPatroller(condoId) && resource.data.guardId == request.auth.uid && ownGuard() && sameCondo())
-          || (canManageRondas(condoId) && sameCondo() && request.resource.data.guardId == resource.data.guardId);
+        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create: if sameCompany() && ((isPatroller(condoId) && setsOwn('guard_id')) || canManageRondas(condoId));
+        allow update: if sameCompany() && keeps('guard_id')
+          && ((isPatroller(condoId) && wasOwn('guard_id')) || canManageRondas(condoId));
         allow delete: if false;
       }
       match /rondas_rondas/{roundId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
-        allow create: if isPatroller(condoId) && sameCondo() && ownGuard() && request.resource.data.status == 'IN_PROGRESS';
-        allow update: if (isPatroller(condoId) && resource.data.guardId == request.auth.uid && ownGuard() && sameCondo())
-          || (canManageRondas(condoId) && sameCondo() && request.resource.data.guardId == resource.data.guardId);
+        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('guard_id') && request.resource.data.status == 'IN_PROGRESS';
+        allow update: if sameCompany() && keeps('guard_id')
+          && ((isPatroller(condoId) && wasOwn('guard_id')) || canManageRondas(condoId));
         allow delete: if false;
       }
       // Visitas a puntos de control: registro de auditoria, no se editan ni se borran
       match /rondas_visitas/{visitId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
-        allow create: if isPatroller(condoId) && sameCondo() && ownGuard();
+        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('guard_id');
         allow update, delete: if false;
       }
       // Posicion actual de cada guardia (documento = su id) e historial de 30 dias
-      match /rondas_en_vivo/{guardId} {
+      match /rondas_en_vivo/{userId} {
         allow read: if canSeeRondas();
-        allow create, update: if isPatroller(condoId) && guardId == request.auth.uid && ownGuard() && sameCondo();
-        allow delete: if (isPatroller(condoId) && guardId == request.auth.uid) || canManageRondas(condoId);
+        allow create, update: if isPatroller(condoId) && userId == request.auth.uid && setsOwn('user_id') && sameCompany();
+        allow delete: if (isPatroller(condoId) && userId == request.auth.uid) || canManageRondas(condoId);
       }
       match /rondas_ubicaciones/{logId} {
         allow read: if canSeeRondas();
-        allow create: if isPatroller(condoId) && sameCondo() && ownGuard();
+        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('user_id');
         allow update, delete: if false;
       }
       // Incidentes: los reporta quien patrulla; los resuelve admin o supervisor
       match /rondas_incidentes/{incidentId} {
         allow read: if canSeeRondas() || isResponder(condoId);
-        allow create: if isPatroller(condoId) && sameCondo()
-          && request.resource.data.reportedBy == request.auth.uid && request.resource.data.status == 'OPEN';
-        allow update: if canManageRondas(condoId) && sameCondo() && request.resource.data.reportedBy == resource.data.reportedBy;
+        allow create: if patrols() && sameCompany() && setsOwn('reported_by') && request.resource.data.status == 'OPEN';
+        allow update: if canManageRondas(condoId) && sameCompany() && keeps('reported_by');
         allow delete: if false;
+      }
+      // Alertas del panel de RONDIN (turno iniciado, punto visitado, incidente, abandono de turno...)
+      match /rondas_alertas/{alertId} {
+        allow read: if canSeeRondas();
+        allow create: if patrols() && sameCompany() && setsOwn('source_user_id') && request.resource.data.acknowledged == 0;
+        allow update: if canManageRondas(condoId) && onlyChanges(['acknowledged', 'acknowledged_by', 'acknowledged_at'])
+          && request.resource.data.acknowledged_by == request.auth.uid;
+        allow delete: if canManageRondas(condoId);
       }
       // Fotos (turnos e incidentes), comprimidas en el navegador: menos de ~900 KB
       match /rondas_fotos/{photoId} {
-        allow read: if canSeeRondas() || resource.data.by == request.auth.uid;
-        allow create: if (isPatroller(condoId) || canManageRondas(condoId)) && sameCondo()
-          && request.resource.data.by == request.auth.uid
+        allow read: if canSeeRondas() || wasOwn('by');
+        allow create: if patrols() && sameCompany() && setsOwn('by')
           && request.resource.data.data is string && request.resource.data.data.size() < 900000;
         allow update: if false;
+        allow delete: if canManageRondas(condoId);
+      }
+      // Rondin Air: drones del condominio y su ultima telemetria
+      match /rondas_drones/{droneId} {
+        allow read: if canSeeRondas();
+        allow create, update: if canManageRondas(condoId) && sameCompany();
         allow delete: if canManageRondas(condoId);
       }
 

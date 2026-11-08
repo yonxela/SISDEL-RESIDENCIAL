@@ -15,7 +15,7 @@ const REDIRECTS = {
     [ROLES.VECINO]: 'vecino.html',
     [ROLES.POLICIA]: 'garita.html',
     [ROLES.AUDITOR]: 'auditor.html',
-    [ROLES.SUPERVISOR]: 'rondas.html'
+    [ROLES.SUPERVISOR]: 'rondin/'
 };
 
 async function isMasterCode(code) {

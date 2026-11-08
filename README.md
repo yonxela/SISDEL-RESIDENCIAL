@@ -11,8 +11,8 @@ Control de acceso para condominios: panel master, administrador, vecino y garita
 | `policia` | `garita.html` | Verifica códigos y QR, registra ingresos. |
 | `vecino` | `vecino.html` | Sus visitas, vehículos y mensajes. |
 | `admin` (finanzas) | `finanzas.html` | Sistema Financiero del condominio (OIKOS): cuotas, ingresos, egresos, estados de cuenta y reportes. |
-| `supervisor` | `rondas.html` | Rondas de vigilancia: rutas, puntos de control, guardias en vivo, incidentes, alertas y reportes. |
-| `policia` (rondas) | `rondin.html` | App del guardia: turno, rondas por GPS o código, incidentes con foto y botón de pánico. |
+| `supervisor` | `rondin/` | SISDEL RONDÍN: rutas de monitoreo, guardias en vivo, Rondín Air, alertas, incidentes y vecinos. El admin entra como Director General y el auditor en solo lectura. |
+| `policia` (rondas) | `rondin/` | Rondín Móvil: iniciar ronda con foto y GPS, puntos de control, incidentes y botón de pánico. |
 | `auditor` | `auditor.html` | Lee todo su condominio menos los códigos de acceso; no puede escribir. Reportes por rango de fechas con exportación CSV e impresión. |
 
 ## Stack
@@ -34,15 +34,19 @@ condominios/{condoId}
     finanzas_residentes/{userId}    datos financieros del vecino (DPI, lote, notas, finiquito)
     finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
+    rondas_config/general           configuracion de RONDIN (boton de panico de vecinos)
+    rondas_personal/{userId}        expediente del guardia (DPI, sangre, supervisor)
     rondas_rutas/{id}               rutas con sus puntos de control
     rondas_asignaciones/{id}        que guardia patrulla que ruta y cuando
-    rondas_turnos/{id}              turnos (inicio y fin con GPS y foto)
+    rondas_turnos/{id}              turnos (check-in y check-out con GPS y foto)
     rondas_rondas/{id}              cada vuelta a la ruta, con su puntaje
     rondas_visitas/{id}             puntos marcados (no se editan)
-    rondas_en_vivo/{guardId}        posicion actual de cada guardia
+    rondas_en_vivo/{userId}         posicion actual de cada guardia
     rondas_ubicaciones/{id}         historial de posiciones (30 dias)
     rondas_incidentes/{id}          incidentes reportados en ronda
+    rondas_alertas/{id}             alertas del panel de RONDIN (90 dias)
     rondas_fotos/{id}               fotos comprimidas de turnos e incidentes
+    rondas_drones/{id}              Rondin Air: drones y su ultima telemetria
     alertas_panico/{id}             boton de panico de vecinos y guardias
     emergencia/{userId}             contactos de emergencia del vecino
 codigos/{codigo}            índice único código -> usuario
@@ -62,7 +66,8 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `firestore.rules` | Permisos por rol y por condominio. |
 | `functions/src/auth.js` | Login y verificación de códigos en garita. |
 | `functions/src/anpr/` | Webhook de la cámara LPR. |
-| `rondas.html`, `rondin.html`, `rondas-*.js`, `panico-alertas.js` | Rondas de vigilancia y alertas de pánico (traído de SISDEL RONDIN). |
+| `rondin/` | SISDEL RONDÍN sin modificar su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
+| `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |
 | `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
 | `finanzas/` | Sistema Financiero (OIKOS), copia sin modificar de MULTISYS. |

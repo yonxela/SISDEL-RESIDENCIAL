@@ -1,5 +1,7 @@
-// Limpieza diaria de rondas: cierra turnos y rondas olvidados y borra el historial
-// de posiciones viejo. Las funciones de seleccion son puras (se prueban sin emulador).
+// Limpieza diaria de rondas (datos con el formato de SISDEL RONDIN, ver rondin/js/sisdel-api.js):
+// cierra turnos y rondas olvidados y borra posiciones y alertas viejas.
+// Las fechas son 'AAAA-MM-DD HH:MM:SS' en UTC, como las guardaba RONDIN (SQLite).
+// Las funciones de seleccion son puras (se prueban sin emulador en scripts/test-rondas-servidor.mjs).
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 
@@ -7,25 +9,39 @@ const SHIFT_MAX_HOURS = 16;
 const ROUND_MAX_HOURS = 6;
 const LIVE_MAX_HOURS = 24;
 const HISTORY_DAYS = 30;
-const COMPLETE_SCORE = 80; // igual que rondas-logic.js
+const ALERT_DAYS = 90;
+const COMPLETE_SCORE = 80; // igual que RONDIN (routes/rounds.js)
 const BATCH_SIZE = 400;
 const HOUR = 3600 * 1000;
 
-const olderThan = (iso, hours, nowMs) => {
-    const t = Date.parse(iso || '');
+// Fecha de RONDIN <-> milisegundos
+function toMs(value) {
+    if (!value) return NaN;
+    const text = String(value);
+    return Date.parse(text.includes('T') ? text : text.replace(' ', 'T') + 'Z');
+}
+function sqlTime(ms) { return new Date(ms).toISOString().replace('T', ' ').slice(0, 19); }
+
+const olderThan = (value, hours, nowMs) => {
+    const t = toMs(value);
     return !Number.isFinite(t) || nowMs - t > hours * HOUR;
 };
 
-function isStaleShift(shift, nowMs) { return shift.status === 'ACTIVE' && olderThan(shift.startedAt, SHIFT_MAX_HOURS, nowMs); }
-function isStaleRound(round, nowMs) { return round.status === 'IN_PROGRESS' && olderThan(round.startedAt, ROUND_MAX_HOURS, nowMs); }
-function isStaleLive(live, nowMs) { return olderThan(live.at, LIVE_MAX_HOURS, nowMs); }
-function historyCutoff(nowMs) { return new Date(nowMs - HISTORY_DAYS * 24 * HOUR).toISOString(); }
+function isStaleShift(shift, nowMs) {
+    return shift.status === 'ACTIVE' && olderThan(shift.actual_start || shift.scheduled_start, SHIFT_MAX_HOURS, nowMs);
+}
+function isStaleRound(round, nowMs) { return round.status === 'IN_PROGRESS' && olderThan(round.started_at, ROUND_MAX_HOURS, nowMs); }
+function isStaleLive(live, nowMs) { return olderThan(live.timestamp, LIVE_MAX_HOURS, nowMs); }
+function historyCutoff(nowMs) { return sqlTime(nowMs - HISTORY_DAYS * 24 * HOUR); }
+function alertCutoff(nowMs) { return sqlTime(nowMs - ALERT_DAYS * 24 * HOUR); }
 
-// Puntaje de una ronda que se cierra sola: con los puntos que alcanzo a marcar
-function closingScore(round) {
-    const total = Number(round.totalCheckpoints) || 0;
-    const visited = Array.isArray(round.visited) ? new Set(round.visited).size : 0;
-    const score = total ? Math.round((Math.min(visited, total) / total) * 1000) / 10 : 0;
+// Puntaje como RONDIN: % de puntos obligatorios visitados (sin contar visitas sospechosas); completa desde 80
+function closingScore(checkpoints, visits) {
+    const mandatory = (checkpoints || []).filter((c) => c.is_mandatory !== 0 && c.status !== 'INACTIVE');
+    if (!mandatory.length) return { score: 0, status: 'INCOMPLETE' };
+    const visited = new Set((visits || []).filter((v) => v.status !== 'SUSPICIOUS').map((v) => v.checkpoint_id));
+    const count = mandatory.filter((c) => visited.has(c.id)).length;
+    const score = Math.round((count / mandatory.length) * 1000) / 10;
     return { score, status: score >= COMPLETE_SCORE ? 'COMPLETED' : 'INCOMPLETE' };
 }
 
@@ -37,9 +53,22 @@ async function commitInChunks(writes) {
     }
 }
 
+// Borra por tandas los documentos con field < cutoff
+async function deleteOlder(collection, field, cutoff) {
+    let deleted = 0;
+    for (;;) {
+        const old = await collection.where(field, '<', cutoff).limit(BATCH_SIZE).get();
+        if (old.empty) break;
+        await commitInChunks(old.docs.map((d) => (b) => b.delete(d.ref)));
+        deleted += old.size;
+        if (old.size < BATCH_SIZE) break;
+    }
+    return deleted;
+}
+
 async function cleanCondo(condoRef, now = new Date()) {
     const nowMs = now.getTime();
-    const nowIso = now.toISOString();
+    const nowSql = sqlTime(nowMs);
     const [shifts, rounds, live] = await Promise.all([
         condoRef.collection('rondas_turnos').where('status', '==', 'ACTIVE').get(),
         condoRef.collection('rondas_rondas').where('status', '==', 'IN_PROGRESS').get(),
@@ -47,30 +76,30 @@ async function cleanCondo(condoRef, now = new Date()) {
     ]);
     const writes = [];
     let closedShifts = 0;
-    let closedRounds = 0;
     shifts.docs.filter((d) => isStaleShift(d.data(), nowMs)).forEach((d) => {
         closedShifts++;
-        writes.push((b) => b.update(d.ref, { status: 'CLOSED_AUTO', endedAt: nowIso, notes: `Cerrado automaticamente: quedo abierto mas de ${SHIFT_MAX_HOURS} horas` }));
+        writes.push((b) => b.update(d.ref, { status: 'COMPLETED', actual_end: nowSql, notes: `Cerrado automáticamente: quedó abierto más de ${SHIFT_MAX_HOURS} horas` }));
     });
-    rounds.docs.filter((d) => isStaleRound(d.data(), nowMs)).forEach((d) => {
-        closedRounds++;
-        const { score, status } = closingScore(d.data());
-        writes.push((b) => b.update(d.ref, { status, score, completedAt: nowIso, notes: 'Cerrada automaticamente' }));
-    });
+
+    // Rondas olvidadas: se cierran con el puntaje de los puntos que alcanzo a marcar
+    const stale = rounds.docs.filter((d) => isStaleRound(d.data(), nowMs));
+    const routes = new Map();
+    for (const d of stale) {
+        const round = d.data();
+        if (!routes.has(round.route_id)) {
+            const routeSnap = round.route_id ? await condoRef.collection('rondas_rutas').doc(String(round.route_id)).get() : null;
+            routes.set(round.route_id, routeSnap && routeSnap.exists ? (routeSnap.data().checkpoints || []) : []);
+        }
+        const visits = await condoRef.collection('rondas_visitas').where('round_id', '==', d.id).get();
+        const { score, status } = closingScore(routes.get(round.route_id), visits.docs.map((v) => v.data()));
+        writes.push((b) => b.update(d.ref, { status, score, completed_at: nowSql, notes: 'Cerrada automáticamente' }));
+    }
     live.docs.filter((d) => isStaleLive(d.data(), nowMs)).forEach((d) => writes.push((b) => b.delete(d.ref)));
     await commitInChunks(writes);
 
-    // Historial de posiciones de mas de 30 dias, por tandas
-    let deleted = 0;
-    const cutoff = historyCutoff(nowMs);
-    for (;;) {
-        const old = await condoRef.collection('rondas_ubicaciones').where('at', '<', cutoff).limit(BATCH_SIZE).get();
-        if (old.empty) break;
-        await commitInChunks(old.docs.map((d) => (b) => b.delete(d.ref)));
-        deleted += old.size;
-        if (old.size < BATCH_SIZE) break;
-    }
-    return { condoId: condoRef.id, closedShifts, closedRounds, deletedLocations: deleted };
+    const deletedLocations = await deleteOlder(condoRef.collection('rondas_ubicaciones'), 'timestamp', historyCutoff(nowMs));
+    const deletedAlerts = await deleteOlder(condoRef.collection('rondas_alertas'), 'created_at', alertCutoff(nowMs));
+    return { condoId: condoRef.id, closedShifts, closedRounds: stale.length, deletedLocations, deletedAlerts };
 }
 
 async function cleanAll(now = new Date()) {
@@ -84,4 +113,4 @@ async function cleanAll(now = new Date()) {
     return results;
 }
 
-module.exports = { isStaleShift, isStaleRound, isStaleLive, historyCutoff, closingScore, cleanCondo, cleanAll };
+module.exports = { toMs, sqlTime, isStaleShift, isStaleRound, isStaleLive, historyCutoff, alertCutoff, closingScore, cleanCondo, cleanAll };

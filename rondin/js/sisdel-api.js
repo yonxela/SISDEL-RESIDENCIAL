@@ -164,7 +164,9 @@
     }
     async function staff() {
         const [users, personal] = await Promise.all([sisdelUsers(), personalMap()]);
-        return users.filter((u) => u.role !== 'vecino').map((u) => userOut(u, personal));
+        // Un operador aparece en RONDIN solo si el administrador le dio privilegios de rondas (guardia, supervisor o director)
+        const inRondin = (u) => u.role !== 'operador' || ['rondas.ver', 'rondas.gestionar', 'rondas.patrullar'].some((k) => SISDEL.PRIV.has(u.role, u.privilegios, k));
+        return users.filter((u) => u.role !== 'vecino' && inRondin(u)).map((u) => userOut(u, personal));
     }
     async function userName(id) {
         const u = (await sisdelUsers()).find((x) => x.id === id);

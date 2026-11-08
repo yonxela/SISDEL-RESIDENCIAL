@@ -3,6 +3,7 @@
 //   GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node set-whatsapp.mjs --target=prod
 //   node set-whatsapp.mjs --target=prod --ver        (solo muestra que esta configurado, sin claves)
 //   node set-whatsapp.mjs --target=prod --probar     (verifica las claves con el proveedor sin enviar mensajes)
+//   node set-whatsapp.mjs --target=prod --quitar=ultramsg|meta|todo   (borra esas claves; "todo" deja WhatsApp apagado)
 // Proveedores: UltraMsg (principal) y Meta Cloud API (respaldo). Se puede cargar uno o los dos.
 // Numero de la central: con codigo de pais, solo digitos (ej. 50212345678).
 import readline from 'node:readline';
@@ -71,6 +72,20 @@ async function probe(c) {
         }
     } else lines.push('  Meta Cloud API: sin configurar.');
     return lines.join('\n');
+}
+
+if (args.quitar) {
+    const what = String(args.quitar);
+    if (!['ultramsg', 'meta', 'todo'].includes(what)) {
+        console.log('Use --quitar=ultramsg, --quitar=meta o --quitar=todo');
+        process.exit(1);
+    }
+    const next = { ...current, updatedAt: new Date().toISOString() };
+    if (what === 'ultramsg' || what === 'todo') { delete next.ultramsgInstance; delete next.ultramsgToken; }
+    if (what === 'meta' || what === 'todo') { delete next.metaPhoneId; delete next.metaToken; }
+    await ref.set(next);
+    console.log(`Quitado (${what}) en ${target}:\n${describe(next)}`);
+    process.exit(0);
 }
 
 if (args.ver) {

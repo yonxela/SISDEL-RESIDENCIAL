@@ -16,5 +16,6 @@ setGlobalOptions({
 const { login, verifyAccessCode } = require('./src/auth');
 const { deleteCondominio } = require('./src/condominios');
 const { anprWebhook } = require('./src/anpr/webhook');
+const { onFinanceMovement, onFinanceSettings, dailyFinance } = require('./src/finanzas');
 
-module.exports = { login, verifyAccessCode, deleteCondominio, anprWebhook };
+module.exports = { login, verifyAccessCode, deleteCondominio, anprWebhook, onFinanceMovement, onFinanceSettings, dailyFinance };

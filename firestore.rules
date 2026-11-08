@@ -98,11 +98,18 @@ service cloud.firestore {
             && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor']
             && !('accessCode' in request.resource.data);
         }
+        // Con la mora automatica activa, el estado de pago lo escribe solo el servidor
+        // (lo calcula el Sistema Financiero; ver functions/src/finanzas/recalc.js)
+        function paymentByHand() {
+          return condoDoc(condoId).get('moraAutomatica', false) != true
+            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'morosoSince']);
+        }
         allow read: if isMaster()
           || isStaff(condoId)
           || isAuditor(condoId)
           || (isResident(condoId) && request.auth.uid == userId);
-        allow create, update: if isMaster() || (isAdmin(condoId) && validUser());
+        allow create: if isMaster() || (isAdmin(condoId) && validUser());
+        allow update: if isMaster() || (isAdmin(condoId) && validUser() && paymentByHand());
         allow delete: if isMaster() || isAdmin(condoId);
       }
 

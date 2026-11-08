@@ -214,6 +214,7 @@
                         <option value="al_dia">Al día</option>
                         <option value="moroso">Moroso</option>
                     </select>
+                    <p id="editUserPaymentAuto" style="display:none; align-items:center; gap:0.5rem;"></p>
                 </div>
 
                 <!-- Vehicle Plates Section (only for vecinos) -->
@@ -285,6 +286,13 @@
                 document.getElementById('btnMessages').style.color = showingMessages ? 'white' : '';
                 if (showingMessages) renderSentMessages();
             });
+
+            // true cuando el Sistema Financiero ya calcula el estado de pago de los vecinos
+            let moraAutomatica = false;
+            async function loadMoraMode() {
+                const condo = await SISDEL.getCondominio(condoId);
+                moraAutomatica = !!(condo && condo.moraAutomatica);
+            }
 
             let currentTab = 'vecinos';
             let searchQuery = '';
@@ -466,6 +474,13 @@
                 document.getElementById('editUserCasa').value = user.casa || '';
                 document.getElementById('editUserPayment').value = user.paymentStatus || 'al_dia';
                 document.getElementById('editUserPayment').parentElement.style.display = user.role === 'vecino' ? 'block' : 'none';
+                // Con mora automatica el estado de pago lo calcula el Sistema Financiero: solo se muestra
+                document.getElementById('editUserPayment').style.display = moraAutomatica ? 'none' : '';
+                const paymentAuto = document.getElementById('editUserPaymentAuto');
+                paymentAuto.style.display = moraAutomatica ? 'flex' : 'none';
+                paymentAuto.innerHTML = moraAutomatica
+                    ? `${SISDEL.getPaymentBadge(user.paymentStatus || 'al_dia')} <span class="text-xs text-muted">Calculado por el Sistema Financiero</span>`
+                    : '';
                 
                 // Show plates section only for vecinos
                 const platesSection = document.getElementById('editGroupPlates');
@@ -536,9 +551,9 @@
                 const id = document.getElementById('editUserId').value;
                 const updates = {
                     name: document.getElementById('editUserName').value,
-                    casa: document.getElementById('editUserCasa').value,
-                    paymentStatus: document.getElementById('editUserPayment').value
+                    casa: document.getElementById('editUserCasa').value
                 };
+                if (!moraAutomatica) updates.paymentStatus = document.getElementById('editUserPayment').value;
                 if (await SISDEL.updateUser(id, updates)) {
                     SISDEL.showToast('Usuario actualizado', 'success');
                     modalEditUser.style.display = 'none';
@@ -618,7 +633,7 @@
                 }
             });
 
-            await Promise.all([renderStats(), renderUsers()]);
+            await Promise.all([renderStats(), renderUsers(), loadMoraMode()]);
             SISDEL.reportPageLoad('admin');
         });
     </script>

@@ -21,7 +21,7 @@ Estructura de datos y archivos: ver README.md.
 - Una tarea = una sesion = un worktree propio. Nunca dos sesiones sobre la misma carpeta.
 - Deploy siempre desde `main` y de a uno a la vez: commit -> ff a main -> push (Vercel publica el front) -> `firebase deploy --only ...` desde el checkout de main.
 - Trabajan dos personas en PCs distintas: antes de empezar una tarea y antes de cada `firebase deploy`, `git pull --ff-only` en main. Nunca publicar algo que no este en origin/main: un deploy desde un checkout viejo revierte en produccion las reglas o funciones del otro. Avisarse antes de publicar reglas o funciones.
-- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (203 pruebas: 38 de la sincronizacion financiera, sin emuladores, y 165 contra los emuladores).
+- Antes de publicar cambios en reglas, funciones o sisdel-core.js: levantar emuladores y correr `cd scripts && npm run seed && npm test` (242 pruebas: 38 de la sincronizacion financiera y 28 de la mora, sin emuladores, y 176 contra los emuladores).
 - Cuando cambia sisdel-core.js, subir la version en los HTML (`sisdel-core.js?v=AAAAMMDD`).
 - El repo es PUBLICO: nunca subir respaldos, codigos de acceso ni llaves. Los respaldos van fuera del repo.
 - Al terminar cambios en una pagina, abrir el link para que el usuario pruebe.
@@ -31,7 +31,11 @@ Estructura de datos y archivos: ver README.md.
 - `finanzas.html` lo abre en un iframe con `?msid=<condoId>&msname=&msdirector=`; el bloque de entrada de OIKOS salta su login propio.
 - `finanzas-sync.js` conecta el localStorage de OIKOS con Firestore. Una sola base de vecinos: los residentes de OIKOS son los vecinos de SISDEL (nombre, casa y telefono en `usuarios`); DPI, lote, notas y finiquito en `finanzas_residentes/{mismo id}`, que solo leen admin, auditor y master. Movimientos en `finanzas_movimientos`, configuracion en `finanzas_config/oikos_settings`.
 - Nada se borra (OIKOS anula con `deleted: true`). Cada vecino se cobra desde el mes en que entra al sistema (`feeFrom`), y un condominio nuevo arranca en quetzales y cobro manual.
-- Pendiente (Fase 3): que la mora calculada por OIKOS marque `paymentStatus` del vecino (afecta la camara LPR).
+- Los residentes se ingresan en OIKOS: cada residente nuevo se crea como vecino de SISDEL con su codigo. Las placas se siguen registrando en el panel admin.
+- Mora automatica (`functions/src/finanzas/`): se activa sola con el primer cargo del condominio (`condominios/{id}.moraAutomatica`). Desde ahi `paymentStatus` y `morosoSince` los escribe solo el servidor (las reglas no dejan al admin cambiarlos) y el panel admin muestra "Calculado por el Sistema Financiero".
+  - Moroso para la garita = debe MAS de una cuota vencida (OIKOS muestra mora desde la primera). La cuota del mes vence pasado el dia de cobro + dias de gracia de OIKOS; la camara aplica despues la gracia del condominio (reminderEnabled/gracePeriodDays).
+  - Se recalcula al registrar o anular un cargo o pago (`onFinanceMovement`), al cambiar cuota/dia/gracia/modo (`onFinanceSettings`) y cada dia a las 05:00 de Guatemala (`dailyFinance`, que tambien crea las cuotas del mes en modo automatico, con el mismo id que OIKOS: fee_<vecino>_<AAAA-MM>).
+  - `mora.js` replica funciones de OIKOS; si se vuelve a copiar OIKOS desde MULTISYS, revisar que sigan iguales.
 
 ## Requisitos en una PC nueva
 - `node` 22 o mas, `firebase-tools`, `gcloud`, `gh` y Java 21 o mas (lo piden los emuladores).

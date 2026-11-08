@@ -49,6 +49,7 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `firestore.rules` | Permisos por rol y por condominio. |
 | `functions/src/auth.js` | Login y verificación de códigos en garita. |
 | `functions/src/anpr/` | Webhook de la cámara LPR. |
+| `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
 | `finanzas/` | Sistema Financiero (OIKOS), copia sin modificar de MULTISYS. |
 | `finanzas.html`, `finanzas-sync.js` | Abren OIKOS dentro de SISDEL y sincronizan sus datos con Firestore. |
 | `scripts/` | Pruebas, datos de prueba y migración. No se publican. |

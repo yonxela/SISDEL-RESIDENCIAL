@@ -58,6 +58,25 @@ async function denied(name, fn) {
     }
 }
 
+// Espera hasta que fn() devuelva algo verdadero (los disparadores de Firestore son asincronos)
+async function waitFor(name, fn, timeoutMs = 20000) {
+    const until = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < until) {
+        try { last = await fn(); if (last) { record(name, true); return last; } } catch (e) { last = e.code || e.message; }
+        await new Promise((r) => setTimeout(r, 400));
+    }
+    record(name, false, `-> no se cumplio en ${timeoutMs / 1000}s (${JSON.stringify(last)})`);
+    return null;
+}
+
+// Periodo de cuota 'YYYY-MM' de hace n meses, en hora de Guatemala
+function periodMonthsAgo(n) {
+    const [y, m] = localDate(0).split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 - n, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 function equal(name, actual, expected) {
     record(name, JSON.stringify(actual) === JSON.stringify(expected), `-> esperado ${JSON.stringify(expected)}, recibido ${JSON.stringify(actual)}`);
 }
@@ -350,6 +369,47 @@ async function run() {
     await denied('admin de otro condominio no lee', () => getDocs(collection(luciaFin.db, `condominios/${A}/finanzas_movimientos`)));
     await denied('admin de otro condominio no escribe', () => setDoc(finRef('finanzas_movimientos', 'ajeno')(luciaFin), { id: 'ajeno', type: 'income', amount: 1 }));
     await allowed('admin de otro condominio usa el suyo', () => setDoc(doc(luciaFin.db, `condominios/${B}/finanzas_config/oikos_settings`), { currency: 'GTQ' }));
+
+    // ───────── Mora automatica: el Sistema Financiero decide el estado de pago ─────────
+    console.log('\nMora automatica');
+    const condoA = () => getDoc(doc(admin.db, `condominios/${A}`)).then((d) => d.data());
+    const vecinoA = (id) => getDoc(doc(admin.db, `condominios/${A}/usuarios/${id}`)).then((d) => d.data());
+    await waitFor('el primer cargo activa la mora automatica del condominio', async () => (await condoA()).moraAutomatica === true);
+    await waitFor('el servidor prepara los datos financieros de cada vecino', async () => {
+        const extra = await getDoc(finRef('finanzas_residentes', 'u-maria')(admin));
+        return extra.exists() && extra.data().feeFrom === periodMonthsAgo(0);
+    });
+    await waitFor('en modo automatico el servidor genera la cuota del mes', async () => {
+        const fee = await getDoc(finRef('finanzas_movimientos', `fee_u-maria_${periodMonthsAgo(0)}`)(admin));
+        return fee.exists() && fee.data().serverGenerated === true && fee.data().amount === 500 && fee.data().type === 'charge';
+    });
+    await waitFor('una sola cuota vencida no lo hace moroso para la garita', async () => (await vecinoA('u-maria')).paymentStatus === 'al_dia');
+
+    // Ana: dos cuotas vencidas de 750 (ya tiene un pago de 500) -> debe 1000, mas de una cuota
+    const now = new Date().toISOString();
+    for (const [i, period] of [[1, periodMonthsAgo(2)], [2, periodMonthsAgo(1)]]) {
+        await setDoc(finRef('finanzas_movimientos', `mora_test_${i}`)(admin), { id: `mora_test_${i}`, date: now, type: 'charge', kind: 'fee', period, amount: 750, concept: 'Cuota de prueba', resiId: 'u-ana', created_at: now, updated_at: now });
+    }
+    const anaMorosa = await waitFor('dos cuotas vencidas: el vecino queda moroso', async () => {
+        const v = await vecinoA('u-ana');
+        return v.paymentStatus === 'moroso' && v.morosoSince ? v : null;
+    });
+    await denied('con mora automatica el admin no cambia el estado de pago a mano', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { paymentStatus: 'al_dia', morosoSince: null }));
+    await allowed('el admin sigue editando los demas datos del vecino', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { casa: 'Casa 12', updatedAt: new Date().toISOString() }));
+
+    await setDoc(doc(admin.db, `condominios/${A}/vehiculos/veh-ana-fin`), { id: 'veh-ana-fin', condominioId: A, userId: 'u-ana', plate: 'P-321FIN', plateNorm: 'P321FIN', brand: '', model: '', color: '', marbeteCode: 'MARFIN1', createdAt: now });
+    r = await camera({ condominioId: A }, itms('P321FIN'));
+    equal('la camara lo deja pasar con aviso de mora', [r.body.Command, /MOROSO/.test(r.body.Reason || '')], ['Open', true]);
+
+    await setDoc(finRef('finanzas_movimientos', 'mora_test_pago')(admin), { id: 'mora_test_pago', date: now, type: 'income', amount: 1000, concept: 'Pago', resiId: 'u-ana', receiptNum: 'AG-0002', created_at: now, updated_at: now });
+    await waitFor('al pagar vuelve a estar al dia al instante', async () => {
+        const v = await vecinoA('u-ana');
+        return v.paymentStatus === 'al_dia' && v.morosoSince === null;
+    });
+    await setDoc(doc(admin.db, `condominios/${A}/vehiculos/veh-ana-fin2`), { id: 'veh-ana-fin2', condominioId: A, userId: 'u-ana', plate: 'P-654FIN', plateNorm: 'P654FIN', brand: '', model: '', color: '', marbeteCode: 'MARFIN2', createdAt: now });
+    r = await camera({ condominioId: A }, itms('P654FIN'));
+    equal('ya al dia, la camara abre normal', [r.body.Command, /Vecino permanente/.test(r.body.Reason || '')], ['Open', true]);
+    equal('el moroso conservo su fecha de inicio mientras estuvo en mora', typeof (anaMorosa && anaMorosa.morosoSince), 'string');
 
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');

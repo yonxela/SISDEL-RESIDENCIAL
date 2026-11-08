@@ -21,6 +21,7 @@
     "ignore": [
       "firebase.json",
       "**/.*",
+      ".claude/**",
       "**/node_modules/**",
       "functions/**",
       "scripts/**",

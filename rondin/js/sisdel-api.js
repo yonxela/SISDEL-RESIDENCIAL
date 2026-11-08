@@ -35,9 +35,26 @@
     function condoId() { return (session() || {}).condominioId; }
     function myId() { return (session() || {}).userId; }
     function myRole() { return (session() || {}).role; }
-    function rondinRole() { return myRole() === 'auditor' ? 'DIRECTOR_GENERAL' : (ROLE_OUT[myRole()] || 'GUARDIA'); }
-    const isManager = () => ['admin', 'supervisor', 'auditor'].includes(myRole());
-    const isPatroller = () => ['policia', 'supervisor'].includes(myRole());
+    // Privilegios del usuario (los asigna el administrador; ver privilegios.js). Las reglas de Firestore exigen
+    // lo mismo: aqui solo se decide que pantalla de RONDIN se muestra.
+    const can = (key) => SISDEL.can(key);
+    const canManage = () => can('rondas.gestionar');
+    const canPatrol = () => can('rondas.patrullar');
+    // Pantalla de RONDIN: administra quien tiene rondas.gestionar (supervisor si ademas patrulla), patrulla quien
+    // tiene rondas.patrullar y solo mira quien tiene rondas.ver (el auditor, en solo lectura)
+    function rondinRoleFor(role, overrides) {
+        const has = (key) => SISDEL.PRIV.has(role, overrides, key);
+        if (role === 'vecino') return 'NEIGHBOR';
+        if (role === 'master') return 'SUPER_ADMIN';
+        if (has('rondas.gestionar')) return role === 'admin' ? 'DIRECTOR_GENERAL' : (has('rondas.patrullar') ? 'SUPERVISOR' : 'DIRECTOR_GENERAL');
+        if (has('rondas.patrullar')) return 'GUARDIA';
+        if (has('rondas.ver')) return 'DIRECTOR_GENERAL';
+        return ROLE_OUT[role] || 'GUARDIA';
+    }
+    function rondinRole() { return rondinRoleFor(myRole(), (session() || {}).privilegios); }
+    const asGuard = () => rondinRole() === 'GUARDIA';
+    const isManager = () => canManage() || can('rondas.ver');
+    const isPatroller = () => canPatrol();
 
     function apiUser() {
         const s = session();
@@ -90,7 +107,7 @@
     }
 
     function err(message, status = 400) { const e = new Error(message); e.status = status; return e; }
-    function readOnlyGuard() { if (myRole() === 'auditor') throw err('Perfil de solo lectura: no puede modificar datos.', 403); }
+    function readOnlyGuard() { if (!canManage() && !canPatrol()) throw err('Perfil de solo lectura: no puede modificar datos.', 403); }
     function friendly(e) {
         const code = String((e && e.code) || '');
         if (code.includes('permission-denied')) return err('Sin permisos para esta acción', 403);
@@ -113,8 +130,8 @@
     async function sisdelUsers() {
         return cached('users', 4000, async () => {
             const users = await SISDEL.getUsers(condoId());
-            // El supervisor ve el codigo de sus guardias (el admin ve todos; lo resuelve sisdel-core)
-            if (myRole() === 'supervisor') {
+            // Quien puede registrar guardias ve el codigo de sus guardias (quien ve todos los codigos lo resuelve sisdel-core)
+            if (can('guardias.crear') && !can('usuarios.codigos')) {
                 try {
                     const snap = await fdb().collection('codigos').where('condominioId', '==', condoId()).where('role', '==', 'policia').get();
                     const codes = new Map(snap.docs.map((d) => [d.data().userId, d.id]));
@@ -139,7 +156,7 @@
         else delete profile.access_code;
         return {
             id: u.id, company_id: condoId(), name: u.name, email: u.email || '', phone: u.phone || '',
-            role: ROLE_OUT[u.role] || String(u.role || '').toUpperCase(), photo_url: null,
+            role: u.role === 'operador' ? rondinRoleFor(u.role, u.privilegios) : (ROLE_OUT[u.role] || String(u.role || '').toUpperCase()), photo_url: null,
             status: u.active === false ? 'INACTIVE' : 'ACTIVE', profile: JSON.stringify(profile),
             document_id: p.document_id || null, supervisor_id: p.supervisor_id || null,
             pin_plain: u.accessCode || '', language: 'es', created_at: sqlFromIso(u.createdAt)
@@ -233,7 +250,7 @@
 
     // ══════════ ASIGNACIONES ══════════
     async function assignmentsAll() {
-        if (myRole() === 'policia') return list(await col('rondas_asignaciones').where('guard_id', '==', myId()).get());
+        if (asGuard()) return list(await col('rondas_asignaciones').where('guard_id', '==', myId()).get());
         return cached('assignments', 3000, async () => list(await col('rondas_asignaciones').get()));
     }
     function assignmentWorksOn(a, ymd) {
@@ -254,7 +271,7 @@
     // Turnos de los ultimos dias (los de mas de 16 h los cierra dailyRondas)
     async function shiftsQuery(filters = {}) {
         let q = col('rondas_turnos');
-        if (myRole() === 'policia') q = q.where('guard_id', '==', myId());
+        if (asGuard()) q = q.where('guard_id', '==', myId());
         else if (filters.guard_id) q = q.where('guard_id', '==', filters.guard_id);
         if (filters.status) q = q.where('status', '==', filters.status);
         const since = daysAgoSql(filters.days || 30);
@@ -264,7 +281,7 @@
     // Visitas entre dos instantes (indice route_id + arrived_at en firestore.indexes.json)
     async function visitsQuery({ routeId, sinceSql, untilSql } = {}) {
         let q = col('rondas_visitas');
-        const guard = myRole() === 'policia';
+        const guard = asGuard();
         if (guard) q = q.where('guard_id', '==', myId());
         if (routeId) q = q.where('route_id', '==', routeId);
         if (!guard && sinceSql) q = q.where('arrived_at', '>=', sinceSql);
@@ -369,7 +386,7 @@
         return { ...apiUser(), company_name: c.name || (session() || {}).condominioName || '' };
     });
     on('POST', '/api/auth/logout', async () => {
-        if (myRole() !== 'policia') return { success: true };
+        if (!asGuard()) return { success: true };
         const today = localDate();
         const working = (await assignmentsAll()).some((a) => assignmentWorksOn(a, today));
         if (working) {
@@ -420,7 +437,7 @@
     on('POST', '/api/users', async (b) => {
         readOnlyGuard();
         const role = ROLE_IN[b.role || 'GUARDIA'] || 'policia';
-        if (myRole() === 'supervisor' && role !== 'policia') throw err('El supervisor solo puede registrar guardias', 403);
+        if (role !== 'policia' && !can('usuarios.crear')) throw err('Solo puede registrar guardias', 403);
         const u = await SISDEL.createUser(condoId(), b.name, role, '', b.phone || '', b.email || '', b.pin || '');
         if (!u) throw err('No se pudo crear el usuario.');
         const profile = { ...(b.profile || {}) };
@@ -440,7 +457,12 @@
         if (b.phone) changes.phone = b.phone;
         if (b.email) changes.email = b.email;
         if (b.status) changes.active = b.status !== 'INACTIVE';
-        if (b.role && ROLE_IN[b.role]) changes.role = ROLE_IN[b.role];
+        if (b.role && ROLE_IN[b.role]) {
+            changes.role = ROLE_IN[b.role];
+            // Al cambiar de rol los privilegios a la medida del rol anterior ya no aplican: vuelve a los del nuevo rol
+            const before = (await sisdelUsers()).find((x) => x.id === p.id);
+            if (before && before.role !== changes.role && before.privilegios) changes.privilegios = firebase.firestore.FieldValue.delete();
+        }
         const u = await SISDEL.updateUser(p.id, changes);
         if (!u) throw err('No se pudo actualizar el usuario');
         invalidate('users');
@@ -650,7 +672,7 @@
         return r;
     });
     on('GET', '/api/rounds', async (b, p, q) => {
-        const rows = myRole() === 'policia'
+        const rows = asGuard()
             ? list(await col('rondas_rondas').where('guard_id', '==', myId()).get())
             : await roundsSince(daysAgoSql(30));
         return rows.filter((r) => (!q.get('shift_id') || r.shift_id === q.get('shift_id')) && (!q.get('status') || r.status === q.get('status')));
@@ -1129,7 +1151,7 @@
             const drones = list(await col('rondas_drones').get()).filter((d) => d.status === 'ACTIVE' && (d.battery_level ?? 100) > 20);
             if (!drones.length) return;
             const drone = drones[0];
-            if (!['admin', 'supervisor'].includes(myRole())) return;
+            if (!canManage()) return;
             await col('rondas_drones').doc(drone.id).update({ status: 'DISPATCHED' }).catch(() => {});
             socket.fire('drone:panic_dispatch', { drone_id: drone.id, drone_name: drone.name, company_id: condoId(), emergency_type: type, latitude: panic.lat, longitude: panic.lng, event_id: panic.id, timestamp: new Date().toISOString() });
         } catch (e) { console.warn('drones', e); }
@@ -1154,7 +1176,7 @@
         authReady().then(() => {
             const sinceNow = sql();
             // Panico (vecinos y guardias): lo reciben quienes atienden
-            if (['admin', 'supervisor', 'policia', 'auditor'].includes(myRole())) {
+            if (can('panico.ver')) {
                 listenNewPanics((p) => {
                     const mapsUrl = p.lat != null ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null;
                     if (p.source === 'vecino') {
@@ -1273,6 +1295,25 @@
             }
         };
     });
+
+    // Acceso a rondas: quien no tiene rondas.ver ni rondas.patrullar va a su pagina de inicio. Los privilegios
+    // pudieron cambiar despues del login: se vuelven a leer y, si cambiaron, la pagina se recarga una vez.
+    (function guardAccess() {
+        const entry = SISDEL.PRIV.PAGES.find((p) => p.page === 'rondin/');
+        const s0 = session();
+        if (!s0 || s0.role === 'master' || s0.role === 'vecino') return;
+        const leave = () => location.replace('../' + (SISDEL.homePage() || 'index.html'));
+        if (!SISDEL.PRIV.canEnter(s0.role, s0.privilegios, entry)) { leave(); return; }
+        SISDEL.refreshAccess().then((r) => {
+            const s1 = session();
+            if (!r.ok || !s1) { sessionStorage.removeItem('sisdel_session'); location.replace('../index.html'); return; }
+            if (!SISDEL.PRIV.canEnter(s1.role, s1.privilegios, entry)) { leave(); return; }
+            if (r.changed && !sessionStorage.getItem('sisdel_rondin_reload')) {
+                sessionStorage.setItem('sisdel_rondin_reload', '1');
+                location.reload();
+            } else if (!r.changed) sessionStorage.removeItem('sisdel_rondin_reload');
+        });
+    })();
 
     // RONDIN guardaba su sesion en localStorage; aqui manda la de SISDEL (por pestana)
     localStorage.removeItem('sisdel_token');

@@ -97,11 +97,12 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="privilegios.js?v=20261108d"></script>
+    <script src="sisdel-core.js?v=20261108d"></script>
     <script src="finanzas-sync.js?v=20261107"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const session = await SISDEL.requireAuth([SISDEL.ROLES.ADMIN]);
+            const session = await SISDEL.requireAuth([], 'finanzas.html');
             if (!session) return;
 
             const condoId = session.condominioId;
@@ -198,7 +199,10 @@
                 action();
             }
 
-            document.getElementById('btnBack').addEventListener('click', () => leave(() => { window.location.href = 'admin.html'; }));
+            // Vuelve al panel de inicio de este usuario (un contador, por ejemplo, no entra a admin.html)
+            const backTo = SISDEL.homePage();
+            if (backTo === 'finanzas.html') document.getElementById('btnBack').style.display = 'none'; // su unico panel: sale con "Cerrar sesion" de OIKOS
+            document.getElementById('btnBack').addEventListener('click', () => leave(() => { window.location.href = backTo; }));
 
             // "Cerrar sesión" dentro de OIKOS: OIKOS ya borro el sessionStorage (que comparte
             // con esta pagina, incluida la sesion de SISDEL), asi que se cierra la sesion completa.

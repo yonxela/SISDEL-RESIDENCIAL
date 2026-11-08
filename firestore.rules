@@ -407,7 +407,7 @@ service cloud.firestore {
         allow read: if isMaster() || pUsuariosPrivilegios(condoId);
         allow create, update: if pUsuariosPrivilegios(condoId) && request.resource.data.condominioId == condoId
           && request.resource.data.name is string && request.resource.data.name.size() <= 60
-          && request.resource.data.keys is list && request.resource.data.keys.size() <= 40;
+          && request.resource.data.claves is list && request.resource.data.claves.size() <= 40;
         allow delete: if pUsuariosPrivilegios(condoId);
       }
 

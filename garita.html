@@ -38,11 +38,7 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                     </svg>
                 </button>
-                <a class="btn btn-ghost btn-sm" href="rondin/" id="btnRondas" title="Rondas de vigilancia"
-                    style="gap:0.4rem; border:1px solid var(--border-strong);">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    Rondas
-                </a>
+                <span id="panelLinks" style="display:contents;"></span>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
             </div>
         </header>
@@ -159,16 +155,31 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="privilegios.js?v=20261108d"></script>
+    <script src="sisdel-core.js?v=20261108d"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const session = await SISDEL.requireAuth([SISDEL.ROLES.POLICIA, SISDEL.ROLES.ADMIN]);
+            const session = await SISDEL.requireAuth([], 'garita.html');
             if (!session) return;
 
             const condoId = session.condominioId;
             document.getElementById('condoName').textContent = session.condominioName;
+
+            // Botones hacia los demas paneles a los que este usuario puede entrar
+            const PANEL_ICONS = {
+                'admin.html': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+                'auditor.html': '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>',
+                'finanzas.html': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+                'rondin/': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+            };
+            document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('garita.html').map((p) => `
+                <a class="btn btn-ghost btn-sm" href="${p.page}" title="${p.label}" style="gap:0.4rem; border:1px solid var(--border-strong);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PANEL_ICONS[p.page] || ''}</svg>
+                    ${p.label}
+                </a>`).join('');
+            const seesCamera = SISDEL.can('garita.camara');
 
             // --- Theme Support ---
             const themeToggle = document.getElementById('themeToggle');
@@ -212,7 +223,9 @@
 
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
-            SisdelPanico.watch({ canResolve: session.role === SISDEL.ROLES.ADMIN });
+            if (SISDEL.can('panico.ver')) SisdelPanico.watch({
+                canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.atender'), readOnly: !SISDEL.can('panico.atender')
+            });
 
             // --- Stats & Rendering ---
             async function renderStats() {
@@ -519,7 +532,7 @@
             async function renderHistory() {
                 try {
                     // 1. Fetch Camera/LPR Logs (Today)
-                    const cameraLogs = await SISDEL.getCameraLogsToday(condoId, 15);
+                    const cameraLogs = seesCamera ? await SISDEL.getCameraLogsToday(condoId, 15) : [];
 
                     // 2. Fetch Entered Visits (Today)
                     const visits = await SISDEL.getTodayVisits(condoId);
@@ -600,7 +613,7 @@
             }
 
             // Realtime monitoring for new logs (if LPR enabled)
-            if (hasLPR) {
+            if (hasLPR && seesCamera) {
                 // Subscribe to NEW logs
                 SISDEL.subscribeCameraLogs(condoId, (log) => {
                     // Refresh history

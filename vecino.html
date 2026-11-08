@@ -247,12 +247,20 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="privilegios.js?v=20261108d"></script>
+    <script src="sisdel-core.js?v=20261108d"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO]);
+            const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
             if (!session) return;
+
+            // Lo que el administrador le permite a este vecino (las reglas de Firestore exigen lo mismo)
+            const canVisits = SISDEL.can('vecino.visitas');
+            const canVehicles = SISDEL.can('vecino.vehiculos');
+            const canPanic = SISDEL.can('panico.activar');
+            if (!canVisits) document.getElementById('cardNewVisit').style.display = 'none';
+            if (!canVehicles) document.getElementById('cardNewVehicle').style.display = 'none';
 
             document.getElementById('userName').textContent = session.userName;
             document.getElementById('userCasa').textContent = session.userCasa || 'Pendiente';
@@ -282,7 +290,7 @@
             SisdelRondas.init(session);
             // El boton de panico del vecino se activa en RONDIN > Configuracion ("Vecinos usaran boton de panico")
             SisdelRondas.neighborPanicEnabled().then((enabled) => {
-                document.getElementById('panicCard').style.display = enabled ? 'block' : 'none';
+                document.getElementById('panicCard').style.display = enabled && canPanic ? 'block' : 'none';
             });
             const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const panicBtn = document.getElementById('btnPanicHold');

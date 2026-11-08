@@ -7,14 +7,17 @@ const SISDEL = (() => {
     // ── Constants ──
     const STORAGE_KEYS = { session: 'sisdel_session', loginTiming: 'sisdel_login_timing' };
 
-    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor', SUPERVISOR: 'supervisor' };
+    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor', SUPERVISOR: 'supervisor', OPERADOR: 'operador' };
+    // Catalogo de privilegios (privilegios.js, cargado antes que este archivo)
+    const PRIV = window.SisdelPrivilegios;
+    if (!PRIV) throw new Error('Falta privilegios.js: debe cargarse antes que sisdel-core.js');
     const PAYMENT_STATUS = { AL_DIA: 'al_dia', MOROSO: 'moroso' };
     const VISIT_STATUS = { PENDING: 'pending', ENTERED: 'entered', COMPLETED: 'completed' };
 
     const COL = {
         condos: 'condominios', users: 'usuarios', visits: 'visitas', vehicles: 'vehiculos',
         messages: 'mensajes', cameraLogs: 'camera_logs',
-        globalMessages: 'mensajes_globales', codes: 'codigos'
+        globalMessages: 'mensajes_globales', codes: 'codigos', templates: 'plantillas_privilegios'
     };
 
     // Las lecturas van siempre al servidor: si no hay conexion se avisa, no se muestra una lista vacia
@@ -103,6 +106,31 @@ const SISDEL = (() => {
         return session ? session.role : null;
     }
     function isMasterSession() { return sessionRole() === ROLES.MASTER; }
+
+    // ── Privilegios: el rol trae unos por defecto y el administrador los amplia o restringe por usuario ──
+    // La sesion guarda solo las diferencias (session.privilegios); el catalogo calcula el resto.
+    // Esto decide que se muestra: lo que realmente se permite lo deciden las reglas de Firestore.
+    function can(key) {
+        const session = getSession();
+        return !!session && PRIV.has(session.role, session.privilegios, key);
+    }
+    function canAny(keys) { return keys.some(can); }
+    function effectivePrivileges() {
+        const session = getSession();
+        return session ? PRIV.effective(session.role, session.privilegios) : {};
+    }
+    // Pagina a la que debe ir el usuario al entrar (o cuando la actual no le corresponde)
+    function homePage() {
+        const session = getSession();
+        if (!session) return 'index.html';
+        return session.role === ROLES.MASTER ? 'master.html' : PRIV.landing(session.role, session.privilegios);
+    }
+    // Otras paginas a las que el usuario puede entrar (para los botones de cada panel)
+    function otherPanels(currentPage) {
+        const session = getSession();
+        if (!session || session.role === ROLES.MASTER) return [];
+        return PRIV.pagesFor(session.role, session.privilegios).filter((p) => p.page !== currentPage && p.page !== 'vecino.html');
+    }
 
     // Ubica un documento por id. El master no tiene condominio fijo: se busca en todos
     async function findRef(kind, id) {
@@ -222,7 +250,7 @@ const SISDEL = (() => {
     // ══════════════════════════════════
     //  Codigos de acceso (coleccion aparte: guardias y vecinos no pueden leerlos)
     // ══════════════════════════════════
-    function canReadCodes() { return [ROLES.MASTER, ROLES.ADMIN].includes(sessionRole()); }
+    function canReadCodes() { return isMasterSession() || can('usuarios.codigos'); }
 
     // Mapa userId -> codigo. Devuelve null si el rol no puede ver codigos
     async function codesByUser(condominioId) {
@@ -299,7 +327,8 @@ const SISDEL = (() => {
 
     // preferredCode: codigo que propone la pantalla (RONDIN muestra el codigo del guardia antes de guardarlo);
     // si no es valido o ya esta ocupado se genera uno nuevo
-    async function createUser(condominioId, name, role, casa, phone, email, preferredCode) {
+    // extra: { privilegios, cargo } (solo diferencias con los privilegios del rol; ver privilegios.js)
+    async function createUser(condominioId, name, role, casa, phone, email, preferredCode, extra) {
         try {
             await authReady();
             const condo = await getCondominio(condominioId);
@@ -312,6 +341,9 @@ const SISDEL = (() => {
                 paymentStatus: role === ROLES.VECINO ? PAYMENT_STATUS.AL_DIA : null,
                 morosoSince: null, active: true, createdAt: nowIso()
             };
+            const overrides = PRIV.cleanOverrides(extra && extra.privilegios);
+            if (Object.keys(overrides).length) user.privilegios = overrides;
+            if (extra && extra.cargo) user.cargo = String(extra.cargo).trim().slice(0, 60);
 
             // El codigo es el id del documento: si ya existe, la escritura se rechaza y se prueba otro
             let lastError = null;
@@ -393,6 +425,54 @@ const SISDEL = (() => {
             if (accessCode !== undefined) updated.accessCode = accessCode;
             return updated;
         } catch (error) { reportError('updateUser', error); return null; }
+    }
+
+    // Privilegios y cargo de un usuario. `privilegios` son solo las diferencias con su rol (privilegios.toOverrides);
+    // vacio = vuelve a los del rol. Las reglas exigen usuarios.privilegios y no dejan cambiarse los propios.
+    async function setUserAccess(userId, { privilegios, cargo } = {}) {
+        try {
+            await authReady();
+            const ref = await findRef(COL.users, userId);
+            if (!ref) return false;
+            const overrides = PRIV.cleanOverrides(privilegios);
+            const changes = {
+                privilegios: Object.keys(overrides).length ? overrides : firebase.firestore.FieldValue.delete(),
+                updatedAt: nowIso()
+            };
+            if (cargo !== undefined) changes.cargo = String(cargo || '').trim().slice(0, 60);
+            await ref.update(changes);
+            return true;
+        } catch (error) { reportError('setUserAccess', error); return false; }
+    }
+
+    // ── Plantillas de privilegios propias del condominio (las del sistema estan en privilegios.js) ──
+    async function getPrivilegeTemplates(condominioId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId || sessionCondoId(), COL.templates).get(SERVER);
+            return snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        } catch (error) { reportError('getPrivilegeTemplates', error); return []; }
+    }
+
+    async function savePrivilegeTemplate(condominioId, { id, name, role, claves, description }) {
+        try {
+            await authReady();
+            const ref = id ? sub(condominioId, COL.templates).doc(id) : sub(condominioId, COL.templates).doc();
+            const valid = (claves || []).filter((k) => PRIV.itemOf(k));
+            await ref.set({
+                id: ref.id, condominioId, name: String(name || '').trim().slice(0, 60), role: PRIV.ROLES.includes(role) ? role : 'operador',
+                description: String(description || '').trim().slice(0, 200), claves: valid, updatedAt: nowIso()
+            });
+            return ref.id;
+        } catch (error) { reportError('savePrivilegeTemplate', error); return null; }
+    }
+
+    async function deletePrivilegeTemplate(condominioId, id) {
+        try {
+            await authReady();
+            await sub(condominioId, COL.templates).doc(id).delete();
+            return true;
+        } catch (error) { reportError('deletePrivilegeTemplate', error); return false; }
     }
 
     // Elimina al usuario con su codigo, vehiculos y visitas
@@ -592,7 +672,7 @@ const SISDEL = (() => {
                 await authReady();
                 const role = sessionRole();
                 const scope = condominioId || sessionCondoId();
-                const seesAll = [ROLES.MASTER, ROLES.ADMIN, ROLES.AUDITOR].includes(role);
+                const seesAll = role === ROLES.MASTER || can('mensajes.historial');
                 const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
 
                 const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
@@ -754,10 +834,40 @@ const SISDEL = (() => {
         try { services().auth.signOut().then(leave, leave); } catch { leave(); }
     }
 
-    async function requireAuth(allowedRoles) {
+    // Vuelve a leer la ficha del usuario para tomar sus privilegios, rol y nombre actuales: el administrador
+    // pudo cambiarlos despues del login. Sin conexion se sigue con lo que trajo el login.
+    async function refreshAccess() {
+        const session = getSession();
+        if (!session || session.role === ROLES.MASTER) return { ok: true, changed: false };
+        try {
+            await authReady();
+            const snap = await sub(session.condominioId, COL.users).doc(session.userId).get(SERVER);
+            if (!snap.exists || snap.data().active === false) return { ok: false, changed: false };
+            const data = snap.data();
+            const next = {
+                ...session, role: data.role, userName: data.name || session.userName, userCasa: data.casa || '',
+                privilegios: PRIV.cleanOverrides(data.privilegios), cargo: data.cargo || ''
+            };
+            const changed = JSON.stringify([session.role, session.privilegios || {}]) !== JSON.stringify([next.role, next.privilegios]);
+            sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(next));
+            return { ok: true, changed };
+        } catch (error) {
+            const code = String((error && error.code) || '');
+            // Sin permiso: el usuario o el condominio ya no estan activos
+            if (code.includes('permission-denied')) return { ok: false, changed: false };
+            console.warn('refreshAccess', error);
+            return { ok: true, changed: false, stale: true };
+        }
+    }
+
+    // page: pagina que se abre (ver PAGES en privilegios.js). Con ella manda el catalogo de privilegios;
+    // sin ella (master.html) basta con el rol. Si el usuario no puede estar aqui, va a la pagina que si le toca.
+    async function requireAuth(allowedRoles, page) {
         const session = getSession();
         if (!session) { window.location.href = 'index.html'; return null; }
-        if (allowedRoles && !allowedRoles.includes(session.role)) { window.location.href = 'index.html'; return null; }
+        if (session.role === ROLES.MASTER) {
+            if (allowedRoles && !allowedRoles.includes(ROLES.MASTER)) { window.location.href = 'master.html'; return null; }
+        } else if (!page && allowedRoles && !allowedRoles.includes(session.role)) { window.location.href = 'index.html'; return null; }
 
         // La sesion guardada debe coincidir con el usuario autenticado en Firebase
         const user = await authReady();
@@ -767,7 +877,20 @@ const SISDEL = (() => {
             window.location.href = 'index.html';
             return null;
         }
-        return session;
+        if (session.role === ROLES.MASTER) return session;
+
+        const fresh = await refreshAccess();
+        if (!fresh.ok) { clearSession(); window.location.href = 'index.html'; return null; }
+        const current = getSession();
+        if (page) {
+            const entry = PRIV.PAGES.find((p) => p.page === page);
+            if (!entry || !PRIV.canEnter(current.role, current.privilegios, entry)) {
+                const home = PRIV.landing(current.role, current.privilegios);
+                window.location.href = home && home !== page ? home : 'index.html';
+                return null;
+            }
+        }
+        return current;
     }
 
     // ══════════════════════════════════
@@ -815,7 +938,7 @@ const SISDEL = (() => {
     }
 
     function getRoleName(role) {
-        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.AUDITOR]: 'Auditor', [ROLES.SUPERVISOR]: 'Supervisor de rondas', [ROLES.MASTER]: 'Master' };
+        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.AUDITOR]: 'Auditor', [ROLES.SUPERVISOR]: 'Supervisor de rondas', [ROLES.OPERADOR]: 'Operador', [ROLES.MASTER]: 'Master' };
         return names[role] || role;
     }
 
@@ -867,6 +990,8 @@ const SISDEL = (() => {
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
         getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
+        PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, refreshAccess,
+        setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,

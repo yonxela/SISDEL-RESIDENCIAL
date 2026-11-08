@@ -111,7 +111,7 @@
                 </div>
             </div>
             <div class="top-bar-actions">
-                <a class="btn btn-ghost btn-sm" href="rondin/" title="Rondas de vigilancia (solo lectura)" style="border:1px solid var(--border-strong);">Rondas</a>
+                <span id="panelLinks" style="display:contents;"></span>
                 <span class="ro-badge" title="Este perfil no puede crear, editar ni eliminar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -283,11 +283,27 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="privilegios.js?v=20261108d"></script>
+    <script src="sisdel-core.js?v=20261108d"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const session = await SISDEL.requireAuth([SISDEL.ROLES.AUDITOR]);
+            const session = await SISDEL.requireAuth([], 'auditor.html');
             if (!session) return;
+
+            // Cada pestana pide el privilegio de lectura de sus datos (las reglas de Firestore exigen lo mismo)
+            const can = {
+                usuarios: SISDEL.can('usuarios.ver'),
+                visitas: SISDEL.can('visitas.ver'),
+                accesos: SISDEL.can('garita.camara'),
+                mensajes: SISDEL.can('mensajes.historial'),
+                exportar: SISDEL.can('auditoria.exportar')
+            };
+            can.reportes = can.usuarios && can.visitas && can.accesos;
+            const VIEW_ALLOWED = { usuarios: can.usuarios, visitas: can.visitas, vehiculos: can.visitas, accesos: can.accesos, mensajes: can.mensajes, reportes: can.reportes };
+            document.querySelectorAll('#mainTabs .tab').forEach((t) => { if (!VIEW_ALLOWED[t.dataset.view]) t.style.display = 'none'; });
+            const firstView = Object.keys(VIEW_ALLOWED).find((v) => VIEW_ALLOWED[v]) || null;
+            document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('auditor.html').map((p) => `
+                <a class="btn btn-ghost btn-sm" href="${p.page}" title="${p.label}" style="border:1px solid var(--border-strong);">${p.label}</a>`).join('');
 
             const condoId = session.condominioId;
             const condoName = session.condominioName || '';
@@ -417,8 +433,8 @@
                 const todayStr = ymd(today());
                 const { fromIso, toIso } = isoRange(todayStr, todayStr);
                 const [todayVisits, todayLogs] = await Promise.all([
-                    SISDEL.getTodayVisits(condoId),
-                    SISDEL.getCameraLogsBetween(condoId, fromIso, toIso, MAX_LOGS)
+                    can.visitas ? SISDEL.getTodayVisits(condoId) : Promise.resolve(null),
+                    can.accesos ? SISDEL.getCameraLogsBetween(condoId, fromIso, toIso, MAX_LOGS) : Promise.resolve(null)
                 ]);
                 const vecinos = users.filter((u) => u.role === SISDEL.ROLES.VECINO);
                 const morosos = vecinos.filter((u) => u.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO).length;
@@ -427,7 +443,7 @@
                     stat(users.length, 'Usuarios', 'var(--primary-light)'),
                     stat(vecinos.length, 'Vecinos', 'var(--accent)'),
                     stat(morosos, 'Morosos', 'var(--danger)'),
-                    stat(todayVisits.length, 'Visitas hoy', 'var(--warning)'),
+                    stat(todayVisits ? todayVisits.length : '—', 'Visitas hoy', 'var(--warning)'),
                     stat(todayLogs ? todayLogs.length : '—', 'Accesos hoy', 'var(--success)')
                 ].join('');
             }
@@ -721,9 +737,9 @@
                             ${report.capped ? `<p class="result-note warn">El periodo tiene más de ${MAX_LOGS} accesos; los totales cubren solo los ${MAX_LOGS} más recientes. Reduzca el rango para un total exacto.</p>` : ''}
                         </div>
                         <div class="report-actions no-print">
-                            <button class="btn btn-ghost btn-sm" data-export="logs">${ICONS.download} Accesos (CSV)</button>
+                            ${can.exportar ? `<button class="btn btn-ghost btn-sm" data-export="logs">${ICONS.download} Accesos (CSV)</button>
                             <button class="btn btn-ghost btn-sm" data-export="visits">${ICONS.download} Visitas (CSV)</button>
-                            <button class="btn btn-ghost btn-sm" data-export="users">${ICONS.download} Usuarios (CSV)</button>
+                            <button class="btn btn-ghost btn-sm" data-export="users">${ICONS.download} Usuarios (CSV)</button>` : ''}
                             <button class="btn btn-primary btn-sm" data-export="print">${ICONS.print} Imprimir / PDF</button>
                         </div>
                     </div>
@@ -787,7 +803,7 @@
             }
 
             // --- Pestanas: cada vista se carga la primera vez que se abre, ya con los usuarios cargados ---
-            const usersReady = loadUsers();
+            const usersReady = can.usuarios ? loadUsers() : Promise.resolve();
             const loaded = new Set();
             const loaders = {
                 usuarios: () => renderUsers(),
@@ -820,7 +836,8 @@
             document.getElementById('logTo').value = ymd(t);
             setPreset('30d');
 
-            showView('usuarios');
+            if (firstView) showView(firstView);
+            else document.getElementById('statsGrid').insertAdjacentHTML('afterend', '<p class="text-center text-muted card" style="padding:2rem;">Su usuario no tiene privilegios de lectura en este panel. Pídale al administrador que se los asigne.</p>');
             await usersReady;
             await renderStats();
             SISDEL.reportPageLoad('auditor');

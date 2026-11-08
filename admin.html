@@ -41,19 +41,7 @@
                         <circle id="sunCircle" cx="12" cy="12" r="5" style="display:none;" />
                     </svg>
                 </button>
-                <a class="btn btn-ghost btn-sm" href="finanzas.html" id="btnFinance" title="Sistema Financiero"
-                    style="gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="12" y1="1" x2="12" y2="23"/>
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                    </svg>
-                    Finanzas
-                </a>
-                <a class="btn btn-ghost btn-sm" href="rondin/" id="btnRondas" title="Rondas de vigilancia"
-                    style="gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    Rondas
-                </a>
+                <span id="panelLinks" style="display:contents;"></span>
                 <button class="btn btn-ghost btn-icon" id="btnMessages" title="Mensajes" style="position:relative;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -85,6 +73,7 @@
                 <button class="tab" data-tab="admins">⚙️ Admins</button>
                 <button class="tab" data-tab="auditores">Auditores</button>
                 <button class="tab" data-tab="supervisores">Supervisores</button>
+                <button class="tab" data-tab="operadores">Operadores</button>
                 <button class="tab" data-tab="todos">📋 Todos</button>
             </div>
 
@@ -159,13 +148,20 @@
                 </div>
                 <div class="form-group">
                     <label>Rol del Usuario</label>
-                    <select class="form-input" id="newUserRole" required>
-                        <option value="vecino">Vecino / Residente</option>
-                        <option value="policia">Policía / Guardia de Garita</option>
-                        <option value="admin">Co-Administrador</option>
-                        <option value="auditor">Auditor (solo lectura y reportes)</option>
-                        <option value="supervisor">Supervisor de rondas</option>
-                    </select>
+                    <select class="form-input" id="newUserRole" required></select>
+                    <p class="text-xs text-muted" id="newUserRoleHelp" style="margin-top:0.25rem;"></p>
+                </div>
+                <div class="form-group" id="groupCargo">
+                    <label>Cargo o puesto (opcional)</label>
+                    <input type="text" class="form-input" id="newUserCargo" maxlength="60" placeholder="Ej. Secretaria, Contador, Jefe de seguridad">
+                </div>
+                <div class="form-group" id="groupTemplate" style="display:none;">
+                    <label>Privilegios</label>
+                    <select class="form-input" id="newUserTemplate"></select>
+                    <p class="text-xs text-muted" id="newUserTemplateHelp" style="margin-top:0.25rem;"></p>
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.6rem; font-weight:500;">
+                        <input type="checkbox" id="newUserReview"> Revisar y ajustar los privilegios al crear
+                    </label>
                 </div>
                 <div class="form-group" id="groupCasa">
                     <label>Casa o Lote <span style="color:var(--danger);">*</span></label>
@@ -209,11 +205,15 @@
                     <label>Código de Acceso</label>
                     <input type="text" class="form-input" id="editUserCode" disabled
                         style="background:var(--bg-item); opacity:0.7;">
-                    <p class="text-xs text-muted" style="margin-top:0.25rem;">El código es generado por el sistema.</p>
+                    <p class="text-xs text-muted" style="margin-top:0.25rem;" id="editUserCodeHelp">El código es generado por el sistema.</p>
                 </div>
                 <div class="form-group">
                     <label>Casa/Lote</label>
                     <input type="text" class="form-input" id="editUserCasa">
+                </div>
+                <div class="form-group">
+                    <label>Cargo o puesto</label>
+                    <input type="text" class="form-input" id="editUserCargo" maxlength="60">
                 </div>
                 <div class="form-group">
                     <label>Estado de Pago</label>
@@ -234,9 +234,11 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Guardar
+                <button type="submit" class="btn btn-primary" id="btnSaveEdit" style="width:100%; margin-top:1rem;">Guardar
                     Cambios</button>
-                <div style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
+                <button type="button" class="btn btn-ghost" id="btnEditPrivileges"
+                    style="width:100%; margin-top:0.75rem; border:1px solid var(--border-strong); display:none;">Privilegios de este usuario…</button>
+                <div id="deleteBox" style="margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:1rem;">
                     <button type="button" class="btn btn-ghost" id="btnDeleteUser"
                         style="width:100%; color:var(--danger);">Eliminar de este Condominio</button>
                 </div>
@@ -249,17 +251,75 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261108b"></script>
+    <script src="privilegios.js?v=20261108d"></script>
+    <script src="sisdel-core.js?v=20261108d"></script>
+    <script src="privilegios-ui.js?v=20261108d"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const session = await SISDEL.requireAuth([SISDEL.ROLES.ADMIN]);
+            const session = await SISDEL.requireAuth([], 'admin.html');
             if (!session) return;
 
             const condoId = session.condominioId;
+            const PRIV = SISDEL.PRIV;
             document.getElementById('condoNameHeader').textContent = session.condominioName;
             document.getElementById('adminName').textContent = session.userName;
+
+            // Lo que este usuario puede hacer aqui (lo permitido de verdad lo deciden las reglas de Firestore;
+            // esto solo muestra u oculta botones)
+            const caps = {
+                crear: SISDEL.can('usuarios.crear'),
+                guardias: SISDEL.can('guardias.crear'),
+                editar: SISDEL.can('usuarios.editar'),
+                eliminar: SISDEL.can('usuarios.eliminar'),
+                privilegios: SISDEL.can('usuarios.privilegios'),
+                placas: SISDEL.can('visitas.gestionar'),
+                visitas: SISDEL.can('visitas.ver'),
+                enviar: SISDEL.can('mensajes.enviar'),
+                mensajes: SISDEL.can('mensajes.enviar') || SISDEL.can('mensajes.historial')
+            };
+            let customTemplates = [];
+
+            // Botones hacia los demas paneles a los que este usuario puede entrar
+            const PANEL_ICONS = {
+                'garita.html': '<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/>',
+                'auditor.html': '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>',
+                'finanzas.html': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+                'rondin/': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+            };
+            document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('admin.html').map((p) => `
+                <a class="btn btn-ghost btn-sm" href="${p.page}" title="${p.label}"
+                    style="gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PANEL_ICONS[p.page] || ''}</svg>
+                    ${p.label}
+                </a>`).join('');
+            document.getElementById('btnMessages').style.display = caps.mensajes ? '' : 'none';
+            document.getElementById('btnNewUser').style.display = (caps.crear || caps.guardias) ? '' : 'none';
+            document.getElementById('msgForm').closest('.card').style.display = caps.enviar ? '' : 'none';
+            const esc = SisdelPrivilegiosUI.esc;
+
+            // Roles que este usuario puede crear (las reglas piden lo mismo)
+            const ROLE_OPTIONS = [
+                ['vecino', 'Vecino / Residente'],
+                ['policia', 'Policía / Guardia de Garita'],
+                ['admin', 'Co-Administrador'],
+                ['auditor', 'Auditor (solo lectura y reportes)'],
+                ['supervisor', 'Supervisor de rondas'],
+                ['operador', 'Operador (privilegios a la medida)']
+            ];
+            function creatableRoles() {
+                return ROLE_OPTIONS.filter(([role]) => {
+                    if (role === 'vecino' || role === 'auditor' || role === 'supervisor') return caps.crear;
+                    if (role === 'policia') return caps.crear || caps.guardias;
+                    return caps.crear && caps.privilegios; // admin y operador
+                });
+            }
+            // Administradores y operadores solo los toca quien puede asignar privilegios
+            const isPowerRole = (role) => role === 'admin' || role === 'operador';
+            const canEditUser = (u) => caps.editar && (!isPowerRole(u.role) || caps.privilegios);
+            const canDeleteUser = (u) => caps.eliminar && (!isPowerRole(u.role) || caps.privilegios) && u.id !== session.userId;
+            const canSeePrivileges = (u) => caps.privilegios || u.id === session.userId;
 
             // --- Theme Support ---
             const themeToggle = document.getElementById('themeToggle');
@@ -284,7 +344,7 @@
 
             // Alertas de panico de vecinos y guardias
             SisdelRondas.init(session);
-            SisdelPanico.watch({ canResolve: true });
+            if (SISDEL.can('panico.ver')) SisdelPanico.watch({ canResolve: SISDEL.can('panico.atender'), readOnly: !SISDEL.can('panico.atender') });
 
             // Messages button toggles to messages view
             let showingMessages = false;
@@ -339,19 +399,29 @@
                 const users = await SISDEL.getUsers(condoId);
                 const vecinos = users.filter(u => u.role === SISDEL.ROLES.VECINO);
                 const morosos = vecinos.filter(v => v.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO).length;
-                const todayVisits = await SISDEL.getTodayVisits(condoId);
+                const todayVisits = caps.visitas ? await SISDEL.getTodayVisits(condoId) : null;
 
                 document.getElementById('statsGrid').innerHTML = `
                     <div class="stat-card"><div class="stat-value" style="color:var(--primary-light)">${users.length}</div><div class="stat-label">Usuarios</div></div>
                     <div class="stat-card"><div class="stat-value" style="color:var(--accent)">${vecinos.length}</div><div class="stat-label">Vecinos</div></div>
                     <div class="stat-card"><div class="stat-value" style="color:var(--danger)">${morosos}</div><div class="stat-label">Morosos</div></div>
-                    <div class="stat-card"><div class="stat-value" style="color:var(--warning)">${todayVisits.length}</div><div class="stat-label">Visitas Hoy</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--warning)">${todayVisits ? todayVisits.length : '—'}</div><div class="stat-label">Visitas Hoy</div></div>
                 `;
+            }
+
+            // Etiqueta de privilegios: personalizados, o sin ninguno (un operador sin privilegios no puede entrar)
+            function privilegeBadge(u) {
+                const effective = PRIV.effective(u.role, u.privilegios);
+                const active = PRIV.KEYS.filter((k) => effective[k]).length;
+                const custom = Object.keys(PRIV.cleanOverrides(u.privilegios)).length > 0;
+                if (u.role !== SISDEL.ROLES.OPERADOR && !custom) return '';
+                if (active === 0) return '<span class="badge badge-danger" title="No puede entrar a ningún panel">Sin privilegios</span>';
+                return `<span class="badge ${custom ? 'badge-warning' : 'badge-info'}" title="${custom ? 'Privilegios distintos a los de su rol' : 'Privilegios de su rol'}">${custom ? 'Personalizado · ' : ''}${active} privilegios</span>`;
             }
 
             async function renderUsers() {
                 const allUsers = await SISDEL.getUsers(condoId);
-                const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, todos: null };
+                const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, operadores: SISDEL.ROLES.OPERADOR, todos: null };
                 const targetRole = roleMap[currentTab];
                 let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
                 if (searchQuery) {
@@ -364,10 +434,11 @@
                     <div class="list-item">
                         <div class="avatar" style="${u.paymentStatus === 'moroso' ? 'background:var(--danger);' : ''}">${u.name.charAt(0)}</div>
                         <div class="item-info">
-                            <div class="item-name">${u.name} <code style="font-size:0.75rem; color:var(--accent);">${u.accessCode}</code></div>
-                            <div class="item-detail">${SISDEL.getRoleName(u.role)} ${u.casa ? '· ' + u.casa : ''}</div>
+                            <div class="item-name">${esc(u.name)} ${u.accessCode ? `<code style="font-size:0.75rem; color:var(--accent);">${esc(u.accessCode)}</code>` : ''}</div>
+                            <div class="item-detail">${esc(SISDEL.getRoleName(u.role))} ${u.cargo ? '· ' + esc(u.cargo) : ''} ${u.casa ? '· ' + esc(u.casa) : ''}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
+                            ${privilegeBadge(u)}
                             ${u.paymentStatus ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
                             <div class="custom-tooltip">
                                 <button class="btn btn-ghost btn-icon">
@@ -383,7 +454,8 @@
                                     Casa: ${u.casa || 'N/A'}
                                 </div>
                             </div>
-                            <button class="btn btn-ghost btn-icon" onclick="openEditUser('${u.id}')" title="Editar">✏️</button>
+                            ${canSeePrivileges(u) ? `<button class="btn btn-ghost btn-icon" onclick="openPrivileges('${u.id}')" title="${caps.privilegios && u.id !== session.userId ? 'Privilegios' : 'Mis privilegios'}" aria-label="Privilegios">${SisdelPrivilegiosUI.ICONS.shield}</button>` : ''}
+                            ${(canEditUser(u) || canDeleteUser(u)) ? `<button class="btn btn-ghost btn-icon" onclick="openEditUser('${u.id}')" title="Editar" aria-label="Editar">✏️</button>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -395,9 +467,12 @@
             const btnCloseNewUser = document.getElementById('btnCloseNewUser');
             const newUserForm = document.getElementById('newUserForm');
 
-            btnNewUser.addEventListener('click', () => {
+            btnNewUser.addEventListener('click', async () => {
                 newUserForm.reset();
-                syncNewUserFields(); // Ensure fields match default role (vecino)
+                const roles = creatableRoles();
+                document.getElementById('newUserRole').innerHTML = roles.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+                if (caps.privilegios) customTemplates = await SISDEL.getPrivilegeTemplates(condoId);
+                syncNewUserFields(); // Ensure fields match default role
                 modalNewUser.style.display = 'flex';
             });
             btnCloseNewUser.addEventListener('click', () => modalNewUser.style.display = 'none');
@@ -415,6 +490,10 @@
                     const phone = document.getElementById('newUserPhone').value;
                     const email = document.getElementById('newUserEmail').value;
                     const platesRaw = document.getElementById('newUserPlates').value;
+                    const cargo = document.getElementById('newUserCargo').value;
+                    const templateId = caps.privilegios ? document.getElementById('newUserTemplate').value : '';
+                    const template = templateId ? SisdelPrivilegiosUI.templateChoices(customTemplates).find((t) => t.id === templateId) : null;
+                    const review = caps.privilegios && document.getElementById('newUserReview').checked;
 
                     // Validate required fields for vecino
                     if (role === 'vecino' && !casa.trim()) {
@@ -430,11 +509,13 @@
                         return;
                     }
 
-                    const user = await SISDEL.createUser(condoId, name, role, casa, phone, email);
+                    // Solo se guardan las diferencias con los privilegios del rol
+                    const extra = { cargo, privilegios: template ? PRIV.toOverrides(role, template.claves || []) : {} };
+                    const user = await SISDEL.createUser(condoId, name, role, casa, phone, email, '', extra);
                     if (user) {
                         // Auto-register vehicle plates if provided
                         let plateCount = 0;
-                        if (platesRaw && role === 'vecino') {
+                        if (platesRaw && role === 'vecino' && caps.placas) {
                             const plates = platesRaw.split(',').map(p => p.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(p => p.length > 0);
                             for (const plate of plates) {
                                 const vehicle = await SISDEL.createVehicle(user.id, condoId, plate, '', '', '');
@@ -449,6 +530,12 @@
                         newUserForm.reset();
                         await renderStats();
                         await renderUsers();
+                        // Un operador sin privilegios no puede entrar a nada: se abre el editor para asignarlos
+                        const empty = role === SISDEL.ROLES.OPERADOR && !template;
+                        if (review || empty) {
+                            if (empty) SISDEL.showToast('El operador empieza sin privilegios: asígnele los que necesite', 'info');
+                            openPrivilegesFor(user);
+                        }
                     } else {
                         SISDEL.showToast('Error al crear usuario', 'danger');
                     }
@@ -461,17 +548,55 @@
                 }
             });
 
-            function syncNewUserFields() {
+            function syncNewUserFields(keepTemplate) {
                 const role = document.getElementById('newUserRole').value;
                 const isVecino = role === 'vecino';
                 document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
-                document.getElementById('groupPlates').style.display = isVecino ? 'block' : 'none';
+                document.getElementById('groupPlates').style.display = isVecino && caps.placas ? 'block' : 'none';
                 document.getElementById('newUserCasa').required = isVecino;
                 document.getElementById('newUserPhone').required = isVecino;
+
+                // Privilegios: solo quien puede asignarlos. Por defecto, los del rol; una plantilla los reemplaza
+                const group = document.getElementById('groupTemplate');
+                group.style.display = caps.privilegios ? 'block' : 'none';
+                if (!caps.privilegios) return;
+                const select = document.getElementById('newUserTemplate');
+                if (keepTemplate !== true) {
+                    select.innerHTML = SisdelPrivilegiosUI.templateOptions(SisdelPrivilegiosUI.templateChoices(customTemplates), '')
+                        .replace('<option value="">Elegir plantilla…</option>',
+                            `<option value="">${role === 'operador' ? 'Sin privilegios (los asigno enseguida)' : 'Los del rol ' + SISDEL.getRoleName(role)}</option>`);
+                }
+                document.getElementById('newUserTemplateHelp').textContent = role === 'operador'
+                    ? 'El operador empieza sin ningún privilegio: elija una plantilla o marque lo que necesita.'
+                    : 'Sin plantilla, el usuario recibe los privilegios de su rol. Una plantilla los reemplaza.';
             }
 
-            // Handle role change to show/hide house input
-            document.getElementById('newUserRole').addEventListener('change', syncNewUserFields);
+            // Cambia el rol: se restablece la plantilla. Elegir plantilla: toma el rol que sugiere si se puede crear
+            document.getElementById('newUserRole').addEventListener('change', () => syncNewUserFields());
+            document.getElementById('newUserTemplate').addEventListener('change', (event) => {
+                const template = SisdelPrivilegiosUI.templateChoices(customTemplates).find((t) => t.id === event.target.value);
+                const roleSelect = document.getElementById('newUserRole');
+                if (template && template.role && roleSelect.value !== template.role
+                    && [...roleSelect.options].some((o) => o.value === template.role)) {
+                    roleSelect.value = template.role;
+                    syncNewUserFields(true);
+                    // syncNewUserFields(true) conserva la lista de plantillas: se vuelve a marcar la elegida
+                    document.getElementById('newUserTemplate').value = template.id;
+                }
+            });
+
+            // Abre el editor de privilegios de un usuario (recien creado o de la lista)
+            async function openPrivilegesFor(user) {
+                customTemplates = caps.privilegios ? await SISDEL.getPrivilegeTemplates(condoId) : [];
+                SisdelPrivilegiosUI.openEditor(user, {
+                    condominioId: condoId, templates: customTemplates, isSelf: user.id === session.userId,
+                    onSaved: async () => { await renderStats(); await renderUsers(); }
+                });
+            }
+            window.openPrivileges = async function (id) {
+                const user = await SISDEL.getUserById(id);
+                if (user) openPrivilegesFor(user);
+            };
 
             // --- Edit User Logic ---
             const modalEditUser = document.getElementById('modalEditUser');
@@ -483,8 +608,18 @@
                 if (!user) return;
                 document.getElementById('editUserId').value = user.id;
                 document.getElementById('editUserName').value = user.name;
-                document.getElementById('editUserCode').value = user.accessCode;
+                document.getElementById('editUserCode').value = user.accessCode || (SISDEL.can('usuarios.codigos') ? '' : 'Reservado');
+                document.getElementById('editUserCodeHelp').textContent = SISDEL.can('usuarios.codigos')
+                    ? 'El código es generado por el sistema.' : 'Su usuario no tiene permiso para ver códigos de acceso.';
                 document.getElementById('editUserCasa').value = user.casa || '';
+                document.getElementById('editUserCargo').value = user.cargo || '';
+                // Cada acción aparece solo si este usuario puede hacerla
+                const editable = canEditUser(user);
+                editUserForm.querySelectorAll('input:not([type=hidden]):not(#editUserCode), select').forEach((el) => { el.disabled = !editable; });
+                document.getElementById('btnSaveEdit').style.display = editable ? '' : 'none';
+                document.getElementById('btnEditPrivileges').style.display = canSeePrivileges(user) ? '' : 'none';
+                document.getElementById('btnEditPrivileges').textContent = caps.privilegios && user.id !== session.userId ? 'Privilegios de este usuario…' : 'Ver mis privilegios…';
+                document.getElementById('deleteBox').style.display = canDeleteUser(user) ? '' : 'none';
                 document.getElementById('editUserPayment').value = user.paymentStatus || 'al_dia';
                 document.getElementById('editUserPayment').parentElement.style.display = user.role === 'vecino' ? 'block' : 'none';
                 // Con mora automatica el estado de pago lo calcula el Sistema Financiero: solo se muestra
@@ -497,8 +632,8 @@
                 
                 // Show plates section only for vecinos
                 const platesSection = document.getElementById('editGroupPlates');
-                platesSection.style.display = user.role === 'vecino' ? 'block' : 'none';
-                if (user.role === 'vecino') {
+                platesSection.style.display = user.role === 'vecino' && caps.placas ? 'block' : 'none';
+                if (user.role === 'vecino' && caps.placas) {
                     await renderEditPlates(user.id);
                 }
                 
@@ -558,13 +693,17 @@
             });
 
             btnCloseEditUser.addEventListener('click', () => modalEditUser.style.display = 'none');
+            document.getElementById('btnEditPrivileges').addEventListener('click', () => {
+                window.openPrivileges(document.getElementById('editUserId').value);
+            });
 
             editUserForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const id = document.getElementById('editUserId').value;
                 const updates = {
                     name: document.getElementById('editUserName').value,
-                    casa: document.getElementById('editUserCasa').value
+                    casa: document.getElementById('editUserCasa').value,
+                    cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60)
                 };
                 if (!moraAutomatica) updates.paymentStatus = document.getElementById('editUserPayment').value;
                 if (await SISDEL.updateUser(id, updates)) {
@@ -611,7 +750,7 @@
                             </div>
                             <div style="display:flex; align-items:center; gap:0.5rem;">
                                 <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
-                                <button class="btn btn-ghost btn-icon btn-sm" onclick="deleteMsg('${m.id}')" title="Eliminar" style="color:var(--danger);">🗑️</button>
+                                ${caps.enviar ? `<button class="btn btn-ghost btn-icon btn-sm" onclick="deleteMsg('${m.id}')" title="Eliminar" style="color:var(--danger);">🗑️</button>` : ''}
                             </div>
                         </div>
                         <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">${m.body}</p>

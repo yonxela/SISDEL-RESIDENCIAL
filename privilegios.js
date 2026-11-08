@@ -124,37 +124,37 @@
         {
             id: 'sys-secretaria', name: 'Secretaria / oficina', role: 'operador',
             description: 'Atiende vecinos: los registra y edita, manda mensajes y ve visitas y alertas.',
-            keys: ['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'mensajes.enviar', 'mensajes.historial', 'visitas.ver', 'visitas.gestionar', 'panico.ver']
+            claves: ['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'mensajes.enviar', 'mensajes.historial', 'visitas.ver', 'visitas.gestionar', 'panico.ver']
         },
         {
             id: 'sys-contador', name: 'Contador / tesorero', role: 'operador',
             description: 'Solo el Sistema Financiero (cargos, pagos y reportes) y los datos de los vecinos que necesita.',
-            keys: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'finanzas.ver', 'finanzas.usar']
+            claves: ['usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'finanzas.ver', 'finanzas.usar']
         },
         {
             id: 'sys-jefe-seguridad', name: 'Jefe de seguridad', role: 'operador',
             description: 'Garita, cámara y rondas: opera y administra la vigilancia y registra guardias.',
-            keys: ['usuarios.ver', 'guardias.crear', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.ver', 'rondas.gestionar', 'rondas.patrullar']
+            claves: ['usuarios.ver', 'guardias.crear', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.ver', 'rondas.gestionar', 'rondas.patrullar']
         },
         {
             id: 'sys-garitero', name: 'Garitero (solo garita)', role: 'operador',
             description: 'Opera la garita y atiende alertas, sin acceso a rondas ni a la administración.',
-            keys: ['usuarios.ver', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.ver', 'panico.atender']
+            claves: ['usuarios.ver', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.ver', 'panico.atender']
         },
         {
             id: 'sys-consulta', name: 'Consulta (solo lectura)', role: 'operador',
             description: 'Ve usuarios, visitas, accesos y mensajes en el panel de administración, sin modificar nada.',
-            keys: ['usuarios.panel', 'usuarios.ver', 'visitas.ver', 'garita.camara', 'mensajes.historial', 'panico.ver']
+            claves: ['usuarios.panel', 'usuarios.ver', 'visitas.ver', 'garita.camara', 'mensajes.historial', 'panico.ver']
         },
         {
             id: 'sys-admin-delegado', name: 'Administrador delegado', role: 'admin',
             description: 'Administra el día a día pero no asigna privilegios, no ve ni cambia códigos de acceso y no elimina usuarios.',
-            keys: without(adminKeys, 'usuarios.privilegios', 'usuarios.codigos', 'usuarios.eliminar')
+            claves: without(adminKeys, 'usuarios.privilegios', 'usuarios.codigos', 'usuarios.eliminar')
         },
         {
             id: 'sys-admin-sin-finanzas', name: 'Administrador sin finanzas', role: 'admin',
             description: 'Administrador completo, salvo el Sistema Financiero.',
-            keys: without(adminKeys, 'finanzas.ver', 'finanzas.usar')
+            claves: without(adminKeys, 'finanzas.ver', 'finanzas.usar')
         }
     ];
 

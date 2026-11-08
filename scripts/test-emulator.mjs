@@ -1,16 +1,19 @@
-// Pruebas de extremo a extremo contra los emuladores: login, reglas por rol y webhook de camara.
+// Pruebas de extremo a extremo contra los emuladores: login, reglas por rol, privilegios por usuario y webhook de camara.
 // Uso: levantar emuladores, correr seed-emulator.mjs y luego este archivo.
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
 import {
     getFirestore, connectFirestoreEmulator, collection, collectionGroup, doc, getDoc, getDocs,
-    setDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy
+    setDoc, updateDoc, deleteDoc, deleteField, writeBatch, query, where, orderBy
 } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
 import { PROJECT_ID, EMULATOR, localDate, isoDaysAgo } from './lib.mjs';
 
 const seed = JSON.parse(fs.readFileSync(new URL('./dev-seed.json', import.meta.url), 'utf8'));
+// Catalogo de privilegios (el mismo archivo que cargan las paginas)
+const PRIV = createRequire(import.meta.url)('../privilegios.js');
 const WEBHOOK = `http://${EMULATOR.functions[0]}:${EMULATOR.functions[1]}/${PROJECT_ID}/us-central1/anprWebhook`;
 const A = 'condo-villa-ferrer';
 const B = 'condo-los-olivos';
@@ -571,6 +574,234 @@ async function run() {
     await denied('no se aceptan mas de 5 contactos', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: Array.from({ length: 6 }, () => ({ name: 'x', phone: '1' })), updatedAt: ts() }));
     await allowed('la garita ve los contactos de emergencia', () => getDoc(rref(guard, 'emergencia', 'u-ana')));
     await denied('otro vecino no ve los contactos', () => getDoc(rref(maria, 'emergencia', 'u-ana')));
+
+    // ───────── Privilegios por usuario (el administrador del condominio los asigna) ─────────
+    console.log('\nPrivilegios por usuario');
+    const mkUser = (id, name, role, extra = {}) => ({
+        id, condominioId: A, name, role, casa: '', phone: '5555-0000', email: '', paymentStatus: role === 'vecino' ? 'al_dia' : null,
+        morosoSince: null, active: true, createdAt: ts(), ...extra
+    });
+    const uref = (c, id) => rref(c, 'usuarios', id);
+    // Usuario y codigo en la misma escritura, como hace SISDEL.createUser
+    const createUserAs = (c, user, code) => {
+        const batch = writeBatch(c.db);
+        batch.set(doc(c.db, `codigos/${code}`), { condominioId: A, userId: user.id, role: user.role, createdAt: ts() });
+        batch.set(uref(c, user.id), user);
+        return batch.commit();
+    };
+    // Privilegios (solo diferencias con el rol) de una plantilla del sistema
+    const tpl = (id) => PRIV.TEMPLATES.find((t) => t.id === id);
+    const overridesOf = (templateId, role) => PRIV.toOverrides(role || tpl(templateId).role, tpl(templateId).claves);
+    const setPriv = (c, id, privilegios) => updateDoc(uref(c, id), { privilegios });
+
+    // Operador sin privilegios: existe pero no entra a ningun panel
+    await allowed('admin crea un operador sin privilegios', () => createUserAs(admin, mkUser('u-op0', 'Operador Vacio', 'operador'), 'PO000'));
+    const op0 = await httpsCallable(nobody.functions, 'login')({ code: 'PO000' });
+    equal('un operador sin privilegios no entra', [op0.data.success, op0.data.error], [false, 'Su usuario no tiene accesos asignados. Contacte al administrador.']);
+
+    // Secretaria: plantilla del sistema
+    await allowed('admin crea a la secretaria con su plantilla', () => createUserAs(admin, mkUser('u-sec', 'Secretaria', 'operador', { cargo: 'Secretaria', privilegios: overridesOf('sys-secretaria') }), 'PS001'));
+    const sec = await loginAs('PS001');
+    equal('la secretaria entra al panel de administracion', [sec.login.role, sec.login.redirect], ['operador', 'admin.html']);
+    equal('el login entrega solo las diferencias con el rol', sec.login.session.privilegios, overridesOf('sys-secretaria'));
+    equal('el login entrega el cargo', sec.login.session.cargo, 'Secretaria');
+    await allowed('la secretaria lee su propia ficha', () => getDoc(uref(sec, 'u-sec')));
+    await allowed('la secretaria lee los usuarios', () => getDocs(rcol(sec, 'usuarios')));
+    await denied('la secretaria no lee codigos de acceso', () => getDocs(query(collection(sec.db, 'codigos'), where('condominioId', '==', A))));
+    await allowed('la secretaria crea un vecino', () => createUserAs(sec, mkUser('u-v1', 'Vecino de la secretaria', 'vecino', { casa: 'Casa 77' }), 'PV001'));
+    await allowed('la secretaria crea un guardia', () => createUserAs(sec, mkUser('u-g1', 'Guardia de la secretaria', 'policia'), 'PG001'));
+    await denied('la secretaria no crea administradores', () => createUserAs(sec, mkUser('u-adm-s', 'Admin falso', 'admin'), 'PA001'));
+    await denied('la secretaria no crea operadores', () => createUserAs(sec, mkUser('u-op-s', 'Operador falso', 'operador'), 'PA002'));
+    await denied('la secretaria no asigna privilegios al crear', () => createUserAs(sec, mkUser('u-v2', 'Vecino con poder', 'vecino', { privilegios: { 'finanzas.usar': true } }), 'PV002'));
+    await allowed('la secretaria edita a un vecino', () => updateDoc(uref(sec, 'u-v1'), { phone: '5555-9999' }));
+    await denied('la secretaria no edita a un administrador', () => updateDoc(uref(sec, 'u-fernando'), { phone: '5555-0000' }));
+    await denied('la secretaria no elimina usuarios', () => deleteDoc(uref(sec, 'u-v1')));
+    await denied('la secretaria no cambia privilegios de otros', () => setPriv(sec, 'u-v1', { 'finanzas.usar': true }));
+    await denied('la secretaria no se cambia los suyos', () => setPriv(sec, 'u-sec', { ...overridesOf('sys-secretaria'), 'finanzas.usar': true }));
+    await denied('la secretaria no cambia el rol de otro', () => updateDoc(uref(sec, 'u-v1'), { role: 'auditor' }));
+    await denied('la secretaria no reemplaza el codigo de un usuario', () => setDoc(doc(sec.db, 'codigos/PX001'), { condominioId: A, userId: 'u-v1', role: 'vecino', createdAt: ts() }));
+    await denied('la secretaria no apunta un codigo nuevo a un administrador', () => setDoc(doc(sec.db, 'codigos/PX002'), { condominioId: A, userId: 'u-fernando', role: 'vecino', createdAt: ts() }));
+    await allowed('la secretaria envia un mensaje', () => setDoc(rref(sec, 'mensajes', 'msg-sec'), { id: 'msg-sec', condominioId: A, fromName: 'Secretaria', toRole: 'all', subject: 'Aviso', body: 'Reunion', read: false, createdAt: ts() }));
+    await allowed('la secretaria lee todos los mensajes', () => getDocs(rcol(sec, 'mensajes')));
+    await allowed('la secretaria ve las visitas', () => getDocs(rcol(sec, 'visitas')));
+    await allowed('la secretaria crea una visita para un vecino', () => setDoc(rref(sec, 'visitas', 'vis-sec'), { id: 'vis-sec', condominioId: A, userId: 'u-ana', visitorName: 'Proveedor', visitorInfo: '', vehiclePlate: '', plateNorm: '', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSEC', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: ts() }));
+    await denied('la secretaria no ve el historial de la camara', () => getDocs(rcol(sec, 'camera_logs')));
+    await denied('la secretaria no ve las finanzas', () => getDocs(rcol(sec, 'finanzas_residentes')));
+    await denied('la secretaria no administra rondas', () => setDoc(rref(sec, 'rondas_rutas', 'ruta-sec'), { ...rutaTest, id: 'ruta-sec' }));
+    await denied('la secretaria no atiende alertas de panico', () => updateDoc(rref(sec, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sec' }));
+    await denied('la secretaria no usa la verificacion de garita', () => httpsCallable(sec.functions, 'verifyAccessCode')({ code: 'VA101' }));
+    await denied('la secretaria no lee las plantillas de privilegios', () => getDocs(rcol(sec, 'plantillas_privilegios')));
+    const vecino1 = await loginAs('PV001');
+    equal('el vecino creado por la secretaria entra', [vecino1.login.success, vecino1.login.redirect], [true, 'vecino.html']);
+
+    // Efecto inmediato: el administrador le quita un privilegio y la sesion abierta lo siente en la siguiente operacion
+    await allowed('admin le quita a la secretaria enviar mensajes', () => setPriv(admin, 'u-sec', { ...overridesOf('sys-secretaria'), 'mensajes.enviar': false }));
+    await denied('la secretaria ya no envia mensajes (sin volver a entrar)', () => setDoc(rref(sec, 'mensajes', 'msg-sec2'), { id: 'msg-sec2', condominioId: A, fromName: 'Secretaria', toRole: 'all', subject: 'Otro', body: 'x', read: false, createdAt: ts() }));
+    await allowed('admin se lo devuelve', () => setPriv(admin, 'u-sec', overridesOf('sys-secretaria')));
+    await allowed('la secretaria vuelve a enviar mensajes', () => setDoc(rref(sec, 'mensajes', 'msg-sec2'), { id: 'msg-sec2', condominioId: A, fromName: 'Secretaria', toRole: 'all', subject: 'Otro', body: 'x', read: false, createdAt: ts() }));
+    await allowed('admin desactiva a la secretaria', () => updateDoc(uref(admin, 'u-sec'), { active: false }));
+    await denied('la secretaria desactivada pierde todo al instante', () => getDoc(uref(sec, 'u-sec')));
+    await allowed('admin la reactiva', () => updateDoc(uref(admin, 'u-sec'), { active: true }));
+
+    // Contador: solo el Sistema Financiero
+    await allowed('admin crea al contador', () => createUserAs(admin, mkUser('u-cont', 'Contador', 'operador', { privilegios: overridesOf('sys-contador') }), 'PC001'));
+    const cont = await loginAs('PC001');
+    equal('el contador entra directo al Sistema Financiero', cont.login.redirect, 'finanzas.html');
+    await allowed('el contador lee las finanzas', () => getDocs(rcol(cont, 'finanzas_residentes')));
+    await allowed('el contador escribe en las finanzas', () => setDoc(rref(cont, 'finanzas_movimientos', 'fee_u-ana_2026-12'), { ...finTx, id: 'fee_u-ana_2026-12', period: '2026-12', concept: 'Cuota - Diciembre 2026' }));
+    await allowed('el contador edita la configuracion financiera', () => setDoc(rref(cont, 'finanzas_config', 'oikos_settings'), { id: 'oikos_settings', currency: 'GTQ' }, { merge: true }));
+    await denied('el contador no envia mensajes', () => setDoc(rref(cont, 'mensajes', 'msg-cont'), { id: 'msg-cont', condominioId: A, fromName: 'Contador', toRole: 'all', subject: 'x', body: 'x', read: false, createdAt: ts() }));
+    await denied('el contador no elimina usuarios', () => deleteDoc(uref(cont, 'u-maria')));
+    await denied('el contador no ve codigos', () => getDocs(query(collection(cont.db, 'codigos'), where('condominioId', '==', A))));
+    await denied('el contador no ve el historial de la camara', () => getDocs(rcol(cont, 'camera_logs')));
+
+    // Garitero: solo la garita
+    await allowed('admin crea al garitero', () => createUserAs(admin, mkUser('u-gar', 'Garitero', 'operador', { privilegios: overridesOf('sys-garitero') }), 'PT001'));
+    const gar = await loginAs('PT001');
+    equal('el garitero entra a la garita', gar.login.redirect, 'garita.html');
+    equal('la garita valida codigos de vecino con privilegio garita.operar', (await httpsCallable(gar.functions, 'verifyAccessCode')({ code: 'VA101' })).data.user?.name, 'Ana García');
+    await allowed('el garitero lee los vehiculos', () => getDocs(rcol(gar, 'vehiculos')));
+    await allowed('el garitero ve el historial de la camara', () => getDocs(rcol(gar, 'camera_logs')));
+    await allowed('el garitero registra un ingreso', () => updateDoc(rref(gar, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
+    await allowed('el garitero registra en el historial', () => setDoc(rref(gar, 'camera_logs', 'log-gar'), { id: 'log-gar', condominioId: A, plate: 'RESIDENTE', status: 'Authorized', reason: '', createdAt: ts() }));
+    await denied('el garitero no cambia otros datos de la visita', () => updateDoc(rref(gar, 'visitas', 'vis-sec'), { visitorName: 'Otro' }));
+    await denied('el garitero no crea visitas', () => setDoc(rref(gar, 'visitas', 'vis-gar'), { id: 'vis-gar', condominioId: A, userId: 'u-ana', visitorName: 'x', visitDate: localDate(0), status: 'pending', createdAt: ts() }));
+    await denied('el garitero no crea usuarios', () => createUserAs(gar, mkUser('u-v9', 'Nadie', 'vecino'), 'PV009'));
+    await denied('el garitero no ve las finanzas', () => getDocs(rcol(gar, 'finanzas_residentes')));
+    await denied('el garitero no lee todos los mensajes', () => getDocs(rcol(gar, 'mensajes')));
+    await allowed('el garitero lee los mensajes que le tocan', () => getDocs(query(rcol(gar, 'mensajes'), where('toRole', 'in', ['all', 'operador']))));
+    await allowed('un vecino activa una alerta para el garitero', () => setDoc(rref(ana, 'alertas_panico', 'pan-p'), panico('pan-p')));
+    await allowed('el garitero ve las alertas de panico', () => getDocs(query(rcol(gar, 'alertas_panico'), where('status', 'in', ['ACTIVE', 'ATTENDED']))));
+    await allowed('el garitero atiende la alerta', () => updateDoc(rref(gar, 'alertas_panico', 'pan-p'), { status: 'ATTENDED', attendedBy: 'u-gar', attendedByName: 'Garitero', attendedAt: ts() }));
+    await denied('el garitero no administra rondas', () => setDoc(rref(gar, 'rondas_rutas', 'ruta-gar'), { ...rutaTest, id: 'ruta-gar' }));
+
+    // Rondas: ver, administrar y patrullar son privilegios distintos
+    await allowed('admin crea un operador que solo mira las rondas', () => createUserAs(admin, mkUser('u-rver', 'Mira rondas', 'operador', { privilegios: { 'rondas.ver': true } }), 'PR001'));
+    await allowed('admin crea al jefe de seguridad', () => createUserAs(admin, mkUser('u-jefe', 'Jefe de seguridad', 'operador', { privilegios: overridesOf('sys-jefe-seguridad') }), 'PR002'));
+    const rver = await loginAs('PR001');
+    const jefe = await loginAs('PR002');
+    equal('quien solo mira rondas entra a RONDIN', rver.login.redirect, 'rondin/');
+    equal('el jefe de seguridad entra por la primera pagina que le toca (la garita)', jefe.login.redirect, 'garita.html');
+    await allowed('quien solo mira lee las rutas', () => getDocs(rcol(rver, 'rondas_rutas')));
+    await allowed('quien solo mira lee los turnos de todos', () => getDocs(rcol(rver, 'rondas_turnos')));
+    await denied('quien solo mira no crea rutas', () => setDoc(rref(rver, 'rondas_rutas', 'ruta-rver'), { ...rutaTest, id: 'ruta-rver' }));
+    await denied('quien solo mira no patrulla', () => setDoc(rref(rver, 'rondas_turnos', 'turno-rver'), { id: 'turno-rver', company_id: A, guard_id: 'u-rver', status: 'ACTIVE' }));
+    await allowed('el jefe de seguridad crea una ruta', () => setDoc(rref(jefe, 'rondas_rutas', 'ruta-jefe'), { ...rutaTest, id: 'ruta-jefe', route_code: 'R-901' }));
+    await allowed('el jefe de seguridad registra a un guardia', () => createUserAs(jefe, mkUser('u-g2', 'Guardia del jefe', 'policia'), 'PG002'));
+    await allowed('el jefe de seguridad ve el codigo de sus guardias', () => getDoc(doc(jefe.db, 'codigos/PG002')));
+    await denied('el jefe de seguridad no ve el codigo de un administrador', () => getDoc(doc(jefe.db, 'codigos/VF100')));
+    await denied('el jefe de seguridad no registra vecinos', () => createUserAs(jefe, mkUser('u-v3', 'Vecino', 'vecino'), 'PV003'));
+    await allowed('el jefe de seguridad patrulla (turno propio)', () => setDoc(rref(jefe, 'rondas_turnos', 'turno-jefe'), { id: 'turno-jefe', company_id: A, guard_id: 'u-jefe', status: 'ACTIVE', scheduled_start: sqlTs() }));
+
+    // Un co-administrador con privilegios restringidos
+    const adm2Limits = { 'usuarios.privilegios': false, 'usuarios.eliminar': false, 'finanzas.usar': false, 'mensajes.enviar': false };
+    await allowed('admin crea un co-administrador restringido', () => createUserAs(admin, mkUser('u-adm2', 'Co-administrador', 'admin', { privilegios: adm2Limits }), 'PA010'));
+    const adm2 = await loginAs('PA010');
+    equal('el co-administrador entra al panel de administracion', adm2.login.redirect, 'admin.html');
+    await allowed('el co-administrador crea un vecino', () => createUserAs(adm2, mkUser('u-v4', 'Vecino del co-admin', 'vecino', { casa: 'Casa 88' }), 'PV004'));
+    await allowed('el co-administrador edita un vecino', () => updateDoc(uref(adm2, 'u-v4'), { phone: '5555-4444' }));
+    await allowed('el co-administrador ve los codigos', () => getDocs(query(collection(adm2.db, 'codigos'), where('condominioId', '==', A))));
+    await allowed('el co-administrador lee las finanzas', () => getDocs(rcol(adm2, 'finanzas_residentes')));
+    await denied('el co-administrador no escribe en las finanzas', () => setDoc(rref(adm2, 'finanzas_movimientos', 'tx-adm2'), { ...finTx, id: 'tx-adm2' }));
+    await denied('el co-administrador no elimina usuarios', () => deleteDoc(uref(adm2, 'u-v4')));
+    await denied('el co-administrador no envia mensajes', () => setDoc(rref(adm2, 'mensajes', 'msg-adm2'), { id: 'msg-adm2', condominioId: A, fromName: 'Co-admin', toRole: 'all', subject: 'x', body: 'x', read: false, createdAt: ts() }));
+    await denied('el co-administrador no asigna privilegios', () => setPriv(adm2, 'u-v4', { 'finanzas.usar': true }));
+    await denied('el co-administrador no crea administradores', () => createUserAs(adm2, mkUser('u-adm3', 'Otro admin', 'admin'), 'PA011'));
+    await denied('el co-administrador no edita al administrador', () => updateDoc(uref(adm2, 'u-fernando'), { phone: '5555-0000' }));
+    await denied('el co-administrador no elimina al administrador', () => deleteDoc(uref(adm2, 'u-fernando')));
+    await denied('el co-administrador no se quita las restricciones', () => setPriv(adm2, 'u-adm2', {}));
+    await denied('el co-administrador no cambia el codigo del administrador', () => setDoc(doc(adm2.db, 'codigos/PX003'), { condominioId: A, userId: 'u-fernando', role: 'vecino', createdAt: ts() }));
+    await denied('el co-administrador no se vuelve admin pleno cambiando su rol', () => updateDoc(uref(adm2, 'u-adm2'), { role: 'operador' }));
+
+    // El administrador de plenos poderes
+    await denied('el administrador no se cambia sus propios privilegios', () => setPriv(admin, 'u-fernando', { 'finanzas.usar': false }));
+    await denied('el administrador no se elimina a si mismo', () => deleteDoc(uref(admin, 'u-fernando')));
+    await allowed('el administrador si edita sus datos', () => updateDoc(uref(admin, 'u-fernando'), { phone: '5555-1234' }));
+    await allowed('el administrador asigna privilegios a otro', () => setPriv(admin, 'u-adm2', { ...adm2Limits, 'garita.camara': false }));
+    await allowed('el administrador quita los privilegios a la medida (vuelve a los del rol)', () => updateDoc(uref(admin, 'u-adm2'), { privilegios: deleteField() }));
+    await allowed('con los privilegios del rol, el co-administrador escribe finanzas', () => setDoc(rref(adm2, 'finanzas_movimientos', 'tx-adm2'), { ...finTx, id: 'tx-adm2' }));
+    await denied('los privilegios deben ser un mapa', () => setPriv(admin, 'u-adm2', 'todo'));
+    await denied('los privilegios no pueden ser un arreglo', () => setPriv(admin, 'u-adm2', ['finanzas.usar']));
+    await denied('los privilegios tienen un tope de tamano', () => setPriv(admin, 'u-adm2', Object.fromEntries(Array.from({ length: 41 }, (_, i) => [`x${i}`, true]))));
+    await allowed('admin elimina al co-administrador de prueba', () => deleteDoc(uref(admin, 'u-adm2')));
+
+    // Administrador restringido que pierde el panel: cae en la primera pagina que si le toca
+    await allowed('admin crea un administrador sin acceso al panel de administracion', () => createUserAs(admin, mkUser('u-adm4', 'Admin de garita', 'admin', { privilegios: { 'usuarios.panel': false } }), 'PA012'));
+    const adm4 = await loginAs('PA012');
+    equal('sin panel de administracion el login lo manda a otra pagina', adm4.login.redirect, 'garita.html');
+
+    // Guardia ampliado y restringido
+    await denied('el guardia no ve las finanzas por defecto', () => getDocs(rcol(guard, 'finanzas_residentes')));
+    await allowed('admin le da al guardia lectura financiera', () => setPriv(admin, 'u-pedro', { 'finanzas.ver': true }));
+    await allowed('el guardia ahora lee las finanzas', () => getDocs(rcol(guard, 'finanzas_residentes')));
+    await denied('pero no las escribe', () => setDoc(rref(guard, 'finanzas_movimientos', 'tx-guard'), { ...finTx, id: 'tx-guard' }));
+    await allowed('admin le quita al guardia operar la garita', () => setPriv(admin, 'u-pedro', { 'garita.operar': false }));
+    await denied('el guardia sin garita.operar no registra ingresos', () => updateDoc(rref(guard, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
+    await denied('ni escribe en el historial', () => setDoc(rref(guard, 'camera_logs', 'log-guard2'), { id: 'log-guard2', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
+    await denied('ni usa la verificacion de garita', () => httpsCallable(guard.functions, 'verifyAccessCode')({ code: 'VA101' }));
+    const guardLogin = await httpsCallable(nobody.functions, 'login')({ code: 'VP103' });
+    equal('el guardia sin garita entra a rondas', [guardLogin.data.success, guardLogin.data.redirect], [true, 'rondin/']);
+    await allowed('admin le devuelve al guardia los privilegios de su rol', () => updateDoc(uref(admin, 'u-pedro'), { privilegios: deleteField() }));
+    await allowed('el guardia vuelve a operar la garita', () => updateDoc(rref(guard, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
+    await denied('el guardia vuelve a no ver las finanzas', () => getDocs(rcol(guard, 'finanzas_residentes')));
+
+    // Vecino restringido
+    await allowed('admin restringe a Ana: sin visitas, vehiculos ni panico', () => setPriv(admin, 'u-ana', { 'vecino.visitas': false, 'vecino.vehiculos': false, 'panico.activar': false }));
+    await allowed('Ana sigue leyendo sus visitas', () => getDocs(query(rcol(ana, 'visitas'), where('userId', '==', 'u-ana'))));
+    await denied('Ana ya no crea visitas', () => setDoc(rref(ana, 'visitas', 'vis-ana-r'), { ...visit, id: 'vis-ana-r' }));
+    await denied('Ana ya no registra vehiculos', () => setDoc(rref(ana, 'vehiculos', 'veh-ana-r'), { id: 'veh-ana-r', condominioId: A, userId: 'u-ana', plate: 'P-111RES', plateNorm: 'P111RES', brand: '', model: '', color: '', marbeteCode: 'MARR', createdAt: ts() }));
+    await denied('Ana ya no activa el boton de panico', () => setDoc(rref(ana, 'alertas_panico', 'pan-ana-r'), panico('pan-ana-r')));
+    await allowed('Ana sigue leyendo su ficha', () => getDoc(uref(ana, 'u-ana')));
+    await allowed('admin le devuelve a Ana sus privilegios', () => updateDoc(uref(admin, 'u-ana'), { privilegios: deleteField() }));
+    await allowed('Ana vuelve a crear visitas', () => setDoc(rref(ana, 'visitas', 'vis-ana-r'), { ...visit, id: 'vis-ana-r' }));
+    await allowed('Ana vuelve a activar el panico', () => setDoc(rref(ana, 'alertas_panico', 'pan-ana-r'), panico('pan-ana-r')));
+    await denied('Ana no se da privilegios a si misma', () => setPriv(ana, 'u-ana', { 'finanzas.ver': true }));
+
+    // Auditor ampliado y restringido: sigue siendo de solo lectura salvo lo que el administrador le agregue
+    await allowed('admin le agrega al auditor enviar mensajes', () => setPriv(admin, 'u-sofia', { 'mensajes.enviar': true }));
+    await allowed('el auditor ahora envia un mensaje', () => setDoc(rref(auditor, 'mensajes', 'msg-aud2'), { id: 'msg-aud2', condominioId: A, fromName: 'Auditor', toRole: 'all', subject: 'x', body: 'x', read: false, createdAt: ts() }));
+    await denied('pero sigue sin crear usuarios', () => createUserAs(auditor, mkUser('u-v5', 'Nadie', 'vecino'), 'PV005'));
+    await allowed('admin le quita al auditor las finanzas', () => setPriv(admin, 'u-sofia', { 'finanzas.ver': false }));
+    await denied('el auditor sin finanzas.ver no las lee', () => getDocs(rcol(auditor, 'finanzas_residentes')));
+    await allowed('admin le devuelve al auditor sus privilegios', () => updateDoc(uref(admin, 'u-sofia'), { privilegios: deleteField() }));
+    await allowed('el auditor vuelve a leer las finanzas', () => getDocs(rcol(auditor, 'finanzas_residentes')));
+    await denied('y vuelve a no enviar mensajes', () => setDoc(rref(auditor, 'mensajes', 'msg-aud3'), { id: 'msg-aud3', condominioId: A, fromName: 'Auditor', toRole: 'all', subject: 'x', body: 'x', read: false, createdAt: ts() }));
+
+    // Supervisor: registrar guardias es un privilegio que se puede quitar
+    await allowed('admin le quita al supervisor registrar guardias', () => setPriv(admin, 'u-samuel', { 'guardias.crear': false }));
+    await denied('el supervisor sin guardias.crear no crea guardias', () => createUserAs(sup, mkUser('u-g3', 'Guardia', 'policia'), 'PG003'));
+    await allowed('admin se lo devuelve', () => updateDoc(uref(admin, 'u-samuel'), { privilegios: deleteField() }));
+    await allowed('el supervisor vuelve a crear guardias', () => createUserAs(sup, mkUser('u-g3', 'Guardia', 'policia'), 'PG003'));
+    await denied('el supervisor no crea vecinos', () => createUserAs(sup, mkUser('u-v6', 'Vecino', 'vecino'), 'PV006'));
+
+    // Plantillas de privilegios del condominio
+    const plantilla = { id: 'plt-1', condominioId: A, name: 'Portero de turno', role: 'operador', description: '', claves: ['garita.operar', 'usuarios.ver', 'visitas.ver'], updatedAt: ts() };
+    await allowed('admin guarda una plantilla del condominio', () => setDoc(rref(admin, 'plantillas_privilegios', 'plt-1'), plantilla));
+    await allowed('admin lee las plantillas', () => getDocs(rcol(admin, 'plantillas_privilegios')));
+    await denied('una plantilla necesita una lista de claves', () => setDoc(rref(admin, 'plantillas_privilegios', 'plt-2'), { ...plantilla, id: 'plt-2', claves: 'todas' }));
+    await denied('una plantilla no puede ser de otro condominio', () => setDoc(rref(admin, 'plantillas_privilegios', 'plt-3'), { ...plantilla, id: 'plt-3', condominioId: B }));
+    await denied('el contador no guarda plantillas de privilegios', () => setDoc(rref(cont, 'plantillas_privilegios', 'plt-4'), { ...plantilla, id: 'plt-4' }));
+    await denied('un usuario de otro condominio no ve las plantillas', async () => {
+        const otro = await loginAs('LJ201');
+        return getDocs(collection(otro.db, `condominios/${A}/plantillas_privilegios`));
+    });
+    await allowed('admin elimina la plantilla', () => deleteDoc(rref(admin, 'plantillas_privilegios', 'plt-1')));
+
+    // Eliminar usuarios: quien puede eliminar tambien limpia sus codigos
+    await allowed('admin elimina a la secretaria con su codigo', async () => {
+        const batch = writeBatch(admin.db);
+        batch.delete(doc(admin.db, 'codigos/PS001'));
+        batch.delete(uref(admin, 'u-sec'));
+        return batch.commit();
+    });
+    await allowed('admin elimina al garitero con su codigo', async () => {
+        const batch = writeBatch(admin.db);
+        batch.delete(doc(admin.db, 'codigos/PT001'));
+        batch.delete(uref(admin, 'u-gar'));
+        return batch.commit();
+    });
+    const goneLogin = await httpsCallable(nobody.functions, 'login')({ code: 'PS001' });
+    equal('un usuario eliminado ya no entra', goneLogin.data.success, false);
 
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');

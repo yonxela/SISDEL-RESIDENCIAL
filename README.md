@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html` (crear usuario con rol, cargo y plantilla; botón
 | `usuarios.crear` | Crear usuarios. Registrar vecinos, auditores y supervisores con su código de acceso. | `admin` |
 | `guardias.crear` | Registrar guardias. Crear guardias (solo ese rol) y ver el código de acceso de los guardias. | `admin`, `supervisor` |
 | `usuarios.editar` | Editar usuarios. Cambiar nombre, casa, teléfono y estado de pago, y registrar placas de un vecino. | `admin` |
-| `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios con su código, vehículos y visitas. | `admin` |
+| `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso). | `admin` |
 | `usuarios.codigos` | Ver y cambiar códigos de acceso **(sensible)**. Ver el código de cualquier usuario y reemplazarlo por otro. | `admin` |
 | `usuarios.privilegios` | Asignar privilegios **(sensible)**. Cambiar los privilegios de otros usuarios y crear administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. | `admin` |
 | `mensajes.enviar` | Enviar y borrar mensajes. Escribir avisos para vecinos y guardias y borrar los enviados. | `admin` |

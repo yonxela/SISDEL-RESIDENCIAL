@@ -41,7 +41,7 @@
                 { key: 'usuarios.crear', label: 'Crear usuarios', description: 'Registrar vecinos, auditores y supervisores con su código de acceso.', roles: ['admin'], requires: ['usuarios.ver'] },
                 { key: 'guardias.crear', label: 'Registrar guardias', description: 'Crear guardias (solo ese rol) y ver el código de acceso de los guardias.', roles: ['admin', 'supervisor'], requires: ['usuarios.ver'] },
                 { key: 'usuarios.editar', label: 'Editar usuarios', description: 'Cambiar nombre, casa, teléfono y estado de pago, y registrar placas de un vecino.', roles: ['admin'], requires: ['usuarios.ver'] },
-                { key: 'usuarios.eliminar', label: 'Eliminar usuarios', description: 'Borrar usuarios con su código, vehículos y visitas.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true },
+                { key: 'usuarios.eliminar', label: 'Eliminar usuarios', description: 'Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true },
                 { key: 'usuarios.codigos', label: 'Ver y cambiar códigos de acceso', description: 'Ver el código de cualquier usuario y reemplazarlo por otro.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true },
                 { key: 'usuarios.privilegios', label: 'Asignar privilegios', description: 'Cambiar los privilegios de otros usuarios y crear administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true }
             ]

@@ -25,6 +25,7 @@
 
 (function () {
     const TZ = 'America/Guatemala';
+    const SIREN_MS = 60000;
     const ROLE_OUT = { admin: 'DIRECTOR_GENERAL', policia: 'GUARDIA', supervisor: 'SUPERVISOR', auditor: 'AUDITOR', vecino: 'NEIGHBOR', master: 'SUPER_ADMIN' };
     const ROLE_IN = { GUARDIA: 'policia', SUPERVISOR: 'supervisor', DIRECTOR_GENERAL: 'admin', ADMIN: 'admin' };
     const ALERT_TYPE_BY_SEVERITY = { CRITICAL: 'EMERGENCY', HIGH: 'URGENT' };
@@ -1241,7 +1242,25 @@
     // El vecino edita sus familiares en la vista de panico: RONDIN los guardaba solo en el
     // equipo; aqui quedan en emergencia/{id}, los mismos que avisa el boton de panico de SISDEL
     document.addEventListener('DOMContentLoaded', () => {
-        if (typeof App === 'undefined' || !App.nbEditContacts) return;
+        if (typeof App === 'undefined') return;
+        // La sirena de panico de RONDIN debia apagarse sola al minuto, pero su codigo apunta a
+        // variables que no existen y sonaba hasta tocar "ENTERADO". Se apaga a los 60 s; el aviso
+        // rojo queda en pantalla hasta que alguien lo cierre
+        if (App.showPanicAlert) {
+            const show = App.showPanicAlert;
+            App.showPanicAlert = function (data) {
+                show.call(this, data);
+                clearTimeout(this._sirenStop);
+                this._sirenStop = setTimeout(() => {
+                    clearInterval(this._panicSirenInterval);
+                    ['_panicOsc1', '_panicOsc2'].forEach((k) => { try { if (this[k]) this[k].stop(); } catch { /* ya detenido */ } this[k] = null; });
+                    try { if (this._panicGain) this._panicGain.disconnect(); } catch { /* ya desconectado */ }
+                    this._panicGain = null;
+                    try { if (navigator.vibrate) navigator.vibrate(0); } catch { /* sin vibracion */ }
+                }, SIREN_MS);
+            };
+        }
+        if (!App.nbEditContacts) return;
         const original = App.nbEditContacts;
         App.nbEditContacts = async function () {
             const before = JSON.stringify(this._neighborData || {});

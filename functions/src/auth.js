@@ -4,19 +4,15 @@ const { logger } = require('firebase-functions/v2');
 const { db, auth } = require('./firebase');
 const { ROLES, normalizeCode, sha256, safeEqual, clientIp } = require('./util');
 const rateLimit = require('./rateLimit');
+const privilegios = require('./privilegios');
 
 // Todo un condominio suele salir por la misma IP publica: el limite es compartido, por eso es amplio
 const LOGIN_LIMIT = { max: 30, windowMs: 15 * 60 * 1000 };
 const VERIFY_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
 
-const REDIRECTS = {
-    [ROLES.MASTER]: 'master.html',
-    [ROLES.ADMIN]: 'admin.html',
-    [ROLES.VECINO]: 'vecino.html',
-    [ROLES.POLICIA]: 'garita.html',
-    [ROLES.AUDITOR]: 'auditor.html',
-    [ROLES.SUPERVISOR]: 'rondin/'
-};
+// Roles de condominio que pueden entrar (el master tiene su propia ruta). A donde van lo decide
+// privilegios.landing: la pagina de su rol y, si el administrador se la quito, la primera que si le toca.
+const CONDO_ROLES = [ROLES.ADMIN, ROLES.VECINO, ROLES.POLICIA, ROLES.AUDITOR, ROLES.SUPERVISOR, ROLES.OPERADOR];
 
 async function isMasterCode(code) {
     const snap = await db.doc('_privado/auth').get();
@@ -62,14 +58,14 @@ const login = onCall(async (request) => {
         await rateLimit.reset('login', ip);
         log('ok', { role: ROLES.MASTER });
         return {
-            success: true, token, role: ROLES.MASTER, redirect: REDIRECTS[ROLES.MASTER],
+            success: true, token, role: ROLES.MASTER, redirect: 'master.html',
             session: { role: ROLES.MASTER }
         };
     }
 
     // 2. Usuario de condominio
     const found = await findUserByCode(code);
-    if (!found || !REDIRECTS[found.user.role] || found.user.role === ROLES.MASTER) {
+    if (!found || !CONDO_ROLES.includes(found.user.role)) {
         await rateLimit.hit('login', ip, LOGIN_LIMIT);
         log(found ? 'bad_role' : 'not_found');
         return { success: false, error: 'Código de acceso no válido' };
@@ -83,16 +79,23 @@ const login = onCall(async (request) => {
         log('user_inactive', { condominioId: user.condominioId, userId: user.id });
         return { success: false, error: 'Usuario inactivo. Contacte al administrador.' };
     }
+    const redirect = privilegios.landing(user.role, user.privilegios);
+    if (!redirect) {
+        log('no_access', { condominioId: user.condominioId, userId: user.id, role: user.role });
+        return { success: false, error: 'Su usuario no tiene accesos asignados. Contacte al administrador.' };
+    }
 
     const token = await auth.createCustomToken(user.id, { role: user.role, condominioId: user.condominioId });
     await rateLimit.reset('login', ip);
     log('ok', { role: user.role, condominioId: user.condominioId, userId: user.id });
 
     return {
-        success: true, token, role: user.role, redirect: REDIRECTS[user.role],
+        success: true, token, role: user.role, redirect,
         session: {
             role: user.role, userId: user.id, userName: user.name, userCasa: user.casa || '',
-            condominioId: user.condominioId, condominioName: condo.name, code
+            condominioId: user.condominioId, condominioName: condo.name, code,
+            // Solo las diferencias con los privilegios de su rol; el navegador calcula el resto (privilegios.js)
+            privilegios: privilegios.cleanOverrides(user.privilegios), cargo: user.cargo || ''
         },
         user: { id: user.id, name: user.name, role: user.role, casa: user.casa || '', condominioId: user.condominioId }
     };
@@ -107,7 +110,7 @@ const verifyAccessCode = onCall(async (request) => {
 
     const me = await db.doc(`condominios/${condominioId}/usuarios/${uid}`).get();
     const allowed = me.exists && me.data().active !== false
-        && [ROLES.ADMIN, ROLES.POLICIA].includes(me.data().role);
+        && privilegios.has(me.data().role, me.data().privilegios, 'garita.operar');
     if (!allowed) throw new HttpsError('permission-denied', 'Sin permisos');
 
     if (await rateLimit.isBlocked('verify', uid, VERIFY_LIMIT)) {

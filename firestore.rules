@@ -4,9 +4,16 @@ rules_version = '2';
 // SISDEL Comunities - Reglas de seguridad
 // Datos aislados por condominio: condominios/{condoId}/...
 // El login entrega un token con: role y condominioId.
-// Roles: master (todo), admin, policia, vecino, auditor (solo lectura) y supervisor (rondas).
-// El rol y el estado activo se leen SIEMPRE del documento del usuario,
-// asi un usuario eliminado o desactivado pierde acceso de inmediato.
+// Roles: master (todo), admin, policia, vecino, auditor (solo lectura), supervisor (rondas)
+// y operador (personal a la medida: arranca sin privilegios).
+// El rol, el estado activo y los privilegios se leen SIEMPRE del documento del usuario,
+// asi un usuario eliminado, desactivado o con privilegios cambiados lo siente de inmediato.
+//
+// Privilegios (ver privilegios.js): cada rol trae unos por defecto, y el administrador del
+// condominio los amplia o restringe por usuario en usuarios/{id}.privilegios = { clave: true|false }.
+// Un usuario sin ese campo conserva exactamente el acceso de su rol. Las funciones pXxx de
+// abajo llevan los roles por defecto de cada clave: scripts/test-privilegios.mjs verifica que
+// coincidan con el catalogo.
 // ═══════════════════════════════════════════════════════════════
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -30,19 +37,54 @@ service cloud.firestore {
         && memberDoc(condoId).get('active', true) != false;
     }
     function memberRole(condoId) { return memberDoc(condoId).get('role', ''); }
-    function isAdmin(condoId) { return isMember(condoId) && memberRole(condoId) == 'admin'; }
-    function isGuard(condoId) { return isMember(condoId) && memberRole(condoId) == 'policia'; }
     function isResident(condoId) { return isMember(condoId) && memberRole(condoId) == 'vecino'; }
-    function isStaff(condoId) { return isMember(condoId) && memberRole(condoId) in ['admin', 'policia']; }
-    // Auditor: lee todo su condominio (sin codigos de acceso) y no escribe nada
-    function isAuditor(condoId) { return isMember(condoId) && memberRole(condoId) == 'auditor'; }
+    // El auditor es de solo lectura: no marca mensajes como leidos ni escribe nada
     function notAuditor(condoId) { return memberRole(condoId) != 'auditor'; }
-    // Rondas: admin y supervisor las administran; policia y supervisor patrullan;
-    // admin, policia y supervisor atienden las alertas de panico
-    function isSupervisor(condoId) { return isMember(condoId) && memberRole(condoId) == 'supervisor'; }
-    function canManageRondas(condoId) { return isMaster() || isAdmin(condoId) || isSupervisor(condoId); }
-    function isPatroller(condoId) { return isMember(condoId) && memberRole(condoId) in ['policia', 'supervisor']; }
-    function isResponder(condoId) { return isMember(condoId) && memberRole(condoId) in ['admin', 'policia', 'supervisor']; }
+
+    // ── Privilegios ──
+    // Vale lo que diga el mapa del usuario; si no menciona la clave, el privilegio del rol (roles = quienes
+    // lo tienen por defecto)
+    function can(condoId, key, roles) {
+      return isMember(condoId)
+        && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
+    }
+    // Usuarios y vecinos
+    function pUsuariosVer(c) { return can(c, 'usuarios.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
+    function pUsuariosCrear(c) { return can(c, 'usuarios.crear', ['admin']); }
+    function pGuardiasCrear(c) { return can(c, 'guardias.crear', ['admin', 'supervisor']); }
+    function pUsuariosEditar(c) { return can(c, 'usuarios.editar', ['admin']); }
+    function pUsuariosEliminar(c) { return can(c, 'usuarios.eliminar', ['admin']); }
+    function pUsuariosCodigos(c) { return can(c, 'usuarios.codigos', ['admin']); }
+    function pUsuariosPrivilegios(c) { return can(c, 'usuarios.privilegios', ['admin']); }
+    // Mensajes
+    function pMensajesEnviar(c) { return can(c, 'mensajes.enviar', ['admin']); }
+    function pMensajesHistorial(c) { return can(c, 'mensajes.historial', ['admin', 'auditor']); }
+    // Visitas y vehiculos
+    function pVisitasVer(c) { return can(c, 'visitas.ver', ['admin', 'policia', 'auditor']); }
+    function pVisitasGestionar(c) { return can(c, 'visitas.gestionar', ['admin']); }
+    // Garita y camara
+    function pGaritaOperar(c) { return can(c, 'garita.operar', ['admin', 'policia']); }
+    function pGaritaCamara(c) { return can(c, 'garita.camara', ['admin', 'policia', 'auditor']); }
+    // Panel del vecino
+    function pVecinoVisitas(c) { return can(c, 'vecino.visitas', ['vecino']); }
+    function pVecinoVehiculos(c) { return can(c, 'vecino.vehiculos', ['vecino']); }
+    function pPanicoActivar(c) { return can(c, 'panico.activar', ['vecino', 'policia', 'supervisor']); }
+    // Alertas de panico
+    function pPanicoVer(c) { return can(c, 'panico.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
+    function pPanicoAtender(c) { return can(c, 'panico.atender', ['admin', 'policia', 'supervisor']); }
+    // Sistema Financiero
+    function pFinanzasVer(c) { return can(c, 'finanzas.ver', ['admin', 'auditor']); }
+    function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
+    // Rondas de vigilancia
+    function pRondasVer(c) { return can(c, 'rondas.ver', ['admin', 'supervisor', 'auditor']); }
+    function pRondasGestionar(c) { return can(c, 'rondas.gestionar', ['admin', 'supervisor']); }
+    function pRondasPatrullar(c) { return can(c, 'rondas.patrullar', ['policia', 'supervisor']); }
+
+    // Rondas: administran quienes tienen rondas.gestionar, patrullan quienes tienen rondas.patrullar,
+    // y las alertas de panico las atienden quienes tienen panico.atender
+    function canManageRondas(condoId) { return isMaster() || pRondasGestionar(condoId); }
+    function isPatroller(condoId) { return pRondasPatrullar(condoId); }
+    function isResponder(condoId) { return pPanicoAtender(condoId); }
 
     function isOwner() { return resource.data.userId == request.auth.uid; }
     function willOwn(condoId) {
@@ -53,31 +95,51 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
     }
 
+    // Quien puede crear un usuario de ese rol. Administradores y operadores (los roles con privilegios
+    // a la medida) solo los crea quien ademas puede asignar privilegios.
+    function canCreateRole(c, role) {
+      return (role in ['vecino', 'auditor', 'supervisor'] && pUsuariosCrear(c))
+        || (role == 'policia' && (pUsuariosCrear(c) || pGuardiasCrear(c)))
+        || (role in ['admin', 'operador'] && pUsuariosCrear(c) && pUsuariosPrivilegios(c));
+    }
+    // Editar o borrar a un administrador u operador tambien exige poder asignar privilegios
+    function manageable(c, role) {
+      return role in ['vecino', 'policia', 'auditor', 'supervisor'] || pUsuariosPrivilegios(c);
+    }
+
     // ── Datos privados del sistema: solo el servidor (Admin SDK) ──
     match /_privado/{document=**} {
       allow read, write: if false;
     }
 
-    // Codigo para un guardia que el supervisor crea en la misma escritura (no puede apuntar a otro usuario)
-    function newGuardCode() {
+    // Codigo de un usuario que se crea en la misma escritura (no puede apuntar a un usuario que ya existe)
+    function newUserCode() {
       let userPath = /databases/$(database)/documents/condominios/$(request.resource.data.condominioId)/usuarios/$(request.resource.data.userId);
-      return request.resource.data.role == 'policia'
-        && !exists(userPath)
-        && getAfter(userPath).data.role == 'policia';
+      return !exists(userPath) && getAfter(userPath).data.role == request.resource.data.role;
+    }
+    // Rol que tendra el usuario al que apunta el codigo, una vez aplicada la escritura
+    function codeTargetRole() {
+      return getAfter(/databases/$(database)/documents/condominios/$(request.resource.data.condominioId)/usuarios/$(request.resource.data.userId)).data.role;
+    }
+    // Codigo nuevo: de un usuario que se crea ahora (lo puede quien puede crear ese rol) o de uno que ya existe
+    // (reemplazo del codigo: usuarios.codigos, y sobre administradores y operadores solo con usuarios.privilegios)
+    function codeCreateOk(c) {
+      return request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador']
+        && (newUserCode()
+            ? canCreateRole(c, request.resource.data.role)
+            : (pUsuariosCodigos(c) && manageable(c, codeTargetRole()) && manageable(c, request.resource.data.role)));
     }
 
     // ── Codigos de acceso: indice unico codigo -> usuario ──
     // No se guardan dentro del usuario para que guardias y vecinos no puedan leerlos.
     match /codigos/{code} {
-      allow read: if isMaster() || isAdmin(resource.data.condominioId)
-        || (isSupervisor(resource.data.condominioId) && resource.data.role == 'policia');
-      allow create: if isMaster()
-        || (isAdmin(request.resource.data.condominioId)
-            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor'])
-        || (isSupervisor(request.resource.data.condominioId) && newGuardCode());
+      allow read: if isMaster() || pUsuariosCodigos(resource.data.condominioId)
+        || (pGuardiasCrear(resource.data.condominioId) && resource.data.role == 'policia');
+      allow create: if isMaster() || codeCreateOk(request.resource.data.condominioId);
       // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
       allow update: if false;
-      allow delete: if isMaster() || isAdmin(resource.data.condominioId);
+      allow delete: if isMaster() || pUsuariosCodigos(resource.data.condominioId)
+        || (pUsuariosEliminar(resource.data.condominioId) && manageable(resource.data.condominioId, resource.data.role));
     }
 
     // ── Mensajes para todos los condominios ──
@@ -111,8 +173,16 @@ service cloud.firestore {
       match /usuarios/{userId} {
         function validUser() {
           return request.resource.data.condominioId == condoId
-            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor']
-            && !('accessCode' in request.resource.data);
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador']
+            && !('accessCode' in request.resource.data)
+            && (!('privilegios' in request.resource.data)
+                || (request.resource.data.privilegios is map && request.resource.data.privilegios.size() <= 40));
+        }
+        // Rol y privilegios son el poder de un usuario: cambiarlos exige usuarios.privilegios
+        // y nadie se los cambia a si mismo (solo el master)
+        function touchesPower() {
+          return request.resource.data.get('privilegios', {}) != resource.data.get('privilegios', {})
+            || request.resource.data.role != resource.data.role;
         }
         // Con la mora automatica activa, el estado de pago lo escribe solo el servidor
         // (lo calcula el Sistema Financiero; ver functions/src/finanzas/recalc.js)
@@ -120,75 +190,79 @@ service cloud.firestore {
           return condoDoc(condoId).get('moraAutomatica', false) != true
             || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'morosoSince']);
         }
+        // Cada miembro lee su propia ficha (de ahi salen sus privilegios); las demas, con usuarios.ver
         allow read: if isMaster()
-          || isStaff(condoId)
-          || isAuditor(condoId)
-          || isSupervisor(condoId)
-          || (isResident(condoId) && request.auth.uid == userId);
-        allow create: if isMaster() || (isAdmin(condoId) && validUser())
-          || (isSupervisor(condoId) && validUser() && request.resource.data.role == 'policia');
-        allow update: if isMaster() || (isAdmin(condoId) && validUser() && paymentByHand());
-        allow delete: if isMaster() || isAdmin(condoId);
+          || (isMember(condoId) && request.auth.uid == userId)
+          || pUsuariosVer(condoId);
+        allow create: if isMaster()
+          || (validUser() && canCreateRole(condoId, request.resource.data.role)
+              && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
+        allow update: if isMaster()
+          || (pUsuariosEditar(condoId) && validUser() && paymentByHand()
+              && manageable(condoId, resource.data.role) && manageable(condoId, request.resource.data.role)
+              && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)));
+        allow delete: if isMaster()
+          || (pUsuariosEliminar(condoId) && manageable(condoId, resource.data.role) && userId != request.auth.uid);
       }
 
       match /visitas/{visitId} {
         allow read: if isMaster()
-          || isStaff(condoId)
-          || isAuditor(condoId)
+          || pVisitasVer(condoId)
           || (isResident(condoId) && isOwner());
         allow create: if isMaster()
-          || isAdmin(condoId)
-          || (isResident(condoId) && willOwn(condoId));
+          || pVisitasGestionar(condoId)
+          || (isResident(condoId) && pVecinoVisitas(condoId) && willOwn(condoId));
         allow update: if isMaster()
-          || isAdmin(condoId)
-          || (isGuard(condoId) && onlyChanges(['status', 'enteredAt']))
-          || (isResident(condoId) && isOwner() && willOwn(condoId));
+          || pVisitasGestionar(condoId)
+          || (pGaritaOperar(condoId) && onlyChanges(['status', 'enteredAt']))
+          || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner() && willOwn(condoId));
+        // Al eliminar un usuario se borran tambien sus visitas y vehiculos
         allow delete: if isMaster()
-          || isAdmin(condoId)
-          || (isResident(condoId) && isOwner());
+          || pVisitasGestionar(condoId)
+          || pUsuariosEliminar(condoId)
+          || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner());
       }
 
       match /vehiculos/{vehicleId} {
         allow read: if isMaster()
-          || isStaff(condoId)
-          || isAuditor(condoId)
+          || pVisitasVer(condoId)
           || (isResident(condoId) && isOwner());
         allow create: if isMaster()
-          || (isAdmin(condoId) && request.resource.data.condominioId == condoId)
-          || (isResident(condoId) && willOwn(condoId));
-        allow update: if isMaster() || isAdmin(condoId);
+          || (pVisitasGestionar(condoId) && request.resource.data.condominioId == condoId)
+          || (isResident(condoId) && pVecinoVehiculos(condoId) && willOwn(condoId));
+        allow update: if isMaster() || pVisitasGestionar(condoId);
         allow delete: if isMaster()
-          || isAdmin(condoId)
-          || (isResident(condoId) && isOwner());
+          || pVisitasGestionar(condoId)
+          || pUsuariosEliminar(condoId)
+          || (isResident(condoId) && pVecinoVehiculos(condoId) && isOwner());
       }
 
       match /mensajes/{msgId} {
         allow read: if isMaster()
-          || isAdmin(condoId)
-          || isAuditor(condoId)
+          || pMensajesHistorial(condoId)
           || (isMember(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
         allow create: if isMaster()
-          || (isAdmin(condoId) && request.resource.data.condominioId == condoId);
+          || (pMensajesEnviar(condoId) && request.resource.data.condominioId == condoId);
         allow update: if isMaster()
-          || isAdmin(condoId)
+          || pMensajesEnviar(condoId)
           || (isMember(condoId)
               && notAuditor(condoId)
               && resource.data.toRole in ['all', memberRole(condoId)]
               && onlyChanges(['read']));
-        allow delete: if isMaster() || isAdmin(condoId);
+        allow delete: if isMaster() || pMensajesEnviar(condoId);
       }
 
       match /camera_logs/{logId} {
-        allow read: if isMaster() || isStaff(condoId) || isAuditor(condoId);
-        allow create: if isStaff(condoId) && request.resource.data.condominioId == condoId;
+        allow read: if isMaster() || pGaritaCamara(condoId);
+        allow create: if pGaritaOperar(condoId) && request.resource.data.condominioId == condoId;
         allow update: if false;
-        allow delete: if isMaster() || isAdmin(condoId);
+        allow delete: if isMaster() || pVisitasGestionar(condoId);
       }
 
       // ── Sistema Financiero (OIKOS, ver finanzas-sync.js) ──
-      // Lo edita el admin; el master y el auditor solo leen. Nunca se borra:
+      // Lo edita quien tiene finanzas.usar; el master y quien solo tiene finanzas.ver leen. Nunca se borra:
       // OIKOS anula con deleted:true para que la anulacion llegue a todos los equipos.
-      function canReadFinance() { return isMaster() || isAdmin(condoId) || isAuditor(condoId); }
+      function canReadFinance() { return isMaster() || pFinanzasVer(condoId); }
       function validFinanceItem() {
         return 'id' in request.resource.data
           && (!('receiptImg' in request.resource.data)
@@ -197,19 +271,19 @@ service cloud.firestore {
       }
       match /finanzas_residentes/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if isAdmin(condoId) && validFinanceItem();
+        allow create, update: if pFinanzasUsar(condoId) && validFinanceItem();
         allow delete: if false;
       }
       match /finanzas_movimientos/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if isAdmin(condoId) && validFinanceItem();
+        allow create, update: if pFinanzasUsar(condoId) && validFinanceItem();
         allow delete: if false;
       }
       // ── Rondas: SISDEL RONDIN sobre la base de SISDEL (ver rondin/js/sisdel-api.js) ──
       // Los campos conservan el formato de RONDIN: company_id = condominio, guard_id/user_id = usuario.
       function sameCompany() { return request.resource.data.company_id == condoId; }
       function sameCondo() { return request.resource.data.condominioId == condoId; }
-      function canSeeRondas() { return canManageRondas(condoId) || isAuditor(condoId); }
+      function canSeeRondas() { return canManageRondas(condoId) || pRondasVer(condoId); }
       function patrols() { return isPatroller(condoId) || canManageRondas(condoId); }
       function setsOwn(field) { return request.resource.data.get(field, '') == request.auth.uid; }
       function wasOwn(field) { return resource.data.get(field, '') == request.auth.uid; }
@@ -225,7 +299,7 @@ service cloud.firestore {
       match /rondas_personal/{userId} {
         allow read: if canSeeRondas();
         allow create, update: if canManageRondas(condoId) && sameCompany() && request.resource.data.id == userId;
-        allow delete: if isAdmin(condoId);
+        allow delete: if pUsuariosEliminar(condoId);
       }
       // Rutas con sus puntos de control: las ven quienes patrullan
       match /rondas_rutas/{routeId} {
@@ -305,12 +379,13 @@ service cloud.firestore {
       // El vecino o guardia la crea a su nombre; admin, policia y supervisor la atienden;
       // el vecino puede cancelar la suya mientras siga activa. Nunca se borran.
       match /alertas_panico/{alertId} {
-        allow read: if isMaster() || isResponder(condoId) || isAuditor(condoId)
+        allow read: if isMaster() || pPanicoVer(condoId)
           || (isResident(condoId) && resource.data.userId == request.auth.uid);
         allow create: if sameCondo() && request.resource.data.userId == request.auth.uid
           && request.resource.data.status == 'ACTIVE'
+          && pPanicoActivar(condoId)
           && ((isResident(condoId) && request.resource.data.source == 'vecino')
-              || (isPatroller(condoId) && request.resource.data.source == 'guardia'));
+              || (!isResident(condoId) && request.resource.data.source == 'guardia'));
         allow update: if (isResponder(condoId)
               && onlyChanges(['status', 'attendedBy', 'attendedByName', 'attendedAt', 'resolvedBy', 'resolvedByName', 'resolvedAt', 'notes'])
               && request.resource.data.status in ['ATTENDED', 'RESOLVED'])
@@ -320,16 +395,25 @@ service cloud.firestore {
       }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
-        allow read: if isMaster() || isResponder(condoId) || isAuditor(condoId)
+        allow read: if isMaster() || pPanicoVer(condoId)
           || (isResident(condoId) && request.auth.uid == userId);
-        allow create, update: if ((isResident(condoId) && request.auth.uid == userId) || isAdmin(condoId))
+        allow create, update: if ((isResident(condoId) && request.auth.uid == userId) || pUsuariosEditar(condoId))
           && request.resource.data.contacts is list && request.resource.data.contacts.size() <= 5;
-        allow delete: if isAdmin(condoId);
+        allow delete: if pUsuariosEliminar(condoId);
+      }
+
+      // Plantillas de privilegios propias del condominio (las del sistema viven en privilegios.js)
+      match /plantillas_privilegios/{docId} {
+        allow read: if isMaster() || pUsuariosPrivilegios(condoId);
+        allow create, update: if pUsuariosPrivilegios(condoId) && request.resource.data.condominioId == condoId
+          && request.resource.data.name is string && request.resource.data.name.size() <= 60
+          && request.resource.data.keys is list && request.resource.data.keys.size() <= 40;
+        allow delete: if pUsuariosPrivilegios(condoId);
       }
 
       match /finanzas_config/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if isAdmin(condoId) && docId == 'oikos_settings';
+        allow create, update: if pFinanzasUsar(condoId) && docId == 'oikos_settings';
         allow delete: if false;
       }
     }

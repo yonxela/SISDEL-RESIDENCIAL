@@ -6,6 +6,7 @@ const { db } = require('../firebase');
 const { recipientsFor } = require('./avisos');
 const whatsapp = require('./whatsapp');
 const { cleanAll } = require('./mantenimiento');
+const privilegios = require('../privilegios');
 
 // Alerta de panico nueva: WhatsApp a la central, al personal del condominio y,
 // si es un vecino, a sus contactos de emergencia. El resultado queda en la alerta.
@@ -23,9 +24,12 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
     const [condoSnap, contactsSnap, staffSnap] = await Promise.all([
         condoRef.get(),
         alert.source === 'vecino' ? condoRef.collection('emergencia').doc(String(alert.userId)).get() : Promise.resolve(null),
-        condoRef.collection('usuarios').where('role', 'in', ['admin', 'supervisor']).get()
+        condoRef.collection('usuarios').where('role', 'in', ['admin', 'supervisor', 'operador']).get()
     ]);
-    const staff = staffSnap.docs.map((d) => d.data()).filter((u) => u.active !== false && u.phone);
+    // Se avisa al personal que puede atender alertas de panico (admin y supervisores por defecto; el administrador
+    // del condominio puede quitarselo a uno o dárselo a un operador)
+    const staff = staffSnap.docs.map((d) => d.data())
+        .filter((u) => u.active !== false && u.phone && privilegios.has(u.role, u.privilegios, 'panico.atender'));
     const recipients = recipientsFor({
         alert,
         condoName: condoSnap.exists ? condoSnap.data().name : '',

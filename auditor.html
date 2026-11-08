@@ -111,6 +111,7 @@
                 </div>
             </div>
             <div class="top-bar-actions">
+                <a class="btn btn-ghost btn-sm" href="rondas.html" title="Rondas de vigilancia (solo lectura)" style="border:1px solid var(--border-strong);">Rondas</a>
                 <span class="ro-badge" title="Este perfil no puede crear, editar ni eliminar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -282,7 +283,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261107"></script>
+    <script src="sisdel-core.js?v=20261108"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.AUDITOR]);

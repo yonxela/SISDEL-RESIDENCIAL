@@ -130,7 +130,7 @@ async function run() {
     });
     await allowed('master lista todos los usuarios', async () => {
         const snap = await getDocs(collectionGroup(master.db, 'usuarios'));
-        if (snap.size !== 9) throw new Error(`esperaba 9, hay ${snap.size}`);
+        if (snap.size !== 10) throw new Error(`esperaba 10, hay ${snap.size}`);
     });
     await allowed('master lee codigos', () => getDocs(collection(master.db, 'codigos')));
     await allowed('master cambia ajustes de condominio', () => updateDoc(doc(master.db, `condominios/${B}`), { hasLPR: true }));
@@ -410,6 +410,106 @@ async function run() {
     r = await camera({ condominioId: A }, itms('P654FIN'));
     equal('ya al dia, la camara abre normal', [r.body.Command, /Vecino permanente/.test(r.body.Reason || '')], ['Open', true]);
     equal('el moroso conservo su fecha de inicio mientras estuvo en mora', typeof (anaMorosa && anaMorosa.morosoSince), 'string');
+
+    // ───────── Rondas (traido de SISDEL RONDIN) ─────────
+    console.log('\nRondas');
+    const sup = await loginAs('VO105');
+    equal('supervisor entra al panel de rondas', [sup.login.role, sup.login.redirect], ['supervisor', 'rondas.html']);
+    const rref = (c, col, id) => doc(c.db, `condominios/${A}/${col}/${id}`);
+    const rcol = (c, col) => collection(c.db, `condominios/${A}/${col}`);
+    const ts = () => new Date().toISOString();
+    const rutaTest = {
+        id: 'ruta-test', condominioId: A, name: 'Ruta de prueba', status: 'ACTIVE', color: '#3B82F6',
+        checkpoints: [{ id: 'cp1', name: 'Punto 1', lat: 14.5, lng: -90.4, radius: 25, order: 1, mandatory: true, active: true, code: 'ABC234' }],
+        config: { roundsPerShift: 2, maxMinutes: 30, sequential: false }
+    };
+    await allowed('supervisor crea una ruta', () => setDoc(rref(sup, 'rondas_rutas', 'ruta-test'), rutaTest));
+    await allowed('admin edita la ruta', () => updateDoc(rref(admin, 'rondas_rutas', 'ruta-test'), { name: 'Ruta de prueba 2' }));
+    await denied('guardia no crea rutas', () => setDoc(rref(guard, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala' }));
+    await denied('auditor no crea rutas', () => setDoc(rref(auditor, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala' }));
+    await denied('ruta marcada de otro condominio es rechazada', () => setDoc(rref(sup, 'rondas_rutas', 'ruta-mala'), { ...rutaTest, id: 'ruta-mala', condominioId: B }));
+    await allowed('guardia ve las rutas', () => getDocs(rcol(guard, 'rondas_rutas')));
+    await allowed('auditor ve las rutas', () => getDocs(rcol(auditor, 'rondas_rutas')));
+    await denied('vecino no ve las rutas', () => getDocs(rcol(ana, 'rondas_rutas')));
+    await denied('admin de otro condominio no ve las rutas', () => getDocs(rcol(luciaFin, 'rondas_rutas')));
+
+    await allowed('guardia ve sus asignaciones', async () => {
+        const snap = await getDocs(query(rcol(guard, 'rondas_asignaciones'), where('guardId', '==', 'u-pedro')));
+        if (snap.size !== 1) throw new Error(`esperaba 1, hay ${snap.size}`);
+    });
+    await denied('guardia no ve las asignaciones de todos', () => getDocs(rcol(guard, 'rondas_asignaciones')));
+    const asig = { id: 'asig-test', condominioId: A, routeId: 'ruta-test', guardId: 'u-pedro', guardName: 'Pedro', dateStart: localDate(0), dateEnd: localDate(5), hourStart: '08:00', hourEnd: '20:00', status: 'ACTIVE' };
+    await allowed('supervisor asigna una ruta', () => setDoc(rref(sup, 'rondas_asignaciones', 'asig-test'), asig));
+    await denied('guardia no se asigna rutas', () => setDoc(rref(guard, 'rondas_asignaciones', 'asig-mala'), { ...asig, id: 'asig-mala' }));
+
+    const turno = { id: 'turno-test', condominioId: A, guardId: 'u-pedro', guardName: 'Pedro', routeId: 'ruta-test', routeName: 'Ruta', startedAt: ts(), status: 'ACTIVE', rounds: 0 };
+    await allowed('guardia inicia su turno', () => setDoc(rref(guard, 'rondas_turnos', 'turno-test'), turno));
+    await denied('guardia no inicia turno a nombre de otro', () => setDoc(rref(guard, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guardId: 'u-otro' }));
+    await denied('vecino no inicia turnos', () => setDoc(rref(ana, 'rondas_turnos', 'turno-malo'), { ...turno, id: 'turno-malo', guardId: 'u-ana' }));
+    await allowed('guardia lee su turno activo', () => getDocs(query(rcol(guard, 'rondas_turnos'), where('guardId', '==', 'u-pedro'), where('status', '==', 'ACTIVE'))));
+    const ronda = { id: 'ronda-test', condominioId: A, shiftId: 'turno-test', routeId: 'ruta-test', guardId: 'u-pedro', number: 1, startedAt: ts(), visited: [], totalCheckpoints: 1, status: 'IN_PROGRESS' };
+    await allowed('guardia inicia una ronda', () => setDoc(rref(guard, 'rondas_rondas', 'ronda-test'), ronda));
+    const visita = { id: 'visita-test', condominioId: A, roundId: 'ronda-test', shiftId: 'turno-test', routeId: 'ruta-test', checkpointId: 'cp1', guardId: 'u-pedro', at: ts(), lat: 14.5, lng: -90.4, distance: 3, method: 'GPS', status: 'VALID' };
+    await allowed('guardia marca un punto', () => setDoc(rref(guard, 'rondas_visitas', 'visita-test'), visita));
+    await denied('un punto marcado no se puede cambiar', () => updateDoc(rref(guard, 'rondas_visitas', 'visita-test'), { distance: 1 }));
+    await denied('un punto marcado no se puede borrar', () => deleteDoc(rref(sup, 'rondas_visitas', 'visita-test')));
+    await allowed('guardia termina la ronda', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { status: 'COMPLETED', score: 100, completedAt: ts() }));
+    await denied('guardia no pasa la ronda a otro guardia', () => updateDoc(rref(guard, 'rondas_rondas', 'ronda-test'), { guardId: 'u-otro' }));
+    await allowed('supervisor ve los puntos de la ronda', () => getDocs(query(rcol(sup, 'rondas_visitas'), where('roundId', '==', 'ronda-test'))));
+    await allowed('auditor ve las rondas', () => getDocs(rcol(auditor, 'rondas_rondas')));
+    await denied('guardia no ve las rondas de todos', () => getDocs(rcol(guard, 'rondas_rondas')));
+    await allowed('supervisor cierra el turno', () => updateDoc(rref(sup, 'rondas_turnos', 'turno-test'), { status: 'CLOSED', endedAt: ts() }));
+
+    await allowed('guardia publica su posicion', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-pedro'), { guardId: 'u-pedro', condominioId: A, shiftId: 'turno-test', lat: 14.5, lng: -90.4, at: ts() }));
+    await denied('guardia no publica la posicion de otro', () => setDoc(rref(guard, 'rondas_en_vivo', 'u-otro'), { guardId: 'u-otro', condominioId: A, lat: 1, lng: 1, at: ts() }));
+    await allowed('supervisor ve las posiciones en vivo', () => getDocs(rcol(sup, 'rondas_en_vivo')));
+    await denied('vecino no ve las posiciones de los guardias', () => getDocs(rcol(ana, 'rondas_en_vivo')));
+    await allowed('guardia guarda su historial de posiciones', () => setDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), { guardId: 'u-pedro', condominioId: A, shiftId: 'turno-test', lat: 14.5, lng: -90.4, at: ts() }));
+    await denied('el historial de posiciones no se edita', () => updateDoc(rref(guard, 'rondas_ubicaciones', 'ubi-test'), { lat: 0 }));
+
+    const incidente = { id: 'inc-test', condominioId: A, reportedBy: 'u-pedro', reporterName: 'Pedro', type: 'Robo', severity: 'HIGH', title: 'Prueba', description: '', status: 'OPEN', photoIds: [], createdAt: ts() };
+    await allowed('guardia reporta un incidente', () => setDoc(rref(guard, 'rondas_incidentes', 'inc-test'), incidente));
+    await denied('vecino no reporta incidentes de ronda', () => setDoc(rref(ana, 'rondas_incidentes', 'inc-malo'), { ...incidente, id: 'inc-malo', reportedBy: 'u-ana' }));
+    await denied('guardia no resuelve incidentes', () => updateDoc(rref(guard, 'rondas_incidentes', 'inc-test'), { status: 'RESOLVED' }));
+    await allowed('supervisor resuelve el incidente', () => updateDoc(rref(sup, 'rondas_incidentes', 'inc-test'), { status: 'RESOLVED', resolvedBy: 'u-samuel', resolvedAt: ts(), resolution: 'Revisado' }));
+    const foto = { id: 'foto-test', condominioId: A, data: 'data:image/jpeg;base64,AAAA', kind: 'incidente', refId: 'inc-test', by: 'u-pedro', createdAt: ts() };
+    await allowed('guardia sube una foto', () => setDoc(rref(guard, 'rondas_fotos', 'foto-test'), foto));
+    await denied('foto demasiado grande es rechazada', () => setDoc(rref(guard, 'rondas_fotos', 'foto-grande'), { ...foto, id: 'foto-grande', data: 'x'.repeat(950000) }));
+    await allowed('auditor ve la foto', () => getDoc(rref(auditor, 'rondas_fotos', 'foto-test')));
+    await denied('vecino no ve fotos de rondas', () => getDoc(rref(ana, 'rondas_fotos', 'foto-test')));
+
+    console.log('\nAlertas de panico');
+    const maria = await loginAs('VM102');
+    const panico = (id, extra = {}) => ({ id, condominioId: A, source: 'vecino', userId: 'u-ana', userName: 'Ana García', casa: 'Casa 12', phone: '5555-5678', lat: 14.542, lng: -90.453, status: 'ACTIVE', createdAt: ts(), ...extra });
+    await allowed('vecino activa el boton de panico', () => setDoc(rref(ana, 'alertas_panico', 'pan-1'), panico('pan-1')));
+    await denied('vecino no activa alertas a nombre de otro', () => setDoc(rref(ana, 'alertas_panico', 'pan-x'), panico('pan-x', { userId: 'u-maria' })));
+    await denied('vecino no se hace pasar por guardia', () => setDoc(rref(ana, 'alertas_panico', 'pan-x'), panico('pan-x', { source: 'guardia' })));
+    await allowed('la garita ve las alertas sin resolver', () => getDocs(query(rcol(guard, 'alertas_panico'), where('status', 'in', ['ACTIVE', 'ATTENDED']))));
+    await allowed('el vecino ve su alerta', () => getDoc(rref(ana, 'alertas_panico', 'pan-1')));
+    await denied('otro vecino no ve la alerta', () => getDoc(rref(maria, 'alertas_panico', 'pan-1')));
+    await denied('un vecino no ve las alertas de todos', () => getDocs(rcol(ana, 'alertas_panico')));
+    await waitFor('la alerta avisa por WhatsApp a central, personal y familiares (simulado)', async () => {
+        const w = (await getDoc(rref(admin, 'alertas_panico', 'pan-1'))).data().whatsapp;
+        if (!w) return false;
+        const names = w.recipients.map((r) => r.nombre);
+        return w.sent === true && names[0] === 'Central SISDEL' && names.includes('Samuel Ortiz') && names.includes('Luis García') && names.includes('Marta García');
+    });
+    await allowed('el guardia atiende la alerta', () => updateDoc(rref(guard, 'alertas_panico', 'pan-1'), { status: 'ATTENDED', attendedBy: 'u-pedro', attendedByName: 'Pedro', attendedAt: ts() }));
+    await denied('el guardia no cambia los datos de la alerta', () => updateDoc(rref(guard, 'alertas_panico', 'pan-1'), { userName: 'Otro' }));
+    await denied('el vecino no marca su alerta como resuelta', () => updateDoc(rref(ana, 'alertas_panico', 'pan-1'), { status: 'RESOLVED' }));
+    await allowed('el supervisor resuelve la alerta', () => updateDoc(rref(sup, 'alertas_panico', 'pan-1'), { status: 'RESOLVED', resolvedBy: 'u-samuel', resolvedByName: 'Samuel', resolvedAt: ts(), notes: 'Falsa alarma' }));
+    await allowed('vecino activa otra alerta', () => setDoc(rref(ana, 'alertas_panico', 'pan-2'), panico('pan-2')));
+    await allowed('el vecino cancela su alerta activa', () => updateDoc(rref(ana, 'alertas_panico', 'pan-2'), { status: 'CANCELLED', cancelledAt: ts() }));
+    await denied('una alerta no se borra', () => deleteDoc(rref(admin, 'alertas_panico', 'pan-2')));
+    await allowed('el guardia activa su boton de panico', () => setDoc(rref(guard, 'alertas_panico', 'pan-g'), { ...panico('pan-g'), source: 'guardia', userId: 'u-pedro', userName: 'Pedro Ramírez' }));
+    await denied('el auditor no atiende alertas', () => updateDoc(rref(auditor, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sofia' }));
+    await allowed('el auditor ve las alertas', () => getDocs(rcol(auditor, 'alertas_panico')));
+
+    await allowed('vecino guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: [{ name: 'Luis', phone: '5555-1111' }], updatedAt: ts() }));
+    await denied('vecino no edita contactos de otro', () => setDoc(rref(ana, 'emergencia', 'u-maria'), { userId: 'u-maria', condominioId: A, contacts: [], updatedAt: ts() }));
+    await denied('no se aceptan mas de 5 contactos', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: Array.from({ length: 6 }, () => ({ name: 'x', phone: '1' })), updatedAt: ts() }));
+    await allowed('la garita ve los contactos de emergencia', () => getDoc(rref(guard, 'emergencia', 'u-ana')));
+    await denied('otro vecino no ve los contactos', () => getDoc(rref(maria, 'emergencia', 'u-ana')));
 
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');

@@ -24,9 +24,11 @@ async function run() {
     const now = new Date().toISOString();
 
     batch.set(db.doc('_privado/auth'), { masterCodeHash: sha256(seed.masterCode), updatedAt: now });
+    // WhatsApp simulado: las alertas de panico registran a quien se avisaria, sin enviar nada
+    if (seed.whatsapp) batch.set(db.doc('_privado/whatsapp'), { ...seed.whatsapp, updatedAt: now });
 
     for (const condo of seed.condominios) {
-        const { usuarios, vehiculos, visitas, mensajes, ...condoData } = condo;
+        const { usuarios, vehiculos, visitas, mensajes, rondas, ...condoData } = condo;
         const condoRef = db.doc(`condominios/${condo.id}`);
         batch.set(condoRef, { phone: '', serviceExpiry: null, createdAt: now, ...condoData });
 
@@ -56,6 +58,18 @@ async function run() {
         }
         for (const m of mensajes) {
             batch.set(condoRef.collection('mensajes').doc(m.id), { ...m, condominioId: condo.id, read: false, createdAt: now });
+        }
+        for (const r of (rondas && rondas.rutas) || []) {
+            batch.set(condoRef.collection('rondas_rutas').doc(r.id), { ...r, condominioId: condo.id, status: 'ACTIVE', createdAt: now, updatedAt: now });
+        }
+        for (const a of (rondas && rondas.asignaciones) || []) {
+            const { startOffset, endOffset, ...data } = a;
+            batch.set(condoRef.collection('rondas_asignaciones').doc(a.id), {
+                ...data, condominioId: condo.id, dateStart: localDate(startOffset), dateEnd: localDate(endOffset), status: 'ACTIVE', createdAt: now
+            });
+        }
+        for (const e of (rondas && rondas.emergencia) || []) {
+            batch.set(condoRef.collection('emergencia').doc(e.userId), { ...e, condominioId: condo.id, updatedAt: now });
         }
     }
     for (const m of seed.mensajesGlobales) {

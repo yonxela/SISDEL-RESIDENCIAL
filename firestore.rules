@@ -4,7 +4,7 @@ rules_version = '2';
 // SISDEL Comunities - Reglas de seguridad
 // Datos aislados por condominio: condominios/{condoId}/...
 // El login entrega un token con: role y condominioId.
-// Roles: master (todo), admin, policia, vecino y auditor (solo lectura).
+// Roles: master (todo), admin, policia, vecino, auditor (solo lectura) y supervisor (rondas).
 // El rol y el estado activo se leen SIEMPRE del documento del usuario,
 // asi un usuario eliminado o desactivado pierde acceso de inmediato.
 // ═══════════════════════════════════════════════════════════════
@@ -37,6 +37,12 @@ service cloud.firestore {
     // Auditor: lee todo su condominio (sin codigos de acceso) y no escribe nada
     function isAuditor(condoId) { return isMember(condoId) && memberRole(condoId) == 'auditor'; }
     function notAuditor(condoId) { return memberRole(condoId) != 'auditor'; }
+    // Rondas: admin y supervisor las administran; policia y supervisor patrullan;
+    // admin, policia y supervisor atienden las alertas de panico
+    function isSupervisor(condoId) { return isMember(condoId) && memberRole(condoId) == 'supervisor'; }
+    function canManageRondas(condoId) { return isMaster() || isAdmin(condoId) || isSupervisor(condoId); }
+    function isPatroller(condoId) { return isMember(condoId) && memberRole(condoId) in ['policia', 'supervisor']; }
+    function isResponder(condoId) { return isMember(condoId) && memberRole(condoId) in ['admin', 'policia', 'supervisor']; }
 
     function isOwner() { return resource.data.userId == request.auth.uid; }
     function willOwn(condoId) {
@@ -58,7 +64,7 @@ service cloud.firestore {
       allow read: if isMaster() || isAdmin(resource.data.condominioId);
       allow create: if isMaster()
         || (isAdmin(request.resource.data.condominioId)
-            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor']);
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor']);
       // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
       allow update: if false;
       allow delete: if isMaster() || isAdmin(resource.data.condominioId);
@@ -95,7 +101,7 @@ service cloud.firestore {
       match /usuarios/{userId} {
         function validUser() {
           return request.resource.data.condominioId == condoId
-            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor']
+            && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor']
             && !('accessCode' in request.resource.data);
         }
         // Con la mora automatica activa, el estado de pago lo escribe solo el servidor
@@ -107,6 +113,7 @@ service cloud.firestore {
         allow read: if isMaster()
           || isStaff(condoId)
           || isAuditor(condoId)
+          || isSupervisor(condoId)
           || (isResident(condoId) && request.auth.uid == userId);
         allow create: if isMaster() || (isAdmin(condoId) && validUser());
         allow update: if isMaster() || (isAdmin(condoId) && validUser() && paymentByHand());
@@ -187,6 +194,99 @@ service cloud.firestore {
         allow create, update: if isAdmin(condoId) && validFinanceItem();
         allow delete: if false;
       }
+      // ── Rondas (traido de SISDEL RONDIN) ──
+      function sameCondo() { return request.resource.data.condominioId == condoId; }
+      function ownGuard() { return request.resource.data.guardId == request.auth.uid; }
+      function canSeeRondas() { return canManageRondas(condoId) || isAuditor(condoId); }
+
+      // Rutas con sus puntos de control: las ven quienes patrullan
+      match /rondas_rutas/{routeId} {
+        allow read: if canSeeRondas() || isPatroller(condoId);
+        allow create, update: if canManageRondas(condoId) && sameCondo();
+        allow delete: if canManageRondas(condoId);
+      }
+      // Que guardia patrulla que ruta y en que horario
+      match /rondas_asignaciones/{assignmentId} {
+        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
+        allow create, update: if canManageRondas(condoId) && sameCondo();
+        allow delete: if canManageRondas(condoId);
+      }
+      // Turnos y rondas: cada guardia escribe los suyos; el supervisor puede cerrarlos
+      match /rondas_turnos/{shiftId} {
+        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
+        allow create: if isPatroller(condoId) && sameCondo() && ownGuard() && request.resource.data.status == 'ACTIVE';
+        allow update: if (isPatroller(condoId) && resource.data.guardId == request.auth.uid && ownGuard() && sameCondo())
+          || (canManageRondas(condoId) && sameCondo() && request.resource.data.guardId == resource.data.guardId);
+        allow delete: if false;
+      }
+      match /rondas_rondas/{roundId} {
+        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
+        allow create: if isPatroller(condoId) && sameCondo() && ownGuard() && request.resource.data.status == 'IN_PROGRESS';
+        allow update: if (isPatroller(condoId) && resource.data.guardId == request.auth.uid && ownGuard() && sameCondo())
+          || (canManageRondas(condoId) && sameCondo() && request.resource.data.guardId == resource.data.guardId);
+        allow delete: if false;
+      }
+      // Visitas a puntos de control: registro de auditoria, no se editan ni se borran
+      match /rondas_visitas/{visitId} {
+        allow read: if canSeeRondas() || (isPatroller(condoId) && resource.data.guardId == request.auth.uid);
+        allow create: if isPatroller(condoId) && sameCondo() && ownGuard();
+        allow update, delete: if false;
+      }
+      // Posicion actual de cada guardia (documento = su id) e historial de 30 dias
+      match /rondas_en_vivo/{guardId} {
+        allow read: if canSeeRondas();
+        allow create, update: if isPatroller(condoId) && guardId == request.auth.uid && ownGuard() && sameCondo();
+        allow delete: if (isPatroller(condoId) && guardId == request.auth.uid) || canManageRondas(condoId);
+      }
+      match /rondas_ubicaciones/{logId} {
+        allow read: if canSeeRondas();
+        allow create: if isPatroller(condoId) && sameCondo() && ownGuard();
+        allow update, delete: if false;
+      }
+      // Incidentes: los reporta quien patrulla; los resuelve admin o supervisor
+      match /rondas_incidentes/{incidentId} {
+        allow read: if canSeeRondas() || isResponder(condoId);
+        allow create: if isPatroller(condoId) && sameCondo()
+          && request.resource.data.reportedBy == request.auth.uid && request.resource.data.status == 'OPEN';
+        allow update: if canManageRondas(condoId) && sameCondo() && request.resource.data.reportedBy == resource.data.reportedBy;
+        allow delete: if false;
+      }
+      // Fotos (turnos e incidentes), comprimidas en el navegador: menos de ~900 KB
+      match /rondas_fotos/{photoId} {
+        allow read: if canSeeRondas() || resource.data.by == request.auth.uid;
+        allow create: if (isPatroller(condoId) || canManageRondas(condoId)) && sameCondo()
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.data is string && request.resource.data.data.size() < 900000;
+        allow update: if false;
+        allow delete: if canManageRondas(condoId);
+      }
+
+      // ── Alertas de panico (vecinos y guardias) ──
+      // El vecino o guardia la crea a su nombre; admin, policia y supervisor la atienden;
+      // el vecino puede cancelar la suya mientras siga activa. Nunca se borran.
+      match /alertas_panico/{alertId} {
+        allow read: if isMaster() || isResponder(condoId) || isAuditor(condoId)
+          || (isResident(condoId) && resource.data.userId == request.auth.uid);
+        allow create: if sameCondo() && request.resource.data.userId == request.auth.uid
+          && request.resource.data.status == 'ACTIVE'
+          && ((isResident(condoId) && request.resource.data.source == 'vecino')
+              || (isPatroller(condoId) && request.resource.data.source == 'guardia'));
+        allow update: if (isResponder(condoId)
+              && onlyChanges(['status', 'attendedBy', 'attendedByName', 'attendedAt', 'resolvedBy', 'resolvedByName', 'resolvedAt', 'notes'])
+              && request.resource.data.status in ['ATTENDED', 'RESOLVED'])
+          || (isResident(condoId) && resource.data.userId == request.auth.uid && resource.data.status == 'ACTIVE'
+              && onlyChanges(['status', 'cancelledAt']) && request.resource.data.status == 'CANCELLED');
+        allow delete: if false;
+      }
+      // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
+      match /emergencia/{userId} {
+        allow read: if isMaster() || isResponder(condoId) || isAuditor(condoId)
+          || (isResident(condoId) && request.auth.uid == userId);
+        allow create, update: if ((isResident(condoId) && request.auth.uid == userId) || isAdmin(condoId))
+          && request.resource.data.contacts is list && request.resource.data.contacts.size() <= 5;
+        allow delete: if isAdmin(condoId);
+      }
+
       match /finanzas_config/{docId} {
         allow read: if canReadFinance();
         allow create, update: if isAdmin(condoId) && docId == 'oikos_settings';

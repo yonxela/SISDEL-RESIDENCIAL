@@ -38,6 +38,11 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                     </svg>
                 </button>
+                <a class="btn btn-ghost btn-sm" href="rondin.html" id="btnRondas" title="Rondas de vigilancia"
+                    style="gap:0.4rem; border:1px solid var(--border-strong);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Rondas
+                </a>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
             </div>
         </header>
@@ -154,7 +159,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261107"></script>
+    <script src="sisdel-core.js?v=20261108"></script>
+    <script src="rondas-logic.js?v=20261108"></script>
+    <script src="rondas-core.js?v=20261108"></script>
+    <script src="panico-alertas.js?v=20261108"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.POLICIA, SISDEL.ROLES.ADMIN]);
@@ -202,6 +210,10 @@
             }
 
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
+            SisdelRondas.init(session);
+            SisdelPanico.watch({ canResolve: session.role === SISDEL.ROLES.ADMIN });
 
             // --- Stats & Rendering ---
             async function renderStats() {

@@ -7,7 +7,7 @@ const SISDEL = (() => {
     // ── Constants ──
     const STORAGE_KEYS = { session: 'sisdel_session', loginTiming: 'sisdel_login_timing' };
 
-    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor' };
+    const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor', SUPERVISOR: 'supervisor' };
     const PAYMENT_STATUS = { AL_DIA: 'al_dia', MOROSO: 'moroso' };
     const VISIT_STATUS = { PENDING: 'pending', ENTERED: 'entered', COMPLETED: 'completed' };
 
@@ -812,7 +812,7 @@ const SISDEL = (() => {
     }
 
     function getRoleName(role) {
-        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.AUDITOR]: 'Auditor', [ROLES.MASTER]: 'Master' };
+        const names = { [ROLES.ADMIN]: 'Administrador', [ROLES.VECINO]: 'Vecino', [ROLES.POLICIA]: 'Policía / Guardia', [ROLES.AUDITOR]: 'Auditor', [ROLES.SUPERVISOR]: 'Supervisor de rondas', [ROLES.MASTER]: 'Master' };
         return names[role] || role;
     }
 

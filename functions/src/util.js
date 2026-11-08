@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 
 const TIME_ZONE = 'America/Guatemala';
-const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor' };
+const ROLES = { MASTER: 'master', ADMIN: 'admin', VECINO: 'vecino', POLICIA: 'policia', AUDITOR: 'auditor', SUPERVISOR: 'supervisor' };
 
 // Codigo de acceso normalizado. Devuelve '' si no sirve como id de documento
 function normalizeCode(code) {

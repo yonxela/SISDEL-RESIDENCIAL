@@ -8,6 +8,16 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        .panic-card { margin-bottom: 2rem; padding: 1.25rem; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-strong); }
+        .panic-hold { position: relative; overflow: hidden; width: 100%; padding: 1.15rem; border: none; border-radius: 999px; background: #dc2626; color: #fff;
+            font-weight: 900; font-size: 1.1rem; letter-spacing: 0.06em; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+            display: flex; align-items: center; justify-content: center; gap: 0.6rem; box-shadow: 0 10px 25px rgba(220,38,38,0.35); }
+        .panic-hold .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,255,255,0.25); }
+        .panic-hold span { position: relative; }
+        .panic-status { margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.9rem; }
+        .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
+    </style>
 </head>
 
 <body>
@@ -51,6 +61,25 @@
                         id="userCasa" class="badge badge-info">...</span></p>
             </div>
 
+            <!-- Boton de panico: avisa a la garita, la administracion y sus contactos de emergencia -->
+            <div class="panic-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.75rem;">
+                    <div>
+                        <h3 style="font-size:1.1rem;">Emergencia</h3>
+                        <p class="text-xs text-muted">Mantenga presionado 2 segundos. Avisa a la garita, la administración y sus contactos de emergencia.</p>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button">Mis contactos de emergencia</button>
+                </div>
+                <button class="panic-hold" id="btnPanicHold" type="button" aria-label="Botón de pánico: mantener presionado">
+                    <div class="fill" id="panicFill"></div>
+                    <span>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-5px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        BOTÓN DE PÁNICO
+                    </span>
+                </button>
+                <div class="panic-status" id="panicStatus" style="display:none;"></div>
+            </div>
+
             <div class="stats-grid">
                 <div class="stat-card" style="cursor:pointer;" id="cardNewVisit">
                     <div class="stat-value" style="color:var(--primary-light)">+</div>
@@ -71,6 +100,21 @@
         <footer class="app-footer">
             SISDEL &copy; 2026 - Access Intelligence
         </footer>
+    </div>
+
+    <!-- Modal Contactos de emergencia -->
+    <div class="modal-overlay" id="modalContacts" style="display:none;">
+        <div class="modal" style="max-width:480px;">
+            <div class="modal-header">
+                <h3>Contactos de emergencia</h3>
+                <button class="btn btn-ghost btn-icon" id="btnCloseContacts" type="button">&times;</button>
+            </div>
+            <div style="padding:1.25rem;">
+                <p class="text-xs text-muted" style="margin-bottom:0.75rem;">Hasta 5 personas. Si activa el botón de pánico, reciben un WhatsApp con su ubicación.</p>
+                <div id="contactRows"></div>
+                <button class="btn btn-primary" id="btnSaveContacts" type="button" style="width:100%; margin-top:0.75rem;">Guardar contactos</button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal Registrar Visita -->
@@ -203,7 +247,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261107"></script>
+    <script src="sisdel-core.js?v=20261108"></script>
+    <script src="rondas-logic.js?v=20261108"></script>
+    <script src="rondas-core.js?v=20261108"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO]);
@@ -232,6 +278,110 @@
             });
 
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // --- Boton de panico ---
+            SisdelRondas.init(session);
+            const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const panicBtn = document.getElementById('btnPanicHold');
+            const panicFill = document.getElementById('panicFill');
+            const panicStatus = document.getElementById('panicStatus');
+            const HOLD_MS = 2000;
+            let holdTimer = null;
+            let holdStart = 0;
+            let myPhone = '';
+            let panicUnsub = null;
+            SISDEL.getUserById(session.userId).then((u) => { myPhone = (u && u.phone) || ''; });
+
+            const PANIC_TEXT = {
+                ACTIVE: 'Alerta enviada. La garita y la administración ya fueron avisadas. Manténgase en un lugar seguro.',
+                ATTENDED: 'Su alerta fue atendida',
+                RESOLVED: 'Su alerta fue resuelta.',
+                CANCELLED: 'Alerta cancelada.'
+            };
+            function showPanic(alert) {
+                if (!alert) { panicStatus.style.display = 'none'; return; }
+                panicStatus.style.display = 'block';
+                const who = alert.status === 'ATTENDED' && alert.attendedByName ? ` por ${escHtml(alert.attendedByName)}.` : '';
+                panicStatus.innerHTML = `<strong>${escHtml(PANIC_TEXT[alert.status] || alert.status)}${who}</strong>
+                    <div class="text-xs text-muted" style="margin-top:0.25rem;">${escHtml(SISDEL.formatDateTime(alert.createdAt))}${alert.lat == null ? ' · sin ubicación GPS' : ''}</div>
+                    ${alert.status === 'ACTIVE' ? '<button class="btn btn-ghost btn-sm" id="btnCancelPanic" type="button" style="margin-top:0.5rem;">Fue un error: cancelar la alerta</button>' : ''}`;
+                const cancel = document.getElementById('btnCancelPanic');
+                if (cancel) cancel.addEventListener('click', async () => {
+                    if (!confirm('¿Cancelar la alerta de pánico?')) return;
+                    await SisdelRondas.cancelPanic(alert.id);
+                });
+                if (['RESOLVED', 'CANCELLED'].includes(alert.status)) setTimeout(() => { panicStatus.style.display = 'none'; }, 15000);
+            }
+            function followPanic(id) {
+                if (panicUnsub) panicUnsub();
+                panicUnsub = SisdelRondas.subscribePanic(id, showPanic, (e) => console.error('alerta', e));
+            }
+            async function firePanic() {
+                panicBtn.disabled = true;
+                panicStatus.style.display = 'block';
+                panicStatus.textContent = 'Enviando alerta...';
+                try {
+                    const pos = await SisdelRondas.getPosition(6000);
+                    const alert = await SisdelRondas.raisePanic({ source: 'vecino', pos, casa: session.userCasa || '', phone: myPhone });
+                    if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+                    followPanic(alert.id);
+                } catch (e) {
+                    console.error(e);
+                    panicStatus.textContent = 'No se pudo enviar la alerta. Llame a la garita por teléfono.';
+                } finally { setTimeout(() => { panicBtn.disabled = false; }, 5000); }
+            }
+            function holdStartFn(e) {
+                if (panicBtn.disabled) return;
+                e.preventDefault();
+                holdStart = Date.now();
+                panicFill.style.transition = `width ${HOLD_MS}ms linear`;
+                panicFill.style.width = '100%';
+                holdTimer = setTimeout(() => { holdTimer = null; panicFill.style.transition = 'none'; panicFill.style.width = '0'; firePanic(); }, HOLD_MS);
+            }
+            function holdEndFn() {
+                if (!holdTimer) return;
+                clearTimeout(holdTimer);
+                holdTimer = null;
+                panicFill.style.transition = 'none';
+                panicFill.style.width = '0';
+            }
+            panicBtn.addEventListener('pointerdown', holdStartFn);
+            ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => panicBtn.addEventListener(ev, holdEndFn));
+            panicBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+            // Teclado: confirmacion en lugar de mantener presionado
+            panicBtn.addEventListener('keydown', (e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && confirm('¿Activar la alerta de pánico?')) { e.preventDefault(); firePanic(); }
+            });
+            // Si ya tiene una alerta reciente sin resolver, se muestra su estado
+            SisdelRondas.myLatestPanic().then((a) => {
+                if (a && ['ACTIVE', 'ATTENDED'].includes(a.status) && Date.now() - Date.parse(a.createdAt) < 6 * 3600000) followPanic(a.id);
+            }).catch(() => {});
+
+            // --- Contactos de emergencia ---
+            const modalContacts = document.getElementById('modalContacts');
+            const contactRows = document.getElementById('contactRows');
+            document.getElementById('btnContacts').addEventListener('click', async () => {
+                const contacts = await SisdelRondas.getContacts(session.userId).catch(() => []);
+                contactRows.innerHTML = Array.from({ length: 5 }, (_, i) => {
+                    const c = contacts[i] || {};
+                    return `<div class="contact-row">
+                        <input class="form-input" style="padding-left:1rem;" data-c="name" placeholder="Nombre ${i + 1}" value="${escHtml(c.name || '')}" maxlength="60">
+                        <input class="form-input" style="padding-left:1rem;" data-c="phone" type="tel" placeholder="Teléfono" value="${escHtml(c.phone || '')}" maxlength="20">
+                    </div>`;
+                }).join('');
+                modalContacts.style.display = 'flex';
+            });
+            document.getElementById('btnCloseContacts').addEventListener('click', () => { modalContacts.style.display = 'none'; });
+            document.getElementById('btnSaveContacts').addEventListener('click', async () => {
+                const rows = [...contactRows.querySelectorAll('.contact-row')].map((r) => ({
+                    name: r.querySelector('[data-c="name"]').value, phone: r.querySelector('[data-c="phone"]').value
+                }));
+                try {
+                    const saved = await SisdelRondas.saveContacts(session.userId, rows);
+                    SISDEL.showToast(`${saved.length} contacto(s) guardado(s)`, 'success');
+                    modalContacts.style.display = 'none';
+                } catch (e) { console.error(e); SISDEL.showToast('No se pudieron guardar los contactos', 'error'); }
+            });
 
             // --- Visits Logic ---
             async function renderVisits() {

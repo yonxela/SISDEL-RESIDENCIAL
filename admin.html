@@ -49,6 +49,11 @@
                     </svg>
                     Finanzas
                 </a>
+                <a class="btn btn-ghost btn-sm" href="rondas.html" id="btnRondas" title="Rondas de vigilancia"
+                    style="gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Rondas
+                </a>
                 <button class="btn btn-ghost btn-icon" id="btnMessages" title="Mensajes" style="position:relative;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -79,6 +84,7 @@
                 <button class="tab" data-tab="policias">👮 Guardias</button>
                 <button class="tab" data-tab="admins">⚙️ Admins</button>
                 <button class="tab" data-tab="auditores">Auditores</button>
+                <button class="tab" data-tab="supervisores">Supervisores</button>
                 <button class="tab" data-tab="todos">📋 Todos</button>
             </div>
 
@@ -158,6 +164,7 @@
                         <option value="policia">Policía / Guardia de Garita</option>
                         <option value="admin">Co-Administrador</option>
                         <option value="auditor">Auditor (solo lectura y reportes)</option>
+                        <option value="supervisor">Supervisor de rondas</option>
                     </select>
                 </div>
                 <div class="form-group" id="groupCasa">
@@ -242,7 +249,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="sisdel-core.js?v=20261107"></script>
+    <script src="sisdel-core.js?v=20261108"></script>
+    <script src="rondas-logic.js?v=20261108"></script>
+    <script src="rondas-core.js?v=20261108"></script>
+    <script src="panico-alertas.js?v=20261108"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.ADMIN]);
@@ -272,6 +282,10 @@
 
             // --- App Logic ---
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // Alertas de panico de vecinos y guardias
+            SisdelRondas.init(session);
+            SisdelPanico.watch({ canResolve: true });
 
             // Messages button toggles to messages view
             let showingMessages = false;
@@ -338,7 +352,7 @@
 
             async function renderUsers() {
                 const allUsers = await SISDEL.getUsers(condoId);
-                const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, todos: null };
+                const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, todos: null };
                 const targetRole = roleMap[currentTab];
                 let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
                 if (searchQuery) {

@@ -823,6 +823,17 @@ async function run() {
         return batch.commit();
     });
 
+    // Configuracion en solo lectura: usuarios.panel + usuarios.ver
+    await allowed('admin crea un operador de solo lectura', () => createUserAs(admin, mkUser('u-ro', 'Solo lectura', 'operador', { privilegios: { 'usuarios.panel': true, 'usuarios.ver': true } }), 'PO777'));
+    const ro = await loginAs('PO777');
+    equal('el operador de solo lectura entra al panel de administracion', ro.login.redirect, 'admin.html');
+    await allowed('ve la lista de usuarios', () => getDocs(rcol(ro, 'usuarios')));
+    await denied('no edita usuarios', () => updateDoc(uref(ro, 'u-ana'), { phone: '5555-0000' }));
+    await denied('no crea usuarios', () => createUserAs(ro, mkUser('u-v8', 'Nadie', 'vecino'), 'PV008'));
+    await denied('no ve las plantillas del condominio (Configuracion solo le muestra las del sistema)', () => getDocs(rcol(ro, 'plantillas_privilegios')));
+    await denied('no ve codigos de acceso', () => getDocs(query(collection(ro.db, 'codigos'), where('condominioId', '==', A))));
+    await denied('no cambia privilegios', () => setPriv(ro, 'u-ana', { 'finanzas.ver': true }));
+
     // Plantillas de privilegios del condominio
     const plantilla = { id: 'plt-1', condominioId: A, name: 'Portero de turno', role: 'operador', description: '', claves: ['garita.operar', 'usuarios.ver', 'visitas.ver'], updatedAt: ts() };
     await allowed('admin guarda una plantilla del condominio', () => setDoc(rref(admin, 'plantillas_privilegios', 'plt-1'), plantilla));

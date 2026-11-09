@@ -42,6 +42,11 @@
                     </svg>
                 </button>
                 <span id="panelLinks" style="display:contents;"></span>
+                <button class="btn btn-ghost btn-sm" id="btnConfig" title="Configuración: usuarios, privilegios y plantillas" aria-label="Configuración"
+                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Configuración
+                </button>
                 <button class="btn btn-ghost btn-icon" id="btnMessages" title="Mensajes" style="position:relative;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -61,6 +66,7 @@
         </header>
 
         <div class="page-content">
+          <div id="panelMain">
             <div id="messagesBanner" style="display:none;"></div>
 
             <!-- Stats -->
@@ -126,6 +132,51 @@
                 </div>
                 <h3 style="margin-bottom:1rem;">Mensajes Enviados</h3>
                 <div id="sentMsgList"></div>
+            </div>
+          </div><!-- /panelMain -->
+
+            <!-- Configuracion: usuarios, privilegios y plantillas (estructura del modulo de MULTISYS) -->
+            <div id="viewConfig" style="display:none;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem;">
+                    <div>
+                        <h2 style="font-size:1.4rem; margin:0;">Configuración</h2>
+                        <p class="text-xs text-muted" style="margin:0.25rem 0 0;">Usuarios, privilegios y plantillas del condominio</p>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="btnConfigBack" style="border:1px solid var(--border-strong);">Volver al panel</button>
+                </div>
+                <div class="tabs" id="configTabs">
+                    <button class="tab active" data-cfg="usuarios">Usuarios</button>
+                    <button class="tab" data-cfg="privilegios">Privilegios</button>
+                    <button class="tab" data-cfg="plantillas">Plantillas</button>
+                </div>
+                <section id="cfgUsuarios">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; gap:1rem; flex-wrap:wrap;">
+                        <div style="display:flex; gap:0.75rem; align-items:center; flex:1; flex-wrap:wrap;">
+                            <div class="input-group" style="max-width:300px; flex:1; min-width:200px;">
+                                <span class="input-icon">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                                </span>
+                                <input type="text" class="form-input" id="cfgSearch" placeholder="Buscar por nombre, casa o cargo...">
+                            </div>
+                            <select class="form-input" id="cfgRole" aria-label="Filtrar por rol" style="max-width:240px; padding-left:1rem;">
+                                <option value="">Todos los roles</option>
+                                <option value="vecino">Vecinos</option>
+                                <option value="policia">Guardias</option>
+                                <option value="admin">Administradores</option>
+                                <option value="auditor">Auditores</option>
+                                <option value="supervisor">Supervisores</option>
+                                <option value="operador">Operadores</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="btnCfgNewUser">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                            Agregar Usuario
+                        </button>
+                    </div>
+                    <div id="cfgUsersList"></div>
+                </section>
+                <section id="cfgPrivilegios" style="display:none;"></section>
+                <section id="cfgPlantillas" style="display:none;"></section>
             </div>
         </div>
 
@@ -259,7 +310,7 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261108f"></script>
     <script src="sisdel-core.js?v=20261108f"></script>
-    <script src="privilegios-ui.js?v=20261108f"></script>
+    <script src="privilegios-ui.js?v=20261108g"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
     <script>
@@ -378,9 +429,9 @@
             let currentTab = 'vecinos';
             let searchQuery = '';
 
-            document.querySelectorAll('.tab').forEach(tab => {
+            document.querySelectorAll('#mainTabs .tab').forEach(tab => {
                 tab.addEventListener('click', () => {
-                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('#mainTabs .tab').forEach(t => t.classList.remove('active'));
                     tab.classList.add('active');
                     currentTab = tab.dataset.tab;
                     // If returning from messages view
@@ -417,12 +468,14 @@
                 `;
             }
 
-            document.getElementById('usersList').addEventListener('click', (event) => {
+            const onUserListClick = (event) => {
                 const priv = event.target.closest('[data-priv]');
                 if (priv) { window.openPrivileges(priv.dataset.priv); return; }
                 const edit = event.target.closest('[data-edit]');
                 if (edit) window.openEditUser(edit.dataset.edit);
-            });
+            };
+            document.getElementById('usersList').addEventListener('click', onUserListClick);
+            document.getElementById('cfgUsersList').addEventListener('click', onUserListClick);
 
             // Etiqueta de privilegios: personalizados, o sin ninguno (un operador sin privilegios no puede entrar)
             function privilegeBadge(u) {
@@ -436,18 +489,11 @@
                 return `<span class="badge ${custom ? 'badge-warning' : 'badge-info'}" title="${custom ? 'Privilegios distintos a los de su rol' : 'Privilegios de su rol'}">${custom ? 'Personalizado · ' : ''}${active} privilegios</span>`;
             }
 
-            async function renderUsers() {
-                const allUsers = await SISDEL.getUsers(condoId);
-                const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, operadores: SISDEL.ROLES.OPERADOR, todos: null };
-                const targetRole = roleMap[currentTab];
-                let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
-                if (searchQuery) {
-                    filtered = filtered.filter(u => u.name.toLowerCase().includes(searchQuery) || (u.casa || '').toLowerCase().includes(searchQuery) || (u.cargo || '').toLowerCase().includes(searchQuery));
-                }
-                const list = document.getElementById('usersList');
-                if (filtered.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin resultados.</p>'; return; }
+            const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, operadores: SISDEL.ROLES.OPERADOR, todos: null };
+            const matchesText = (u, q) => !q || u.name.toLowerCase().includes(q) || (u.casa || '').toLowerCase().includes(q) || (u.cargo || '').toLowerCase().includes(q);
 
-                list.innerHTML = filtered.map(u => `
+            // Una fila de usuario: la usan el panel de siempre y la pestaña Usuarios de Configuración
+            const userRow = (u) => `
                     <div class="list-item">
                         <div class="avatar" style="${u.paymentStatus === 'moroso' ? 'background:var(--danger);' : ''}">${esc(u.name.charAt(0))}</div>
                         <div class="item-info">
@@ -476,7 +522,28 @@
                             ${(canEditUser(u) || canDeleteUser(u)) ? `<button class="btn btn-ghost btn-icon" data-edit="${esc(u.id)}" title="Editar" aria-label="Editar">✏️</button>` : ''}
                         </div>
                     </div>
-                `).join('');
+`;
+            function paintUsers(list, users) {
+                list.innerHTML = users.length ? users.map(userRow).join('') : '<p class="text-center text-muted card" style="padding:2rem;">Sin resultados.</p>';
+            }
+
+            let allUsersCache = [];
+            let privTab = null; // pestaña Privilegios de Configuración (se arma la primera vez que se abre)
+            let cfgRole = '';
+            let cfgQuery = '';
+            function renderConfigUsers() {
+                paintUsers(document.getElementById('cfgUsersList'), allUsersCache.filter((u) => (!cfgRole || u.role === cfgRole) && matchesText(u, cfgQuery)));
+            }
+
+            async function renderUsers() {
+                const allUsers = await SISDEL.getUsers(condoId);
+                allUsersCache = allUsers;
+                const targetRole = roleMap[currentTab];
+                let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
+                if (searchQuery) filtered = filtered.filter(u => matchesText(u, searchQuery));
+                paintUsers(document.getElementById('usersList'), filtered);
+                renderConfigUsers();
+                if (privTab) privTab.setUsers(allUsers);
             }
 
             // --- Modal Actions ---
@@ -485,14 +552,17 @@
             const btnCloseNewUser = document.getElementById('btnCloseNewUser');
             const newUserForm = document.getElementById('newUserForm');
 
-            btnNewUser.addEventListener('click', async () => {
+            async function openNewUser() {
                 newUserForm.reset();
                 const roles = creatableRoles();
                 document.getElementById('newUserRole').innerHTML = roles.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
                 if (caps.privilegios) customTemplates = await SISDEL.getPrivilegeTemplates(condoId);
                 syncNewUserFields(); // Ensure fields match default role
                 modalNewUser.style.display = 'flex';
-            });
+            }
+            btnNewUser.addEventListener('click', openNewUser);
+            document.getElementById('btnCfgNewUser').addEventListener('click', openNewUser);
+            document.getElementById('btnCfgNewUser').style.display = (caps.crear || caps.guardias) ? '' : 'none';
             btnCloseNewUser.addEventListener('click', () => modalNewUser.style.display = 'none');
 
             newUserForm.addEventListener('submit', async (e) => {
@@ -822,7 +892,90 @@
                 }
             });
 
+            // ── Configuración: Usuarios, Privilegios y Plantillas (estructura del módulo de MULTISYS) ──
+            // Quien no tiene ningún privilegio usuarios.* no ve el botón; con solo usuarios.ver todo es de solo lectura
+            const canConfig = SISDEL.canAny(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios']);
+            const btnConfig = document.getElementById('btnConfig');
+            btnConfig.style.display = canConfig ? '' : 'none';
+            const cfgAllowed = { usuarios: SISDEL.can('usuarios.ver'), privilegios: SISDEL.can('usuarios.ver'), plantillas: true };
+            let cfgOpen = false;
+            let cfgTab = 'usuarios';
+            let tplTab = null;
+
+            document.querySelectorAll('#configTabs .tab').forEach((t) => {
+                t.style.display = cfgAllowed[t.dataset.cfg] ? '' : 'none';
+                t.addEventListener('click', () => { location.hash = `#configuracion/${t.dataset.cfg}`; });
+            });
+            document.getElementById('cfgSearch').addEventListener('input', (e) => { cfgQuery = e.target.value.toLowerCase(); renderConfigUsers(); });
+            document.getElementById('cfgRole').addEventListener('change', (e) => { cfgRole = e.target.value; renderConfigUsers(); });
+
+            const unsaved = () => (privTab && privTab.isDirty()) || (tplTab && tplTab.isDirty());
+            async function ensureTemplates() {
+                if (caps.privilegios) customTemplates = await SISDEL.getPrivilegeTemplates(condoId);
+            }
+            async function mountPrivTab() {
+                await ensureTemplates();
+                privTab = SisdelPrivilegiosUI.mountPrivilegesTab(document.getElementById('cfgPrivilegios'), {
+                    condominioId: condoId, users: allUsersCache, templates: customTemplates,
+                    currentUserId: session.userId, readOnly: !caps.privilegios,
+                    onSaved: async () => { await renderStats(); await renderUsers(); },
+                    onTemplatesChanged: (list) => { customTemplates = list; if (tplTab) tplTab.setTemplates(list); }
+                });
+            }
+            async function mountTplTab() {
+                await ensureTemplates();
+                tplTab = SisdelPrivilegiosUI.mountTemplatesTab(document.getElementById('cfgPlantillas'), {
+                    condominioId: condoId, templates: customTemplates, canManage: caps.privilegios,
+                    onChanged: (list) => { customTemplates = list; if (privTab) privTab.setTemplates(list); }
+                });
+            }
+
+            async function showConfigTab(tab) {
+                if (!cfgAllowed[tab]) tab = 'plantillas';
+                cfgTab = tab;
+                document.querySelectorAll('#configTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.cfg === tab));
+                document.getElementById('cfgUsuarios').style.display = tab === 'usuarios' ? '' : 'none';
+                document.getElementById('cfgPrivilegios').style.display = tab === 'privilegios' ? '' : 'none';
+                document.getElementById('cfgPlantillas').style.display = tab === 'plantillas' ? '' : 'none';
+                if (tab === 'usuarios') renderConfigUsers();
+                if (tab === 'privilegios' && !privTab) await mountPrivTab();
+                if (tab === 'plantillas' && !tplTab) await mountTplTab();
+            }
+
+            function showConfigView(open) {
+                cfgOpen = open;
+                document.getElementById('panelMain').style.display = open ? 'none' : '';
+                document.getElementById('viewConfig').style.display = open ? '' : 'none';
+                btnConfig.style.background = open ? 'var(--primary-light)' : '';
+                btnConfig.style.color = open ? 'white' : '';
+                if (open) window.scrollTo(0, 0);
+            }
+
+            // La vista vive en la dirección (#configuracion/privilegios): se puede abrir, recargar y volver atrás
+            async function applyHash() {
+                const match = /^#configuracion(?:\/(usuarios|privilegios|plantillas))?$/.exec(location.hash);
+                if (match && canConfig) {
+                    showConfigView(true);
+                    await showConfigTab(match[1] || cfgTab);
+                } else if (cfgOpen) {
+                    showConfigView(false);
+                }
+            }
+            window.addEventListener('hashchange', applyHash);
+            btnConfig.addEventListener('click', () => {
+                if (cfgOpen) document.getElementById('btnConfigBack').click();
+                else location.hash = `#configuracion/${cfgTab}`;
+            });
+            document.getElementById('btnConfigBack').addEventListener('click', () => {
+                if (unsaved() && !confirm('Hay cambios sin guardar. ¿Salir de Configuración de todos modos?')) return;
+                history.replaceState(null, '', location.pathname + location.search);
+                showConfigView(false);
+            });
+            // Si el usuario abre Mensajes estando en Configuración, vuelve primero al panel
+            document.getElementById('btnMessages').addEventListener('click', () => { if (cfgOpen) { history.replaceState(null, '', location.pathname + location.search); showConfigView(false); } }, true);
+
             await Promise.all([renderStats(), renderUsers(), loadMoraMode()]);
+            applyHash();
             SISDEL.reportPageLoad('admin');
         });
     </script>

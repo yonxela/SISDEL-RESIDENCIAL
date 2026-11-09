@@ -72,6 +72,36 @@ const SisdelPrivilegiosUI = (() => {
         .pv-modal-foot .dirty { color:var(--warning); font-weight:700; }
         .pv-note { font-size:0.8rem; color:var(--text-secondary); background:var(--info-bg); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:0.6rem 0.8rem; margin-bottom:0.9rem; }
         .pv-note.warn { background:var(--warning-bg); color:var(--text-primary); }
+        .pv-page { display:grid; grid-template-columns:280px 1fr; gap:1rem; align-items:start; }
+        .pv-side { background:var(--bg-surface-solid); border:1px solid var(--border-strong); border-radius:var(--radius-lg); overflow:hidden; display:flex; flex-direction:column; max-height:calc(100vh - 230px); position:sticky; top:0.5rem; }
+        .pv-side-search { display:flex; align-items:center; gap:0.5rem; padding:0.65rem 0.8rem; border-bottom:1px solid var(--border-strong); color:var(--text-muted); }
+        .pv-side-search input { flex:1; background:transparent; border:none; outline:none; color:var(--text-primary); font-size:0.85rem; min-width:0; }
+        .pv-side-count { padding:0.45rem 0.9rem; font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); background:var(--info-bg); }
+        .pv-userlist { overflow-y:auto; padding:0.3rem; flex:1; }
+        .pv-user { display:flex; align-items:center; gap:0.5rem; width:100%; text-align:left; padding:0.6rem 0.7rem; margin:2px 0; border-radius:var(--radius-md); border:1px solid transparent; background:transparent; color:var(--text-primary); cursor:pointer; font:inherit; }
+        .pv-user:hover { background:var(--bg-item); }
+        .pv-user.is-active { background:var(--info-bg); border-color:var(--primary); }
+        .pv-user.is-off { opacity:0.55; }
+        .pv-user strong { display:block; font-size:0.85rem; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pv-user small { display:block; font-size:0.7rem; color:var(--text-muted); margin-top:1px; }
+        .pv-user-count { font-size:0.68rem; font-weight:800; color:var(--info); background:var(--info-bg); padding:0.1rem 0.5rem; border-radius:var(--radius-full); flex-shrink:0; }
+        .pv-user-count.custom { color:var(--warning); background:var(--warning-bg); }
+        .pv-main { min-width:0; }
+        .pv-userhead { margin-bottom:0.8rem; }
+        .pv-userhead h3 { margin:0; font-size:1.15rem; }
+        .pv-userhead small { color:var(--text-muted); font-size:0.8rem; }
+        .pv-empty { background:var(--bg-surface-solid); border:1px dashed var(--border-strong); border-radius:var(--radius-lg); padding:3rem 1.5rem; text-align:center; color:var(--text-muted); }
+        .pv-empty svg { color:var(--primary-light); margin-bottom:0.5rem; width:44px; height:44px; }
+        .pv-empty h3 { margin:0.3rem 0; color:var(--text-primary); }
+        .pv-foot { position:sticky; bottom:0; display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; padding:0.8rem 1rem; margin-top:1rem; background:var(--bg-surface-solid); border:1px solid var(--border-strong); border-radius:var(--radius-lg); z-index:2; }
+        .pv-foot .grow { flex:1; min-width:180px; font-size:0.82rem; color:var(--text-muted); }
+        .pv-foot .dirty { color:var(--warning); font-weight:700; }
+        .pv-fields { display:grid; grid-template-columns:1fr 1fr; gap:0.8rem; margin-bottom:1rem; }
+        .pv-fields label { display:flex; flex-direction:column; gap:0.3rem; font-size:0.78rem; font-weight:600; color:var(--text-secondary); }
+        .pv-fields .wide { grid-column:1 / -1; }
+        .pv-input { background:var(--input-bg); border:1px solid var(--border-strong); color:var(--text-primary); border-radius:var(--radius-md); padding:0.6rem 0.8rem; font-size:0.9rem; width:100%; font-family:inherit; }
+        .pv-input:disabled { opacity:0.75; }
+        @media (max-width: 800px) { .pv-page { grid-template-columns:1fr; } .pv-side { position:static; max-height:260px; } .pv-fields { grid-template-columns:1fr; } }
         @media (max-width: 640px) { .pv-cards { grid-template-columns:1fr; } .pv-modal { max-height:96vh; } }
         `;
         document.head.appendChild(style);
@@ -93,7 +123,7 @@ const SisdelPrivilegiosUI = (() => {
     }
 
     // ── Tarjetas por modulo ──
-    // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search }
+    // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search, marks (false: sin etiquetas Agregado/Quitado) }
     function renderMatrix(container, opts) {
         injectStyles();
         const defaults = PRIV.defaultsOf(opts.role);
@@ -123,8 +153,9 @@ const SisdelPrivilegiosUI = (() => {
                         const locked = !PRIV.allowedFor(i.key, opts.role);
                         const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
-                        const state = on && !inRole ? ' is-added' : (!on && inRole ? ' is-removed' : '');
-                        const tag = on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (!on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
+                        const marks = opts.marks !== false;
+                        const state = marks && on && !inRole ? ' is-added' : (marks && !on && inRole ? ' is-removed' : '');
+                        const tag = marks && on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (marks && !on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
                         const lockTag = locked ? '<span class="pv-tag removed">Solo administradores y operadores</span>' : '';
                         return `<button type="button" class="pv-row${on ? ' is-on' : ''}${state}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}">
                             ${on ? ICONS.on : ICONS.off}
@@ -164,9 +195,12 @@ const SisdelPrivilegiosUI = (() => {
         return change.on ? `Se activó también lo que necesita: ${names}.` : `Se quitó también lo que depende de ello: ${names}.`;
     }
 
-    // ── Editor de privilegios de un usuario existente ──
-    // user: { id, name, role, cargo, privilegios }; options: { condominioId, templates (propias), isSelf, onSaved() }
-    function openEditor(user, options = {}) {
+    // ── Editor de privilegios de un usuario, dentro de cualquier contenedor ──
+    // Se usa en la pestana Privilegios de Configuracion (en linea) y en la ventana del escudo de cada usuario.
+    // user: { id, name, role, cargo, privilegios }
+    // options: { condominioId, templates (propias del condominio), isSelf, readOnly, onSaved(), onDirty(boolean) }
+    // Devuelve { isDirty(), destroy() }
+    function mountEditor(container, user, options = {}) {
         injectStyles();
         const role = user.role;
         const effective = PRIV.effective(role, user.privilegios);
@@ -174,39 +208,30 @@ const SisdelPrivilegiosUI = (() => {
         const set = new Set(original);
         let templates = options.templates || [];
         let search = '';
-        const readOnly = !!options.isSelf || !SISDEL.can('usuarios.privilegios');
+        const readOnly = !!options.isSelf || !!options.readOnly || !SISDEL.can('usuarios.privilegios');
 
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.innerHTML = `
-            <div class="modal pv-modal" role="dialog" aria-modal="true">
-                <div class="pv-modal-head">
-                    <div>
-                        <h3>Privilegios de ${esc(user.name)}</h3>
-                        <div class="text-xs text-muted">${esc(SISDEL.getRoleName(role))}${user.cargo ? ' · ' + esc(user.cargo) : ''}</div>
-                    </div>
-                    <button type="button" class="btn btn-ghost btn-icon" data-act="close" aria-label="Cerrar">&times;</button>
-                </div>
-                <div class="pv-modal-body">
-                    <div class="pv-note ${readOnly ? 'warn' : ''}" id="pvIntro"></div>
-                    <div class="pv-bar" id="pvBar"></div>
-                    <div id="pvMatrix"></div>
-                </div>
-                <div class="pv-modal-foot">
-                    <span class="grow" id="pvStatus"></span>
-                    <button type="button" class="pv-btn" data-act="cancel">Cerrar</button>
-                    <button type="button" class="pv-btn primary" data-act="save" ${readOnly ? 'style="display:none;"' : ''}>Guardar privilegios</button>
-                </div>
+        const root = document.createElement('div');
+        root.className = 'pv-editor';
+        root.innerHTML = `
+            <div class="pv-note ${readOnly ? 'warn' : ''}" data-ref="intro"></div>
+            <div class="pv-bar" data-ref="bar"></div>
+            <div data-ref="matrix"></div>
+            <div class="pv-foot">
+                <span class="grow" data-ref="status"></span>
+                ${readOnly ? '' : `<button type="button" class="pv-btn" data-act="discard">Descartar</button>
+                <button type="button" class="pv-btn primary" data-act="save">Guardar privilegios</button>`}
             </div>`;
-        document.body.appendChild(overlay);
+        container.innerHTML = '';
+        container.appendChild(root);
 
-        const matrix = overlay.querySelector('#pvMatrix');
-        const status = overlay.querySelector('#pvStatus');
-        const intro = overlay.querySelector('#pvIntro');
-        const bar = overlay.querySelector('#pvBar');
-        const saveButton = overlay.querySelector('[data-act=save]');
+        const ref = (name) => root.querySelector(`[data-ref=${name}]`);
+        const matrix = ref('matrix');
+        const status = ref('status');
+        const bar = ref('bar');
+        const saveButton = root.querySelector('[data-act=save]');
+        const discardButton = root.querySelector('[data-act=discard]');
 
-        intro.textContent = options.isSelf
+        ref('intro').textContent = options.isSelf
             ? 'Estos son sus propios privilegios. Nadie puede cambiarse los suyos: pídaselo a otro administrador.'
             : readOnly
                 ? 'Usted puede ver los privilegios, pero no cambiarlos.'
@@ -220,46 +245,47 @@ const SisdelPrivilegiosUI = (() => {
 
         function refreshStatus(note) {
             const n = diffCount();
-            const active = set.size;
-            status.innerHTML = `${active} de ${PRIV.KEYS.length} activos${n ? ` · <span class="dirty">${n} cambio${n === 1 ? '' : 's'} sin guardar</span>` : ''}${note ? ' · ' + esc(note) : ''}`;
-            saveButton.disabled = readOnly || n === 0;
+            status.innerHTML = `${set.size} de ${PRIV.KEYS.length} activos${n ? ` · <span class="dirty">${n} cambio${n === 1 ? '' : 's'} sin guardar</span>` : ''}${note ? ' · ' + esc(note) : ''}`;
+            if (saveButton) saveButton.disabled = n === 0;
+            if (discardButton) discardButton.disabled = n === 0;
+            if (options.onDirty) options.onDirty(n > 0);
         }
 
         function draw(note) {
-            renderMatrix(matrix, {
-                role, set, disabled: readOnly, search,
-                onChange: (_s, change) => { draw(cascadeNote(change)); }
-            });
+            renderMatrix(matrix, { role, set, disabled: readOnly, search, onChange: (_s, change) => { draw(cascadeNote(change)); } });
             refreshStatus(note);
         }
 
         function drawBar() {
             const choices = templateChoices(templates);
             bar.innerHTML = `
-                <input type="search" id="pvSearch" placeholder="Buscar privilegio…" aria-label="Buscar privilegio" value="${esc(search)}">
+                <input type="search" data-ref="search" placeholder="Buscar privilegio…" aria-label="Buscar privilegio" value="${esc(search)}">
                 ${readOnly ? '' : `
-                <select id="pvTemplate" aria-label="Plantilla">${templateOptions(choices, '')}</select>
+                <select data-ref="template" aria-label="Plantilla">${templateOptions(choices, '')}</select>
+                <button type="button" class="pv-btn" data-act="all">Marcar todos</button>
+                <button type="button" class="pv-btn" data-act="none">Limpiar</button>
                 <button type="button" class="pv-btn" data-act="role" title="Dejar exactamente los privilegios que trae su rol">Valores del rol</button>
-                <button type="button" class="pv-btn" data-act="none">Quitar todos</button>
                 <button type="button" class="pv-btn" data-act="saveTemplate" title="Guardar los privilegios marcados como plantilla del condominio">Guardar como plantilla</button>
                 <button type="button" class="pv-btn danger" data-act="delTemplate" style="display:none;">Eliminar plantilla</button>`}`;
-            bar.querySelector('#pvSearch').addEventListener('input', (e) => { search = e.target.value; draw(); });
+            bar.querySelector('[data-ref=search]').addEventListener('input', (e) => { search = e.target.value; draw(); });
         }
 
-        overlay.addEventListener('click', async (event) => {
+        root.addEventListener('click', async (event) => {
             const act = event.target.closest('[data-act]');
-            if (event.target === overlay || (act && (act.dataset.act === 'close' || act.dataset.act === 'cancel'))) {
-                if (diffCount() && !readOnly && !confirm('Hay cambios sin guardar. ¿Cerrar de todos modos?')) return;
-                overlay.remove();
-                return;
-            }
-            if (!act) return;
-            if (act.dataset.act === 'role') {
+            if (!act || !root.contains(act)) return;
+            const kind = act.dataset.act;
+            if (kind === 'role') {
                 set.clear(); Object.keys(PRIV.defaultsOf(role)).forEach((k) => set.add(k));
                 draw('Se dejaron los privilegios del rol');
-            } else if (act.dataset.act === 'none') {
+            } else if (kind === 'all') {
+                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
+                draw();
+            } else if (kind === 'none') {
                 set.clear(); draw();
-            } else if (act.dataset.act === 'saveTemplate') {
+            } else if (kind === 'discard') {
+                set.clear(); original.forEach((k) => set.add(k));
+                draw('Se descartaron los cambios');
+            } else if (kind === 'saveTemplate') {
                 const name = (prompt('Nombre de la plantilla (por ejemplo: Secretaria de turno noche):') || '').trim();
                 if (!name) return;
                 const id = await SISDEL.savePrivilegeTemplate(options.condominioId, { name, role, claves: [...set], description: '' });
@@ -267,24 +293,26 @@ const SisdelPrivilegiosUI = (() => {
                     templates = await SISDEL.getPrivilegeTemplates(options.condominioId);
                     SISDEL.showToast(`Plantilla "${name}" guardada`, 'success');
                     drawBar();
+                    if (options.onTemplatesChanged) options.onTemplatesChanged(templates);
                 }
-            } else if (act.dataset.act === 'delTemplate') {
-                const select = bar.querySelector('#pvTemplate');
-                const picked = templates.find((t) => t.id === select.value);
+            } else if (kind === 'delTemplate') {
+                const picked = templates.find((t) => t.id === bar.querySelector('[data-ref=template]').value);
                 if (picked && confirm(`¿Eliminar la plantilla "${picked.name}"? Los usuarios que la usaron conservan sus privilegios.`)) {
                     if (await SISDEL.deletePrivilegeTemplate(options.condominioId, picked.id)) {
                         templates = await SISDEL.getPrivilegeTemplates(options.condominioId);
                         drawBar();
+                        if (options.onTemplatesChanged) options.onTemplatesChanged(templates);
                     }
                 }
-            } else if (act.dataset.act === 'save') {
+            } else if (kind === 'save') {
                 saveButton.disabled = true;
                 saveButton.textContent = 'Guardando…';
                 const ok = await SISDEL.setUserAccess(user.id, { privilegios: PRIV.toOverrides(role, [...set]) });
                 saveButton.textContent = 'Guardar privilegios';
                 if (ok) {
                     SISDEL.showToast(`Privilegios de ${user.name} actualizados`, 'success');
-                    overlay.remove();
+                    original.clear(); set.forEach((k) => original.add(k));
+                    refreshStatus();
                     if (options.onSaved) options.onSaved();
                 } else {
                     SISDEL.showToast('No se pudieron guardar los privilegios', 'error');
@@ -293,8 +321,8 @@ const SisdelPrivilegiosUI = (() => {
             }
         });
 
-        overlay.addEventListener('change', (event) => {
-            if (event.target.id !== 'pvTemplate') return;
+        root.addEventListener('change', (event) => {
+            if (event.target.dataset.ref !== 'template') return;
             const tpl = templateChoices(templates).find((t) => t.id === event.target.value);
             bar.querySelector('[data-act=delTemplate]').style.display = tpl && tpl.custom ? '' : 'none';
             if (!tpl) return;
@@ -305,7 +333,314 @@ const SisdelPrivilegiosUI = (() => {
 
         drawBar();
         draw();
+        return { isDirty: () => diffCount() > 0, destroy: () => root.remove() };
     }
 
-    return { renderMatrix, openEditor, templateChoices, templateOptions, cascadeNote, esc, ICONS };
+    // ── Ventana con el editor (escudo de cada usuario) ──
+    function openEditor(user, options = {}) {
+        injectStyles();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal pv-modal" role="dialog" aria-modal="true">
+                <div class="pv-modal-head">
+                    <div>
+                        <h3>Privilegios de ${esc(user.name)}</h3>
+                        <div class="text-xs text-muted">${esc(SISDEL.getRoleName(user.role))}${user.cargo ? ' · ' + esc(user.cargo) : ''}</div>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-icon" data-act="close" aria-label="Cerrar">&times;</button>
+                </div>
+                <div class="pv-modal-body" data-ref="body"></div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const editor = mountEditor(overlay.querySelector('[data-ref=body]'), user, {
+            ...options,
+            onSaved: () => { overlay.remove(); if (options.onSaved) options.onSaved(); }
+        });
+        overlay.addEventListener('click', (event) => {
+            if (event.target !== overlay && !event.target.closest('.pv-modal-head [data-act=close]')) return;
+            if (editor.isDirty() && !confirm('Hay cambios sin guardar. ¿Cerrar de todos modos?')) return;
+            overlay.remove();
+        });
+    }
+
+    // ── Pestana Privilegios: usuarios a la izquierda, tarjetas por modulo a la derecha ──
+    // options: { condominioId, users, templates (propias), currentUserId, readOnly, onSaved(), onTemplatesChanged(lista) }
+    // Devuelve { setUsers(lista), setTemplates(lista), select(id), isDirty() }
+    function mountPrivilegesTab(container, options = {}) {
+        injectStyles();
+        let users = options.users || [];
+        let templates = options.templates || [];
+        let selectedId = null;
+        let query = '';
+        let editor = null;
+
+        container.innerHTML = `
+            <div class="pv-page">
+                <aside class="pv-side">
+                    <div class="pv-side-search">${ICONS.search}<input type="search" placeholder="Buscar usuario…" aria-label="Buscar usuario"></div>
+                    <div class="pv-side-count" data-ref="count"></div>
+                    <div class="pv-userlist" data-ref="list"></div>
+                </aside>
+                <section class="pv-main" data-ref="main"></section>
+            </div>`;
+        const list = container.querySelector('[data-ref=list]');
+        const main = container.querySelector('[data-ref=main]');
+        const count = container.querySelector('[data-ref=count]');
+
+        const activeCount = (u) => { const e = PRIV.effective(u.role, u.privilegios); return PRIV.KEYS.filter((k) => e[k]).length; };
+        const custom = (u) => Object.keys(PRIV.cleanOverrides(u.privilegios)).length > 0;
+
+        function visibleUsers() {
+            const q = query.trim().toLowerCase();
+            return users
+                .filter((u) => !q || `${u.name} ${u.cargo || ''} ${u.casa || ''} ${SISDEL.getRoleName(u.role)}`.toLowerCase().includes(q))
+                .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        }
+
+        function drawList() {
+            const shown = visibleUsers();
+            count.textContent = `${shown.length} usuario${shown.length === 1 ? '' : 's'}`;
+            list.innerHTML = shown.length ? shown.map((u) => `
+                <button type="button" class="pv-user${u.id === selectedId ? ' is-active' : ''}${u.active === false ? ' is-off' : ''}" data-id="${esc(u.id)}">
+                    <span style="flex:1; min-width:0;">
+                        <strong>${esc(u.name)}</strong>
+                        <small>${esc(SISDEL.getRoleName(u.role))}${u.cargo ? ' · ' + esc(u.cargo) : ''}${u.active === false ? ' · inactivo' : ''}</small>
+                    </span>
+                    <span class="pv-user-count${custom(u) ? ' custom' : ''}" title="${custom(u) ? 'Privilegios distintos a los de su rol' : 'Privilegios de su rol'}">${activeCount(u)}</span>
+                </button>`).join('') : '<p class="text-center text-muted text-xs" style="padding:1rem;">Sin coincidencias.</p>';
+        }
+
+        function mountMain() {
+            const user = users.find((u) => u.id === selectedId);
+            if (editor) { editor.destroy(); editor = null; }
+            if (!user) {
+                main.innerHTML = `<div class="pv-empty">${ICONS.shield}<h3>Elija un usuario</h3><p>Seleccione una persona de la lista para ver y cambiar lo que puede ver o usar.</p></div>`;
+                return;
+            }
+            main.innerHTML = `
+                <div class="pv-userhead">
+                    <h3>${esc(user.name)}</h3>
+                    <small>${esc(SISDEL.getRoleName(user.role))}${user.cargo ? ' · ' + esc(user.cargo) : ''}${user.active === false ? ' · inactivo' : ''}</small>
+                </div>
+                <div data-ref="ed"></div>`;
+            editor = mountEditor(main.querySelector('[data-ref=ed]'), user, {
+                condominioId: options.condominioId, templates,
+                isSelf: user.id === options.currentUserId, readOnly: !!options.readOnly,
+                onSaved: () => { if (options.onSaved) options.onSaved(); },
+                onTemplatesChanged: (list) => { templates = list; if (options.onTemplatesChanged) options.onTemplatesChanged(list); }
+            });
+        }
+
+        function select(id) {
+            if (id === selectedId) return;
+            if (editor && editor.isDirty() && !confirm('Hay cambios sin guardar en este usuario. ¿Descartarlos?')) return;
+            selectedId = id;
+            drawList();
+            mountMain();
+        }
+
+        list.addEventListener('click', (event) => {
+            const button = event.target.closest('.pv-user');
+            if (button) select(button.dataset.id);
+        });
+        container.querySelector('.pv-side-search input').addEventListener('input', (event) => { query = event.target.value; drawList(); });
+
+        // Como en MULTISYS: si hay usuarios, ya viene uno elegido
+        if (users.length) selectedId = visibleUsers()[0].id;
+        drawList();
+        mountMain();
+
+        return {
+            // Lista nueva (despues de guardar o de crear un usuario). Si hay cambios sin guardar solo se refresca la lista.
+            setUsers(next) {
+                users = next || [];
+                if (!users.some((u) => u.id === selectedId)) selectedId = null;
+                if (!selectedId && users.length) selectedId = visibleUsers()[0] ? visibleUsers()[0].id : users[0].id;
+                drawList();
+                if (!editor || !editor.isDirty()) mountMain();
+            },
+            setTemplates(next) { templates = next || []; },
+            select,
+            isDirty: () => !!(editor && editor.isDirty())
+        };
+    }
+
+    // ── Pestana Plantillas: las del sistema (solo lectura) y las del condominio (crear, editar, borrar) ──
+    // options: { condominioId, templates (propias), canManage, onChanged(lista) }
+    // Devuelve { setTemplates(lista), isDirty() }
+    function mountTemplatesTab(container, options = {}) {
+        injectStyles();
+        const canManage = !!options.canManage;
+        let own = options.templates || [];
+        let selectedId = null; // id de plantilla o 'new'
+        let dirty = () => false;
+
+        container.innerHTML = `
+            <div class="pv-page">
+                <aside class="pv-side">
+                    <div class="pv-userlist" data-ref="list"></div>
+                    ${canManage ? '<div style="padding:0.6rem;"><button type="button" class="pv-btn primary" data-act="new" style="width:100%; justify-content:center;">Nueva plantilla</button></div>' : ''}
+                </aside>
+                <section class="pv-main" data-ref="main"></section>
+            </div>`;
+        const list = container.querySelector('[data-ref=list]');
+        const main = container.querySelector('[data-ref=main]');
+
+        const row = (t, system) => `
+            <button type="button" class="pv-user${t.id === selectedId ? ' is-active' : ''}" data-id="${esc(t.id)}">
+                <span style="flex:1; min-width:0;">
+                    <strong>${esc(t.name)}</strong>
+                    <small>${esc(PRIV.ROLE_LABELS[t.role] || t.role)} · ${(t.claves || []).length} privilegios</small>
+                </span>
+            </button>`;
+
+        function drawList() {
+            list.innerHTML = `
+                <div class="pv-side-count">Del sistema (solo lectura)</div>
+                ${PRIV.TEMPLATES.map((t) => row(t, true)).join('')}
+                <div class="pv-side-count">Del condominio</div>
+                ${canManage
+                    ? (own.length ? own.map((t) => row(t, false)).join('') : '<p class="text-muted text-xs" style="padding:0.6rem 0.9rem;">Aún no hay plantillas propias.</p>')
+                    : '<p class="text-muted text-xs" style="padding:0.6rem 0.9rem;">Las plantillas del condominio las ve quien puede asignar privilegios.</p>'}`;
+        }
+
+        function find(id) {
+            const system = PRIV.TEMPLATES.find((t) => t.id === id);
+            if (system) return { ...system, system: true };
+            const mine = own.find((t) => t.id === id);
+            return mine ? { ...mine, system: false } : null;
+        }
+
+        function mountForm(tpl) {
+            const readOnly = tpl.system || !canManage;
+            const form = { name: tpl.name || '', role: PRIV.ROLES.includes(tpl.role) ? tpl.role : 'operador', description: tpl.description || '' };
+            const set = new Set((tpl.claves || []).filter((k) => PRIV.itemOf(k) && PRIV.allowedFor(k, form.role)));
+            const snap = () => JSON.stringify([form.name, form.role, form.description, [...set].sort()]);
+            const baseline = snap();
+            dirty = () => !readOnly && snap() !== baseline;
+            let search = '';
+
+            main.innerHTML = `
+                <div class="pv-form">
+                    <div class="pv-note ${readOnly ? 'warn' : ''}">${tpl.system
+                        ? 'Plantilla del sistema: solo se puede ver. Use "Duplicar" para crear una propia a partir de ella.'
+                        : (readOnly ? 'Usted puede ver las plantillas, pero no cambiarlas.' : 'Una plantilla es un conjunto completo de privilegios que se aplica al crear un usuario o desde el editor de privilegios.')}</div>
+                    <div class="pv-fields">
+                        <label>Nombre<input class="pv-input" data-f="name" maxlength="60" ${readOnly ? 'disabled' : ''} value="${esc(form.name)}" placeholder="Ej. Secretaria de turno noche"></label>
+                        <label>Rol sugerido<select class="pv-input" data-f="role" ${readOnly ? 'disabled' : ''}>${PRIV.ROLES.map((r) => `<option value="${r}" ${r === form.role ? 'selected' : ''}>${esc(PRIV.ROLE_LABELS[r])}</option>`).join('')}</select></label>
+                        <label class="wide">Descripción<input class="pv-input" data-f="description" maxlength="200" ${readOnly ? 'disabled' : ''} value="${esc(form.description)}" placeholder="Para qué sirve esta plantilla"></label>
+                    </div>
+                    <div class="pv-bar">
+                        <input type="search" data-ref="search" placeholder="Buscar privilegio…" aria-label="Buscar privilegio">
+                        ${readOnly ? '' : '<button type="button" class="pv-btn" data-act="all">Marcar todos</button><button type="button" class="pv-btn" data-act="none">Limpiar</button>'}
+                    </div>
+                    <div data-ref="matrix"></div>
+                    <div class="pv-foot">
+                        <span class="grow" data-ref="status"></span>
+                        ${tpl.system && canManage ? '<button type="button" class="pv-btn" data-act="duplicate">Duplicar como plantilla propia</button>' : ''}
+                        ${!readOnly && tpl.id ? '<button type="button" class="pv-btn danger" data-act="delete">Eliminar</button>' : ''}
+                        ${readOnly ? '' : '<button type="button" class="pv-btn" data-act="discard">Descartar</button><button type="button" class="pv-btn primary" data-act="save">Guardar plantilla</button>'}
+                    </div>
+                </div>`;
+            const root = main.querySelector('.pv-form');
+            const matrix = root.querySelector('[data-ref=matrix]');
+            const status = root.querySelector('[data-ref=status]');
+            const saveButton = root.querySelector('[data-act=save]');
+            const discardButton = root.querySelector('[data-act=discard]');
+
+            function refresh(note) {
+                const changed = dirty();
+                status.innerHTML = `${set.size} privilegios${changed ? ' · <span class="dirty">cambios sin guardar</span>' : ''}${note ? ' · ' + esc(note) : ''}`;
+                if (saveButton) saveButton.disabled = !changed && !!tpl.id;
+                if (discardButton) discardButton.disabled = !changed;
+            }
+            function draw(note) {
+                renderMatrix(matrix, { role: form.role, set, disabled: readOnly, search, marks: false, onChange: (_s, change) => draw(cascadeNote(change)) });
+                refresh(note);
+            }
+
+            root.querySelector('[data-ref=search]').addEventListener('input', (e) => { search = e.target.value; draw(); });
+            root.addEventListener('input', (event) => {
+                const field = event.target.dataset.f;
+                if (field === 'name' || field === 'description') { form[field] = event.target.value; refresh(); }
+            });
+            root.addEventListener('change', (event) => {
+                if (event.target.dataset.f !== 'role') return;
+                form.role = event.target.value;
+                // Los privilegios que el nuevo rol no puede tener se quitan
+                [...set].forEach((k) => { if (!PRIV.allowedFor(k, form.role)) set.delete(k); });
+                draw();
+            });
+            root.addEventListener('click', async (event) => {
+                const act = event.target.closest('[data-act]');
+                if (!act) return;
+                const kind = act.dataset.act;
+                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role)).forEach((k) => set.add(k)); draw(); }
+                else if (kind === 'none') { set.clear(); draw(); }
+                else if (kind === 'discard') { mountForm(tpl); }
+                else if (kind === 'duplicate') {
+                    selectedId = 'new'; drawList();
+                    mountForm({ name: `${tpl.name} (copia)`, role: tpl.role, description: tpl.description, claves: tpl.claves, system: false });
+                } else if (kind === 'delete') {
+                    if (!confirm(`¿Eliminar la plantilla "${tpl.name}"? Los usuarios que la usaron conservan sus privilegios.`)) return;
+                    if (await SISDEL.deletePrivilegeTemplate(options.condominioId, tpl.id)) {
+                        SISDEL.showToast('Plantilla eliminada', 'success');
+                        await reload(null);
+                    }
+                } else if (kind === 'save') {
+                    const name = form.name.trim();
+                    if (!name) { SISDEL.showToast('Escriba el nombre de la plantilla', 'warning'); return; }
+                    if (!set.size) { SISDEL.showToast('Marque al menos un privilegio', 'warning'); return; }
+                    saveButton.disabled = true;
+                    const id = await SISDEL.savePrivilegeTemplate(options.condominioId, { id: tpl.id || undefined, name, role: form.role, claves: [...set], description: form.description });
+                    if (id) {
+                        SISDEL.showToast(`Plantilla "${name}" guardada`, 'success');
+                        await reload(id);
+                    } else {
+                        SISDEL.showToast('No se pudo guardar la plantilla', 'error');
+                        refresh();
+                    }
+                }
+            });
+            draw();
+        }
+
+        async function reload(nextSelected) {
+            own = await SISDEL.getPrivilegeTemplates(options.condominioId);
+            if (options.onChanged) options.onChanged(own);
+            select(nextSelected, true);
+        }
+
+        function select(id, force) {
+            if (!force && id === selectedId) return;
+            if (!force && dirty() && !confirm('Hay cambios sin guardar en esta plantilla. ¿Descartarlos?')) return;
+            selectedId = id;
+            drawList();
+            if (!id) {
+                dirty = () => false;
+                main.innerHTML = `<div class="pv-empty">${ICONS.shield}<h3>Elija una plantilla</h3><p>Las del sistema son de solo lectura${canManage ? '; cree las del condominio con "Nueva plantilla" o duplique una del sistema' : ''}.</p></div>`;
+            } else if (id === 'new') {
+                mountForm({ name: '', role: 'operador', description: '', claves: [], system: false });
+            } else {
+                const tpl = find(id);
+                if (tpl) mountForm(tpl); else select(null, true);
+            }
+        }
+
+        list.addEventListener('click', (event) => {
+            const button = event.target.closest('.pv-user');
+            if (button) select(button.dataset.id);
+        });
+        const newButton = container.querySelector('[data-act=new]');
+        if (newButton) newButton.addEventListener('click', () => select('new'));
+
+        select(null, true);
+        return {
+            setTemplates(next) { own = next || []; drawList(); },
+            isDirty: () => dirty()
+        };
+    }
+
+    return { renderMatrix, mountEditor, openEditor, mountPrivilegesTab, mountTemplatesTab, templateChoices, templateOptions, cascadeNote, esc, ICONS };
 })();

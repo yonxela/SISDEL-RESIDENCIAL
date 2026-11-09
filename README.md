@@ -34,7 +34,7 @@ Idea tomada del módulo de Configuración de MULTISYS (catálogo de privilegios 
 - **Eliminar usuarios** también borra sus visitas, vehículos y códigos, y solo en esa misma operación: `usuarios.eliminar` no sirve para vaciar el registro de visitas.
 - **Plantillas:** `privilegios.js` trae siete del sistema (Secretaria, Contador, Jefe de seguridad, Garitero, Consulta, Administrador delegado, Administrador sin finanzas); cada condominio guarda las suyas en `plantillas_privilegios`.
 
-Dónde se usa: en `admin.html` (crear usuario con rol, cargo y plantilla; botón de escudo en cada usuario para abrir el editor de privilegios), también en `master.html`, y en `garita.html`, `auditor.html`, `vecino.html`, `finanzas.html` y `rondin/` (ver `rondin/js/sisdel-api.js`).
+Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configuracion`): pestañas Usuarios (lista con filtro por rol y Agregar Usuario), Privilegios (usuarios a la izquierda, tarjetas por módulo a la derecha, plantillas y Guardar / Descartar) y Plantillas (las del sistema en solo lectura; las del condominio se crean, editan y borran); el escudo de cada usuario del panel abre el mismo editor en una ventana. También en `master.html`, y en `garita.html`, `auditor.html`, `vecino.html`, `finanzas.html` y `rondin/` (ver `rondin/js/sisdel-api.js`).
 
 | Privilegio | Qué permite | Lo traen por defecto |
 | --- | --- | --- |

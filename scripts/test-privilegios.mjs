@@ -171,6 +171,29 @@ for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', '
     yes(`${file} carga privilegios.js antes que sisdel-core.js y con la misma version`, core && cat && cat[1] === core[1] && html.indexOf('privilegios.js') < html.indexOf('sisdel-core.js'));
 }
 yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(read('admin.html')));
+{
+    // Configuracion: boton en el encabezado y vista con Usuarios, Privilegios y Plantillas (como en MULTISYS)
+    const admin = read('admin.html');
+    const ui = read('privilegios-ui.js');
+    yes('admin.html tiene el boton Configuracion con icono SVG y sin emojis', /id="btnConfig"[\s\S]*?<svg[\s\S]*?Configuración\s*<\/button>/.test(admin));
+    yes('la vista Configuracion tiene sus tres pestanas', ['usuarios', 'privilegios', 'plantillas'].every((t) => new RegExp(`data-cfg="${t}"`).test(admin)) && /id="viewConfig"/.test(admin));
+    yes('el panel de siempre queda aparte de la vista Configuracion', /<div id="panelMain">/.test(admin) && /<\/div><!-- \/panelMain -->/.test(admin));
+    yes('las pestanas del panel y las de Configuracion no se mezclan', !/querySelectorAll\('\.tab'\)/.test(admin) && (admin.match(/querySelectorAll\('#mainTabs \.tab'\)/g) || []).length === 2);
+    const shown = (admin.match(/SISDEL\.canAny\(\[('usuarios\.[a-z]+'(?:, )?)+\]\)/) || [''])[0].match(/usuarios\.[a-z]+/g) || [];
+    equal('el boton Configuracion lo ve quien tenga algun usuarios.*', sorted(shown), sorted(P.KEYS.filter((k) => k.startsWith('usuarios.'))));
+    yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\)\)\?\$/.test(admin) && /hashchange/.test(admin));
+    yes('Configuracion reutiliza la lista, Agregar Usuario y el editor (sin duplicarlos)', /async function openNewUser\(\)/.test(admin) && /btnCfgNewUser'\)\.addEventListener\('click', openNewUser\)/.test(admin)
+        && /mountPrivilegesTab\(/.test(admin) && /mountTemplatesTab\(/.test(admin) && (admin.match(/const userRow = /g) || []).length === 1);
+    yes('Configuracion sin privilegios usuarios.privilegios queda en solo lectura', /readOnly: !caps\.privilegios/.test(admin) && /canManage: caps\.privilegios/.test(admin));
+    yes('privilegios-ui.js ofrece el editor en linea, la ventana y las pestanas', /return \{ renderMatrix, mountEditor, openEditor, mountPrivilegesTab, mountTemplatesTab,/.test(ui));
+    yes('la ventana del escudo usa el mismo editor en linea', /const editor = mountEditor\(overlay\.querySelector/.test(ui));
+    yes('Marcar todos y Limpiar en el editor y en las plantillas', (ui.match(/data-act="all">Marcar todos/g) || []).length >= 2 && (ui.match(/data-act="none">Limpiar/g) || []).length >= 2);
+    yes('las plantillas del sistema son de solo lectura y se duplican', /Duplicar como plantilla propia/.test(ui) && /Plantillas del sistema|Plantilla del sistema: solo se puede ver/.test(ui));
+    yes('privilegios-ui.js sube de version en admin.html y master.html por igual', (() => {
+        const a = admin.match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
+        return a && m && a[1] === m[1];
+    })());
+}
 yes('el servidor pide garita.operar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.operar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));
 

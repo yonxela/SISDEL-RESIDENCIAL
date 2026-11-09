@@ -309,8 +309,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109b"></script>
-    <script src="sisdel-core.js?v=20261109b"></script>
+    <script src="privilegios.js?v=20261109d"></script>
+    <script src="sisdel-core.js?v=20261109d"></script>
     <script src="privilegios-ui.js?v=20261108i"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
@@ -409,7 +409,7 @@
             });
 
             // --- App Logic ---
-            document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+            SISDEL.bindExitButton(document.getElementById('btnLogout'), 'admin.html');
 
             // Alertas de panico de vecinos y guardias
             SisdelRondas.init(session);

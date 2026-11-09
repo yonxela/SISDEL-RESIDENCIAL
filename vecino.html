@@ -248,8 +248,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109b"></script>
-    <script src="sisdel-core.js?v=20261109b"></script>
+    <script src="privilegios.js?v=20261109d"></script>
+    <script src="sisdel-core.js?v=20261109d"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -301,7 +301,7 @@
                 applyTheme(newTheme);
             });
 
-            document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+            SISDEL.bindExitButton(document.getElementById('btnLogout'), 'vecino.html');
 
             // Un vecino con privilegios de otros paneles (p. ej. fiscalizador: reportes en solo lectura) los ve como botones
             const PANEL_ICONS = {

@@ -125,6 +125,25 @@ const SISDEL = (() => {
         if (!session) return 'index.html';
         return session.role === ROLES.MASTER ? 'master.html' : PRIV.landing(session.role, session.privilegios);
     }
+    // Boton de salida de una pagina: en el panel principal del usuario (homePage) cierra la sesion ("Salir"); en cualquier otro
+    // panel es "Regresar al panel principal" y no cierra la sesion. Asi hay un solo "Salir" en todo el sistema.
+    // Devuelve true si el boton regresa al panel principal.
+    function bindExitButton(button, currentPage) {
+        if (!button) return false;
+        const home = homePage();
+        const toHome = !!home && home !== currentPage && home !== 'index.html';
+        if (toHome) {
+            const label = 'Regresar al panel principal';
+            const icon = button.querySelector('svg');
+            [...button.childNodes].filter((node) => node.nodeType === 3).forEach((node) => node.remove());
+            button.appendChild(document.createTextNode(' ' + label));
+            if (icon) icon.innerHTML = '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>';
+            button.setAttribute('title', label);
+        }
+        button.addEventListener('click', () => { if (toHome) window.location.href = home; else logout(); });
+        return toHome;
+    }
+
     // Otras paginas a las que el usuario puede entrar (para los botones de cada panel)
     function otherPanels(currentPage) {
         const session = getSession();
@@ -1039,7 +1058,7 @@ const SISDEL = (() => {
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
         getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
-        PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, refreshAccess,
+        PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,

@@ -368,7 +368,7 @@ function makeCore({ session, authUid, docs = {}, failWith = null }) {
         db: { collection: (name) => ({ doc: (id) => docRef(`${name}/${id}`) }) }
     };
     const ctx = vm.createContext({
-        window, sessionStorage, localStorage: {}, performance: { now: () => 0 }, console: { log() {}, warn() {}, error() {} }, setTimeout,
+        window, document: { addEventListener() {}, createTextNode: (text) => ({ nodeType: 3, textContent: text }) }, sessionStorage, localStorage: {}, performance: { now: () => 0 }, console: { log() {}, warn() {}, error() {} }, setTimeout,
         firebase: { firestore: { FieldValue: { delete: () => '__borrar__' } } }
     });
     vm.runInContext(read('sisdel-core.js'), ctx);
@@ -396,6 +396,35 @@ equal('el master no tiene paneles de condominio', core.SISDEL.otherPanels('x'), 
 core = makeCore({ session: null });
 yes('sin sesion no puede nada', !core.SISDEL.can('usuarios.ver'));
 equal('sin sesion el inicio es el login', core.SISDEL.homePage(), 'index.html');
+
+// Un solo "Salir" para todo el sistema: en el panel principal cierra la sesion; en los demas, "Regresar al panel principal"
+{
+    const fakeButton = () => {
+        const children = [{ nodeType: 3, textContent: 'Salir' }];
+        children[0].remove = () => children.splice(children.indexOf(children[0]), 1);
+        const handlers = [];
+        return {
+            childNodes: children, querySelector: () => null, appendChild: (node) => children.push(node), setAttribute() {},
+            addEventListener: (event, handler) => handlers.push(handler), click: () => handlers.forEach((h) => h()),
+            text: () => children.map((n) => n.textContent).join('').trim()
+        };
+    };
+    const adminCore = makeCore({ session: sess('admin') });
+    const inHome = fakeButton();
+    equal('el administrador en su panel principal conserva "Salir"', [adminCore.SISDEL.bindExitButton(inHome, 'admin.html'), inHome.text()], [false, 'Salir']);
+    const inGarita = fakeButton();
+    equal('el administrador en la garita ve "Regresar al panel principal"', [adminCore.SISDEL.bindExitButton(inGarita, 'garita.html'), inGarita.text()], [true, 'Regresar al panel principal']);
+    inGarita.click();
+    equal('y ese boton lo lleva a su panel principal sin cerrar la sesion', [adminCore.window.location.href, adminCore.store.has('sisdel_session')], ['admin.html', true]);
+    const guardCore = makeCore({ session: sess('policia') });
+    equal('el guardia en su garita conserva "Salir"; en Auditoria (si pudiera entrar) regresaria a la garita', [guardCore.SISDEL.bindExitButton(fakeButton(), 'garita.html'), guardCore.SISDEL.bindExitButton(fakeButton(), 'auditor.html')], [false, true]);
+    const fiscalCore = makeCore({ session: sess('vecino', P.toOverrides('vecino', P.templateKeys(P.templateById('sys-fiscalizador')))) });
+    equal('el fiscalizador: "Salir" en su panel de vecino, "Regresar" en la auditoria y en finanzas', [fiscalCore.SISDEL.bindExitButton(fakeButton(), 'vecino.html'), fiscalCore.SISDEL.bindExitButton(fakeButton(), 'auditor.html'), fiscalCore.SISDEL.bindExitButton(fakeButton(), 'finanzas.html')], [false, true, true]);
+    equal('sin boton no hace nada', adminCore.SISDEL.bindExitButton(null, 'admin.html'), false);
+    for (const page of ['admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html']) {
+        yes(`${page}: su boton de salida pasa por SISDEL.bindExitButton`, new RegExp(`SISDEL\\.bindExitButton\\(document\\.getElementById\\('btnLogout'\\), '${page.replace('.', '\\.')}'\\)`).test(read(page)) && !/btnLogout'\)\.addEventListener\('click', \(\) => SISDEL\.logout\(\)\)/.test(read(page)));
+    }
+}
 
 // Copiar codigos: el nucleo ofrece el boton y las listas de usuarios lo usan
 {

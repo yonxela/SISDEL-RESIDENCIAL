@@ -371,14 +371,61 @@ service cloud.firestore {
               || request.resource.data.receiptImg == null
               || (request.resource.data.receiptImg is string && request.resource.data.receiptImg.size() < 900000));
       }
+      // Campos que cambia cada operacion (para exigir el privilegio de cada una)
+      function finChanged() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      // Datos financieros del residente (el nombre, la casa y el telefono viven en usuarios)
+      function residentRights() {
+        return (!finChanged().hasAny(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom']) || pFinanzasResidentesFiniquitar(condoId))
+          && (!finChanged().hasAny(['deleted', 'deleted_at']) || pFinanzasResidentesEliminar(condoId))
+          && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'updated_at', 'created_at', 'createdAt'])
+              || pFinanzasResidentesEditar(condoId));
+      }
       match /finanzas_residentes/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if pFinanzasUsar(condoId) && validFinanceItem();
+        // El residente nuevo con sus datos lo crea quien puede registrar residentes; el registro minimo (id, feeFrom) que
+        // OIKOS crea solo al abrir para un vecino sin datos financieros lo admite cualquiera que use el Sistema Financiero
+        allow create: if validFinanceItem()
+          && (pFinanzasResidentesCrear(condoId)
+              || (pFinanzasUsar(condoId) && request.resource.data.keys().hasOnly(['id', 'feeFrom', 'updated_at', 'created_at', 'createdAt'])));
+        // Un "toque" (solo la fecha de modificacion, y createdAt que OIKOS copia del vecino) lo hace OIKOS al operar
+        allow update: if pFinanzasUsar(condoId) && validFinanceItem()
+          && (finChanged().hasOnly(['updated_at', 'created_at', 'createdAt']) || residentRights());
         allow delete: if false;
+      }
+      // Movimientos: cada tipo tiene su privilegio (cargo, pago, egreso) y anular es otro aparte
+      function movementCreateOk() {
+        return (request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
+          || (request.resource.data.get('type', '') == 'expense'
+              && (pFinanzasEgresosRegistrar(condoId)
+                  // OIKOS asienta el saldo inicial adeudado al registrar un residente nuevo
+                  || (request.resource.data.get('concept', '') == 'Saldo Inicial Adeudado' && pFinanzasResidentesCrear(condoId))))
+          // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,
+          // meses de un residente o cargo con concepto de cuota) llevan manual:true y no se distinguen entre si en las reglas
+          || (request.resource.data.get('type', '') == 'charge'
+              && ((request.resource.data.get('kind', '') == 'fee'
+                    && (pFinanzasCuotasMes(condoId)
+                        || (request.resource.data.get('auto', false) != true && (pFinanzasCuotasMeses(condoId) || pFinanzasCargosCrear(condoId)))))
+                  || (request.resource.data.get('kind', '') == 'extra' && pFinanzasCargosCrear(condoId))));
+      }
+      function movementUpdateOk() {
+        return finChanged().hasOnly(['updated_at'])
+          || (resource.data.get('type', '') == 'charge' && finChanged().hasOnly(['period', 'kind', 'updated_at']))
+          // Anular: el mismo documento con deleted:true (nunca se borra)
+          || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])
+              && (pFinanzasDeshacer(condoId)
+                  || (resource.data.get('type', '') == 'income' && pFinanzasPagosAnular(condoId))
+                  || (resource.data.get('type', '') == 'expense' && pFinanzasEgresosAnular(condoId))
+                  || (resource.data.get('type', '') == 'charge'
+                      && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId))))))
+          // Devolver una anulacion es "deshacer"
+          || (resource.data.get('deleted', false) == true && request.resource.data.get('deleted', false) != true
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at']) && pFinanzasDeshacer(condoId));
       }
       match /finanzas_movimientos/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if pFinanzasUsar(condoId) && validFinanceItem();
+        allow create: if validFinanceItem() && movementCreateOk();
+        allow update: if pFinanzasUsar(condoId) && validFinanceItem() && movementUpdateOk();
         allow delete: if false;
       }
       // ── Rondas: SISDEL RONDIN sobre la base de SISDEL (ver rondin/js/sisdel-api.js) ──
@@ -394,73 +441,91 @@ service cloud.firestore {
       // Configuracion de RONDIN (boton de panico de vecinos, pais, logo): la leen todos los del condominio
       match /rondas_config/{docId} {
         allow read: if isMaster() || isMember(condoId);
-        allow create, update: if canManageRondas(condoId) && docId == 'general' && sameCompany();
+        allow create, update: if (isMaster() || pRondasAjustesPanicovecinos(condoId)) && docId == 'general' && sameCompany();
         allow delete: if false;
       }
-      // Expediente del guardia o supervisor (DPI, tipo de sangre, supervisor asignado); el resto vive en usuarios
+      // Expediente del guardia o supervisor (DPI, tipo de sangre, supervisor asignado); el resto vive en usuarios.
+      // El supervisor asignado es un privilegio (rondas.supervisores_asignar) y el expediente, otro (guardias.crear)
       match /rondas_personal/{userId} {
         allow read: if canSeeRondas();
-        allow create, update: if canManageRondas(condoId) && sameCompany() && request.resource.data.id == userId;
+        allow create: if (isMaster() || pGuardiasCrear(condoId) || pUsuariosCrear(condoId)) && sameCompany() && request.resource.data.id == userId;
+        allow update: if sameCompany() && request.resource.data.id == userId
+          && (isMaster()
+              || (onlyChanges(['supervisor_id', 'updated_at']) ? pRondasSupervisoresAsignar(condoId) : (pGuardiasCrear(condoId) || pUsuariosEditar(condoId))));
         allow delete: if pUsuariosEliminar(condoId) && ownerGone(userId);
       }
-      // Rutas con sus puntos de control: las ven quienes patrullan
+      // Rutas con sus puntos de control: las ven quienes patrullan. Los puntos van dentro de la ruta: se distingue
+      // agregar (hay mas), quitar (hay menos) o renombrar (los mismos) por el cambio en su cantidad
+      function routeUpdateOk() {
+        return finChanged().hasOnly(['checkpoints', 'updated_at'])
+          ? (request.resource.data.get('checkpoints', []).size() > resource.data.get('checkpoints', []).size() ? pRondasPuntosCrear(condoId)
+              : (request.resource.data.get('checkpoints', []).size() < resource.data.get('checkpoints', []).size() ? pRondasPuntosEliminar(condoId)
+                  : pRondasPuntosEditar(condoId)))
+          : ((finChanged().hasOnly(['status', 'updated_at']) && request.resource.data.get('status', '') == 'INACTIVE') ? pRondasRutasEliminar(condoId)
+              : pRondasRutasCrear(condoId));
+      }
       match /rondas_rutas/{routeId} {
-        allow read: if canSeeRondas() || isPatroller(condoId);
-        allow create, update: if canManageRondas(condoId) && sameCompany();
-        allow delete: if canManageRondas(condoId);
+        allow read: if isMaster() || pRondasRutasVer(condoId) || isPatroller(condoId);
+        allow create: if (isMaster() || pRondasRutasCrear(condoId)) && sameCompany();
+        allow update: if sameCompany() && (isMaster() || routeUpdateOk());
+        allow delete: if isMaster() || pRondasRutasEliminar(condoId);
       }
       // Que guardia patrulla que ruta y en que fechas
       match /rondas_asignaciones/{assignmentId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
-        allow create, update: if canManageRondas(condoId) && sameCompany();
-        allow delete: if canManageRondas(condoId);
+        allow read: if isMaster() || pRondasAsignacionesVer(condoId) || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create: if (isMaster() || pRondasAsignacionesCrear(condoId)) && sameCompany();
+        allow update: if (isMaster() || pRondasAsignacionesEditar(condoId)) && sameCompany();
+        allow delete: if isMaster() || pRondasAsignacionesEliminar(condoId);
       }
-      // Turnos y rondas: cada guardia escribe los suyos; el supervisor tambien puede crearlos o cerrarlos
+      // Turnos y rondas: cada guardia escribe los suyos (iniciar, marcar y terminar son privilegios aparte);
+      // el supervisor tambien puede crearlos o cerrarlos
       match /rondas_turnos/{shiftId} {
         allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
-        allow create: if sameCompany() && ((isPatroller(condoId) && setsOwn('guard_id')) || canManageRondas(condoId));
+        allow create: if sameCompany() && ((isPatroller(condoId) && setsOwn('guard_id') && pRondasPatrullaIniciar(condoId)) || canManageRondas(condoId));
         allow update: if sameCompany() && keeps('guard_id')
-          && ((isPatroller(condoId) && wasOwn('guard_id')) || canManageRondas(condoId));
+          && ((isPatroller(condoId) && wasOwn('guard_id')
+                && (request.resource.data.get('status', '') == 'COMPLETED' ? pRondasPatrullaTerminar(condoId) : pRondasPatrullaIniciar(condoId)))
+              || canManageRondas(condoId));
         allow delete: if false;
       }
       match /rondas_rondas/{roundId} {
         allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
-        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('guard_id') && request.resource.data.status == 'IN_PROGRESS';
+        allow create: if isPatroller(condoId) && pRondasPatrullaIniciar(condoId) && sameCompany() && setsOwn('guard_id') && request.resource.data.status == 'IN_PROGRESS';
         allow update: if sameCompany() && keeps('guard_id')
-          && ((isPatroller(condoId) && wasOwn('guard_id')) || canManageRondas(condoId));
+          && ((isPatroller(condoId) && wasOwn('guard_id') && (pRondasPatrullaMarcar(condoId) || pRondasPatrullaTerminar(condoId))) || canManageRondas(condoId));
         allow delete: if false;
       }
       // Visitas a puntos de control: registro de auditoria, no se editan ni se borran
       match /rondas_visitas/{visitId} {
-        allow read: if canSeeRondas() || (isPatroller(condoId) && wasOwn('guard_id'));
-        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('guard_id');
+        allow read: if isMaster() || pRondasRecorridosVer(condoId) || (isPatroller(condoId) && wasOwn('guard_id'));
+        allow create: if isPatroller(condoId) && pRondasPatrullaMarcar(condoId) && sameCompany() && setsOwn('guard_id');
         allow update, delete: if false;
       }
-      // Posicion actual de cada guardia (documento = su id) e historial de 30 dias
+      // Posicion actual de cada guardia (documento = su id) e historial de 30 dias: compartirla es un privilegio
       match /rondas_en_vivo/{userId} {
-        allow read: if canSeeRondas();
-        allow create, update: if isPatroller(condoId) && userId == request.auth.uid && setsOwn('user_id') && sameCompany();
+        allow read: if isMaster() || pRondasMonitoreoVer(condoId);
+        allow create, update: if isPatroller(condoId) && pRondasPatrullaRastrear(condoId) && userId == request.auth.uid && setsOwn('user_id') && sameCompany();
         allow delete: if (isPatroller(condoId) && userId == request.auth.uid) || canManageRondas(condoId);
       }
       match /rondas_ubicaciones/{logId} {
-        allow read: if canSeeRondas();
-        allow create: if isPatroller(condoId) && sameCompany() && setsOwn('user_id');
+        allow read: if isMaster() || pRondasMonitoreoHistorial(condoId);
+        allow create: if isPatroller(condoId) && pRondasPatrullaRastrear(condoId) && sameCompany() && setsOwn('user_id');
         allow update, delete: if false;
       }
-      // Incidentes: los reporta quien patrulla; los resuelve admin o supervisor
+      // Incidentes: los reporta quien patrulla; los resuelve quien administra las rondas
       match /rondas_incidentes/{incidentId} {
-        allow read: if canSeeRondas() || isResponder(condoId);
-        allow create: if patrols() && sameCompany() && setsOwn('reported_by') && request.resource.data.status == 'OPEN';
-        allow update: if canManageRondas(condoId) && sameCompany() && keeps('reported_by');
+        allow read: if isMaster() || pRondasIncidentesVer(condoId) || isResponder(condoId);
+        allow create: if (pRondasIncidentesReportar(condoId) || canManageRondas(condoId)) && sameCompany() && setsOwn('reported_by') && request.resource.data.status == 'OPEN';
+        allow update: if (isMaster() || pRondasIncidentesResolver(condoId)) && sameCompany() && keeps('reported_by');
         allow delete: if false;
       }
       // Alertas del panel de RONDIN (turno iniciado, punto visitado, incidente, abandono de turno...)
       match /rondas_alertas/{alertId} {
-        allow read: if canSeeRondas();
+        allow read: if isMaster() || pRondasAlertasVer(condoId);
         allow create: if patrols() && sameCompany() && setsOwn('source_user_id') && request.resource.data.acknowledged == 0;
-        allow update: if canManageRondas(condoId) && onlyChanges(['acknowledged', 'acknowledged_by', 'acknowledged_at'])
+        allow update: if (isMaster() || pRondasAlertasAtender(condoId)) && onlyChanges(['acknowledged', 'acknowledged_by', 'acknowledged_at'])
           && request.resource.data.acknowledged_by == request.auth.uid;
-        allow delete: if canManageRondas(condoId);
+        allow delete: if isMaster() || pRondasAlertasEliminar(condoId);
       }
       // Fotos (turnos e incidentes), comprimidas en el navegador: menos de ~900 KB
       match /rondas_fotos/{photoId} {
@@ -472,9 +537,10 @@ service cloud.firestore {
       }
       // Rondin Air: drones del condominio y su ultima telemetria
       match /rondas_drones/{droneId} {
-        allow read: if canSeeRondas();
-        allow create, update: if canManageRondas(condoId) && sameCompany();
-        allow delete: if canManageRondas(condoId);
+        allow read: if isMaster() || pRondasDronesVer(condoId);
+        allow create: if (isMaster() || pRondasDronesRegistrar(condoId)) && sameCompany();
+        allow update: if (isMaster() || pRondasDronesOperar(condoId)) && sameCompany();
+        allow delete: if isMaster() || pRondasDronesRegistrar(condoId);
       }
 
       // ── Alertas de panico (vecinos y guardias) ──
@@ -513,9 +579,21 @@ service cloud.firestore {
         allow delete: if isMaster() || pPlantillasGestionar(condoId);
       }
 
+      // Configuracion: cuota y cobro, datos generales y conceptos son privilegios distintos; los contadores que cambia
+      // operar (recibos, meses cobrados) los puede escribir quien use el Sistema Financiero
+      function settingsRights() {
+        return (!finChanged().hasAny(['fee', 'chargeDay', 'graceDays', 'feeMode']) || pFinanzasConfigCuota(condoId))
+          && (!finChanged().hasAny(['currency', 'lang', 'name', 'theme']) || pFinanzasConfigGeneral(condoId))
+          && (!finChanged().hasAny(['customIncomeConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasCargosCrear(condoId))
+          && (!finChanged().hasAny(['customExpenseConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasEgresosRegistrar(condoId))
+          && (finChanged().hasOnly(['fee', 'chargeDay', 'graceDays', 'feeMode', 'currency', 'lang', 'name', 'theme', 'customIncomeConcepts',
+                                    'customExpenseConcepts', 'receiptCounter', 'chargedMonths', 'lastChargedMonth', 'updated_at', 'created_at'])
+              || pFinanzasConfigGeneral(condoId));
+      }
       match /finanzas_config/{docId} {
         allow read: if canReadFinance();
-        allow create, update: if pFinanzasUsar(condoId) && docId == 'oikos_settings';
+        allow create: if pFinanzasUsar(condoId) && docId == 'oikos_settings';
+        allow update: if pFinanzasUsar(condoId) && docId == 'oikos_settings' && settingsRights();
         allow delete: if false;
       }
     }

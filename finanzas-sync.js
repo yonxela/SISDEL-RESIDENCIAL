@@ -52,6 +52,8 @@ const SisdelFinanzas = (() => {
     function oikosCompanyId(condoId) { return 'multisys-' + condoId; }
     function storageKey(condoId, name) { return 'oikos_' + oikosCompanyId(condoId) + '_' + name; }
     function pendingKey(condoId) { return PENDING_PREFIX + condoId; }
+    // Vecinos que este equipo ya vio en la nube (para no resucitar uno eliminado desde una copia local pendiente)
+    function knownKey(condoId) { return 'sisdel_fin_conocidos_' + condoId; }
 
     // Id de documento valido para Firestore (sin '/')
     function docIdOf(item) { return String(item.id).replace(/\//g, '_'); }
@@ -238,15 +240,37 @@ const SisdelFinanzas = (() => {
         return extra;
     }
 
+    // Solo las claves de `item` que cambiaron respecto a `prev` (mas las que siempre viajan). Al subir solo eso, un
+    // documento que otro equipo cambio mientras tanto (un finiquito, la cuota) no se pisa con la copia vieja de este equipo.
+    function pick(item, keys) {
+        const out = {};
+        keys.forEach((k) => { if (item[k] !== undefined) out[k] = item[k]; });
+        return out;
+    }
+    function changedFields(item, prev, always = ['id', 'updated_at']) {
+        return [...new Set([...changedKeys(item, prev), ...always.filter((k) => item[k] !== undefined)])];
+    }
+    // Residentes que solo existen en esta copia local pero que la nube YA conocio (`known`): los elimino otro
+    // equipo o el panel admin, no son nuevos; subirlos los resucitaria con un codigo de acceso nuevo.
+    function dropResurrected(localItems, cloudById, known) {
+        return (localItems || []).filter((r) => {
+            if (!r || r.id === null || r.id === undefined) return true;
+            const id = docIdOf(r);
+            return cloudById.has(id) || !known.has(id);
+        });
+    }
+
     function satisfied(needs, can) {
         return needs.every((clause) => clause.some((key) => can(key)));
     }
 
     // next/prev: residente de OIKOS (mezcla de vecino y datos financieros); prev = null si es nuevo en la nube
     function residentNeeds(next, prev, userExists) {
-        if (!userExists || !prev) return [['finanzas.residentes_crear']];
+        // Un residente nuevo crea tambien al vecino de SISDEL (usuarios + codigos): exige ambos privilegios
+        if (!userExists || !prev) return [['finanzas.residentes_crear'], ['usuarios.crear']];
         const needs = [];
-        if (changedKeys(next, prev).some((k) => CORE_FIELDS.includes(k))) needs.push(['finanzas.residentes_editar']);
+        // Nombre, casa y telefono viven en el vecino de SISDEL
+        if (changedKeys(next, prev).some((k) => CORE_FIELDS.includes(k))) needs.push(['finanzas.residentes_editar'], ['usuarios.editar']);
         const keys = changedKeys(extraOf(next), extraOf(prev)).filter((k) => !TOUCH_KEYS.includes(k));
         if (keys.some((k) => RESIDENT_STATE_KEYS.includes(k))) needs.push(['finanzas.residentes_finiquitar']);
         if (keys.some((k) => RESIDENT_DELETE_KEYS.includes(k))) needs.push(['finanzas.residentes_eliminar']);
@@ -258,11 +282,10 @@ const SisdelFinanzas = (() => {
         const recent = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) && now - t < UNDO_WINDOW_MS; };
         const type = next && next.type;
         if (!prev) {
+            // Todo movimiento nace con un monto numerico mayor que cero (igual que las reglas)
+            if (!(typeof next.amount === 'number' && next.amount > 0)) return [[]];
             if (type === 'income') return [['finanzas.pagos_registrar']];
-            if (type === 'expense') {
-                const initial = next.concept === 'Saldo Inicial Adeudado';
-                return [initial ? ['finanzas.egresos_registrar', 'finanzas.residentes_crear'] : ['finanzas.egresos_registrar']];
-            }
+            if (type === 'expense') return [['finanzas.egresos_registrar']];
             if (type === 'charge') {
                 if (next.kind === 'fee') {
                     return next.auto === true ? [['finanzas.cuotas_mes']] : [['finanzas.cuotas_mes', 'finanzas.cuotas_meses', 'finanzas.cargos_crear']];
@@ -334,6 +357,8 @@ const SisdelFinanzas = (() => {
             settings: () => condoRef.collection(COL.settings).doc(SETTINGS_DOC)
         };
         const readRaw = (name) => localStorage.getItem(storageKey(condoId, name));
+        const readKnown = () => { try { return new Set(JSON.parse(localStorage.getItem(knownKey(condoId)) || '[]')); } catch { return new Set(); } };
+        const rememberKnown = () => { try { const seen = readKnown(); cloud.users.forEach((u, id) => seen.add(id)); localStorage.setItem(knownKey(condoId), JSON.stringify([...seen])); } catch { /* sin espacio */ } };
         const writeRaw = (name, value) => localStorage.setItem(storageKey(condoId, name), JSON.stringify(value));
         const nowIso = () => new Date().toISOString();
 
@@ -393,7 +418,8 @@ const SisdelFinanzas = (() => {
             throw lastError;
         }
 
-        async function writeResidents(items) {
+        // prevById: lo ultimo que sabiamos de la nube de cada documento (canon), para subir solo lo que cambio
+        async function writeResidents(items, prevById) {
             const writes = [];
             const creations = [];
             const applied = [];
@@ -407,22 +433,31 @@ const SisdelFinanzas = (() => {
                     writes.push((b) => b.update(ref.users().doc(id), update));
                     applied.push(() => cloud.users.set(id, { ...user, ...update }));
                 }
-                writes.push((b) => b.set(ref.extras().doc(id), plain(extra)));
-                applied.push(() => cloud.extras.set(id, extra));
+                const prev = prevById && prevById.get(id) ? extraOf(JSON.parse(prevById.get(id))) : null;
+                const data = prev ? pick(plain(extra), changedFields(extra, prev)) : plain(extra);
+                writes.push((b) => b.set(ref.extras().doc(id), data, { merge: true }));
+                applied.push(() => cloud.extras.set(id, { ...(cloud.extras.get(id) || {}), ...data }));
             });
             await commitInChunks(writes);
             applied.forEach((fn) => fn());
             for (const c of creations) await createVecino(c.resident, c.core, c.extra);
         }
 
-        async function writeTransactions(items) {
-            await commitInChunks(items.map((item) => (b) => b.set(ref.transactions().doc(docIdOf(item)), plain(item))));
-            items.forEach((item) => cloud.transactions.set(docIdOf(item), item));
+        async function writeTransactions(items, prevById) {
+            const payloads = items.map((item) => {
+                const id = docIdOf(item);
+                const prev = prevById && prevById.get(id) ? JSON.parse(prevById.get(id)) : null;
+                return { id, data: prev ? pick(plain(item), changedFields(item, prev)) : plain(item) };
+            });
+            await commitInChunks(payloads.map(({ id, data }) => (b) => b.set(ref.transactions().doc(id), data, { merge: true })));
+            payloads.forEach(({ id, data }) => cloud.transactions.set(id, { ...(cloud.transactions.get(id) || {}), ...data }));
         }
 
-        async function writeSettings(item) {
-            await ref.settings().set(plain(item));
-            cloud.settings = item;
+        async function writeSettings(item, prevCanon) {
+            const prev = prevCanon ? JSON.parse(prevCanon) : null;
+            const data = prev ? pick(plain(item), changedFields(item, prev, ['updated_at'])) : plain(item);
+            await ref.settings().set(data, { merge: true });
+            cloud.settings = { ...(cloud.settings || {}), ...data };
         }
 
         // ¿Puede este usuario escribir este cambio? Se compara con lo ultimo que sabemos de la nube.
@@ -476,6 +511,9 @@ const SisdelFinanzas = (() => {
         async function push(kind, items) {
             items = gate(kind, items);
             if (!items.length) return;
+            // Lo ultimo que sabiamos de la nube: para subir solo los campos que cambiaron y para volver atras si falla
+            const prevSettings = synced.settings;
+            const prevById = new Map(items.map((item) => [docIdOf(item), synced[kind] instanceof Map ? synced[kind].get(docIdOf(item)) : null]));
             items.forEach((item) => {
                 if (kind === 'settings') synced.settings = canon(item);
                 else synced[kind].set(docIdOf(item), canon(item));
@@ -484,19 +522,20 @@ const SisdelFinanzas = (() => {
             inFlight++;
             updateStatus();
             try {
-                if (kind === 'residents') await writeResidents(items);
-                else if (kind === 'transactions') await writeTransactions(items);
-                else await writeSettings(items[0]);
+                if (kind === 'residents') await writeResidents(items, prevById);
+                else if (kind === 'transactions') await writeTransactions(items, prevById);
+                else await writeSettings(items[0], prevSettings);
                 failed = null;
             } catch (error) {
                 console.error('Sistema Financiero: no se pudo guardar', error);
                 const denied = String(error && error.code || '').includes('permission-denied');
                 failed = denied ? 'denied' : 'error';
-                // Se olvida lo enviado: el siguiente intento lo vuelve a subir.
-                // Sin permisos no se reintenta (sesion vencida o usuario desactivado).
+                // Se vuelve a lo que sabiamos antes de enviar: el siguiente intento lo sube de nuevo como el mismo cambio
+                // (no como un alta). Sin permisos no se reintenta (sesion vencida o usuario desactivado).
                 items.forEach((item) => {
-                    if (kind === 'settings') synced.settings = null;
-                    else synced[kind].delete(docIdOf(item));
+                    if (kind === 'settings') { synced.settings = prevSettings; return; }
+                    const prev = prevById.get(docIdOf(item));
+                    if (prev) synced[kind].set(docIdOf(item), prev); else synced[kind].delete(docIdOf(item));
                 });
                 if (!disposed && !denied) setTimeout(() => schedule(kind, 0), RETRY_MS);
             } finally {
@@ -606,7 +645,8 @@ const SisdelFinanzas = (() => {
             markPending();
             updateStatus();
             try {
-                await commitInChunks(extras.map((e) => (b) => b.set(ref.extras().doc(e.id), e)));
+                // merge: si otro equipo acaba de guardar el residente con sus datos, no se pisan
+                await commitInChunks(extras.map((e) => (b) => b.set(ref.extras().doc(e.id), e, { merge: true })));
             } catch (error) {
                 console.error('Sistema Financiero: no se pudieron preparar los vecinos', error);
                 failed = 'error';
@@ -667,8 +707,10 @@ const SisdelFinanzas = (() => {
             // equipo se sube unicamente si quedo pendiente de una sesion anterior.
             const residents = cloudResidents();
             synced.residents = new Map([...residents.entries()].map(([id, r]) => [id, canon(r)]));
-            const localRes = parseArray(readRaw('residents'));
-            const res = mergeList(localRes || [], residents, hadPending);
+            // Lo local-solo se sube unicamente si quedo pendiente; nunca un vecino que la nube ya conocio (lo eliminaron)
+            const localRes = dropResurrected(parseArray(readRaw('residents')) || [], residents, readKnown());
+            const res = mergeList(localRes, residents, hadPending);
+            rememberKnown();
             writeRaw('residents', res.merged);
             toPush.residents = res.toPush;
 
@@ -693,6 +735,7 @@ const SisdelFinanzas = (() => {
             remote.users = (snap) => {
                 const { docs, removed } = changesOf(snap);
                 docs.forEach(({ _docId, ...u }) => cloud.users.set(_docId, { ...u, id: _docId }));
+                rememberKnown();
                 removed.forEach((id) => cloud.users.delete(id));
                 saveExtras(missingExtras());
                 applyRemote('residents', docs.map((u) => cloudResident(u._docId)).filter(Boolean), removed);
@@ -751,7 +794,7 @@ const SisdelFinanzas = (() => {
         internals: {
             oikosCompanyId, storageKey, pendingKey, docIdOf, stampOf, periodOf, canon, parseArray,
             toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS,
-            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds
+            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, pick, changedFields, dropResurrected
         }
     };
 })();

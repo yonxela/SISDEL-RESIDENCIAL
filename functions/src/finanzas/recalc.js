@@ -78,10 +78,16 @@ async function recalcCondo(condoId, now = new Date()) {
         if (!extra) {
             extra = { id: doc.id, feeFrom: currentPeriod, updated_at: nowIso };
             const data = extra;
-            writes.push((b) => b.set(condoRef.collection('finanzas_residentes').doc(doc.id), data));
+            writes.push((b) => b.set(condoRef.collection('finanzas_residentes').doc(doc.id), data, { merge: true }));
         }
-        // Quitado del Sistema Financiero en OIKOS: su estado de pago no se toca
-        if (extra.deleted) return;
+        // Quitado del Sistema Financiero en OIKOS: no se le cobra ni cuenta como moroso (la garita lo deja pasar)
+        if (extra.deleted) {
+            if (user.paymentStatus === 'moroso') {
+                changes++;
+                writes.push((b) => b.update(condoRef.collection('usuarios').doc(doc.id), { paymentStatus: 'al_dia', morosoSince: null }));
+            }
+            return;
+        }
         residents.push({ ...extra, id: doc.id, createdAt: extra.createdAt || user.createdAt });
     });
 
@@ -117,7 +123,10 @@ async function recalcResident(condoId, residentId, now = new Date()) {
         condoRef.collection('finanzas_movimientos').where('resiId', '==', String(residentId)).select(...TX_FIELDS).get()
     ]);
     if (!settings || !userSnap.exists || userSnap.data().role !== 'vecino') return null;
-    if (extraSnap.exists && extraSnap.data().deleted) return null;
+    if (extraSnap.exists && extraSnap.data().deleted) {
+        if (userSnap.data().paymentStatus === 'moroso') await userRef.update({ paymentStatus: 'al_dia', morosoSince: null });
+        return null;
+    }
 
     const mora = moraOf(String(residentId), txSnap.docs.map(txOf), settings, now);
     const update = statusUpdate(userSnap.data(), mora, now.toISOString());

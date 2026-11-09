@@ -952,9 +952,9 @@
                 alerts.push({ level: 'HIGH', icon: '🚫', type: 'GUARD_INACTIVE', title: `Guardia inactivo en ruta: ${rmap.get(a.route_id).name}`, detail: `${g.name} está asignado a esta ruta hoy pero su estado es ${g.status}. La ruta puede quedar sin cobertura real.`, time: dayStart });
                 return;
             }
-            const shift = d.shifts.filter((s) => s.guard_id === g.id && ['ACTIVE', 'PENDING'].includes(s.status)).sort((x, y) => String(y.scheduled_start).localeCompare(String(x.scheduled_start)))[0];
+            const shift = d.shifts.filter((s) => s.guard_id === g.id && ['ACTIVE', 'SCHEDULED'].includes(s.status)).sort((x, y) => String(y.scheduled_start).localeCompare(String(x.scheduled_start)))[0];
             if (!shift) alerts.push({ level: 'HIGH', icon: '⚠️', type: 'NO_CHECKIN', title: `Sin check-in en turno: ${g.name}`, detail: `Asignado a la ruta "${rmap.get(a.route_id).name}" (${a.shift_type}) pero no ha iniciado turno hoy.`, time: dayStart });
-            else if (shift.status === 'PENDING') alerts.push({ level: 'MEDIUM', icon: '🕐', type: 'SHIFT_PENDING', title: `Turno pendiente: ${g.name}`, detail: `Asignado a la ruta "${rmap.get(a.route_id).name}" — su turno está creado pero aún no ha hecho check-in.`, time: dayStart });
+            else if (shift.status === 'SCHEDULED') alerts.push({ level: 'MEDIUM', icon: '🕐', type: 'SHIFT_PENDING', title: `Turno pendiente: ${g.name}`, detail: `Asignado a la ruta "${rmap.get(a.route_id).name}" — su turno está creado pero aún no ha hecho check-in.`, time: dayStart });
         });
         d.incidents.filter((i) => i.status === 'OPEN' && ['HIGH', 'CRITICAL'].includes(i.severity)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 5).forEach((i) => alerts.push({
             level: 'HIGH', icon: '🚨', type: 'INCIDENT', title: `Incidente ${i.severity}: ${i.title}`, detail: `Reportado por ${(umap.get(i.reported_by) || {}).name || i.reporter_name || ''} — ${i.incident_type}`, time: i.created_at
@@ -1191,10 +1191,14 @@
             const sinceNow = sql();
             // Panico (vecinos y guardias): lo reciben quienes atienden
             if (can('panico.ver')) {
-                listenNewPanics((p) => {
-                    const mapsUrl = p.lat != null ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null;
+                listenNewPanics((raw) => {
+                    // El documento lo escribe el vecino o el guardia y RONDIN lo pinta con innerHTML: se escapa y se tipa aqui
+                    const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+                    const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+                    const p = { ...raw, userName: esc(raw.userName), casa: esc(raw.casa), phone: esc(raw.phone), lat: num(raw.lat), lng: num(raw.lng) };
+                    const mapsUrl = p.lat != null && p.lng != null ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null;
                     if (p.source === 'vecino') {
-                        socket.fire('alert:panic', { type: 'neighbor_panic', neighbor: { id: p.userId, name: p.userName, phone: p.phone, document_id: '' }, guard: { id: p.userId, name: `${p.userName}${p.casa ? ' (' + p.casa + ')' : ''}` }, company_name: (session() || {}).condominioName || '', latitude: p.lat, longitude: p.lng, timestamp: p.createdAt, mapsUrl, familiares: [] });
+                        socket.fire('alert:panic', { type: 'neighbor_panic', neighbor: { id: p.userId, name: p.userName, phone: p.phone, document_id: '' }, guard: { id: p.userId, name: `${p.userName}${p.casa ? ' (' + p.casa + ')' : ''}` }, company_name: esc((session() || {}).condominioName || ''), latitude: p.lat, longitude: p.lng, timestamp: p.createdAt, mapsUrl, familiares: [] });
                         dispatchDrone(p, 'NEIGHBOR');
                     } else {
                         socket.fire('alert:panic', { panic: guardPanicOut(p), guard: { id: p.userId, name: p.userName }, latitude: p.lat, longitude: p.lng, timestamp: p.createdAt, mapsUrl });

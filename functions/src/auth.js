@@ -8,7 +8,7 @@ const privilegios = require('./privilegios');
 
 // Todo un condominio suele salir por la misma IP publica: el limite es compartido, por eso es amplio
 const LOGIN_LIMIT = { max: 30, windowMs: 15 * 60 * 1000 };
-const VERIFY_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
+const VERIFY_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 
 // Roles de condominio que pueden entrar (el master tiene su propia ruta). A donde van lo decide
 // privilegios.landing: la pagina de su rol y, si el administrador se la quito, la primera que si le toca.
@@ -123,6 +123,9 @@ const verifyAccessCode = onCall(async (request) => {
 
     const found = await findUserByCode(code);
     if (!found || found.user.condominioId !== condominioId) return { user: null };
+    // La garita verifica vecinos. Los codigos del personal (guardias, administradores...) no se confirman desde aqui:
+    // confirmar uno equivale a poder entrar con el.
+    if (found.user.role !== 'vecino') return { user: null };
 
     const u = found.user;
     return {

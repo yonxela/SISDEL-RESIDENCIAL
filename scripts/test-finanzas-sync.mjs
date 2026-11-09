@@ -100,8 +100,7 @@ const income = { id: 'p1', type: 'income', amount: 500, resiId: 'u1', updated_at
 equal('registrar un pago exige pagos_registrar', [ok(F.movementNeeds(income, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds(income, null), 'finanzas.egresos_registrar')], [true, false]);
 const expense = { id: 'e1', type: 'expense', amount: 90, concept: 'Luz', updated_at: T1 };
 equal('registrar un egreso exige egresos_registrar', [ok(F.movementNeeds(expense, null), 'finanzas.egresos_registrar'), ok(F.movementNeeds(expense, null), 'finanzas.pagos_registrar')], [true, false]);
-const initialDebt = { id: 'e2', type: 'expense', amount: 90, concept: 'Saldo Inicial Adeudado', category: 'Ajuste', updated_at: T1 };
-equal('el saldo inicial adeudado lo asienta quien registra residentes', ok(F.movementNeeds(initialDebt, null), 'finanzas.residentes_crear'), true);
+equal('un movimiento nuevo en cero, negativo o con monto como texto no se sube (las reglas lo rechazan)', [ok(F.movementNeeds({ ...income, amount: 0 }, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds({ ...income, amount: -5 }, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds({ ...income, amount: '500' }, null), 'finanzas.pagos_registrar')], [false, false, false]);
 const autoFee = { id: 'fee_u1_2026-11', type: 'charge', kind: 'fee', period: '2026-11', auto: true, amount: 300, resiId: 'u1', updated_at: T1 };
 equal('la cuota automatica exige cuota del mes', [ok(F.movementNeeds(autoFee, null), 'finanzas.cuotas_mes'), ok(F.movementNeeds(autoFee, null), 'finanzas.cuotas_meses', 'finanzas.cargos_crear')], [true, false]);
 const manualFee = { ...autoFee, auto: false, manual: true };
@@ -131,9 +130,17 @@ equal('reasignar el periodo de una cuota que ya lo tiene no lo permite nadie', o
 
 console.log('\nPrivilegios: residentes');
 const resNow = { id: 'u1', name: 'Ana', unit: 'Casa 1', contact: '+50255555678', dpi: '111', status: 'active', feeFrom: '2026-11', createdAt: T1, updated_at: T1 };
-equal('registrar un residente nuevo exige residentes_crear', [ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_editar')], [true, false]);
+equal('registrar un residente nuevo exige residentes_crear y crear usuarios (crea al vecino)', [ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear', 'usuarios.crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_editar', 'usuarios.crear')], [true, false, false]);
 equal('cambiar el DPI exige residentes_editar', [ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false]);
-equal('cambiar el nombre (vive en SISDEL) tambien exige residentes_editar', ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar'), false);
+equal('cambiar el nombre (vive en SISDEL) exige residentes_editar y editar usuarios', [ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false, false]);
+equal('cambiar solo el DPI no exige editar usuarios', ok(F.residentNeeds({ ...resNow, dpi: '333', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), true);
+
+console.log('\nEscrituras por campo y vecinos eliminados');
+equal('changedFields: solo lo que cambio mas id y sello', F.changedFields({ id: '1', a: 1, b: 2, updated_at: T2 }, { id: '1', a: 1, b: 1, updated_at: T1 }).sort(), ['b', 'id', 'updated_at']);
+equal('pick toma solo esas claves', F.pick({ id: '1', a: 1, b: 2, c: 3 }, ['b', 'id', 'z']), { b: 2, id: '1' });
+equal('un finiquito de otro equipo no se pisa: el "toque" de este equipo solo sube el sello', F.changedFields({ id: 'u1', status: 'active', dpi: '1', updated_at: T2 }, { id: 'u1', status: 'active', dpi: '1', updated_at: T1 }).sort(), ['id', 'updated_at']);
+equal('un residente local que la nube ya conocio y ya no esta se descarta (lo eliminaron)', F.dropResurrected([{ id: 'u-viejo' }, { id: 'u-nuevo' }, { id: 'u-ana' }], cloudMap([{ id: 'u-ana' }]), new Set(['u-viejo', 'u-ana'])).map((r) => r.id), ['u-nuevo', 'u-ana']);
+equal('sin memoria de la nube, lo local-solo se conserva', F.dropResurrected([{ id: 'u-x' }], cloudMap([]), new Set()).map((r) => r.id), ['u-x']);
 const closed = { ...resNow, status: 'closed', closedAt: T2, closeReason: 'Mudanza', closeNotes: '', updated_at: T2 };
 equal('finiquitar exige residentes_finiquitar y no residentes_editar', [ok(F.residentNeeds(closed, resNow, true), 'finanzas.residentes_finiquitar'), ok(F.residentNeeds(closed, resNow, true), 'finanzas.residentes_editar')], [true, false]);
 const reactivated = { ...closed, status: 'active', reactivatedAt: T2, feeFrom: '2026-12', updated_at: T2 };

@@ -394,18 +394,17 @@ service cloud.firestore {
       }
       // Movimientos: cada tipo tiene su privilegio (cargo, pago, egreso) y anular es otro aparte
       function movementCreateOk() {
-        return (request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
-          || (request.resource.data.get('type', '') == 'expense'
-              && (pFinanzasEgresosRegistrar(condoId)
-                  // OIKOS asienta el saldo inicial adeudado al registrar un residente nuevo
-                  || (request.resource.data.get('concept', '') == 'Saldo Inicial Adeudado' && pFinanzasResidentesCrear(condoId))))
+        // Todo movimiento nace con un monto numerico mayor que cero (un pago negativo seria un cargo escondido)
+        return request.resource.data.get('amount', 0) is number && request.resource.data.amount > 0
+          && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
+          || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,
           // meses de un residente o cargo con concepto de cuota) llevan manual:true y no se distinguen entre si en las reglas
           || (request.resource.data.get('type', '') == 'charge'
               && ((request.resource.data.get('kind', '') == 'fee'
                     && (pFinanzasCuotasMes(condoId)
                         || (request.resource.data.get('auto', false) != true && (pFinanzasCuotasMeses(condoId) || pFinanzasCargosCrear(condoId)))))
-                  || (request.resource.data.get('kind', '') == 'extra' && pFinanzasCargosCrear(condoId))));
+                  || (request.resource.data.get('kind', '') == 'extra' && pFinanzasCargosCrear(condoId)))));
       }
       // "Deshacer" (Ctrl+Z en OIKOS) solo alcanza lo hecho hace poco: la pila de deshacer vive en la memoria de la pagina.
       // Sin este limite, quien tiene "deshacer" anularia cualquier movimiento aunque no tenga "anular pagos". La fecha la
@@ -559,6 +558,10 @@ service cloud.firestore {
           || (isResident(condoId) && resource.data.userId == request.auth.uid);
         allow create: if sameCondo() && request.resource.data.userId == request.auth.uid
           && request.resource.data.status == 'ACTIVE'
+          && request.resource.data.userName is string && request.resource.data.get('casa', '') is string
+          && request.resource.data.get('phone', '') is string
+          && (request.resource.data.get('lat', null) == null || request.resource.data.lat is number)
+          && (request.resource.data.get('lng', null) == null || request.resource.data.lng is number)
           && pPanicoActivar(condoId)
           && ((isResident(condoId) && request.resource.data.source == 'vecino')
               || (!isResident(condoId) && request.resource.data.source == 'guardia'));

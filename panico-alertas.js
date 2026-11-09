@@ -38,9 +38,17 @@ const SisdelPanico = (() => {
 
     // Sirena corta con WebAudio (sin archivos de sonido)
     let audioCtx = null;
-    function beep() {
+    // El navegador crea el audio suspendido hasta el primer toque: se reanuda ahi y en cada sirena
+    function wakeAudio() {
         try {
             audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        } catch { /* sin audio */ }
+    }
+    document.addEventListener('pointerdown', wakeAudio, { once: true, capture: true });
+    function beep() {
+        try {
+            wakeAudio();
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = 'square';
@@ -78,7 +86,7 @@ const SisdelPanico = (() => {
             bar.innerHTML = (alerts.length ? '<button class="pan-pill pan-min" data-minimize="1">Minimizar</button>' : '') + alerts.map((a) => {
                 const who = a.source === 'guardia' ? `Guardia: ${esc(a.userName)}` : `Vecino: ${esc(a.userName)}${a.casa ? ' · ' + esc(a.casa) : ''}`;
                 const phone = a.phone ? ` · Tel. <a href="tel:${esc(a.phone)}" style="border:none;padding:0;background:none;text-decoration:underline;">${esc(a.phone)}</a>` : '';
-                const map = a.lat != null ? `<a href="${SisdelRondas.mapsLink(a.lat, a.lng)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span style="font-size:0.75rem;opacity:0.85;">Sin GPS</span>';
+                const map = (typeof a.lat === 'number' && typeof a.lng === 'number') ? `<a href="${esc(SisdelRondas.mapsLink(a.lat, a.lng))}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span style="font-size:0.75rem;opacity:0.85;">Sin GPS</span>';
                 const state = a.status === 'ATTENDED' ? ` · Atendida por ${esc(a.attendedByName || '')}` : '';
                 return `
                 <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}" role="alert">

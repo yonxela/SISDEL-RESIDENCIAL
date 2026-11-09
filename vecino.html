@@ -248,8 +248,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109d"></script>
-    <script src="sisdel-core.js?v=20261109d"></script>
+    <script src="privilegios.js?v=20261109f"></script>
+    <script src="sisdel-core.js?v=20261109f"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -429,7 +429,7 @@
                 if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas recientes.</p>'; return; }
                 list.innerHTML = visits.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(v => {
                     const isExtended = v.visitType === 'temporal';
-                    const isExpired = isExtended && v.endDate && new Date(v.endDate) < new Date(new Date().toISOString().split('T')[0]);
+                    const isExpired = isExtended && v.endDate && v.endDate < SISDEL.localToday();
                     let dateInfo = SISDEL.formatDate(v.visitDate);
                     if (isExtended && v.endDate) {
                         dateInfo += ` → ${SISDEL.formatDate(v.endDate)}`;
@@ -468,10 +468,10 @@
                 if (!v) return;
 
                 document.getElementById('vName').value = v.visitorName;
-                document.getElementById('vInfo').value = v.info || '';
+                document.getElementById('vInfo').value = v.visitorInfo || '';
                 document.getElementById('vPlate').value = v.vehiclePlate || '';
-                document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
-                document.getElementById('vTime').value = v.aproxTime || '';
+                document.getElementById('vDate').value = SISDEL.localToday();
+                document.getElementById('vTime').value = v.visitTime ? String(v.visitTime).slice(0, 5) : '';
 
                 modalNewVisit.style.display = 'flex';
                 SISDEL.showToast('Datos de visita cargados', 'info');
@@ -479,7 +479,7 @@
 
             document.getElementById('cardNewVisit').addEventListener('click', () => {
                 document.getElementById('visitForm').reset();
-                document.getElementById('vDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('vDate').value = SISDEL.localToday();
                 document.getElementById('extendedOptions').style.display = 'none';
                 modalNewVisit.style.display = 'flex';
             });
@@ -491,10 +491,10 @@
                 opts.style.display = e.target.checked ? 'block' : 'none';
                 if (e.target.checked) {
                     // Default end date: 7 days from start
-                    const startDate = document.getElementById('vDate').value || new Date().toISOString().split('T')[0];
-                    const endDefault = new Date(startDate);
+                    const startDate = document.getElementById('vDate').value || SISDEL.localToday();
+                    const endDefault = new Date(startDate + 'T12:00:00');
                     endDefault.setDate(endDefault.getDate() + 7);
-                    document.getElementById('vEndDate').value = endDefault.toISOString().split('T')[0];
+                    document.getElementById('vEndDate').value = `${endDefault.getFullYear()}-${String(endDefault.getMonth() + 1).padStart(2, '0')}-${String(endDefault.getDate()).padStart(2, '0')}`;
                     document.getElementById('vEndDate').min = startDate;
                 }
             });

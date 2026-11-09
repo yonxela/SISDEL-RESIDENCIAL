@@ -3,7 +3,7 @@ const { db } = require('../firebase');
 const { normalizePlate, localDate, daysAgo } = require('../util');
 
 const PENDING_WINDOW_DAYS = 30;   // Una visita pendiente mas vieja ya no abre por camara
-const MIN_PARTIAL_LENGTH = 4;     // Minimo de caracteres para aceptar coincidencia parcial
+const MIN_PARTIAL_LENGTH = 6;     // Minimo de caracteres para aceptar coincidencia parcial (una placa de Guatemala tiene 7)
 
 const RANK = { Authorized: 3, Reminder: 2, Denied: 1 };
 
@@ -49,7 +49,7 @@ function platesMatch(visitPlate, plate) {
     return clean.includes(plate) || plate.includes(clean);
 }
 
-async function checkVisit(condoRef, plate, now) {
+async function checkVisit(condoRef, condo, plate, now) {
     const today = localDate(now);
     const cutoff = localDate(daysAgo(PENDING_WINDOW_DAYS, now));
     const visits = condoRef.collection('visitas');
@@ -62,23 +62,33 @@ async function checkVisit(condoRef, plate, now) {
     const candidates = new Map();
     [...pending.docs, ...temporal.docs].forEach((d) => candidates.set(d.id, { id: d.id, ...d.data() }));
 
+    let deniedByOwner = null;
     for (const visit of candidates.values()) {
         if (!['pending', 'entered'].includes(visit.status)) continue;
         if (!platesMatch(visit.vehiclePlate, plate)) continue;
 
         const isTemporal = visit.visitType === 'temporal' && visit.endDate;
-        const valid = isTemporal ? today <= visit.endDate : visit.status === 'pending';
+        const valid = isTemporal ? (today <= visit.endDate && (!visit.visitDate || visit.visitDate <= today)) : visit.status === 'pending';
         if (!valid) continue;
 
+        // El pase vale lo que vale su vecino: uno eliminado, desactivado o moroso sin gracia no abre ni con un pase
+        // (si no, un moroso registraria su propia placa como "visita")
+        const ownerSnap = visit.userId ? await condoRef.collection('usuarios').doc(String(visit.userId)).get() : null;
+        const owner = ownerSnap && ownerSnap.exists ? ownerSnap.data() : null;
+        const ownerOutcome = residentOutcome(owner, condo, now);
+        if (!ownerOutcome || ownerOutcome.status === 'Denied') {
+            deniedByOwner = ownerOutcome ? `Visita de ${visit.visitorName} no entra: ${ownerOutcome.reason}` : `Visita de ${visit.visitorName} no entra: vecino inactivo`;
+            continue;
+        }
+
+        const who = isTemporal ? `Vecino temporal: ${visit.visitorName} (hasta ${visit.endDate})` : `Visita programada: ${visit.visitorName}`;
         return {
-            status: 'Authorized',
-            reason: isTemporal
-                ? `Vecino temporal: ${visit.visitorName} (hasta ${visit.endDate})`
-                : `Visita programada: ${visit.visitorName}`,
+            status: ownerOutcome.status === 'Reminder' ? 'Reminder' : 'Authorized',
+            reason: ownerOutcome.status === 'Reminder' ? `${who} - ${ownerOutcome.reason}` : who,
             visitIdToMark: visit.status === 'pending' ? visit.id : null
         };
     }
-    return null;
+    return deniedByOwner ? { status: 'Denied', reason: deniedByOwner, visitIdToMark: null } : null;
 }
 
 // Devuelve { status, reason, visitIdToMark }
@@ -86,7 +96,7 @@ async function decideAccess(condoRef, condo, plate, now = new Date()) {
     const resident = await checkResident(condoRef, condo, plate, now);
     if (resident && resident.status !== 'Denied') return { ...resident, visitIdToMark: null };
 
-    const visit = await checkVisit(condoRef, plate, now);
+    const visit = await checkVisit(condoRef, condo, plate, now);
     if (visit) return visit;
 
     return {

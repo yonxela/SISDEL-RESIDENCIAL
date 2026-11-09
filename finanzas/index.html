@@ -810,13 +810,6 @@
             </form>
         </div>
     </div>
-    <div id="modal-initbal" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8">
-            <h3 class="text-xl font-bold mb-4 dark:text-white" id="title-modal-init">Cargar Saldo Inicial</h3>
-            <form onsubmit="handleInitBalanceSubmit(event)"><input type="hidden" id="init-res-id"><div class="space-y-4"><p class="text-sm text-slate-500 dark:text-slate-400" id="help-init">Registra un saldo previo para este residente.</p><input type="number" step="0.01" id="init-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" required placeholder="Ej. 500.00"></div>
-            <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeModal('modal-initbal')" class="px-4 py-2 text-slate-600 dark:text-slate-300" id="btn-init-cancel">Cancelar</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium" id="btn-init-load">Cargar</button></div></form>
-        </div>
-    </div>
     <div id="modal-income" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-emerald-500">
             <h3 class="text-xl font-bold mb-4 dark:text-white" id="title-modal-inc"><i class="fas fa-arrow-down text-emerald-500 mr-2"></i>Ingreso</h3>
@@ -824,7 +817,7 @@
                 <select id="inc-resident" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required onchange="updateIncomeConcepts()"></select>
                 <select id="inc-concept-type" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-medium cursor-pointer" onchange="handleIncomeConceptChange()"><option value="fee" id="inc-opt-fee">Cuota del Mes</option><option value="custom">Personalizar...</option></select>
                 <input type="text" id="inc-concept-custom" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg hidden" placeholder="Concepto">
-                <input type="number" step="0.01" id="inc-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
+                <input type="number" step="0.01" min="0.01" id="inc-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
                 <div class="border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2"><i class="fas fa-file-alt mr-1"></i>Documento de Pago</label>
                     <input type="text" id="inc-receipt-num" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg mb-3" placeholder="No. de Documento (Opcional)" autocomplete="off">
@@ -851,7 +844,7 @@
             <h3 class="text-xl font-bold mb-4 dark:text-white" id="title-modal-exp"><i class="fas fa-arrow-up text-rose-500 mr-2"></i>Egreso</h3>
             <form onsubmit="handleTransactionSubmit(event, 'expense')"><div class="space-y-4">
                 <select id="exp-resident" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg"><option value="">(Fondo Común / General)</option></select>
-                <input type="number" step="0.01" id="exp-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
+                <input type="number" step="0.01" min="0.01" id="exp-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
                 <!-- Categoría: autocomplete con sugerencias inteligentes.
                      Antes era un <select> con "Seleccione (Opcional)" + "Personalizar...".
                      Ahora el usuario escribe y el dropdown filtra en tiempo real.
@@ -1141,7 +1134,7 @@
         };
 
         // ========== COMPANY-SCOPED STORE ==========
-        const defaultSettings = { lang: 'es', currency: 'MXN', name: 'OIKOS Residencial', theme: 'light', fee: 500, chargeDay: 1, graceDays: 5, lastChargedMonth: '', feeMode: 'auto' };
+        const defaultSettings = { lang: 'es', currency: 'MXN', name: 'OIKOS Residencial', theme: 'light', fee: 0, chargeDay: 1, graceDays: 5, lastChargedMonth: '', feeMode: 'auto' };
         const defaultState = { settings: defaultSettings, residents: [], transactions: [] };
         // ════════════════════════════════════════════════════════════════════
         // STORE — tombstones + saldo derivado + sello updated_at
@@ -1650,22 +1643,25 @@
         }
 
         // ========== HISTORY (UNDO/REDO) ==========
+        // SISDEL: las fotos son de la lista CRUDA (con anulados) para que rehacer una anulacion conserve su motivo y fecha,
+        // y la pila se vacia cuando finanzas-sync.js escribe un cambio de otro equipo o del servidor (ver el evento 'storage'):
+        // si no, deshacer reescribia la lista sin ese movimiento y la sincronizacion lo subia como anulado.
         const History = {
             stack: [], redoStack: [], max: 20,
             push() {
-                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.get('residents'))), transactions: JSON.parse(JSON.stringify(Store.get('transactions'))) });
+                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
                 this.redoStack = [];
                 if (this.stack.length > this.max) this.stack.shift();
             },
             undo() {
                 if (this.stack.length === 0) return false;
-                this.redoStack.push({ residents: JSON.parse(JSON.stringify(Store.get('residents'))), transactions: JSON.parse(JSON.stringify(Store.get('transactions'))) });
+                this.redoStack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
                 this._apply(this.stack.pop());
                 showToast('Acción deshecha'); return true;
             },
             redo() {
                 if (this.redoStack.length === 0) return false;
-                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.get('residents'))), transactions: JSON.parse(JSON.stringify(Store.get('transactions'))) });
+                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
                 this._apply(this.redoStack.pop());
                 showToast('Acción rehecha'); return true;
             },
@@ -1693,6 +1689,13 @@
         function feePeriodLabel(period) { const { y, m } = feePeriodParts(period); return `${FEE_MONTHS_SHORT[m] || '?'} ${y}`; }
         function feePeriodLongLabel(period) { const { y, m } = feePeriodParts(period); return `${FEE_MONTHS_ES[m] || '?'} ${y}`; }
         function currentFeePeriod() { const d = new Date(); return feePeriodKey(d.getFullYear(), d.getMonth()); }
+        // SISDEL: dia local (AAAA-MM-DD) de una fecha ISO (que se guarda en UTC). Los filtros por fecha y las agrupaciones
+        // por mes usan este mismo criterio: antes los filtros comparaban el dia UTC y un pago de las 7 pm caia en el dia siguiente
+        function localDayKey(iso) {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return String(iso || '').slice(0, 10);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
         /** Extrae 'YYYY-MM' de conceptos legacy: "Cuota - Noviembre 2026", "Cuota - Noviembre de 2026", "Cuota - November 2026". */
         function parseFeePeriod(concept) {
             const mt = _deacc(concept).match(/^cuota\s*[-–]\s*(?:de\s+)?([a-z]+)\s+(?:de\s+)?(\d{4})$/);
@@ -1954,7 +1957,7 @@
             });
             const debtBeforeCurrent = -r.balance - curFee;
             if (debtBeforeCurrent > 0.005) return true;
-            return d.getDate() >= (cDay + gDays);
+            return d.getTime() >= new Date(d.getFullYear(), d.getMonth(), cDay + gDays).getTime();   // SISDEL: con rollover al mes siguiente
         }
 
         // ========== RENDER VIEWS ==========
@@ -1963,11 +1966,11 @@
             const txs = Store.get('transactions');
             const s = Store.get('settings');
             let inc = 0, exp = 0;
-            txs.forEach(t => { if (t.type === 'income') inc += t.amount; else if (t.type === 'expense') exp += t.amount; });
+            txs.forEach(t => { if (t.type === 'income') inc += parseFloat(t.amount) || 0; else if (t.type === 'expense') exp += parseFloat(t.amount) || 0; });
             document.getElementById('dash-balance').innerText = formatMoney(inc - exp);
             document.getElementById('dash-income').innerText = formatMoney(inc);
             document.getElementById('dash-expenses').innerText = formatMoney(exp);
-            const debtorsCount = res.filter(checkIsMoroso).length;
+            const debtorsCount = res.filter(r => isResidentActive(r) && checkIsMoroso(r)).length;
             const alertEl = document.getElementById('dash-debt-alert');
             if (debtorsCount > 0) { document.getElementById('lbl-debt-count').innerText = `${debtorsCount} Residentes en Mora`; alertEl.classList.remove('hidden'); }
             else alertEl.classList.add('hidden');
@@ -1988,7 +1991,7 @@
             }
             txs.forEach(t => {
                 const td = new Date(t.date); const k = `${td.getFullYear()}-${td.getMonth()}`;
-                if (mapInc[k] !== undefined) { if (t.type === 'income') mapInc[k] += t.amount; else if (t.type === 'expense') mapExp[k] += t.amount; }
+                if (mapInc[k] !== undefined) { if (t.type === 'income') mapInc[k] += parseFloat(t.amount) || 0; else if (t.type === 'expense') mapExp[k] += parseFloat(t.amount) || 0; }
             });
             const isDark = document.documentElement.classList.contains('dark');
             const tc = isDark ? '#cbd5e1' : '#475569';
@@ -2347,7 +2350,7 @@
             if (!r) return;
             finiquitoResidentId = id;
             document.getElementById('fin-res-info').textContent = r.unit + ' - ' + r.name;
-            document.getElementById('fin-date').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('fin-date').value = localDayKey(new Date());
             document.getElementById('fin-reason').value = 'Venta de la propiedad';
             document.getElementById('fin-notes').value = '';
             const balEl = document.getElementById('fin-balance');
@@ -2481,23 +2484,6 @@
                 if (match) { document.getElementById('res-country-code').value = match; document.getElementById('res-contact').value = ct.substring(match.length).trim(); }
                 else { document.getElementById('res-country-code').value = '+502'; document.getElementById('res-contact').value = ct; }
             } else { document.getElementById('res-country-code').value = '+502'; document.getElementById('res-contact').value = ct; }
-        }
-
-        function openInitBalance(id) { document.getElementById('init-res-id').value = id; openModal('modal-initbal'); }
-
-        function handleInitBalanceSubmit(e) {
-            e.preventDefault(); History.push();
-            const id = document.getElementById('init-res-id').value;
-            const amt = parseFloat(document.getElementById('init-amount').value);
-            const res = Store.get('residents');
-            const idx = res.findIndex(r => r.id === id);
-            if (idx > -1) {
-                res[idx].balance -= amt; Store.set('residents', res);
-                const txs = Store.get('transactions');
-                txs.push({ id: Date.now().toString(), date: new Date().toISOString(), type: 'expense', amount: amt, concept: 'Saldo Inicial Adeudado', category: 'Ajuste' });
-                Store.set('transactions', txs);
-                closeModal('modal-initbal'); renderResidents(); showToast('Saldo inicial cargado');
-            }
         }
 
         function contactWhatsApp(contact, balance) {
@@ -2685,21 +2671,35 @@
         // ========== RECEIPT AUTO-NUMBER ==========
         function getNextReceiptNumber(residentName) {
             const s = Store.get('settings');
-            let counter = parseInt(s.receiptCounter) || 0;
-            counter++;
-            s.receiptCounter = counter;
-            Store.set('settings', s);
+            // SISDEL: varias PCs comparten la configuracion ("ultimo updated_at gana"), asi que un contador atrasado
+            // repetiria numeros: se parte del mayor ya emitido y se salta cualquier numero que ya exista.
+            const used = new Set();
+            let maxSeq = 0;
+            Store.getRaw('transactions').forEach(t => {
+                if (!t || !t.receiptNum) return;
+                used.add(String(t.receiptNum));
+                const m = /(\d{4,})$/.exec(String(t.receiptNum));
+                if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+            });
+            let counter = Math.max(parseInt(s.receiptCounter) || 0, maxSeq);
             // First 2 letters of name (uppercase, remove accents)
             const clean = (residentName || 'XX').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z]/g, '');
             const initials = (clean.substring(0, 2) || 'XX').padEnd(2, 'X');
-            return initials + String(counter).padStart(4, '0');
+            let num;
+            do { counter++; num = initials + String(counter).padStart(4, '0'); } while (used.has(num));
+            s.receiptCounter = counter;
+            Store.set('settings', s);
+            return num;
         }
 
         // ========== TRANSACTION SUBMIT ==========
         function handleTransactionSubmit(e, type) {
-            e.preventDefault(); History.push();
-            const txs = Store.get('transactions');
+            e.preventDefault();
             const amt = parseFloat(document.getElementById(`${type.substring(0, 3)}-amount`).value);
+            // SISDEL: el monto debe ser mayor que cero (un pago negativo seria un cargo escondido) y el pago lleva residente
+            if (!(amt > 0)) { alert('El monto debe ser mayor que cero.'); return; }
+            if (type === 'income' && !document.getElementById('inc-resident').value) { alert('Seleccione un residente.'); return; }
+            const txs = Store.get('transactions');
             let conceptVal = '';
             if (type === 'income') {
                 const typeSel = document.getElementById('inc-concept-type').value;
@@ -2718,6 +2718,7 @@
                     return;
                 }
             }
+            History.push();
             let tx = { id: Date.now().toString(), date: new Date().toISOString(), type, amount: amt, concept: conceptVal };
             // Document number (manual - payment doc like transfer, check, etc.)
             const prefix = type.substring(0, 3);
@@ -2995,7 +2996,7 @@
                 fromEl.value = `${yyyy}-01-01`;
             }
             if (toEl && !toEl.value) {
-                toEl.value = today.toISOString().slice(0, 10);
+                toEl.value = localDayKey(today);
             }
             selectReport(currentReportKey || 'income');
         }
@@ -3275,7 +3276,7 @@
             const txs = Store.get('transactions').filter(function (t) {
                 if (t.type !== 'income') return false;
                 if (!t.date) return false;
-                const d = t.date.slice(0, 10);
+                const d = localDayKey(t.date);
                 if (from && d < from) return false;
                 if (to && d > to) return false;
                 return true;
@@ -3329,58 +3330,40 @@
         // 4 meses, el reporte no encontraba match y lo marcaba moroso de
         // los 4 meses aunque su balance estuviera en 0.
         function buildMorososReport() {
+            // SISDEL: parte del saldo real (pagos menos cargos vivos, de cualquier fecha) y reparte los pagos en orden
+            // sobre TODOS los cargos vivos (cuotas de cualquier ano y cargos especiales). Asi el total coincide con el saldo
+            // del residente y nunca se marca como adeudado un mes que ya se cubrio con un pago de otro ano.
             const settings = Store.get('settings') || {};
             const fee = parseFloat(settings.fee || 0);
             const residents = Store.get('residents') || [];
             const txs = Store.get('transactions') || [];
-            const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-            const now = new Date();
-            const curYear = now.getFullYear();
-            const curMonth = now.getMonth();
             const rows = [];
             let totalDebt = 0;
             let totalMonths = 0;
             residents.forEach(function (r) {
-                // (1) Total recibido en el año (cualquier concepto income).
-                let totalPaid = txs
-                    .filter(function (t) {
-                        if (t.type !== 'income' || t.resiId !== r.id) return false;
-                        if (!t.date) return false;
-                        return new Date(t.date).getFullYear() === curYear;
-                    })
-                    .reduce(function (s, t) { return s + (parseFloat(t.amount) || 0); }, 0);
-
-                // (2) Cargos mensuales del año en curso, ordenados FIFO.
-                const monthlyCharges = [];
-                for (let m = 0; m <= curMonth; m++) {
-                    const charge = findFeeCharge(txs, r.id, feePeriodKey(curYear, m), false);
-                    if (charge) {
-                        monthlyCharges.push({ month: monthNames[m], amount: parseFloat(charge.amount) || 0 });
-                    }
-                }
-
-                // (3) Aplicar pagos FIFO contra cargos cronológicos.
+                if (!(r.balance < -0.005)) return;
+                const mine = txs.filter(function (t) { return t && String(t.resiId) === String(r.id); });
+                let remaining = mine.filter(function (t) { return t.type === 'income'; }).reduce(function (sum, t) { return sum + (parseFloat(t.amount) || 0); }, 0);
+                const charges = mine.filter(function (t) { return t.type === 'charge'; }).map(function (t) {
+                    const period = txFeePeriod(t);
+                    return { isFee: !!period, sort: period ? period + '-00' : localDayKey(t.date), label: period ? feePeriodLabel(period) : (t.concept || 'Cargo especial'), amount: parseFloat(t.amount) || 0 };
+                }).sort(function (a, b) { return a.sort.localeCompare(b.sort); });
                 const debts = [];
-                let remaining = totalPaid;
-                monthlyCharges.forEach(function (mc) {
-                    if (remaining >= mc.amount) {
-                        // Mes totalmente pagado.
-                        remaining -= mc.amount;
-                    } else {
-                        // Mes parcialmente pagado (o nada) → queda como deuda.
-                        const owed = +(mc.amount - remaining).toFixed(2);
-                        if (owed > 0.005) debts.push({ month: mc.month, owed: owed });
-                        remaining = 0;
-                    }
+                charges.forEach(function (c) {
+                    if (remaining >= c.amount - 0.005) { remaining -= c.amount; return; }
+                    const owed = +(c.amount - Math.max(0, remaining)).toFixed(2);
+                    remaining = 0;
+                    if (owed > 0.005) debts.push({ label: c.label, owed: owed, isFee: c.isFee });
                 });
                 if (debts.length === 0) return;
-                const totalRes = debts.reduce(function (s, d) { return s + d.owed; }, 0);
+                const totalRes = +debts.reduce(function (sum, d) { return sum + d.owed; }, 0).toFixed(2);
+                const feeMonths = debts.filter(function (d) { return d.isFee; }).length;
                 totalDebt += totalRes;
-                totalMonths += debts.length;
+                totalMonths += feeMonths;
                 rows.push({
-                    name: (r.unit ? r.unit + ' · ' : '') + (r.name || ''),
-                    months: debts.map(function (d) { return d.month; }).join(', '),
-                    count: debts.length,
+                    name: (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'),
+                    months: debts.map(function (d) { return d.label; }).join(', '),
+                    count: feeMonths,
                     amount: totalRes,
                     residentId: r.id,  // metadata para click → estado de cuenta
                 });
@@ -3388,7 +3371,7 @@
             rows.sort(function (a, b) { return b.amount - a.amount; });
             return {
                 title: 'Vecinos con morosidad — meses adeudados',
-                summary: rows.length + ' residente(s) con saldo pendiente · cuota Q' + fee.toFixed(2),
+                summary: rows.length + ' residente(s) con saldo pendiente · cuota ' + formatMoney(fee),
                 headers: ['Residente', 'Meses adeudados', 'Cantidad de meses', 'Total adeudado'],
                 rows: rows.map(function (r) { return [r.name, r.months, String(r.count), formatMoney(r.amount)]; }),
                 // rowsMeta es paralelo a rows[]. Lo usa paintReportTable para
@@ -3412,7 +3395,7 @@
             const txs = Store.get('transactions').filter(function (t) {
                 if (t.type !== 'expense') return false;
                 if (!t.date) return false;
-                const d = t.date.slice(0, 10);
+                const d = localDayKey(t.date);
                 if (from && d < from) return false;
                 if (to && d > to) return false;
                 return true;
@@ -3463,7 +3446,7 @@
             const txs = (Store.get('transactions') || []).filter(function (t) {
                 if (!t.date) return false;
                 if (t.type !== 'income' && t.type !== 'expense') return false;
-                const d = t.date.slice(0, 10);
+                const d = localDayKey(t.date);
                 if (from && d < from) return false;
                 if (to && d > to) return false;
                 return true;
@@ -3476,7 +3459,7 @@
                 (Store.get('transactions') || []).forEach(function (t) {
                     if (!t.date) return;
                     if (t.type !== 'income' && t.type !== 'expense') return;
-                    if (t.date.slice(0, 10) < from) {
+                    if (localDayKey(t.date) < from) {
                         const amt = parseFloat(t.amount) || 0;
                         openingBalance += t.type === 'income' ? amt : -amt;
                     }
@@ -3621,8 +3604,8 @@
                 else { from = new Date(txs.reduce((min, t) => t.date < min ? t.date : min, txs[0].date)); }
                 to = now;
             }
-            document.getElementById('rep-date-from').value = from.toISOString().slice(0, 10);
-            document.getElementById('rep-date-to').value = to.toISOString().slice(0, 10);
+            document.getElementById('rep-date-from').value = localDayKey(from);
+            document.getElementById('rep-date-to').value = localDayKey(to);
             renderReportDataPeriod();
         }
 
@@ -3640,7 +3623,7 @@
 
         function renderReportData(mk) {
             const txs = Store.get('transactions'); let mI = 0, mE = 0;
-            txs.forEach(t => { const d = new Date(t.date); const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; if (k === mk) { if (t.type === 'income') mI += t.amount; else if (t.type === 'expense') mE += t.amount; } });
+            txs.forEach(t => { const d = new Date(t.date); const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; if (k === mk) { if (t.type === 'income') mI += parseFloat(t.amount) || 0; else if (t.type === 'expense') mE += parseFloat(t.amount) || 0; } });
             document.getElementById('rep-val-inc').innerText = formatMoney(mI);
             document.getElementById('rep-val-exp').innerText = formatMoney(mE);
             document.getElementById('rep-val-bal').innerText = formatMoney(mI - mE);
@@ -3654,10 +3637,10 @@
             if (!from || !to) return;
             const txs = Store.get('transactions'); let mI = 0, mE = 0;
             txs.forEach(t => {
-                const td = t.date.slice(0, 10);
+                const td = localDayKey(t.date);
                 if (td >= from && td <= to) {
-                    if (t.type === 'income') mI += t.amount;
-                    else if (t.type === 'expense') mE += t.amount;
+                    if (t.type === 'income') mI += parseFloat(t.amount) || 0;
+                    else if (t.type === 'expense') mE += parseFloat(t.amount) || 0;
                 }
             });
             const fromD = new Date(from + 'T12:00:00'); const toD = new Date(to + 'T12:00:00');
@@ -3678,7 +3661,7 @@
             } else {
                 const from = document.getElementById('rep-date-from').value;
                 const to = document.getElementById('rep-date-to').value;
-                return txs.filter(t => { const td = t.date.slice(0, 10); return td >= from && td <= to && t.type !== 'charge'; }).sort((a, b) => new Date(a.date) - new Date(b.date));
+                return txs.filter(t => { const td = localDayKey(t.date); return td >= from && td <= to && t.type !== 'charge'; }).sort((a, b) => new Date(a.date) - new Date(b.date));
             }
         }
 
@@ -4015,10 +3998,10 @@
                 name: document.getElementById('cfg-name').value,
                 lang: document.getElementById('cfg-lang').value,
                 currency: document.getElementById('cfg-curr').value,
-                fee: feeTotal > 0 ? feeTotal : (document.getElementById('cfg-fee').value || 500),
+                fee: feeTotal,   // SISDEL: la suma del desglose; 0 = no hay cuota configurada y no se cobra nada
                 feeBreakdown,
-                chargeDay: document.getElementById('cfg-day').value || 1,
-                graceDays: parseInt(document.getElementById('cfg-grace').value) || 5,
+                chargeDay: Math.min(28, Math.max(1, parseInt(document.getElementById('cfg-day').value, 10) || 1)),   // SISDEL: numero 1-28
+                graceDays: Number.isFinite(parseInt(document.getElementById('cfg-grace').value, 10)) ? Math.max(0, parseInt(document.getElementById('cfg-grace').value, 10)) : 5,   // SISDEL: 0 vale 0
                 theme: document.getElementById('cfg-theme').checked ? 'dark' : 'light',
                 feeMode: cfgFeeMode,
                 lastChargedMonth: oldS.lastChargedMonth || '',
@@ -4059,7 +4042,7 @@
             const resId = document.getElementById('inc-resident').value; if (!resId) return;
             const s = Store.get('settings'); const txs = Store.get('transactions'); const currentYM = currentFeePeriod();
             const feeConcept = feeConceptFor(new Date().getFullYear(), new Date().getMonth());
-            const hasPaidFee = txs.some(t => t.type === 'income' && t.resiId === resId && t.date && t.date.startsWith(currentYM) && (t.concept === feeConcept || (t.concept && (t.concept.toLowerCase().includes('cuota') || t.concept.toLowerCase().includes('fee')))));
+            const hasPaidFee = txs.some(t => t.type === 'income' && t.resiId === resId && t.date && localDayKey(t.date).startsWith(currentYM) && (t.concept === feeConcept || (t.concept && (t.concept.toLowerCase().includes('cuota') || t.concept.toLowerCase().includes('fee')))));
             const cus = s.customIncomeConcepts || [];
             document.getElementById('inc-concept-type').innerHTML = `<option value="" disabled selected>Seleccione...</option>${hasPaidFee ? '' : `<option value="fee" id="inc-opt-fee">${feeConcept}</option>`}${cus.map(c => `<option value="${c}">${c}</option>`).join('')}<option value="custom">Personalizar...</option>`;
         }
@@ -4231,6 +4214,8 @@
                 if (!e || !e.key) return;
                 const myPrefix = Store.prefix();   // 'oikos_<activeId>_'
                 if (!e.key.startsWith(myPrefix)) return;
+                // SISDEL: llego un cambio de otro equipo o del servidor: la pila de deshacer ya no describe este estado
+                if (e.key === myPrefix + 'transactions' || e.key === myPrefix + 'residents') { History.stack = []; History.redoStack = []; }
                 // Cambio en una colección de la empresa activa → refrescar
                 // las 3 vistas. renderDashboard incluye totals y gráficas;
                 // renderResidents y renderAccounting cubren las tablas.
@@ -4252,7 +4237,7 @@
             // Default: current year
             const now = new Date();
             document.getElementById('ec-date-from').value = now.getFullYear() + '-01-01';
-            document.getElementById('ec-date-to').value = now.toISOString().split('T')[0];
+            document.getElementById('ec-date-to').value = localDayKey(now);
             document.getElementById('ec-gen-date').textContent = now.toLocaleString('es-MX');
             openModal('modal-estado-cuenta');
             renderEstadoCuenta();
@@ -4262,13 +4247,13 @@
             const now = new Date();
             if (period === 'year') {
                 document.getElementById('ec-date-from').value = now.getFullYear() + '-01-01';
-                document.getElementById('ec-date-to').value = now.toISOString().split('T')[0];
+                document.getElementById('ec-date-to').value = localDayKey(now);
             } else if (period === 'month') {
                 document.getElementById('ec-date-from').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
-                document.getElementById('ec-date-to').value = now.toISOString().split('T')[0];
+                document.getElementById('ec-date-to').value = localDayKey(now);
             } else {
                 document.getElementById('ec-date-from').value = '2020-01-01';
-                document.getElementById('ec-date-to').value = now.toISOString().split('T')[0];
+                document.getElementById('ec-date-to').value = localDayKey(now);
             }
             renderEstadoCuenta();
         }
@@ -4285,8 +4270,16 @@
                 const d = new Date(t.date);
                 return d >= from && d <= to;
             }).sort((a, b) => new Date(a.date) - new Date(b.date));
+            // SISDEL: el saldo arranca con lo anterior al rango (saldo anterior); asi el saldo final es el real
+            let opening = 0;
+            Store.get('transactions').forEach(t => {
+                if (!t || String(t.resiId) !== String(ecResidentId) || !t.date || new Date(t.date) >= from) return;
+                const amt = parseFloat(t.amount) || 0;
+                if (t.type === 'income') opening += amt; else if (t.type === 'charge' || t.type === 'expense') opening -= amt;
+            });
+            opening = Math.round((opening + Number.EPSILON) * 100) / 100;
             let totInc = 0, totChg = 0;
-            let runBal = 0;
+            let runBal = opening;
             const rows = txs.map(t => {
                 let tipo, monto, cls;
                 const amt = parseFloat(t.amount) || 0;
@@ -4299,12 +4292,12 @@
                 // documento de pago al hacer click (navegación en cascada).
                 return { id: t.id, date: t.date, concept: t.concept, tipo, monto, cls, runBal, deleted: dead, deletedReason: t.deleted_reason || '', deletedAt: t.deleted_at || '' };
             });
-            return { r, rows, totInc, totChg, balance: totInc - totChg };
+            return { r, rows, totInc, totChg, opening, balance: Math.round((opening + totInc - totChg + Number.EPSILON) * 100) / 100 };
         }
 
         function renderEstadoCuenta() {
             const showDeleted = !!document.getElementById('ec-show-deleted')?.checked;
-            const { r, rows, totInc, totChg, balance } = getEcData(showDeleted);
+            const { r, rows, totInc, totChg, opening, balance } = getEcData(showDeleted);
             if (!r) return;
             document.getElementById('ec-total-inc').textContent = formatMoney(totInc);
             document.getElementById('ec-total-charges').textContent = formatMoney(totChg);
@@ -4312,7 +4305,10 @@
             balEl.textContent = formatMoney(balance);
             balEl.className = 'text-lg font-bold ' + (balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400');
             const tbody = document.getElementById('ec-table-body');
-            if (rows.length === 0) {
+            const openingRow = Math.abs(opening) >= 0.005
+                ? `<tr class="bg-slate-50 dark:bg-slate-700/40"><td colspan="4" class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">Saldo anterior al ${document.getElementById('ec-date-from').value}</td><td class="py-2 px-4 text-right font-mono text-xs ${opening >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${formatMoney(opening)}</td><td></td></tr>`
+                : '';
+            if (rows.length === 0 && !openingRow) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400"><i class="fas fa-inbox text-3xl block mb-2"></i>No hay movimientos en este período.</td></tr>';
                 return;
             }
@@ -4322,7 +4318,7 @@
             // segundo nivel de la navegación en cascada: morosos → estado
             // de cuenta → detalle del movimiento. La última columna permite
             // ANULAR un movimiento agregado por error (queda marcado, no se borra).
-            tbody.innerHTML = rows.map(row => {
+            tbody.innerHTML = openingRow + rows.map(row => {
                 const idJs = String(row.id).replace(/'/g, "\\'");
                 if (row.deleted) {
                     return `<tr onclick="openTxDetail('${idJs}')" class="opacity-50 cursor-pointer" title="Anulado${row.deletedReason ? ': ' + esc(row.deletedReason) : ''}">
@@ -4569,7 +4565,7 @@
 
         function downloadEstadoCuentaPDF() {
             if (!window.jspdf || !window.jspdf.jsPDF) return alert('Cargando PDF, intente en 2s.');
-            const { r, rows, totInc, totChg, balance } = getEcData();
+            const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
             const from = document.getElementById('ec-date-from').value;
@@ -4598,8 +4594,9 @@
             doc.setFontSize(8); doc.setTextColor(225, 29, 72); doc.text('CARGOS', 79, 58); doc.setFontSize(12); doc.text(formatMoney(totChg), 79, 66);
             doc.setFontSize(8); doc.setTextColor(79, 70, 229); doc.text('SALDO', 142, 58); doc.setFontSize(12); doc.text(formatMoney(balance), 142, 66);
             // Table
-            if (rows.length > 0) {
-                const body = rows.map(row => [new Date(row.date).toLocaleDateString('es-MX'), row.concept, row.tipo, (row.tipo === 'Pago' ? '+' : '-') + formatMoney(row.monto), formatMoney(row.runBal)]);
+            const openingBody = Math.abs(opening) >= 0.005 ? [[from, 'Saldo anterior', '', '', formatMoney(opening)]] : [];
+            if (rows.length > 0 || openingBody.length > 0) {
+                const body = openingBody.concat(rows.map(row => [new Date(row.date).toLocaleDateString('es-MX'), row.concept, row.tipo, (row.tipo === 'Pago' ? '+' : '-') + formatMoney(row.monto), formatMoney(row.runBal)]));
                 doc.autoTable({ startY: 76, head: [['Fecha', 'Concepto', 'Tipo', 'Monto', 'Saldo']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } } });
             } else {
                 doc.setFontSize(11); doc.setTextColor(150, 150, 170); doc.text('No hay movimientos en este período.', 14, 82);
@@ -4609,12 +4606,13 @@
         }
 
         function printEstadoCuenta() {
-            const { r, rows, totInc, totChg, balance } = getEcData();
+            const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
             const from = document.getElementById('ec-date-from').value;
             const to = document.getElementById('ec-date-to').value;
-            const rowsHtml = rows.map(row => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(row.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${row.concept}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${row.tipo === 'Pago' ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${row.tipo}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${row.tipo === 'Pago' ? '#059669' : '#e11d48'}">${row.tipo === 'Pago' ? '+' : '-'}${formatMoney(row.monto)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:11px;color:${row.runBal >= 0 ? '#059669' : '#e11d48'}">${formatMoney(row.runBal)}</td></tr>`).join('');
+            const openingHtml = Math.abs(opening) >= 0.005 ? `<tr><td colspan="4" style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">Saldo anterior al ${from}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:right;font-family:monospace">${formatMoney(opening)}</td></tr>` : '';
+            const rowsHtml = openingHtml + rows.map(row => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(row.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${row.concept}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${row.tipo === 'Pago' ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${row.tipo}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${row.tipo === 'Pago' ? '#059669' : '#e11d48'}">${row.tipo === 'Pago' ? '+' : '-'}${formatMoney(row.monto)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:11px;color:${row.runBal >= 0 ? '#059669' : '#e11d48'}">${formatMoney(row.runBal)}</td></tr>`).join('');
             const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${r.name}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}@media print{body{padding:15px}}</style></head><body>
                 <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${s.name || 'OIKOS'}</p></div>
                 <div style="margin-bottom:16px"><h2 style="margin:0;font-size:18px">${r.unit} - ${r.name}</h2><p style="color:#64748b;font-size:13px;margin:4px 0">Período: ${from} al ${to}</p></div>

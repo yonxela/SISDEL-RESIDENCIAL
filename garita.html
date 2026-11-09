@@ -155,10 +155,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109d"></script>
-    <script src="sisdel-core.js?v=20261109d"></script>
+    <script src="privilegios.js?v=20261109f"></script>
+    <script src="sisdel-core.js?v=20261109f"></script>
     <script src="rondas-core.js?v=20261108b"></script>
-    <script src="panico-alertas.js?v=20261108b"></script>
+    <script src="panico-alertas.js?v=20261109f"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'garita.html');
@@ -237,7 +237,7 @@
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
             if (SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) SisdelPanico.watch({
-                canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender')
+                canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender')
             });
 
             // --- Stats & Rendering ---
@@ -276,18 +276,24 @@
                         <div class="item-info">
                             <div class="item-name">${esc(v.visitorName)}</div>
                             <div class="item-detail">
-                                <strong>Placa:</strong> ${v.vehiclePlate || 'N/A'} <br>
-                                ${v.visitTime || 'Todo el día'} · Casa: ${esc(v.casa || 'N/A')}
+                                <strong>Placa:</strong> ${esc(v.vehiclePlate || 'N/A')} <br>
+                                ${esc(v.visitTime || 'Todo el día')} · Casa: ${esc(v.casa || 'N/A')}
                             </div>
                         </div>
                         <div>
                             ${v.status === SISDEL.VISIT_STATUS.ENTERED
                         ? '<span class="badge badge-success">Ingresó</span>'
-                        : '<button class="btn btn-ghost btn-sm" onclick="processVisit(\'' + v.id + '\')">Validar</button>'}
+                        : `<button class="btn btn-ghost btn-sm" data-visit="${esc(v.id)}">Validar</button>`}
                         </div>
                     </div>
                 `).join('');
             }
+
+            // El boton Validar de cada visita (el id de la base no va dentro de onclick)
+            document.getElementById('todayVisitsList').addEventListener('click', (e) => {
+                const button = e.target.closest('[data-visit]');
+                if (button) processVisit(button.getAttribute('data-visit'));
+            });
 
             // --- Verification Logic ---
             let currentVerification = null;
@@ -313,69 +319,120 @@
                     // Check resident status
                     const resident = await SISDEL.getUserById(obj.userId);
                     const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                    // El pase vale solo su dia (o su rango si es temporal) y una sola vez; el vecino que lo dio debe estar activo
+                    const today = SISDEL.localToday();
+                    const isTemporal = obj.visitType === 'temporal' && !!obj.endDate;
+                    const dateOk = isTemporal ? (obj.visitDate <= today && today <= obj.endDate) : obj.visitDate === today;
+                    const used = !isTemporal && obj.status !== SISDEL.VISIT_STATUS.PENDING;
+                    const ownerOk = !!resident && resident.active !== false;
+                    const problem = !ownerOk ? 'El vecino que autorizó este pase no está activo.'
+                        : used ? 'Este pase ya fue utilizado.'
+                            : !dateOk ? (obj.visitDate > today ? `Este pase es para el ${SISDEL.formatDate(obj.visitDate)}.` : 'Este pase ya venció.') : '';
+                    const dates = `<p><strong>Fecha del pase:</strong> ${esc(SISDEL.formatDate(obj.visitDate))}${isTemporal ? ' → ' + esc(SISDEL.formatDate(obj.endDate)) : ''}</p>`;
 
-                    if (isMoroso) {
+                    if (problem) {
+                        icon.textContent = '⛔';
+                        title.textContent = 'PASE NO VÁLIDO';
+                        title.style.color = 'var(--danger)';
+                        info.innerHTML = `
+                            <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
+                            <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
+                            ${dates}
+                            <hr style="margin:0.5rem 0; opacity:0.1;">
+                            <p style="color:var(--danger); font-weight:bold;">${esc(problem)}</p>
+                        `;
+                        btnConfirm.style.display = 'none';
+                        showBigStatusScreen('error', 'NO VÁLIDO', `Visita: ${esc(obj.visitorName)}`);
+                    } else if (isMoroso) {
                         icon.textContent = '⛔';
                         title.textContent = 'ACCESO DENEGADO';
                         title.style.color = 'var(--danger)';
                         info.innerHTML = `
                             <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
-                            <p><strong>Casa:</strong> ${obj.casa}</p>
+                            <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
+                            ${dates}
                             <hr style="margin:0.5rem 0; opacity:0.1;">
                             <p style="color:var(--danger); font-weight:bold;">⚠️ RESIDENTE MOROSO</p>
                             <p class="text-xs">El residente ${esc(resident.name)} tiene pagos pendientes. No se permite el ingreso de visitas.</p>
                         `;
                         btnConfirm.style.display = 'none';
-                        showBigStatusScreen('warning', 'MOROSO', `Visita para: ${obj.casa}`);
+                        showBigStatusScreen('warning', 'MOROSO', `Visita para: ${esc(obj.casa || 'N/A')}`);
                     } else {
                         icon.textContent = '✅';
                         title.textContent = 'ACCESO PERMITIDO';
                         title.style.color = 'var(--success)';
                         info.innerHTML = `
                             <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
-                            <p><strong>Casa:</strong> ${obj.casa}</p>
+                            <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
                             <p><strong>Asunto:</strong> ${esc(obj.visitorInfo || 'No especificado')}</p>
-                            <p><strong>Placa:</strong> ${obj.vehiclePlate || 'N/A'}</p>
+                            <p><strong>Placa:</strong> ${esc(obj.vehiclePlate || 'N/A')}</p>
+                            ${dates}
                         `;
                         showBigStatusScreen('success', 'AL DÍA', `Visita: ${esc(obj.visitorName)}`);
                     }
                 } else if (type === 'vehicle') {
-                    icon.textContent = '🚗';
-                    title.textContent = 'RESIDENTE IDENTIFICADO';
-                    title.style.color = 'var(--accent)';
                     const resident = await SISDEL.getUserById(obj.userId);
                     const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-
-                    info.innerHTML = `
-                        <p><strong>Vehículo:</strong> ${obj.brand} ${obj.model} (${obj.color})</p>
-                        <p><strong>Placa:</strong> ${esc(obj.plate)}</p>
+                    const vehicleLine = `<p><strong>Vehículo:</strong> ${esc(obj.brand || '')} ${esc(obj.model || '')} (${esc(obj.color || '')})</p>
+                        <p><strong>Placa:</strong> ${esc(obj.plate)}</p>`;
+                    if (!resident || resident.active === false) {
+                        // Marbete de un vecino eliminado o desactivado: no abre
+                        icon.textContent = '⛔';
+                        title.textContent = 'ACCESO DENEGADO';
+                        title.style.color = 'var(--danger)';
+                        info.innerHTML = `
+                        ${vehicleLine}
                         <hr style="margin:0.5rem 0; opacity:0.1;">
-                        <p><strong>Piloto:</strong> ${resident ? resident.name : 'Desconocido'}</p>
+                        <p style="color:var(--danger); font-weight:bold;">El vecino dueño de este marbete ${resident ? 'está desactivado' : 'ya no existe'}.</p>
+                    `;
+                        btnConfirm.style.display = 'none';
+                        showBigStatusScreen('error', 'NO ACTIVO', `Placa: ${esc(obj.plate)}`);
+                    } else {
+                        icon.textContent = '🚗';
+                        title.textContent = 'RESIDENTE IDENTIFICADO';
+                        title.style.color = 'var(--accent)';
+                        info.innerHTML = `
+                        ${vehicleLine}
+                        <hr style="margin:0.5rem 0; opacity:0.1;">
+                        <p><strong>Piloto:</strong> ${esc(resident.name)}</p>
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
-                    
-                    if (isMoroso) {
-                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${esc(obj.plate)}`);
-                    } else {
-                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${esc(obj.plate)}`);
+                        if (isMoroso) {
+                            showBigStatusScreen('warning', 'MOROSO', `Placa: ${esc(obj.plate)}`);
+                        } else {
+                            showBigStatusScreen('success', 'AL DÍA', `Placa: ${esc(obj.plate)}`);
+                        }
                     }
-
                 } else if (type === 'resident') {
-                    icon.textContent = '👤';
-                    title.textContent = 'ACCESO RESIDENTE';
-                    title.style.color = 'var(--primary-light)';
                     const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                    info.innerHTML = `
+                    if (obj.active === false) {
+                        // Codigo de un vecino desactivado: no abre
+                        icon.textContent = '⛔';
+                        title.textContent = 'ACCESO DENEGADO';
+                        title.style.color = 'var(--danger)';
+                        info.innerHTML = `
+                        <p><strong>Nombre:</strong> ${esc(obj.name)}</p>
+                        <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
+                        <hr style="margin:0.5rem 0; opacity:0.1;">
+                        <p style="color:var(--danger); font-weight:bold;">Usuario desactivado por la administración.</p>
+                    `;
+                        btnConfirm.style.display = 'none';
+                        showBigStatusScreen('error', 'NO ACTIVO', `Vecino: ${esc(obj.name)}`);
+                    } else {
+                        icon.textContent = '👤';
+                        title.textContent = 'ACCESO RESIDENTE';
+                        title.style.color = 'var(--primary-light)';
+                        info.innerHTML = `
                         <p><strong>Nombre:</strong> ${esc(obj.name)}</p>
                         <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
                         <hr style="margin:0.5rem 0; opacity:0.1;">
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
-                    
-                    if (isMoroso) {
-                        showBigStatusScreen('warning', 'MOROSO', `Vecino: ${esc(obj.name)}`);
-                    } else {
-                        showBigStatusScreen('success', 'AL DÍA', `Vecino: ${esc(obj.name)}`);
+                        if (isMoroso) {
+                            showBigStatusScreen('warning', 'MOROSO', `Vecino: ${esc(obj.name)}`);
+                        } else {
+                            showBigStatusScreen('success', 'AL DÍA', `Vecino: ${esc(obj.name)}`);
+                        }
                     }
                 }
             }
@@ -394,7 +451,7 @@
                             condoId,
                             obj.vehiclePlate,
                             isMoroso ? 'Reminder' : 'Authorized',
-                            `Visita: ${esc(obj.visitorName)} → Casa ${esc(obj.casa || 'N/A')}`
+                            `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`
                         );
                     }
                     SISDEL.showToast('Ingreso de visita registrado', 'success');
@@ -607,14 +664,14 @@
                             <div class="list-item" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: ${bgColor}; margin-bottom: 0; border-radius: 0; border: none; border-bottom: 1px solid var(--border-subtle);">
                                 <div style="flex:1;">
                                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                        <strong style="font-size:1.1rem; letter-spacing:1px; color: ${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${entry.plate}</strong>
+                                        <strong style="font-size:1.1rem; letter-spacing:1px; color: ${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${esc(entry.plate)}</strong>
                                         <span style="font-size:0.75rem; opacity:0.6;">${timeStr}</span>
                                     </div>
                                     <div style="font-size:0.85rem; margin-top:0.25rem;">
                                         <span class="badge ${badgeClass}" style="font-size:0.7rem;">
                                             ${badgeText}
                                         </span>
-                                        <span style="margin-left:0.5rem; opacity:0.8;">${entry.reason || ''}</span>
+                                        <span style="margin-left:0.5rem; opacity:0.8;">${esc(entry.reason || '')}</span>
                                     </div>
                                 </div>
                             </div>
@@ -664,7 +721,7 @@
                         <h2 style="color:#f59e0b; margin-bottom:0.5rem; font-size:1.4rem;">RECORDATORIO DE PAGO</h2>
                         <div style="background:rgba(245,158,11,0.1); border-radius:12px; padding:1rem; margin:1rem 0;">
                             <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${esc(log.plate)}</div>
-                            <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
+                            <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${esc(reason)}</div>
                         </div>
                         <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">
                             Este vecino tiene pagos pendientes. Se le permite el acceso durante el período de gracia.<br>

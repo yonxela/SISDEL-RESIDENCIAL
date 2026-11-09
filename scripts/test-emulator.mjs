@@ -398,6 +398,20 @@ async function run() {
         return v.paymentStatus === 'moroso' && v.morosoSince ? v : null;
     });
     await denied('con mora automatica el admin no cambia el estado de pago a mano', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { paymentStatus: 'al_dia', morosoSince: null }));
+    // Un moroso sin gracia no entra ni registrando su propia placa como visita
+    await updateDoc(doc(master.db, `condominios/${A}`), { reminderEnabled: false });
+    await setDoc(doc(ana.db, `condominios/${A}/visitas/vis-self`), { id: 'vis-self', condominioId: A, userId: 'u-ana', visitorName: 'Yo mismo', visitorInfo: '', vehiclePlate: 'P-SELF01', plateNorm: 'PSELF01', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSELF', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: now });
+    r = await camera({ condominioId: A }, itms('PSELF01'));
+    equal('la camara no abre a la "visita" de un moroso sin gracia', [r.body.Command, /MOROSO/i.test(r.body.Reason || '')], ['Close', true]);
+    await updateDoc(doc(master.db, `condominios/${A}`), { reminderEnabled: true });
+    await setDoc(doc(ana.db, `condominios/${A}/visitas/vis-self3`), { id: 'vis-self3', condominioId: A, userId: 'u-ana', visitorName: 'Yo mismo', visitorInfo: '', vehiclePlate: 'P-SELF03', plateNorm: 'PSELF03', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSELF3', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: now });
+    r = await camera({ condominioId: A }, itms('PSELF03'));
+    equal('con gracia, la visita del moroso entra con aviso de mora', [r.body.Command, /MOROSO/i.test(r.body.Reason || '')], ['Open', true]);
+    await updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { active: false });
+    await setDoc(doc(admin.db, `condominios/${A}/visitas/vis-self2`), { id: 'vis-self2', condominioId: A, userId: 'u-ana', visitorName: 'Otra', visitorInfo: '', vehiclePlate: 'P-SELF02', plateNorm: 'PSELF02', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSELF2', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: now });
+    r = await camera({ condominioId: A }, itms('PSELF02'));
+    equal('la camara no abre a la visita de un vecino desactivado', [r.body.Command, /inactivo/i.test(r.body.Reason || '')], ['Close', true]);
+    await updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { active: true });
     await allowed('el admin sigue editando los demas datos del vecino', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-ana`), { casa: 'Casa 12', updatedAt: new Date().toISOString() }));
 
     await setDoc(doc(admin.db, `condominios/${A}/vehiculos/veh-ana-fin`), { id: 'veh-ana-fin', condominioId: A, userId: 'u-ana', plate: 'P-321FIN', plateNorm: 'P321FIN', brand: '', model: '', color: '', marbeteCode: 'MARFIN1', createdAt: now });
@@ -413,6 +427,20 @@ async function run() {
     r = await camera({ condominioId: A }, itms('P654FIN'));
     equal('ya al dia, la camara abre normal', [r.body.Command, /Vecino permanente/.test(r.body.Reason || '')], ['Open', true]);
     equal('el moroso conservo su fecha de inicio mientras estuvo en mora', typeof (anaMorosa && anaMorosa.morosoSince), 'string');
+    // Un vecino quitado del Sistema Financiero (deleted en finanzas_residentes) deja de ser moroso: la garita lo deja pasar
+    {
+        const b = writeBatch(admin.db);
+        b.set(doc(admin.db, 'codigos/VQ900'), { condominioId: A, userId: 'u-quitado', role: 'vecino', createdAt: now });
+        b.set(doc(admin.db, `condominios/${A}/usuarios/u-quitado`), { id: 'u-quitado', condominioId: A, name: 'Vecino Quitado', role: 'vecino', casa: 'Casa 90', phone: '', email: '', paymentStatus: 'al_dia', morosoSince: null, active: true, createdAt: '2020-01-01T00:00:00.000Z' });
+        await b.commit();
+        for (const [i, period] of [[1, periodMonthsAgo(2)], [2, periodMonthsAgo(1)]]) {
+            await setDoc(finRef('finanzas_movimientos', `quit_fee_${i}`)(admin), { id: `quit_fee_${i}`, date: now, type: 'charge', kind: 'fee', period, amount: 500, concept: 'Cuota', resiId: 'u-quitado', created_at: now, updated_at: now });
+        }
+        await waitFor('un vecino con dos cuotas vencidas queda moroso', async () => (await vecinoA('u-quitado')).paymentStatus === 'moroso');
+        await setDoc(finRef('finanzas_residentes', 'u-quitado')(admin), { id: 'u-quitado', deleted: true, updated_at: now }, { merge: true });
+        await setDoc(finRef('finanzas_movimientos', 'quit_touch')(admin), { id: 'quit_touch', date: now, type: 'charge', kind: 'extra', amount: 1, concept: 'Disparador', resiId: 'u-quitado', created_at: now, updated_at: now });
+        await waitFor('quitado del Sistema Financiero en OIKOS, vuelve a estar al dia (no se le cobra)', async () => (await vecinoA('u-quitado')).paymentStatus === 'al_dia');
+    }
 
     // ───────── Rondas (traido de SISDEL RONDIN) ─────────
     console.log('\nRondas');
@@ -566,6 +594,9 @@ async function run() {
     await allowed('el vecino cancela su alerta activa', () => updateDoc(rref(ana, 'alertas_panico', 'pan-2'), { status: 'CANCELLED', cancelledAt: ts() }));
     await denied('una alerta no se borra', () => deleteDoc(rref(admin, 'alertas_panico', 'pan-2')));
     await allowed('el guardia activa su boton de panico', () => setDoc(rref(guard, 'alertas_panico', 'pan-g'), { ...panico('pan-g'), source: 'guardia', userId: 'u-pedro', userName: 'Pedro Ramírez' }));
+    await denied('una alerta con coordenadas que no son numeros es rechazada (se pintan en pantalla)', () => setDoc(rref(ana, 'alertas_panico', 'pan-x'), panico('pan-x', { lat: '14.5" onclick="x' })));
+    await denied('una alerta con nombre que no es texto es rechazada', () => setDoc(rref(ana, 'alertas_panico', 'pan-y'), panico('pan-y', { userName: { html: 'x' } })));
+    await allowed('una alerta sin GPS (lat nulo) se acepta', () => setDoc(rref(ana, 'alertas_panico', 'pan-z'), panico('pan-z', { lat: null, lng: null })));
     await denied('el auditor no atiende alertas', () => updateDoc(rref(auditor, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sofia' }));
     await allowed('el auditor ve las alertas', () => getDocs(rcol(auditor, 'alertas_panico')));
 
@@ -662,6 +693,7 @@ async function run() {
     const gar = await loginAs('PT001');
     equal('el garitero entra a la garita', gar.login.redirect, 'garita.html');
     equal('la garita valida codigos de vecino con privilegio garita.operar', (await httpsCallable(gar.functions, 'verifyAccessCode')({ code: 'VA101' })).data.user?.name, 'Ana García');
+    equal('la garita no confirma el codigo de un administrador ni de un guardia (entraria con el)', [(await httpsCallable(gar.functions, 'verifyAccessCode')({ code: 'VF100' })).data.user, (await httpsCallable(gar.functions, 'verifyAccessCode')({ code: 'vp103' })).data.user], [null, null]);
     await allowed('el garitero lee los vehiculos', () => getDocs(rcol(gar, 'vehiculos')));
     await allowed('el garitero ve el historial de la camara', () => getDocs(rcol(gar, 'camera_logs')));
     await allowed('el garitero registra un ingreso', () => updateDoc(rref(gar, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
@@ -916,6 +948,10 @@ async function run() {
     const cajero = await opWith('u-caj', 'PCAJ1', 'Cajero', ['finanzas.pagos_registrar']);
     await allowed('cajero lee los movimientos', () => getDocs(rcol(cajero, 'finanzas_movimientos')));
     await allowed('cajero registra un pago', () => setDoc(mref(cajero, 'caj-in'), mv('caj-in', { type: 'income', receiptNum: 'C-1', receiptImg: 'data:image/jpeg;base64,AAAA' })));
+    await denied('un pago en cero es rechazado', () => setDoc(mref(cajero, 'caj-cero'), mv('caj-cero', { type: 'income', amount: 0 })));
+    await denied('un pago negativo es rechazado (seria un cargo escondido)', () => setDoc(mref(cajero, 'caj-neg'), mv('caj-neg', { type: 'income', amount: -500 })));
+    await denied('un monto como texto es rechazado', () => setDoc(mref(cajero, 'caj-txt'), mv('caj-txt', { type: 'income', amount: '500' })));
+    await denied('el administrador tampoco registra un egreso negativo', () => setDoc(mref(admin, 'adm-neg'), mv('adm-neg', { type: 'expense', amount: -1, resiId: null })));
     await allowed('cajero deja su sello en un residente (registrar un pago lo re-sella)', () => updateDoc(xref(cajero, 'res-t1'), { updated_at: ts() }));
     await allowed('cajero avanza el contador de recibos', () => patchCfg(cajero, { receiptCounter: 7 }));
     await allowed('cajero marca un vecino nuevo para cobrarse desde este mes', () => setDoc(xref(cajero, 'res-min'), { id: 'res-min', feeFrom: '2026-11', updated_at: ts() }));

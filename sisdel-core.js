@@ -1065,7 +1065,7 @@ const SISDEL = (() => {
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,
         createCameraLog, getCameraLogsToday, getCameraLogsBetween, subscribeCameraLogs,
-        login, getSession, logout, requireAuth, reportPageLoad,
+        login, getSession, logout, requireAuth, reportPageLoad, localToday,
         showToast, copyText, copyButton, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };
 })();

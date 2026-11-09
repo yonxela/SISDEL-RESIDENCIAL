@@ -68,7 +68,7 @@ yes('OIKOS carga el modulo', /<script src="\.\/sisdel-cuotas\.js\?v=\w+"><\/scri
 yes('OIKOS tiene los cinco campos del desglose en Configuracion', ['maintenance', 'water', 'garbage', 'electricity', 'other'].every((k) => new RegExp(`id="cfg-fee-${k}"[^>]*oninput="updateFeeTotal\\(\\)"`).test(oikos)));
 yes('la cuota mensual es la suma y no se edita a mano', /id="cfg-fee" readonly/.test(oikos));
 yes('hay una vista previa de la descripcion del cargo', /id="cfg-fee-preview"/.test(oikos));
-yes('Configuracion muestra el desglose al abrir y lo guarda al guardar', /fillFeeBreakdown\(s\);/.test(oikos) && /feeBreakdown,\n/.test(oikos) && /fee: feeTotal > 0 \? feeTotal/.test(oikos));
+yes('Configuracion muestra el desglose al abrir y lo guarda al guardar', /fillFeeBreakdown\(s\);/.test(oikos) && /feeBreakdown,\n/.test(oikos) && /fee: feeTotal,/.test(oikos));
 yes('toda cuota (automatica, manual o por meses) pasa por createFeeCharge con el concepto del desglose', /const feeInfo = SisdelCuotas\.feeInfo\(Store\.get\('settings'\), fee\);/.test(oikos) && /concept: feeInfo \? feeInfo\.concept : feeConceptFor\(y, m\),/.test(oikos) && /\.\.\.\(feeInfo \? \{ breakdown: feeInfo\.breakdown \} : \{\}\)/.test(oikos));
 yes('las cuatro vias de cobro llaman a createFeeCharge', (oikos.match(/createFeeCharge\(txs, /g) || []).length >= 4);
 yes('el detalle de un movimiento muestra el desglose', /SisdelCuotas\.listParts\(tx\.breakdown/.test(oikos));

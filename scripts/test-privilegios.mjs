@@ -311,7 +311,7 @@ const syntaxOk = (name, code) => { try { new vm.Script(code, { filename: name })
 for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
     yes(`${file} no tiene errores de sintaxis`, syntaxOk(file, read(file)));
 }
-for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html']) {
+for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html', 'finanzas/index.html']) {
     const inline = [...read(file).matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
     yes(`${file}: sus scripts no tienen errores de sintaxis`, inline.length > 0 && inline.every((code, i) => syntaxOk(`${file}#${i}`, code)));
 }

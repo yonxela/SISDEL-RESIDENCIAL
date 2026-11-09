@@ -85,7 +85,7 @@ const anprWebhook = onRequest(
             if (authorized) {
                 reply(res, { Command: 'Open', Message: 'Authorized', Reason: decision.reason, Plate: plateNumber });
             } else {
-                reply(res, { Command: 'Close', Message: 'Denied', Reason: 'Placa no registrada', Plate: plateNumber });
+                reply(res, { Command: 'Close', Message: 'Denied', Reason: decision.reason || 'Placa no registrada', Plate: plateNumber });
             }
         } catch (error) {
             logger.error('ANPR error', { message: error.message, stack: error.stack });

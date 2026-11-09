@@ -249,6 +249,14 @@ Detalles que conviene saber:
 - **Cuotas manuales:** el botón Cuota del mes, los meses de un residente y un cargo con concepto de cuota escriben el mismo tipo de movimiento y las reglas no los distinguen entre sí; basta cualquiera de los tres privilegios. Las cuotas automáticas (`auto: true`) exigen "Cobrar la cuota del mes". Si OIKOS las genera al abrir para alguien sin ese privilegio, el filtro las descarta en silencio.
 - **Registrar un pago** también re-sella al residente y avanza el contador de recibos: las reglas admiten esas escrituras operativas (solo `updated_at`, `receiptCounter`, `chargedMonths`...) a quien use el Sistema Financiero.
 - **Residente nuevo desde OIKOS** crea también al vecino con su código (`finanzas.residentes_crear` requiere `usuarios.crear`); el toast muestra el código, así que es sensible.
+- **Deshacer y otras PCs:** la pila de Deshacer se vacía cuando llega un cambio de otro equipo o del servidor (antes, deshacer anulaba sin querer un pago registrado en otra PC o las cuotas que el servidor generó de madrugada).
+- **Números de recibo:** cada PC parte del mayor número ya emitido en los movimientos, así que una PC con el contador atrasado no repite números; dos PCs sin conexión al mismo tiempo todavía podrían coincidir.
+- **Fechas:** los filtros por fecha y las agrupaciones por mes de todos los reportes usan el día del calendario local de Guatemala (las fechas se guardan en UTC: un pago de las 7 pm ya no cae en el día siguiente).
+- **Montos:** pagos, egresos y cargos nacen con un monto mayor que cero; lo exigen OIKOS, el filtro de subida y las reglas (un "pago" negativo sería un cargo escondido).
+- **Reporte de morosos** parte del saldo real del residente y reparte los pagos sobre todos sus cargos vivos (cuotas de cualquier año y cargos especiales); el total coincide con su saldo. **Estado de cuenta** muestra el saldo anterior al rango y el saldo final real.
+- **Sin desglose no hay cuota:** si se borran los montos del desglose la cuota queda en 0 y no se cobra nada (antes se cobraban Q500 por defecto).
+- **Sincronización:** cada subida lleva solo los campos que cambiaron en este equipo (un finiquito o un cambio de cuota hecho en otra PC ya no se pisa con una copia vieja), un reintento conserva lo que se sabía de la nube, y un vecino que este equipo ya vio en la nube no se vuelve a crear desde una copia local pendiente si lo eliminaron.
+- **Vecino quitado del Sistema Financiero** (eliminado en OIKOS): deja de cobrársele y, si estaba moroso, vuelve a "al día" para la garita.
 
 Para agregar un privilegio: una entrada en `privilegios.js` (con `parent` si es una acción, `requires` si depende de otro, `enforce` y sus roles por defecto si es paraguas), copiar el archivo a `functions/src/privilegios.js`, `cd scripts && npm run reglas` (regenera las funciones `pXxx`) y usar la función en la regla que corresponda; mostrar u ocultar lo que corresponda en la página (`finanzas-bloqueo.js`, `rondin/js/privilegios-rondin.js` o la propia página), regenerar la tabla de este README con `node scripts/generar-tabla-privilegios.mjs` y subir la versión (`?v=`) de los scripts que cambiaron en los HTML. `cd scripts && npm test` avisa si algo no coincide.
 
@@ -354,3 +362,7 @@ firebase deploy --only firestore,functions,hosting
 
 La cámara envía a `https://garita.app/api/lpr?condominioId=<id del condominio>`.
 También se aceptan `/api/anpr`, `/LAPI/*` y `/NotificationInfo/*`.
+
+Decisión de la cámara (`functions/src/anpr/decide.js`): vehículo registrado de un vecino al día abre; moroso con gracia abre con aviso; moroso sin gracia, vecino desactivado o eliminado no abre. Un pase de visita vale lo que vale el vecino que lo dio: si ese vecino está moroso sin gracia o inactivo, su visita tampoco abre (así nadie registra su propia placa como "visita"). La coincidencia parcial de placas exige al menos 6 caracteres. El webhook es público: cualquiera que conozca el id del condominio puede mandarle placas; no abre la puerta (la respuesta vuelve a quien envía), pero puede consumir pases pendientes y llenar el historial. Ponerle un secreto exige reconfigurar la cámara.
+
+En la garita (`garita.html`): un pase QR vale solo su día (o su rango, si es temporal) y una sola vez; un marbete o código de un vecino desactivado no abre; la verificación manual de códigos (`verifyAccessCode`) solo confirma vecinos, nunca códigos de guardias o administradores, y admite 60 intentos cada 10 minutos por usuario.

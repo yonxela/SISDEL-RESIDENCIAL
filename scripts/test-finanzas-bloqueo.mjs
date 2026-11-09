@@ -97,6 +97,15 @@ equal('con configuracion solo de lectura los campos quedan bloqueados', (() => {
     const css = B.cssFor(only('config_ver'));
     return ['#cfg-name', '#cfg-fee', '#cfg-feemode-auto', '#new-inc-concept', '#btn-save-cfg'].every((s) => css.includes(s));
 })(), true);
+equal('el desglose de la cuota (cinco campos) tambien queda bloqueado sin config_cuota', (() => {
+    const css = B.cssFor(only('config_ver', 'config_general'));
+    return ['maintenance', 'water', 'garbage', 'electricity', 'other'].every((k) => css.includes(`#cfg-fee-${k}`));
+})(), true);
+equal('con config_cuota el desglose no se bloquea', (() => {
+    const css = B.cssFor(only('config_ver', 'config_cuota'));
+    return ['maintenance', 'water', 'garbage', 'electricity', 'other'].some((k) => css.includes(`#cfg-fee-${k}`));
+})(), false);
+equal('los campos del desglose se deshabilitan (no se pueden quitar del DOM: saveSettings los lee)', B.DISABLE.config_cuota.includes('#cfg-fee-maintenance') && B.DISABLE.config_cuota.includes('#cfg-fee-other'), true);
 
 console.log('\nCobertura del catalogo: ningun privilegio de OIKOS queda sin efecto en pantalla');
 const names = PRIV.ITEMS.filter((i) => i.key.startsWith('finanzas.')).map((i) => i.key.slice('finanzas.'.length));

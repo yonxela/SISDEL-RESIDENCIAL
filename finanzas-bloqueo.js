@@ -139,13 +139,13 @@
         [['residentes_estado'], ['#residents-table-body button[onclick^="openEstadoCuenta("]', '#rep-tbody tr[onclick^="openEstadoCuenta("]']],
         [['residentes_contactar'], ['#dash-debt-alert']],
         [['config_general'], ['#cfg-name', '#cfg-lang', '#cfg-curr', '#cfg-theme']],
-        [['config_cuota'], ['#cfg-fee', '#cfg-day', '#cfg-grace', '#cfg-feemode-auto', '#cfg-feemode-manual']],
+        [['config_cuota'], ['#cfg-fee', '#cfg-fee-maintenance', '#cfg-fee-water', '#cfg-fee-garbage', '#cfg-fee-electricity', '#cfg-fee-other', '#cfg-day', '#cfg-grace', '#cfg-feemode-auto', '#cfg-feemode-manual']],
         [['config_conceptos'], ['#new-inc-concept', '#new-exp-concept']]
     ];
     // Campos que ademas se deshabilitan (el boton de guardar de OIKOS lee sus valores: no se pueden quitar del DOM)
     const DISABLE = {
         config_general: ['#cfg-name', '#cfg-lang', '#cfg-curr', '#cfg-theme'],
-        config_cuota: ['#cfg-fee', '#cfg-day', '#cfg-grace']
+        config_cuota: ['#cfg-fee', '#cfg-fee-maintenance', '#cfg-fee-water', '#cfg-fee-garbage', '#cfg-fee-electricity', '#cfg-fee-other', '#cfg-day', '#cfg-grace']
     };
 
     const hasAny = (can, names) => names.some((n) => can(PREFIX + n));

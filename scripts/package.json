@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "seed": "node seed-emulator.mjs",
-    "test": "node test-privilegios.mjs && node test-finanzas-sync.mjs && node test-finanzas-bloqueo.mjs && node test-finanzas-mora.mjs && node test-rondas-servidor.mjs && node test-rondas-privilegios.mjs && node test-emulator.mjs",
+    "test": "node test-privilegios.mjs && node test-finanzas-sync.mjs && node test-finanzas-bloqueo.mjs && node test-finanzas-cuotas.mjs && node test-finanzas-mora.mjs && node test-rondas-servidor.mjs && node test-rondas-privilegios.mjs && node test-emulator.mjs",
     "migrate": "node migrate-supabase.mjs",
     "master-code": "node set-master-code.mjs",
-    "test:finanzas": "node test-finanzas-sync.mjs && node test-finanzas-bloqueo.mjs && node test-finanzas-mora.mjs",
+    "test:finanzas": "node test-finanzas-sync.mjs && node test-finanzas-bloqueo.mjs && node test-finanzas-cuotas.mjs && node test-finanzas-mora.mjs",
     "test:rondas": "node test-rondas-servidor.mjs && node test-rondas-privilegios.mjs",
     "test:privilegios": "node test-privilegios.mjs",
     "reglas": "node generar-reglas-privilegios.mjs",

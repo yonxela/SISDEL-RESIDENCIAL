@@ -219,7 +219,7 @@ const SisdelFinanzas = (() => {
     const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'updated_at'];
     // "Deshacer" solo alcanza lo hecho hace poco (igual que firestore.rules): la pila de deshacer vive en la memoria de la pagina
     const UNDO_WINDOW_MS = 2 * 60 * 60 * 1000;
-    const SETTINGS_FEE_KEYS = ['fee', 'chargeDay', 'graceDays', 'feeMode'];
+    const SETTINGS_FEE_KEYS = ['fee', 'feeBreakdown', 'chargeDay', 'graceDays', 'feeMode'];
     const SETTINGS_GENERAL_KEYS = ['currency', 'lang', 'name', 'theme'];
     const SETTINGS_OPERATION_KEYS = ['receiptCounter', 'chargedMonths', 'lastChargedMonth'];
 

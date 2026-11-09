@@ -230,7 +230,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 ### Cómo se hace cumplir en el Sistema Financiero (OIKOS) y en RONDIN
 
-OIKOS (`finanzas/`) y RONDIN (`rondin/`) se usan tal cual (no se editan `finanzas/`, `rondin/js/app.js`, `rondin/css/style.css` ni `rondin/js/i18n.js`). Cada privilegio se aplica en capas:
+OIKOS (`finanzas/`) y RONDIN (`rondin/`) nacieron como copias de MULTISYS y RONDIN, y desde 2026-11-09 se mantienen solo en este repo. Los privilegios se aplican desde fuera (`finanzas.html`, `finanzas-bloqueo.js`, `rondin/js/sisdel-api.js`), sin ensuciar su código. Cada privilegio se aplica en capas:
 
 | Capa | Qué hace | Dónde | ¿Es seguridad? |
 | --- | --- | --- | --- |
@@ -251,6 +251,18 @@ Detalles que conviene saber:
 - **Residente nuevo desde OIKOS** crea también al vecino con su código (`finanzas.residentes_crear` requiere `usuarios.crear`); el toast muestra el código, así que es sensible.
 
 Para agregar un privilegio: una entrada en `privilegios.js` (con `parent` si es una acción, `requires` si depende de otro, `enforce` y sus roles por defecto si es paraguas), copiar el archivo a `functions/src/privilegios.js`, `cd scripts && npm run reglas` (regenera las funciones `pXxx`) y usar la función en la regla que corresponda; mostrar u ocultar lo que corresponda en la página (`finanzas-bloqueo.js`, `rondin/js/privilegios-rondin.js` o la propia página), regenerar la tabla de este README con `node scripts/generar-tabla-privilegios.mjs` y subir la versión (`?v=`) de los scripts que cambiaron en los HTML. `cd scripts && npm test` avisa si algo no coincide.
+
+## Cuota mensual desglosada
+
+En **Sistema Financiero > Configuración** la cuota mensual se escribe por conceptos: **mantenimiento, agua, recolección de basura, electricidad y otros**. La Cuota Mensual es la suma (no se escribe a mano). Al cobrar la cuota, sea automática, con «Cuota del mes» o desde un residente, queda **una sola línea** cuya descripción nombra solo los conceptos que tienen monto:
+
+| Mantenimiento | Agua | Basura | Resultado |
+| --- | --- | --- | --- |
+| 400 | 100 | | `Por aporte para mantenimiento y servicio de agua Q 500.00` |
+| 500 | | | `Por aporte para mantenimiento Q 500.00` |
+| 300 | 100 | 50 | `Por aporte para mantenimiento, servicio de agua y recolección de basura Q 450.00` |
+
+El detalle del movimiento muestra además cada concepto con su monto. Las cuotas ya cobradas conservan su descripción; sin desglose configurado la cuota sigue llamándose «Cuota - Mes Año». Cambiar el desglose es un privilegio de la cuota (`finanzas.config_cuota`).
 
 ## Stack
 
@@ -306,11 +318,11 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `firestore.rules` | Permisos por privilegio (con los del rol por defecto) y por condominio. |
 | `functions/src/auth.js` | Login (con destino según privilegios) y verificación de códigos en garita. |
 | `functions/src/anpr/` | Webhook de la cámara LPR. |
-| `rondin/` | SISDEL RONDÍN sin modificar su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
+| `rondin/` | SISDEL RONDÍN con su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
 | `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |
 | `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
-| `finanzas/` | Sistema Financiero (OIKOS), copia sin modificar de MULTISYS. |
+| `finanzas/` | Sistema Financiero (OIKOS), que se mantiene aquí. `finanzas/sisdel-cuotas.js` arma el desglose de la cuota (`functions/src/finanzas/cuotas.js` es su copia idéntica). |
 | `finanzas.html`, `finanzas-sync.js` | Abren OIKOS dentro de SISDEL y sincronizan sus datos con Firestore (con el filtro de subida por privilegios). |
 | `finanzas-bloqueo.js` | Privilegios dentro de OIKOS: oculta y bloquea en pantalla lo que el usuario no puede usar. |
 | `rondin/js/privilegios-rondin.js` | Qué privilegio exige cada ruta, pantalla y botón de RONDIN. |

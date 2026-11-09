@@ -63,6 +63,8 @@ function createdAfterPeriod(r, period) {
     return Number.isFinite(created) && created > endOfMonth;
 }
 
+const cuotas = require('./cuotas');
+
 function autoSkips(r, period) {
     if (!isActive(r)) return true;
     if (createdAfterPeriod(r, period)) return true;
@@ -92,6 +94,8 @@ function missingFees(residents, txs, settings, now = new Date(), nowIso = now.to
     const ids = new Set(txs.map((t) => String(t.id)));
     const all = txs.slice();
     const created = [];
+    // Con desglose configurado la cuota lleva la misma descripcion que cobra OIKOS (ver finanzas/sisdel-cuotas.js)
+    const info = cuotas.feeInfo(s, fee);
     for (let m = 0; m <= curMonth; m++) {
         if (m === curMonth && d < chargeDay) continue;
         const period = periodKey(y, m);
@@ -102,7 +106,8 @@ function missingFees(residents, txs, settings, now = new Date(), nowIso = now.to
             while (ids.has(id)) id = `fee_${r.id}_${period}_r${n++}`;
             const tx = {
                 id, date: gtDate(y, m, chargeDay, 6).toISOString(), type: 'charge', kind: 'fee', period,
-                amount: fee, concept: feeConcept(y, m), resiId: r.id, auto: true, serverGenerated: true,
+                amount: fee, concept: info ? info.concept : feeConcept(y, m), resiId: r.id, auto: true, serverGenerated: true,
+                ...(info ? { breakdown: info.breakdown } : {}),
                 created_at: nowIso, updated_at: nowIso
             };
             ids.add(id);

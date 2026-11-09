@@ -590,11 +590,11 @@ service cloud.firestore {
       // Configuracion: cuota y cobro, datos generales y conceptos son privilegios distintos; los contadores que cambia
       // operar (recibos, meses cobrados) los puede escribir quien use el Sistema Financiero
       function settingsRights() {
-        return (!finChanged().hasAny(['fee', 'chargeDay', 'graceDays', 'feeMode']) || pFinanzasConfigCuota(condoId))
+        return (!finChanged().hasAny(['fee', 'feeBreakdown', 'chargeDay', 'graceDays', 'feeMode']) || pFinanzasConfigCuota(condoId))
           && (!finChanged().hasAny(['currency', 'lang', 'name', 'theme']) || pFinanzasConfigGeneral(condoId))
           && (!finChanged().hasAny(['customIncomeConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasCargosCrear(condoId))
           && (!finChanged().hasAny(['customExpenseConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasEgresosRegistrar(condoId))
-          && (finChanged().hasOnly(['fee', 'chargeDay', 'graceDays', 'feeMode', 'currency', 'lang', 'name', 'theme', 'customIncomeConcepts',
+          && (finChanged().hasOnly(['fee', 'feeBreakdown', 'chargeDay', 'graceDays', 'feeMode', 'currency', 'lang', 'name', 'theme', 'customIncomeConcepts',
                                     'customExpenseConcepts', 'receiptCounter', 'chargedMonths', 'lastChargedMonth', 'updated_at', 'created_at'])
               || pFinanzasConfigGeneral(condoId));
       }

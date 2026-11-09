@@ -16,6 +16,7 @@
     <script src="./vendor/chart.umd.min.js"></script>
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
+    <script src="./sisdel-cuotas.js?v=20261109e"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -516,8 +517,21 @@
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-lang">Idioma</label><select id="cfg-lang" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"><option value="es">Español</option><option value="en">English</option></select></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-curr">Moneda</label><select id="cfg-curr" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"><option value="MXN">$ (MXN)</option><option value="USD">$ (USD)</option><option value="GTQ">Q (GTQ)</option><option value="EUR">€ (EUR)</option></select></div>
                             </div>
+                            <!-- SISDEL: la cuota mensual se desglosa en conceptos (ver sisdel-cuotas.js) -->
+                            <div class="mt-2 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40" id="cfg-fee-breakdown">
+                                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fas fa-layer-group mr-1 text-blue-500"></i>Desglose de la cuota mensual</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Escriba cuánto de la cuota corresponde a cada concepto; la Cuota Mensual es la suma. Al cobrar, una sola línea nombra solo los conceptos que tienen monto. Las cuotas ya cobradas conservan su descripción.</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-fee-maintenance">Mantenimiento</label><input type="number" step="0.01" min="0" id="cfg-fee-maintenance" oninput="updateFeeTotal()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-fee-water">Agua</label><input type="number" step="0.01" min="0" id="cfg-fee-water" oninput="updateFeeTotal()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-fee-garbage">Recolección de basura</label><input type="number" step="0.01" min="0" id="cfg-fee-garbage" oninput="updateFeeTotal()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-fee-electricity">Electricidad</label><input type="number" step="0.01" min="0" id="cfg-fee-electricity" oninput="updateFeeTotal()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-fee-other">Otros</label><input type="number" step="0.01" min="0" id="cfg-fee-other" oninput="updateFeeTotal()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                </div>
+                                <p class="text-xs mt-3 text-slate-600 dark:text-slate-300"><span class="font-semibold">Descripción del cargo:</span> <span id="cfg-fee-preview"></span></p>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
-                                <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-fee">Cuota Mensual</label><input type="number" step="0.01" id="cfg-fee" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-fee">Cuota Mensual (suma del desglose)</label><input type="number" step="0.01" id="cfg-fee" readonly class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-day">Día de Cobro (1-28)</label><input type="number" min="1" max="28" id="cfg-day" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-grace">Días de Gracia</label><input type="number" min="0" max="30" id="cfg-grace" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                             </div>
@@ -1723,6 +1737,8 @@
             let id = `fee_${r.id}_${period}`;
             let n = 1;
             while (txs.some(t => t && String(t.id) === id)) { id = `fee_${r.id}_${period}_r${n++}`; }
+            // SISDEL: con desglose configurado, una sola linea nombra los conceptos con monto (sisdel-cuotas.js)
+            const feeInfo = SisdelCuotas.feeInfo(Store.get('settings'), fee);
             const tx = Object.assign({
                 id,
                 date: new Date(y, m, cDay, 6, 0, 0).toISOString(),
@@ -1730,9 +1746,10 @@
                 kind: 'fee',
                 period,
                 amount: fee,
-                concept: feeConceptFor(y, m),
+                concept: feeInfo ? feeInfo.concept : feeConceptFor(y, m),
                 resiId: r.id,
                 auto: true,
+                ...(feeInfo ? { breakdown: feeInfo.breakdown } : {}),
             }, extra || {});
             txs.push(tx);
             return tx;
@@ -3928,12 +3945,41 @@
             Store.set('settings', s); renderCustomConceptsSettings();
         }
 
+        // ─── SISDEL: desglose de la cuota mensual ─────────────────────────
+        // La cuota (settings.fee) es la suma de hasta cinco conceptos (settings.feeBreakdown); ver sisdel-cuotas.js
+        const FEE_PART_INPUTS = { maintenance: 'cfg-fee-maintenance', water: 'cfg-fee-water', garbage: 'cfg-fee-garbage', electricity: 'cfg-fee-electricity', other: 'cfg-fee-other' };
+        function readFeeBreakdown() {
+            const raw = {};
+            Object.entries(FEE_PART_INPUTS).forEach(([key, id]) => { const el = document.getElementById(id); raw[key] = el ? el.value : ''; });
+            return SisdelCuotas.normalize(raw);
+        }
+        function updateFeeTotal() {
+            const breakdown = readFeeBreakdown();
+            const sum = SisdelCuotas.total(breakdown);
+            const feeInput = document.getElementById('cfg-fee');
+            if (feeInput) feeInput.value = sum > 0 ? sum : '';
+            const preview = document.getElementById('cfg-fee-preview');
+            if (preview) preview.textContent = sum > 0
+                ? SisdelCuotas.describe(breakdown, (document.getElementById('cfg-curr') || {}).value)
+                : 'Escriba el monto de al menos un concepto: la cuota es la suma.';
+        }
+        function fillFeeBreakdown(s) {
+            let breakdown = SisdelCuotas.normalize(s.feeBreakdown);
+            // Una cuota guardada antes del desglose se muestra completa en Mantenimiento
+            if (SisdelCuotas.total(breakdown) <= 0 && parseFloat(s.fee) > 0) breakdown = { ...breakdown, maintenance: parseFloat(s.fee) };
+            Object.entries(FEE_PART_INPUTS).forEach(([key, id]) => { const el = document.getElementById(id); if (el) el.value = breakdown[key] > 0 ? breakdown[key] : ''; });
+            const currency = document.getElementById('cfg-curr');
+            if (currency && !currency.dataset.sisdelFee) { currency.dataset.sisdelFee = '1'; currency.addEventListener('change', updateFeeTotal); }
+            updateFeeTotal();
+        }
+
         function renderSettings() {
             const s = Store.get('settings');
             document.getElementById('cfg-name').value = s.name;
             document.getElementById('cfg-lang').value = s.lang;
             document.getElementById('cfg-curr').value = s.currency;
             document.getElementById('cfg-fee').value = s.fee;
+            fillFeeBreakdown(s);   // SISDEL: la cuota se muestra desglosada
             document.getElementById('cfg-day').value = s.chargeDay;
             document.getElementById('cfg-grace').value = s.graceDays !== undefined ? s.graceDays : 5;
             document.getElementById('cfg-theme').checked = s.theme === 'dark';
@@ -3959,6 +4005,9 @@
 
         function saveSettings() {
             const oldS = Store.get('settings');
+            // SISDEL: la cuota es la suma del desglose
+            const feeBreakdown = readFeeBreakdown();
+            const feeTotal = SisdelCuotas.total(feeBreakdown);
             // Se conservan TODOS los campos previos (chargedMonths, conceptos,
             // contador de recibos, etc.) y se sobreescriben solo los editables.
             const s = {
@@ -3966,7 +4015,8 @@
                 name: document.getElementById('cfg-name').value,
                 lang: document.getElementById('cfg-lang').value,
                 currency: document.getElementById('cfg-curr').value,
-                fee: document.getElementById('cfg-fee').value || 500,
+                fee: feeTotal > 0 ? feeTotal : (document.getElementById('cfg-fee').value || 500),
+                feeBreakdown,
                 chargeDay: document.getElementById('cfg-day').value || 1,
                 graceDays: parseInt(document.getElementById('cfg-grace').value) || 5,
                 theme: document.getElementById('cfg-theme').checked ? 'dark' : 'light',
@@ -4450,6 +4500,7 @@
                     <p class="text-xs uppercase text-slate-400 font-semibold mb-1">Concepto</p>
                     <p class="text-base font-bold text-slate-800 dark:text-white break-words ${tx.deleted ? 'line-through opacity-60' : ''}">${esc(tx.concept)}</p>
                     ${isCharge && txFeePeriod(tx) ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-calendar-alt mr-1"></i>Cuota del período ${esc(feePeriodLongLabel(txFeePeriod(tx)))}${tx.manual ? ' · aplicada manualmente' : tx.auto ? ' · automática' : ''}</p>` : ''}
+                    ${isCharge && tx.breakdown ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>${esc(SisdelCuotas.listParts(tx.breakdown, (Store.get('settings') || {}).currency))}</p>` : ''}
                 </div>
                 <span class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap ${tipoBadge}">${tipoLabel}</span>
             </div>`;

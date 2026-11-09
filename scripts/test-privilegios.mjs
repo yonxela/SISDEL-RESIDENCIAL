@@ -336,12 +336,6 @@ console.log('\nBloqueos de Finanzas y Rondas');
     yes('RONDIN: la sesion vencida sigue cerrandose sola (API.logout no cambia)', /async logout\(\) \{/.test(read('rondin/js/sisdel-api.js')) && /if \(e\.status === 401\) \{ this\.logout\(\); \}/.test(read('rondin/js/sisdel-api.js')));
     yes('el bloqueo de OIKOS dice que es de pantalla y que las reglas son la barrera real', /no seguridad/.test(bloqueo) && /firestore\.rules/.test(bloqueo));
     yes('el modulo de RONDIN se carga antes que el adaptador, con la misma version', (() => { const h = read('rondin/index.html'); return h.indexOf('privilegios-rondin.js') > 0 && h.indexOf('privilegios-rondin.js') < h.indexOf('sisdel-api.js') && ver(h, 'privilegios-rondin.js') === ver(h, 'sisdel-api.js'); })());
-    yes('app.js, style.css, i18n.js de RONDIN y finanzas/ siguen sin tocar respecto a main', (() => {
-        try {
-            const out = execFileSync('git', ['diff', '--stat', 'main', '--', 'rondin/js/app.js', 'rondin/css/style.css', 'rondin/js/i18n.js', 'finanzas/'], { cwd: new URL('../', import.meta.url).pathname, encoding: 'utf8' });
-            return out.trim() === '';
-        } catch { return true; }
-    })());
 }
 
 // ───────── Nucleo de SISDEL (sisdel-core.js) con un navegador y una base simulados ─────────

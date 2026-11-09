@@ -1290,6 +1290,30 @@
                 }
             });
         }
+        // Cuando RONDIN no es el panel principal del usuario, "Cerrar Sesión" / "Salir" pasa a "Regresar al panel principal": la
+        // sesion se cierra desde el panel principal. (Una sesion vencida sigue cerrandose sola con API.logout.)
+        const home = SISDEL.homePage();
+        if (session() && home && home !== 'rondin/' && home !== 'index.html') {
+            const EXIT_LABEL = 'Regresar al panel principal';
+            const relabel = () => document.querySelectorAll('button[onclick="API.logout()"]').forEach((button) => {
+                if (button.getAttribute('data-sisdel-exit') === '1' && button.textContent.trim() === EXIT_LABEL) return;
+                button.setAttribute('data-sisdel-exit', '1');
+                button.setAttribute('title', EXIT_LABEL);
+                const icon = button.querySelector('i');
+                if (icon) icon.className = 'fas fa-arrow-left';
+                [...button.childNodes].filter((n) => n.nodeType === 3).forEach((n) => n.remove());
+                button.appendChild(document.createTextNode(' ' + EXIT_LABEL));
+            });
+            relabel();
+            // El menu y la vista del guardia se vuelven a pintar (idioma, cambio de pantalla): se repite el cambio
+            new MutationObserver(relabel).observe(document.body, { childList: true, subtree: true });
+            document.addEventListener('click', (event) => {
+                if (!event.target.closest || !event.target.closest('[data-sisdel-exit]')) return;
+                event.preventDefault();
+                event.stopPropagation();
+                location.href = '../' + home;
+            }, true);
+        }
         // La sirena de panico de RONDIN debia apagarse sola al minuto, pero su codigo apunta a
         // variables que no existen y sonaba hasta tocar "ENTERADO". Se apaga a los 60 s; el aviso
         // rojo queda en pantalla hasta que alguien lo cierre

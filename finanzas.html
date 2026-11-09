@@ -147,12 +147,41 @@
                         // Sin el bloqueo de pantalla las reglas y el filtro de escritura siguen protegiendo los datos
                         console.error('Sistema Financiero: no se pudieron aplicar los privilegios en pantalla', error);
                     }
+                    try { exitToHome(mounted.contentWindow); } catch (error) { console.error('Sistema Financiero: no se pudo cambiar el boton de salida', error); }
                     mounted.classList.remove('pendiente');
                 });
                 // Mismo aislamiento que en MULTISYS: sin allow-top-navigation, OIKOS no puede navegar esta pagina
                 iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-forms allow-modals');
                 message.style.display = 'none';
                 frameBox.appendChild(iframe);
+            }
+
+            // El boton "Cerrar Sesión" de OIKOS (menu lateral) pasa a ser "Regresar al panel principal": la sesion se cierra desde el
+            // panel principal. Si el Sistema Financiero es el unico panel del usuario no hay a donde volver y se queda "Cerrar Sesión".
+            function exitToHome(win) {
+                const home = SISDEL.homePage();
+                if (!home || home === 'finanzas.html' || home === 'index.html') return;
+                const doc = win.document;
+                const label = 'Regresar al panel principal';
+                const apply = () => {
+                    const text = doc.getElementById('lbl-logout');
+                    if (text && text.textContent !== label) text.textContent = label;
+                    const button = doc.querySelector('button[onclick="logout()"]');
+                    if (!button) return;
+                    button.setAttribute('data-sisdel-exit', '1');
+                    button.setAttribute('title', label);
+                    const icon = button.querySelector('i');
+                    if (icon && !icon.classList.contains('fa-arrow-left')) icon.className = 'fas fa-arrow-left';
+                };
+                apply();
+                new win.MutationObserver(apply).observe(doc.body, { childList: true, subtree: true, characterData: true });
+                // En fase de captura: antes de que OIKOS ejecute logout() (que borraria la sesion de SISDEL)
+                doc.addEventListener('click', (event) => {
+                    if (!event.target.closest || !event.target.closest('[data-sisdel-exit]')) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    leave(() => { window.location.href = home; });
+                }, true);
             }
 
             const banner = document.getElementById('remoteBanner');

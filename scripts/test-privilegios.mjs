@@ -330,6 +330,10 @@ console.log('\nBloqueos de Finanzas y Rondas');
     yes('la sincronizacion filtra cada subida con los privilegios (push pasa por gate)', /items = gate\(kind, items\);/.test(sync) && /function revertRejected\(/.test(sync));
     yes('las cuotas automaticas rechazadas no avisan (no son una accion del usuario)', /item\.type === 'charge' && item\.auto === true/.test(sync));
     const bloqueo = read('finanzas-bloqueo.js');
+    yes('OIKOS: "Cerrar Sesión" pasa a "Regresar al panel principal" salvo que finanzas.html sea el unico panel', /function exitToHome\(win\)/.test(fin) && /home === 'finanzas\.html'/.test(fin) && /Regresar al panel principal/.test(fin) && /data-sisdel-exit/.test(fin));
+    yes('OIKOS: el boton de regresar actua antes que logout() de OIKOS (fase de captura) y espera a que se guarde todo', /event\.stopPropagation\(\);\s*leave\(\(\) => \{ window\.location\.href = home; \}\);\s*\}, true\);/.test(fin));
+    yes('RONDIN: lo mismo en el menu y en la vista del guardia, salvo que RONDIN sea el panel principal', /home !== 'rondin\/'/.test(read('rondin/js/sisdel-api.js')) && /Regresar al panel principal/.test(read('rondin/js/sisdel-api.js')) && /new MutationObserver\(relabel\)/.test(read('rondin/js/sisdel-api.js')));
+    yes('RONDIN: la sesion vencida sigue cerrandose sola (API.logout no cambia)', /async logout\(\) \{/.test(read('rondin/js/sisdel-api.js')) && /if \(e\.status === 401\) \{ this\.logout\(\); \}/.test(read('rondin/js/sisdel-api.js')));
     yes('el bloqueo de OIKOS dice que es de pantalla y que las reglas son la barrera real', /no seguridad/.test(bloqueo) && /firestore\.rules/.test(bloqueo));
     yes('el modulo de RONDIN se carga antes que el adaptador, con la misma version', (() => { const h = read('rondin/index.html'); return h.indexOf('privilegios-rondin.js') > 0 && h.indexOf('privilegios-rondin.js') < h.indexOf('sisdel-api.js') && ver(h, 'privilegios-rondin.js') === ver(h, 'sisdel-api.js'); })());
     yes('app.js, style.css, i18n.js de RONDIN y finanzas/ siguen sin tocar respecto a main', (() => {

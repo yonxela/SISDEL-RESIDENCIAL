@@ -393,6 +393,21 @@ core = makeCore({ session: null });
 yes('sin sesion no puede nada', !core.SISDEL.can('usuarios.ver'));
 equal('sin sesion el inicio es el login', core.SISDEL.homePage(), 'index.html');
 
+// Copiar codigos: el nucleo ofrece el boton y las listas de usuarios lo usan
+{
+    const c = makeCore({ session: sess('admin') });
+    yes('SISDEL ofrece copyText y copyButton', typeof c.SISDEL.copyText === 'function' && typeof c.SISDEL.copyButton === 'function');
+    const button = c.SISDEL.copyButton('AB"C<1');
+    yes('el boton Copiar lleva el codigo escapado en data-copy', button.includes('data-copy="AB&quot;C&lt;1"') && !button.includes('AB"C<1'));
+    yes('el boton Copiar es accesible (titulo y etiqueta)', /title="Copiar código"/.test(button) && /aria-label="Copiar código"/.test(button));
+    yes('el boton Copiar de un valor vacio no revienta', c.SISDEL.copyButton(null).includes('data-copy=""'));
+    const master = read('master.html');
+    const adminPage = read('admin.html');
+    yes('master.html: cada usuario, el administrador de cada condominio y la ventana de edicion traen Copiar', (master.match(/SISDEL\.copyButton\(/g) || []).length === 2 && /id="btnCopyEditCode"/.test(master) && /btnCopyEditCode'\)\.setAttribute\('data-copy'/.test(master));
+    yes('master.html escapa el codigo, la casa y el telefono al pintarlos', /Code: \$\{esc\(u\.accessCode\)\}/.test(master) && /esc\(u\.casa\)/.test(master) && /Tel: \$\{esc\(a\.phone/.test(master));
+    yes('admin.html: Copiar solo aparece donde el usuario ya ve el codigo', /\$\{u\.accessCode \? `<code[^`]*\$\{SISDEL\.copyButton\(u\.accessCode\)\}` : ''\}/.test(adminPage) && /copyEditCode\.style\.display = user\.accessCode \? '' : 'none'/.test(adminPage));
+}
+
 // Un vecino con la plantilla de fiscalizador ve botones hacia sus paneles de reportes y puede volver a su panel
 {
     const fiscalOv = P.toOverrides('vecino', P.templateKeys(P.templateById('sys-fiscalizador')));

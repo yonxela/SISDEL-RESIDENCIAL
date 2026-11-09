@@ -256,6 +256,7 @@
                     <label>Código de Acceso</label>
                     <input type="text" class="form-input" id="editUserCode" disabled
                         style="background:var(--bg-item); opacity:0.7;">
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnCopyEditCode" data-copy="" style="margin-top:0.35rem;">Copiar código</button>
                     <p class="text-xs text-muted" style="margin-top:0.25rem;" id="editUserCodeHelp">El código es generado por el sistema.</p>
                 </div>
                 <div class="form-group">
@@ -308,8 +309,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109a"></script>
-    <script src="sisdel-core.js?v=20261109a"></script>
+    <script src="privilegios.js?v=20261109b"></script>
+    <script src="sisdel-core.js?v=20261109b"></script>
     <script src="privilegios-ui.js?v=20261108i"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
@@ -507,7 +508,7 @@
                     <div class="list-item">
                         <div class="avatar" style="${u.paymentStatus === 'moroso' ? 'background:var(--danger);' : ''}">${esc(u.name.charAt(0))}</div>
                         <div class="item-info">
-                            <div class="item-name">${esc(u.name)} ${u.accessCode ? `<code style="font-size:0.75rem; color:var(--accent);">${esc(u.accessCode)}</code>` : ''}</div>
+                            <div class="item-name">${esc(u.name)} ${u.accessCode ? `<code style="font-size:0.75rem; color:var(--accent);">${esc(u.accessCode)}</code> ${SISDEL.copyButton(u.accessCode)}` : ''}</div>
                             <div class="item-detail">${esc(SISDEL.getRoleName(u.role))} ${u.cargo ? '· ' + esc(u.cargo) : ''} ${u.casa ? '· ' + esc(u.casa) : ''}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -712,6 +713,10 @@
                 document.getElementById('editUserId').value = user.id;
                 document.getElementById('editUserName').value = user.name;
                 document.getElementById('editUserCode').value = user.accessCode || (SISDEL.can('usuarios.codigos') ? '' : 'Reservado');
+                // Copiar solo si el usuario ya puede ver este codigo
+                const copyEditCode = document.getElementById('btnCopyEditCode');
+                copyEditCode.setAttribute('data-copy', user.accessCode || '');
+                copyEditCode.style.display = user.accessCode ? '' : 'none';
                 document.getElementById('editUserCodeHelp').textContent = SISDEL.can('usuarios.codigos')
                     ? 'El código es generado por el sistema.' : 'Su usuario no tiene permiso para ver códigos de acceso.';
                 document.getElementById('editUserCasa').value = user.casa || '';

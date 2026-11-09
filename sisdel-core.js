@@ -932,6 +932,45 @@ const SISDEL = (() => {
         }, 3500);
     }
 
+    // Copia un texto al portapapeles (por ejemplo un codigo de acceso). Usa el portapapeles del navegador y, si no esta
+    // disponible (pagina sin https, navegador viejo), un campo oculto.
+    async function copyText(text, message = 'Copiado') {
+        const value = String(text == null ? '' : text);
+        let copied = false;
+        try {
+            if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(value); copied = true; }
+        } catch (error) { copied = false; }
+        if (!copied) {
+            const area = document.createElement('textarea');
+            area.value = value;
+            area.setAttribute('readonly', '');
+            area.style.cssText = 'position:fixed; top:0; left:0; opacity:0;';
+            document.body.appendChild(area);
+            area.select();
+            try { copied = document.execCommand('copy'); } catch (error) { copied = false; }
+            area.remove();
+        }
+        showToast(copied ? message : 'No se pudo copiar', copied ? 'success' : 'warning');
+        return copied;
+    }
+
+    // Boton "Copiar" de un codigo. Un clic en cualquier elemento con data-copy copia ese valor (ver el escuchador de abajo).
+    // El valor se escapa: los codigos los escriben otros usuarios.
+    function copyButton(value, label = 'Copiar código') {
+        const safe = String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        return `<button type="button" class="btn btn-ghost btn-icon" data-copy="${safe}" title="${label}" aria-label="${label}" style="width:auto; height:auto; padding:0.2rem; vertical-align:middle;">`
+            + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>';
+    }
+    if (typeof document !== 'undefined') {
+        document.addEventListener('click', (event) => {
+            const button = event.target && event.target.closest ? event.target.closest('[data-copy]') : null;
+            if (!button) return;
+            event.preventDefault();
+            event.stopPropagation();
+            copyText(button.getAttribute('data-copy'), 'Código copiado');
+        });
+    }
+
     function formatDate(dateStr) {
         if (!dateStr) return '';
         // Reemplazamos guiones por barras solo para fechas YYYY-MM-DD
@@ -1008,6 +1047,6 @@ const SISDEL = (() => {
         getMessages, createMessage, markMessageRead, deleteMessage,
         createCameraLog, getCameraLogsToday, getCameraLogsBetween, subscribeCameraLogs,
         login, getSession, logout, requireAuth, reportPageLoad,
-        showToast, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
+        showToast, copyText, copyButton, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };
 })();

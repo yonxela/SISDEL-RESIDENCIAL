@@ -192,6 +192,7 @@
                 <div class="form-group">
                     <label>Código de Acceso</label>
                     <input type="text" class="form-input" id="editUserCode" required style="text-transform:uppercase;">
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnCopyEditCode" data-copy="" style="margin-top:0.35rem;">Copiar código</button>
                 </div>
                 <div class="form-group">
                     <label>Casa/Lote (Opcional)</label>
@@ -218,8 +219,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109a"></script>
-    <script src="sisdel-core.js?v=20261109a"></script>
+    <script src="privilegios.js?v=20261109b"></script>
+    <script src="sisdel-core.js?v=20261109b"></script>
     <script src="privilegios-ui.js?v=20261108i"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -338,7 +339,7 @@
                         ${admins.length ? admins.map(a => `<div class="list-item" style="margin-top:0.5rem; padding:0.75rem; background:var(--bg-item);">
                             <div class="item-info">
                                 <div class="item-name">${esc(a.name)}</div>
-                                <div class="item-detail">Código: <strong>${a.accessCode}</strong> &middot; Tel: ${a.phone || 'N/A'}</div>
+                                <div class="item-detail">Código: <strong>${esc(a.accessCode)}</strong> ${SISDEL.copyButton(a.accessCode)} &middot; Tel: ${esc(a.phone || 'N/A')}</div>
                             </div>
                         </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
                     </div>
@@ -502,7 +503,7 @@
                                 </div>
                                 <div class="item-detail">
                                     <span class="text-xs font-bold" style="color:var(--primary-light)">${condo ? condo.name : 'SISDEL'}</span> · 
-                                    Code: ${u.accessCode} ${u.casa ? '· Casa: ' + u.casa : ''}
+                                    Code: ${esc(u.accessCode)} ${SISDEL.copyButton(u.accessCode)} ${u.casa ? '· Casa: ' + esc(u.casa) : ''}
                                 </div>
                             </div>
                             <button class="btn btn-ghost btn-sm" onclick="openPrivileges('${u.id}')" title="Privilegios de este usuario" style="margin-right:0.25rem;">
@@ -538,6 +539,7 @@
                 document.getElementById('editUserId').value = user.id;
                 document.getElementById('editUserName').value = user.name;
                 document.getElementById('editUserCode').value = user.accessCode;
+                document.getElementById('btnCopyEditCode').setAttribute('data-copy', user.accessCode || '');
                 document.getElementById('editUserCasa').value = user.casa || '';
 
                 // Show modal

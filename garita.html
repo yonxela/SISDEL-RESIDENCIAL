@@ -261,12 +261,12 @@
                 if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas el día de hoy.</p>'; return; }
                 list.innerHTML = visits.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(v => `
                     <div class="list-item">
-                        <div class="avatar">${v.visitorName.charAt(0)}</div>
+                        <div class="avatar">${esc(v.visitorName.charAt(0))}</div>
                         <div class="item-info">
-                            <div class="item-name">${v.visitorName}</div>
+                            <div class="item-name">${esc(v.visitorName)}</div>
                             <div class="item-detail">
                                 <strong>Placa:</strong> ${v.vehiclePlate || 'N/A'} <br>
-                                ${v.visitTime || 'Todo el día'} · Casa: ${v.casa || 'N/A'}
+                                ${v.visitTime || 'Todo el día'} · Casa: ${esc(v.casa || 'N/A')}
                             </div>
                         </div>
                         <div>
@@ -308,7 +308,7 @@
                         title.textContent = 'ACCESO DENEGADO';
                         title.style.color = 'var(--danger)';
                         info.innerHTML = `
-                            <p><strong>Invitado:</strong> ${obj.visitorName}</p>
+                            <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
                             <p><strong>Casa:</strong> ${obj.casa}</p>
                             <hr style="margin:0.5rem 0; opacity:0.1;">
                             <p style="color:var(--danger); font-weight:bold;">⚠️ RESIDENTE MOROSO</p>
@@ -321,12 +321,12 @@
                         title.textContent = 'ACCESO PERMITIDO';
                         title.style.color = 'var(--success)';
                         info.innerHTML = `
-                            <p><strong>Invitado:</strong> ${obj.visitorName}</p>
+                            <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
                             <p><strong>Casa:</strong> ${obj.casa}</p>
-                            <p><strong>Asunto:</strong> ${obj.visitorInfo || 'No especificado'}</p>
+                            <p><strong>Asunto:</strong> ${esc(obj.visitorInfo || 'No especificado')}</p>
                             <p><strong>Placa:</strong> ${obj.vehiclePlate || 'N/A'}</p>
                         `;
-                        showBigStatusScreen('success', 'AL DÍA', `Visita: ${obj.visitorName}`);
+                        showBigStatusScreen('success', 'AL DÍA', `Visita: ${esc(obj.visitorName)}`);
                     }
                 } else if (type === 'vehicle') {
                     icon.textContent = '🚗';
@@ -337,16 +337,16 @@
 
                     info.innerHTML = `
                         <p><strong>Vehículo:</strong> ${obj.brand} ${obj.model} (${obj.color})</p>
-                        <p><strong>Placa:</strong> ${obj.plate}</p>
+                        <p><strong>Placa:</strong> ${esc(obj.plate)}</p>
                         <hr style="margin:0.5rem 0; opacity:0.1;">
                         <p><strong>Piloto:</strong> ${resident ? resident.name : 'Desconocido'}</p>
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
                     
                     if (isMoroso) {
-                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${obj.plate}`);
+                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${esc(obj.plate)}`);
                     } else {
-                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${obj.plate}`);
+                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${esc(obj.plate)}`);
                     }
 
                 } else if (type === 'resident') {
@@ -356,7 +356,7 @@
                     const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
                     info.innerHTML = `
                         <p><strong>Nombre:</strong> ${esc(obj.name)}</p>
-                        <p><strong>Casa:</strong> ${obj.casa || 'N/A'}</p>
+                        <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
                         <hr style="margin:0.5rem 0; opacity:0.1;">
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
@@ -383,7 +383,7 @@
                             condoId,
                             obj.vehiclePlate,
                             isMoroso ? 'Reminder' : 'Authorized',
-                            `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`
+                            `Visita: ${esc(obj.visitorName)} → Casa ${esc(obj.casa || 'N/A')}`
                         );
                     }
                     SISDEL.showToast('Ingreso de visita registrado', 'success');
@@ -407,7 +407,7 @@
                         condoId,
                         'RESIDENTE',
                         isMoroso ? 'Reminder' : 'Authorized',
-                        `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}`
+                        `Acceso QR: ${obj.name} — Casa ${esc(obj.casa || 'N/A')}`
                     );
                     SISDEL.showToast('Ingreso de residente registrado', 'success');
                 }
@@ -559,7 +559,7 @@
                         plate: v.vehiclePlate || 'SIN PLACA',
                         time: new Date(v.enteredAt),
                         status: 'Authorized',
-                        reason: `Visita: ${v.visitorName}`,
+                        reason: `Visita: ${esc(v.visitorName)}`,
                         id: v.id
                     }));
 
@@ -622,17 +622,17 @@
                     renderHistory();
 
                     if (log.status === 'Authorized') {
-                        SISDEL.showToast(`Acceso Abierto: ${log.plate}`, 'success');
-                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${log.plate}`);
+                        SISDEL.showToast(`Acceso Abierto: ${esc(log.plate)}`, 'success');
+                        showBigStatusScreen('success', 'AL DÍA', `Placa: ${esc(log.plate)}`);
                         renderStats();
                         renderVisits();
                     } else if (log.status === 'Reminder') {
                         showReminderAlert(log);
-                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${log.plate}`);
-                        SISDEL.showToast(`MOROSO EN PERÍODO DE GRACIA: ${log.plate}`, 'warning');
+                        showBigStatusScreen('warning', 'MOROSO', `Placa: ${esc(log.plate)}`);
+                        SISDEL.showToast(`MOROSO EN PERÍODO DE GRACIA: ${esc(log.plate)}`, 'warning');
                     } else {
-                        showBigStatusScreen('error', 'NO REGISTRADO', `Placa: ${log.plate}`);
-                        SISDEL.showToast(`Placa detectada: ${log.plate}`, 'info');
+                        showBigStatusScreen('error', 'NO REGISTRADO', `Placa: ${esc(log.plate)}`);
+                        SISDEL.showToast(`Placa detectada: ${esc(log.plate)}`, 'info');
                     }
                 });
             }
@@ -652,7 +652,7 @@
                         <div style="font-size:3.5rem; margin-bottom:0.5rem;">⚠️</div>
                         <h2 style="color:#f59e0b; margin-bottom:0.5rem; font-size:1.4rem;">RECORDATORIO DE PAGO</h2>
                         <div style="background:rgba(245,158,11,0.1); border-radius:12px; padding:1rem; margin:1rem 0;">
-                            <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${log.plate}</div>
+                            <div style="font-size:2rem; font-weight:bold; letter-spacing:2px; color:var(--primary-light);">${esc(log.plate)}</div>
                             <div style="font-size:0.95rem; margin-top:0.5rem; color:var(--text-secondary);">${reason}</div>
                         </div>
                         <p style="font-size:0.85rem; opacity:0.8; line-height:1.5; margin-bottom:1.5rem;">

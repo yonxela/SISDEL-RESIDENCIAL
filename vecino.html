@@ -408,10 +408,10 @@
                     }
                     return `
                     <div class="list-item" style="${isExpired ? 'opacity:0.5;' : ''}">
-                        <div class="avatar" style="${isExtended ? 'background:var(--primary-light);' : ''}">${isExtended ? '📅' : v.visitorName.charAt(0)}</div>
+                        <div class="avatar" style="${isExtended ? 'background:var(--primary-light);' : ''}">${isExtended ? '📅' : escHtml(v.visitorName.charAt(0))}</div>
                         <div class="item-info">
                             <div class="item-name">
-                                ${v.visitorName}
+                                ${escHtml(v.visitorName)}
                                 ${isExtended ? '<span class="badge badge-info" style="font-size:0.6rem; margin-left:0.25rem;">TEMPORAL</span>' : ''}
                                 ${isExpired ? '<span class="badge badge-danger" style="font-size:0.6rem; margin-left:0.25rem;">VENCIDO</span>' : ''}
                             </div>
@@ -529,7 +529,7 @@
                 list.innerHTML = vehicles.map(v => `
                     <div class="list-item" style="background:var(--bg-item);">
                         <div class="item-info">
-                            <div class="item-name">${v.plate} · ${v.brand}</div>
+                            <div class="item-name">${escHtml(v.plate)} · ${escHtml(v.brand)}</div>
                             <div class="item-detail">${v.color} · Marbete: <strong>${v.marbeteCode}</strong></div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">

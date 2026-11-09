@@ -247,8 +247,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261108e"></script>
-    <script src="sisdel-core.js?v=20261108d"></script>
+    <script src="privilegios.js?v=20261108f"></script>
+    <script src="sisdel-core.js?v=20261108f"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -753,10 +753,10 @@
                     msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid var(--primary-light);';
                     msgDiv.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                            <strong style="color:var(--primary-light); font-size:1rem;">${m.subject}</strong>
+                            <strong style="color:var(--primary-light); font-size:1rem;">${escHtml(m.subject)}</strong>
                             <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
                         </div>
-                        <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${m.body}</p>
+                        <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${escHtml(m.body)}</p>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span class="text-xs text-muted">De: ${m.fromName}</span>
                             <button class="btn btn-primary btn-sm" id="msgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>

@@ -609,7 +609,9 @@ async function run() {
     await allowed('la secretaria lee los usuarios', () => getDocs(rcol(sec, 'usuarios')));
     await denied('la secretaria no lee codigos de acceso', () => getDocs(query(collection(sec.db, 'codigos'), where('condominioId', '==', A))));
     await allowed('la secretaria crea un vecino', () => createUserAs(sec, mkUser('u-v1', 'Vecino de la secretaria', 'vecino', { casa: 'Casa 77' }), 'PV001'));
-    await allowed('la secretaria crea un guardia', () => createUserAs(sec, mkUser('u-g1', 'Guardia de la secretaria', 'policia'), 'PG001'));
+    await denied('la secretaria no crea guardias (conocería su código y entraría como él)', () => createUserAs(sec, mkUser('u-g1', 'Guardia de la secretaria', 'policia'), 'PG001'));
+    await denied('la secretaria no crea auditores', () => createUserAs(sec, mkUser('u-au1', 'Auditor de la secretaria', 'auditor'), 'PU001'));
+    await denied('la secretaria no crea supervisores', () => createUserAs(sec, mkUser('u-su1', 'Supervisor de la secretaria', 'supervisor'), 'PU002'));
     await denied('la secretaria no crea administradores', () => createUserAs(sec, mkUser('u-adm-s', 'Admin falso', 'admin'), 'PA001'));
     await denied('la secretaria no crea operadores', () => createUserAs(sec, mkUser('u-op-s', 'Operador falso', 'operador'), 'PA002'));
     await denied('la secretaria no asigna privilegios al crear', () => createUserAs(sec, mkUser('u-v2', 'Vecino con poder', 'vecino', { privilegios: { 'finanzas.usar': true } }), 'PV002'));
@@ -691,6 +693,7 @@ async function run() {
     await allowed('el jefe de seguridad ve el codigo de sus guardias', () => getDoc(doc(jefe.db, 'codigos/PG002')));
     await denied('el jefe de seguridad no ve el codigo de un administrador', () => getDoc(doc(jefe.db, 'codigos/VF100')));
     await denied('el jefe de seguridad no registra vecinos', () => createUserAs(jefe, mkUser('u-v3', 'Vecino', 'vecino'), 'PV003'));
+    await denied('el jefe de seguridad no crea auditores', () => createUserAs(jefe, mkUser('u-au2', 'Auditor', 'auditor'), 'PU003'));
     await allowed('el jefe de seguridad patrulla (turno propio)', () => setDoc(rref(jefe, 'rondas_turnos', 'turno-jefe'), { id: 'turno-jefe', company_id: A, guard_id: 'u-jefe', status: 'ACTIVE', scheduled_start: sqlTs() }));
 
     // Un co-administrador con privilegios restringidos
@@ -700,7 +703,8 @@ async function run() {
     equal('el co-administrador entra al panel de administracion', adm2.login.redirect, 'admin.html');
     await allowed('el co-administrador crea un vecino', () => createUserAs(adm2, mkUser('u-v4', 'Vecino del co-admin', 'vecino', { casa: 'Casa 88' }), 'PV004'));
     await allowed('el co-administrador edita un vecino', () => updateDoc(uref(adm2, 'u-v4'), { phone: '5555-4444' }));
-    await allowed('el co-administrador ve los codigos', () => getDocs(query(collection(adm2.db, 'codigos'), where('condominioId', '==', A))));
+    await allowed('el co-administrador ve los codigos de vecinos, guardias, auditores y supervisores', () => getDocs(query(collection(adm2.db, 'codigos'), where('condominioId', '==', A), where('role', 'in', ['vecino', 'policia', 'auditor', 'supervisor']))));
+    await denied('pero no los de administradores y operadores (no asigna privilegios)', () => getDocs(query(collection(adm2.db, 'codigos'), where('condominioId', '==', A))));
     await allowed('el co-administrador lee las finanzas', () => getDocs(rcol(adm2, 'finanzas_residentes')));
     await denied('el co-administrador no escribe en las finanzas', () => setDoc(rref(adm2, 'finanzas_movimientos', 'tx-adm2'), { ...finTx, id: 'tx-adm2' }));
     await denied('el co-administrador no elimina usuarios', () => deleteDoc(uref(adm2, 'u-v4')));
@@ -774,6 +778,51 @@ async function run() {
     await allowed('el supervisor vuelve a crear guardias', () => createUserAs(sup, mkUser('u-g3', 'Guardia', 'policia'), 'PG003'));
     await denied('el supervisor no crea vecinos', () => createUserAs(sup, mkUser('u-v6', 'Vecino', 'vecino'), 'PV006'));
 
+    // Codigos de acceso: ver codigos no da acceso a las cuentas de administradores y operadores
+    await allowed('admin crea al operador que ve codigos', () => createUserAs(admin, mkUser('u-cod', 'Ve codigos', 'operador', { privilegios: { 'usuarios.ver': true, 'usuarios.codigos': true } }), 'PQ001'));
+    const cod = await loginAs('PQ001');
+    equal('un operador que solo ve codigos no tiene pagina a la que entrar', [cod.login.success, cod.login.error], [false, 'Su usuario no tiene accesos asignados. Contacte al administrador.']);
+    await allowed('admin le agrega ver el historial para que pueda entrar', () => setPriv(admin, 'u-cod', { 'usuarios.ver': true, 'usuarios.codigos': true, 'garita.camara': true, 'visitas.ver': true, 'garita.operar': true }));
+    const cod2 = await loginAs('PQ001');
+    await allowed('ve los codigos de vecinos, guardias, auditores y supervisores', () => getDocs(query(collection(cod2.db, 'codigos'), where('condominioId', '==', A), where('role', 'in', ['vecino', 'policia', 'auditor', 'supervisor']))));
+    await allowed('ve el codigo de un vecino', () => getDoc(doc(cod2.db, 'codigos/VA101')));
+    await denied('no ve la lista completa (incluye administradores)', () => getDocs(query(collection(cod2.db, 'codigos'), where('condominioId', '==', A))));
+    await denied('no ve el codigo del administrador', () => getDoc(doc(cod2.db, 'codigos/VF100')));
+    await denied('no ve los codigos de operadores', () => getDocs(query(collection(cod2.db, 'codigos'), where('condominioId', '==', A), where('role', '==', 'operador'))));
+    await denied('no borra el codigo del administrador', () => deleteDoc(doc(cod2.db, 'codigos/VF100')));
+    await allowed('si cambia el codigo de un vecino', () => setDoc(doc(cod2.db, 'codigos/PZ701'), { condominioId: A, userId: 'u-v4', role: 'vecino', createdAt: ts() }));
+    await denied('el codigo debe llevar el rol real del usuario', () => setDoc(doc(cod2.db, 'codigos/PZ702'), { condominioId: A, userId: 'u-v4', role: 'admin', createdAt: ts() }));
+    await allowed('borra un codigo de vecino', () => deleteDoc(doc(cod2.db, 'codigos/PZ701')));
+    await denied('no apunta un codigo al administrador', () => setDoc(doc(cod2.db, 'codigos/PZ703'), { condominioId: A, userId: 'u-fernando', role: 'admin', createdAt: ts() }));
+
+    // Un guardia, auditor, supervisor o vecino no puede tener "asignar privilegios": solo administradores y operadores
+    await denied('un guardia no puede recibir usuarios.privilegios', () => setPriv(admin, 'u-pedro', { 'usuarios.privilegios': true }));
+    await denied('un vecino no puede recibir usuarios.privilegios', () => setPriv(admin, 'u-ana', { 'usuarios.privilegios': true }));
+    await allowed('un operador si puede recibir usuarios.privilegios', () => setPriv(admin, 'u-cod', { 'usuarios.ver': true, 'usuarios.codigos': true, 'usuarios.privilegios': true, 'usuarios.editar': true, 'garita.operar': true, 'visitas.ver': true }));
+    await allowed('con asignar privilegios ve el codigo del administrador', () => getDoc(doc(cod2.db, 'codigos/VF100')));
+    await allowed('y ve toda la lista de codigos', () => getDocs(query(collection(cod2.db, 'codigos'), where('condominioId', '==', A))));
+    await allowed('admin le quita los privilegios de codigos', () => setPriv(admin, 'u-cod', { 'usuarios.ver': true, 'usuarios.eliminar': true, 'usuarios.codigos': true, 'garita.operar': true, 'visitas.ver': true }));
+
+    // Eliminar usuarios sirve para el borrado en cascada de un usuario, no para vaciar visitas y vehiculos ajenos
+    await allowed('admin crea un vecino con visita y vehiculo para borrarlo', async () => {
+        await createUserAs(admin, mkUser('u-v7', 'Vecino a eliminar', 'vecino', { casa: 'Casa 7' }), 'PV007');
+        await setDoc(rref(admin, 'visitas', 'vis-v7'), { id: 'vis-v7', condominioId: A, userId: 'u-v7', visitorName: 'Visita', visitorInfo: '', vehiclePlate: '', plateNorm: '', visitDate: localDate(0), visitTime: null, casa: 'Casa 7', qrCode: 'VISV7', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: ts() });
+        await setDoc(rref(admin, 'vehiculos', 'veh-v7'), { id: 'veh-v7', condominioId: A, userId: 'u-v7', plate: 'P-777V7', plateNorm: 'P777V7', brand: '', model: '', color: '', marbeteCode: 'MARV7', createdAt: ts() });
+    });
+    const del = await loginAs('PQ001');
+    await denied('quien elimina usuarios no borra visitas de otros vecinos', () => deleteDoc(rref(del, 'visitas', 'vis-sec')));
+    await denied('ni vehiculos de vecinos que siguen existiendo', () => deleteDoc(rref(del, 'vehiculos', 'veh-ana-1')));
+    await denied('ni la visita de un vecino que no se elimina', () => deleteDoc(rref(del, 'visitas', 'vis-v7')));
+    await denied('no elimina a un administrador', () => deleteDoc(uref(del, 'u-fernando')));
+    await allowed('si elimina a un vecino con su codigo, visitas y vehiculos en la misma operacion', async () => {
+        const batch = writeBatch(del.db);
+        batch.delete(doc(del.db, 'codigos/PV007'));
+        batch.delete(rref(del, 'visitas', 'vis-v7'));
+        batch.delete(rref(del, 'vehiculos', 'veh-v7'));
+        batch.delete(uref(del, 'u-v7'));
+        return batch.commit();
+    });
+
     // Plantillas de privilegios del condominio
     const plantilla = { id: 'plt-1', condominioId: A, name: 'Portero de turno', role: 'operador', description: '', claves: ['garita.operar', 'usuarios.ver', 'visitas.ver'], updatedAt: ts() };
     await allowed('admin guarda una plantilla del condominio', () => setDoc(rref(admin, 'plantillas_privilegios', 'plt-1'), plantilla));
@@ -786,6 +835,8 @@ async function run() {
         return getDocs(collection(otro.db, `condominios/${A}/plantillas_privilegios`));
     });
     await allowed('admin elimina la plantilla', () => deleteDoc(rref(admin, 'plantillas_privilegios', 'plt-1')));
+    await allowed('el master guarda una plantilla de un condominio', () => setDoc(rref(master, 'plantillas_privilegios', 'plt-m'), { ...plantilla, id: 'plt-m', name: 'Del master' }));
+    await allowed('el master la elimina', () => deleteDoc(rref(master, 'plantillas_privilegios', 'plt-m')));
 
     // Eliminar usuarios: quien puede eliminar tambien limpia sus codigos
     await allowed('admin elimina a la secretaria con su codigo', async () => {

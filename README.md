@@ -29,7 +29,9 @@ Idea tomada del módulo de Configuración de MULTISYS (catálogo de privilegios 
 - **Las reglas de Firestore lo leen del documento del usuario** (como ya hacían con `role` y `active`): el cambio aplica al instante, sin volver a iniciar sesión, y no depende del token. Las funciones `pXxx` de `firestore.rules` llevan los roles por defecto de cada clave; `scripts/test-privilegios.mjs` verifica que coincidan con el catálogo.
 - **Las páginas muestran solo lo permitido** (`SISDEL.can('clave')`, `SISDEL.requireAuth([], 'pagina.html')`). Lo que se oculta en pantalla también lo bloquean las reglas.
 - **El login manda a cada usuario a la página que le toca**: la de su rol y, si el administrador se la quitó, la primera a la que sí puede entrar. Un usuario sin acceso a ninguna página no entra.
-- **Quién cambia privilegios:** `usuarios.privilegios` (por defecto solo `admin`) y el master. Nadie cambia los suyos. Crear, editar o eliminar administradores y operadores también exige `usuarios.privilegios`. Un código de acceso nuevo solo puede apuntar a un usuario que se crea en la misma escritura (salvo `usuarios.codigos`), así nadie "secuestra" la cuenta de otro.
+- **Quién cambia privilegios:** `usuarios.privilegios` (por defecto solo `admin`; solo un administrador o un operador puede tenerlo) y el master. Nadie cambia los suyos. Crear, editar o eliminar administradores y operadores también exige `usuarios.privilegios`. Con `usuarios.crear` solo se registran vecinos (los guardias, con `guardias.crear`); auditor, supervisor, administrador y operador exigen además `usuarios.privilegios`, porque quien crea una cuenta conoce su código.
+- **Códigos de acceso:** un código nuevo solo puede apuntar a un usuario que se crea en la misma escritura (salvo `usuarios.codigos`), así nadie "secuestra" la cuenta de otro. Quien ve códigos no ve los de administradores y operadores sin `usuarios.privilegios`.
+- **Eliminar usuarios** también borra sus visitas, vehículos y códigos, y solo en esa misma operación: `usuarios.eliminar` no sirve para vaciar el registro de visitas.
 - **Plantillas:** `privilegios.js` trae siete del sistema (Secretaria, Contador, Jefe de seguridad, Garitero, Consulta, Administrador delegado, Administrador sin finanzas); cada condominio guarda las suyas en `plantillas_privilegios`.
 
 Dónde se usa: en `admin.html` (crear usuario con rol, cargo y plantilla; botón de escudo en cada usuario para abrir el editor de privilegios), también en `master.html`, y en `garita.html`, `auditor.html`, `vecino.html`, `finanzas.html` y `rondin/` (ver `rondin/js/sisdel-api.js`).
@@ -38,12 +40,12 @@ Dónde se usa: en `admin.html` (crear usuario con rol, cargo y plantilla; botón
 | --- | --- | --- |
 | `usuarios.panel` | Entrar al panel de administración. Abre admin.html: lista de usuarios, estadísticas y mensajes. | `admin` |
 | `usuarios.ver` | Ver usuarios y vecinos. Consultar la lista de vecinos y personal (sin códigos de acceso). | `admin`, `policia`, `supervisor`, `auditor` |
-| `usuarios.crear` | Crear usuarios. Registrar vecinos, auditores y supervisores con su código de acceso. | `admin` |
-| `guardias.crear` | Registrar guardias. Crear guardias (solo ese rol) y ver el código de acceso de los guardias. | `admin`, `supervisor` |
-| `usuarios.editar` | Editar usuarios. Cambiar nombre, casa, teléfono y estado de pago, y registrar placas de un vecino. | `admin` |
+| `usuarios.crear` | Crear usuarios. Registrar vecinos con su código de acceso. Crear guardias, auditores, supervisores, administradores y operadores exige además Asignar privilegios (los guardias también los crea quien tiene Registrar guardias). | `admin` |
+| `guardias.crear` | Registrar guardias. Crear guardias (solo ese rol) y ver el código de acceso de los guardias; con él se puede entrar como cualquier guardia. | `admin`, `supervisor` |
+| `usuarios.editar` | Editar usuarios. Cambiar nombre, casa, teléfono, cargo y estado de un usuario (activarlo o desactivarlo) y su estado de pago. | `admin` |
 | `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso). | `admin` |
-| `usuarios.codigos` | Ver y cambiar códigos de acceso **(sensible)**. Ver el código de cualquier usuario y reemplazarlo por otro. | `admin` |
-| `usuarios.privilegios` | Asignar privilegios **(sensible)**. Cambiar los privilegios de otros usuarios y crear administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. | `admin` |
+| `usuarios.codigos` | Ver y cambiar códigos de acceso **(sensible)**. Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios. | `admin` |
+| `usuarios.privilegios` | Asignar privilegios **(sensible)**. Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador. | `admin` |
 | `mensajes.enviar` | Enviar y borrar mensajes. Escribir avisos para vecinos y guardias y borrar los enviados. | `admin` |
 | `mensajes.historial` | Ver todos los mensajes. Leer los mensajes enviados a cualquier grupo, no solo los propios. | `admin`, `auditor` |
 | `visitas.ver` | Ver visitas y vehículos. Consultar las visitas y los vehículos de todos los vecinos. | `admin`, `policia`, `auditor` |

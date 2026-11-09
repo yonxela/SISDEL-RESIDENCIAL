@@ -218,11 +218,13 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261108e"></script>
-    <script src="sisdel-core.js?v=20261108d"></script>
-    <script src="privilegios-ui.js?v=20261108d"></script>
+    <script src="privilegios.js?v=20261108f"></script>
+    <script src="sisdel-core.js?v=20261108f"></script>
+    <script src="privilegios-ui.js?v=20261108f"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
+            // Nombres y datos los escriben otros usuarios: siempre se escapan
+            const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const session = await SISDEL.requireAuth([SISDEL.ROLES.MASTER]);
             if (!session) return;
 
@@ -293,7 +295,7 @@
                     <div class="list-item">
                         <div class="avatar">${c.name.charAt(0)}</div>
                         <div class="item-info">
-                            <div class="item-name">${c.name}</div>
+                            <div class="item-name">${esc(c.name)}</div>
                             <div class="item-detail">${c.address || 'Sin dirección'}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -335,7 +337,7 @@
                         <label class="text-xs text-muted">Administrador Responsable</label>
                         ${admins.length ? admins.map(a => `<div class="list-item" style="margin-top:0.5rem; padding:0.75rem; background:var(--bg-item);">
                             <div class="item-info">
-                                <div class="item-name">${a.name}</div>
+                                <div class="item-name">${esc(a.name)}</div>
                                 <div class="item-detail">Código: <strong>${a.accessCode}</strong> &middot; Tel: ${a.phone || 'N/A'}</div>
                             </div>
                         </div>`).join('') : '<p class="text-xs text-muted">Sin administrador asignado.</p>'}
@@ -495,7 +497,7 @@
                             <div class="avatar">${u.name.charAt(0)}</div>
                             <div class="item-info">
                                 <div class="item-name">
-                                    ${u.name} 
+                                    ${esc(u.name)} 
                                     <span class="badge badge-info" style="font-size:0.6rem;">${u.role}</span>
                                 </div>
                                 <div class="item-detail">
@@ -586,7 +588,7 @@
                 const condos = await SISDEL.getCondominios();
                 const filter = document.getElementById('filterCondo');
                 const msgSel = document.getElementById('msgCondo');
-                const options = condos.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+                const options = condos.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
                 filter.innerHTML = '<option value="">Todos los condominios</option>' + options;
                 msgSel.innerHTML = '<option value="all">Todos</option>' + options;
             }

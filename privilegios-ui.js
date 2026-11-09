@@ -107,25 +107,29 @@ const SisdelPrivilegiosUI = (() => {
         container.innerHTML = groups.length
             ? `<div class="pv-cards">${groups.map((g) => {
                 const full = PRIV.GROUPS.find((x) => x.id === g.id);
-                const active = full.items.filter((i) => opts.set.has(i.key)).length;
-                const allOn = active === full.items.length;
+                // Los privilegios que su rol no puede tener (onlyRoles) no cuentan ni se activan
+                const usable = full.items.filter((i) => PRIV.allowedFor(i.key, opts.role));
+                const active = usable.filter((i) => opts.set.has(i.key)).length;
+                const allOn = active === usable.length;
                 return `<section class="pv-card">
                     <div class="pv-card-head">
                         <strong>${esc(g.title)}</strong>
                         <span style="display:flex; gap:0.4rem; align-items:center;">
-                            <span class="pv-count">${active} / ${full.items.length}</span>
-                            ${opts.disabled ? '' : `<button type="button" class="pv-all" data-group="${g.id}" data-on="${allOn ? '0' : '1'}">${allOn ? 'Quitar todo' : 'Marcar todo'}</button>`}
+                            <span class="pv-count">${active} / ${usable.length}</span>
+                            ${opts.disabled || !usable.length ? '' : `<button type="button" class="pv-all" data-group="${g.id}" data-on="${allOn ? '0' : '1'}">${allOn ? 'Quitar todo' : 'Marcar todo'}</button>`}
                         </span>
                     </div>
                     <div class="pv-rows">${g.items.map((i) => {
-                        const on = opts.set.has(i.key);
+                        const locked = !PRIV.allowedFor(i.key, opts.role);
+                        const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
                         const state = on && !inRole ? ' is-added' : (!on && inRole ? ' is-removed' : '');
                         const tag = on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (!on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
-                        return `<button type="button" class="pv-row${on ? ' is-on' : ''}${state}" data-key="${i.key}" ${opts.disabled ? 'disabled' : ''} aria-pressed="${on}">
+                        const lockTag = locked ? '<span class="pv-tag removed">Solo administradores y operadores</span>' : '';
+                        return `<button type="button" class="pv-row${on ? ' is-on' : ''}${state}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}">
                             ${on ? ICONS.on : ICONS.off}
                             <span style="flex:1; min-width:0;">
-                                <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${tag}</span>
+                                <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${tag}${lockTag}</span>
                                 <span class="pv-desc">${esc(i.description)}</span>
                             </span>
                         </button>`;
@@ -146,7 +150,9 @@ const SisdelPrivilegiosUI = (() => {
         container.querySelectorAll('.pv-all').forEach((button) => {
             button.addEventListener('click', () => {
                 const turnOn = button.dataset.on === '1';
-                PRIV.GROUPS.find((g) => g.id === button.dataset.group).items.forEach((i) => PRIV.toggle(opts.set, i.key, turnOn));
+                PRIV.GROUPS.find((g) => g.id === button.dataset.group).items
+                    .filter((i) => PRIV.allowedFor(i.key, opts.role))
+                    .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn));
                 opts.onChange(opts.set, { group: button.dataset.group, on: turnOn, cascade: [] });
             });
         });
@@ -274,7 +280,7 @@ const SisdelPrivilegiosUI = (() => {
             } else if (act.dataset.act === 'save') {
                 saveButton.disabled = true;
                 saveButton.textContent = 'Guardando…';
-                const ok = await SISDEL.setUserAccess(user.id, { privilegios: PRIV.toOverrides(role, set) });
+                const ok = await SISDEL.setUserAccess(user.id, { privilegios: PRIV.toOverrides(role, [...set]) });
                 saveButton.textContent = 'Guardar privilegios';
                 if (ok) {
                     SISDEL.showToast(`Privilegios de ${user.name} actualizados`, 'success');
@@ -293,7 +299,7 @@ const SisdelPrivilegiosUI = (() => {
             bar.querySelector('[data-act=delTemplate]').style.display = tpl && tpl.custom ? '' : 'none';
             if (!tpl) return;
             set.clear();
-            (tpl.claves || []).filter((k) => PRIV.itemOf(k)).forEach((k) => set.add(k));
+            (tpl.claves || []).filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
             draw(`Plantilla "${tpl.name}" aplicada; falta guardar`);
         });
 

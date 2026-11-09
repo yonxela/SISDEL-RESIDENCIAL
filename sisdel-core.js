@@ -252,12 +252,19 @@ const SISDEL = (() => {
     // ══════════════════════════════════
     function canReadCodes() { return isMasterSession() || can('usuarios.codigos'); }
 
+    // Quien ve codigos sin poder asignar privilegios no ve los de administradores y operadores (las reglas lo exigen)
+    const PLAIN_ROLES = [ROLES.VECINO, ROLES.POLICIA, ROLES.AUDITOR, ROLES.SUPERVISOR];
+    function onlyPlainCodes(query) {
+        return isMasterSession() || can('usuarios.privilegios') ? query : query.where('role', 'in', PLAIN_ROLES);
+    }
+
     // Mapa userId -> codigo. Devuelve null si el rol no puede ver codigos
     async function codesByUser(condominioId) {
         if (!canReadCodes()) return null;
         const scope = condominioId || sessionCondoId();
         let query = db().collection(COL.codes);
         if (scope) query = query.where('condominioId', '==', scope);
+        query = onlyPlainCodes(query);
         const snap = await query.get(SERVER);
         const map = new Map();
         snap.docs.forEach((d) => map.set(d.data().userId, d.id));
@@ -265,9 +272,9 @@ const SISDEL = (() => {
     }
 
     async function codeDocsOfUser(condominioId, userId) {
-        const snap = await db().collection(COL.codes)
+        const snap = await onlyPlainCodes(db().collection(COL.codes)
             .where('condominioId', '==', condominioId)
-            .where('userId', '==', userId)
+            .where('userId', '==', userId))
             .get(SERVER);
         return snap.docs;
     }

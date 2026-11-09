@@ -257,9 +257,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261108e"></script>
-    <script src="sisdel-core.js?v=20261108d"></script>
-    <script src="privilegios-ui.js?v=20261108d"></script>
+    <script src="privilegios.js?v=20261108f"></script>
+    <script src="sisdel-core.js?v=20261108f"></script>
+    <script src="privilegios-ui.js?v=20261108f"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
     <script>
@@ -314,11 +314,13 @@
                 ['supervisor', 'Supervisor de rondas'],
                 ['operador', 'Operador (privilegios a la medida)']
             ];
+            // Mismas reglas que firestore.rules (canCreateRole): con usuarios.crear solo se registran vecinos, los guardias
+            // tambien los crea quien tiene guardias.crear, y los demas roles exigen ademas asignar privilegios
             function creatableRoles() {
                 return ROLE_OPTIONS.filter(([role]) => {
-                    if (role === 'vecino' || role === 'auditor' || role === 'supervisor') return caps.crear;
-                    if (role === 'policia') return caps.crear || caps.guardias;
-                    return caps.crear && caps.privilegios; // admin y operador
+                    if (role === 'vecino') return caps.crear;
+                    if (role === 'policia') return caps.guardias || (caps.crear && caps.privilegios);
+                    return caps.crear && caps.privilegios; // auditor, supervisor, admin y operador
                 });
             }
             // Administradores y operadores solo los toca quien puede asignar privilegios
@@ -415,13 +417,22 @@
                 `;
             }
 
+            document.getElementById('usersList').addEventListener('click', (event) => {
+                const priv = event.target.closest('[data-priv]');
+                if (priv) { window.openPrivileges(priv.dataset.priv); return; }
+                const edit = event.target.closest('[data-edit]');
+                if (edit) window.openEditUser(edit.dataset.edit);
+            });
+
             // Etiqueta de privilegios: personalizados, o sin ninguno (un operador sin privilegios no puede entrar)
             function privilegeBadge(u) {
                 const effective = PRIV.effective(u.role, u.privilegios);
                 const active = PRIV.KEYS.filter((k) => effective[k]).length;
                 const custom = Object.keys(PRIV.cleanOverrides(u.privilegios)).length > 0;
                 if (u.role !== SISDEL.ROLES.OPERADOR && !custom) return '';
-                if (active === 0) return '<span class="badge badge-danger" title="No puede entrar a ningún panel">Sin privilegios</span>';
+                if (active === 0) return '<span class="badge badge-danger" title="No tiene ningún privilegio">Sin privilegios</span>';
+                // Con privilegios pero ninguno abre una pagina (por ejemplo solo "Ver usuarios"): tampoco puede entrar
+                if (PRIV.landing(u.role, u.privilegios) === null) return '<span class="badge badge-danger" title="Sus privilegios no le abren ninguna página: no puede entrar">Sin acceso</span>';
                 return `<span class="badge ${custom ? 'badge-warning' : 'badge-info'}" title="${custom ? 'Privilegios distintos a los de su rol' : 'Privilegios de su rol'}">${custom ? 'Personalizado · ' : ''}${active} privilegios</span>`;
             }
 
@@ -438,7 +449,7 @@
 
                 list.innerHTML = filtered.map(u => `
                     <div class="list-item">
-                        <div class="avatar" style="${u.paymentStatus === 'moroso' ? 'background:var(--danger);' : ''}">${u.name.charAt(0)}</div>
+                        <div class="avatar" style="${u.paymentStatus === 'moroso' ? 'background:var(--danger);' : ''}">${esc(u.name.charAt(0))}</div>
                         <div class="item-info">
                             <div class="item-name">${esc(u.name)} ${u.accessCode ? `<code style="font-size:0.75rem; color:var(--accent);">${esc(u.accessCode)}</code>` : ''}</div>
                             <div class="item-detail">${esc(SISDEL.getRoleName(u.role))} ${u.cargo ? '· ' + esc(u.cargo) : ''} ${u.casa ? '· ' + esc(u.casa) : ''}</div>
@@ -455,14 +466,14 @@
                                     </svg>
                                 </button>
                                 <div class="custom-tooltip-text">
-                                    <strong style="color:var(--primary-light);">${u.name}</strong><br>
-                                    Tel: ${u.phone || 'N/A'}<br>
-                                    Email: ${u.email || 'N/A'}<br>
-                                    Casa: ${u.casa || 'N/A'}
+                                    <strong style="color:var(--primary-light);">${esc(u.name)}</strong><br>
+                                    Tel: ${esc(u.phone || 'N/A')}<br>
+                                    Email: ${esc(u.email || 'N/A')}<br>
+                                    Casa: ${esc(u.casa || 'N/A')}
                                 </div>
                             </div>
-                            ${canSeePrivileges(u) ? `<button class="btn btn-ghost btn-icon" onclick="openPrivileges('${u.id}')" title="${caps.privilegios && u.id !== session.userId ? 'Privilegios' : 'Mis privilegios'}" aria-label="Privilegios">${SisdelPrivilegiosUI.ICONS.shield}</button>` : ''}
-                            ${(canEditUser(u) || canDeleteUser(u)) ? `<button class="btn btn-ghost btn-icon" onclick="openEditUser('${u.id}')" title="Editar" aria-label="Editar">✏️</button>` : ''}
+                            ${canSeePrivileges(u) ? `<button class="btn btn-ghost btn-icon" data-priv="${esc(u.id)}" title="${caps.privilegios && u.id !== session.userId ? 'Privilegios' : 'Mis privilegios'}" aria-label="Privilegios">${SisdelPrivilegiosUI.ICONS.shield}</button>` : ''}
+                            ${(canEditUser(u) || canDeleteUser(u)) ? `<button class="btn btn-ghost btn-icon" data-edit="${esc(u.id)}" title="Editar" aria-label="Editar">✏️</button>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -766,19 +777,24 @@
                     <div class="list-item" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
                         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                             <div style="display:flex; align-items:center; gap:0.5rem;">
-                                <strong style="color:var(--primary-light);">${m.subject}</strong>
+                                <strong style="color:var(--primary-light);">${esc(m.subject)}</strong>
                                 ${readBadge}
                             </div>
                             <div style="display:flex; align-items:center; gap:0.5rem;">
                                 <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
-                                ${caps.enviar ? `<button class="btn btn-ghost btn-icon btn-sm" onclick="deleteMsg('${m.id}')" title="Eliminar" style="color:var(--danger);">🗑️</button>` : ''}
+                                ${caps.enviar ? `<button class="btn btn-ghost btn-icon btn-sm" data-del-msg="${esc(m.id)}" title="Eliminar" style="color:var(--danger);">🗑️</button>` : ''}
                             </div>
                         </div>
-                        <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">${m.body}</p>
-                        <span class="text-xs text-muted">Para: ${targetLabel} · De: ${m.fromName}</span>
+                        <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">${esc(m.body)}</p>
+                        <span class="text-xs text-muted">Para: ${targetLabel} · De: ${esc(m.fromName)}</span>
                     </div>`;
                 }).join('');
             }
+
+            document.getElementById('sentMsgList').addEventListener('click', (event) => {
+                const del = event.target.closest('[data-del-msg]');
+                if (del) window.deleteMsg(del.dataset.delMsg);
+            });
 
             window.deleteMsg = async function(id) {
                 if (confirm('¿Eliminar este mensaje?')) {

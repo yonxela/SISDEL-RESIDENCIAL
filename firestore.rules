@@ -95,14 +95,16 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
     }
 
-    // Quien puede crear un usuario de ese rol. Administradores y operadores (los roles con privilegios
-    // a la medida) solo los crea quien ademas puede asignar privilegios.
+    // Quien puede crear un usuario de ese rol. Con usuarios.crear solo se registran vecinos: un guardia lo crea quien
+    // tiene guardias.crear, y los demas roles (auditor, supervisor, administrador, operador) exigen ademas asignar
+    // privilegios, porque quien crea una cuenta conoce su codigo y entra con ella.
     function canCreateRole(c, role) {
-      return (role in ['vecino', 'auditor', 'supervisor'] && pUsuariosCrear(c))
-        || (role == 'policia' && (pUsuariosCrear(c) || pGuardiasCrear(c)))
-        || (role in ['admin', 'operador'] && pUsuariosCrear(c) && pUsuariosPrivilegios(c));
+      return (role == 'vecino' && pUsuariosCrear(c))
+        || (role == 'policia' && (pGuardiasCrear(c) || (pUsuariosCrear(c) && pUsuariosPrivilegios(c))))
+        || (role in ['auditor', 'supervisor', 'admin', 'operador'] && pUsuariosCrear(c) && pUsuariosPrivilegios(c));
     }
-    // Editar o borrar a un administrador u operador tambien exige poder asignar privilegios
+    // Editar o borrar a un administrador u operador tambien exige poder asignar privilegios. Solo un administrador o un
+    // operador puede tener usuarios.privilegios (lo exige validUser), asi que el rol basta para saber si un usuario "manda"
     function manageable(c, role) {
       return role in ['vecino', 'policia', 'auditor', 'supervisor'] || pUsuariosPrivilegios(c);
     }
@@ -127,19 +129,24 @@ service cloud.firestore {
       return request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador']
         && (newUserCode()
             ? canCreateRole(c, request.resource.data.role)
-            : (pUsuariosCodigos(c) && manageable(c, codeTargetRole()) && manageable(c, request.resource.data.role)));
+            : (pUsuariosCodigos(c) && manageable(c, codeTargetRole()) && request.resource.data.role == codeTargetRole()));
     }
 
     // ── Codigos de acceso: indice unico codigo -> usuario ──
     // No se guardan dentro del usuario para que guardias y vecinos no puedan leerlos.
     match /codigos/{code} {
-      allow read: if isMaster() || pUsuariosCodigos(resource.data.condominioId)
+      // Quien ve codigos (usuarios.codigos) no ve los de administradores y operadores salvo que pueda asignar privilegios:
+      // con el codigo de un administrador se entra como administrador
+      allow read: if isMaster()
+        || (pUsuariosCodigos(resource.data.condominioId)
+            && (pUsuariosPrivilegios(resource.data.condominioId) || resource.data.role in ['vecino', 'policia', 'auditor', 'supervisor']))
         || (pGuardiasCrear(resource.data.condominioId) && resource.data.role == 'policia');
       allow create: if isMaster() || codeCreateOk(request.resource.data.condominioId);
       // Nunca se sobreescribe: un codigo ocupado rechaza la escritura
       allow update: if false;
-      allow delete: if isMaster() || pUsuariosCodigos(resource.data.condominioId)
-        || (pUsuariosEliminar(resource.data.condominioId) && manageable(resource.data.condominioId, resource.data.role));
+      allow delete: if isMaster()
+        || ((pUsuariosCodigos(resource.data.condominioId) || pUsuariosEliminar(resource.data.condominioId))
+            && manageable(resource.data.condominioId, resource.data.role));
     }
 
     // ── Mensajes para todos los condominios ──
@@ -170,13 +177,20 @@ service cloud.firestore {
       allow read: if isMaster() || isMember(condoId);
       allow write: if isMaster();
 
+      // El usuario dueño del documento ya no existira al aplicarse la escritura (borrado en cascada al eliminarlo)
+      function ownerGone(ownerId) {
+        return !existsAfter(/databases/$(database)/documents/condominios/$(condoId)/usuarios/$(ownerId));
+      }
+
       match /usuarios/{userId} {
         function validUser() {
           return request.resource.data.condominioId == condoId
             && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador']
             && !('accessCode' in request.resource.data)
             && (!('privilegios' in request.resource.data)
-                || (request.resource.data.privilegios is map && request.resource.data.privilegios.size() <= 40));
+                || (request.resource.data.privilegios is map && request.resource.data.privilegios.size() <= 40
+                    && (request.resource.data.privilegios.get('usuarios.privilegios', false) != true
+                        || request.resource.data.role in ['admin', 'operador'])));
         }
         // Rol y privilegios son el poder de un usuario: cambiarlos exige usuarios.privilegios
         // y nadie se los cambia a si mismo (solo el master)
@@ -216,10 +230,10 @@ service cloud.firestore {
           || pVisitasGestionar(condoId)
           || (pGaritaOperar(condoId) && onlyChanges(['status', 'enteredAt']))
           || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner() && willOwn(condoId));
-        // Al eliminar un usuario se borran tambien sus visitas y vehiculos
+        // Al eliminar un usuario se borran tambien sus visitas y vehiculos (usuarios.eliminar solo sirve para eso)
         allow delete: if isMaster()
           || pVisitasGestionar(condoId)
-          || pUsuariosEliminar(condoId)
+          || (pUsuariosEliminar(condoId) && ownerGone(resource.data.userId))
           || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner());
       }
 
@@ -233,7 +247,7 @@ service cloud.firestore {
         allow update: if isMaster() || pVisitasGestionar(condoId);
         allow delete: if isMaster()
           || pVisitasGestionar(condoId)
-          || pUsuariosEliminar(condoId)
+          || (pUsuariosEliminar(condoId) && ownerGone(resource.data.userId))
           || (isResident(condoId) && pVecinoVehiculos(condoId) && isOwner());
       }
 
@@ -299,7 +313,7 @@ service cloud.firestore {
       match /rondas_personal/{userId} {
         allow read: if canSeeRondas();
         allow create, update: if canManageRondas(condoId) && sameCompany() && request.resource.data.id == userId;
-        allow delete: if pUsuariosEliminar(condoId);
+        allow delete: if pUsuariosEliminar(condoId) && ownerGone(userId);
       }
       // Rutas con sus puntos de control: las ven quienes patrullan
       match /rondas_rutas/{routeId} {
@@ -399,16 +413,16 @@ service cloud.firestore {
           || (isResident(condoId) && request.auth.uid == userId);
         allow create, update: if ((isResident(condoId) && request.auth.uid == userId) || pUsuariosEditar(condoId))
           && request.resource.data.contacts is list && request.resource.data.contacts.size() <= 5;
-        allow delete: if pUsuariosEliminar(condoId);
+        allow delete: if pUsuariosEliminar(condoId) && ownerGone(userId);
       }
 
       // Plantillas de privilegios propias del condominio (las del sistema viven en privilegios.js)
       match /plantillas_privilegios/{docId} {
         allow read: if isMaster() || pUsuariosPrivilegios(condoId);
-        allow create, update: if pUsuariosPrivilegios(condoId) && request.resource.data.condominioId == condoId
+        allow create, update: if (isMaster() || pUsuariosPrivilegios(condoId)) && request.resource.data.condominioId == condoId
           && request.resource.data.name is string && request.resource.data.name.size() <= 60
           && request.resource.data.claves is list && request.resource.data.claves.size() <= 40;
-        allow delete: if pUsuariosPrivilegios(condoId);
+        allow delete: if isMaster() || pUsuariosPrivilegios(condoId);
       }
 
       match /finanzas_config/{docId} {

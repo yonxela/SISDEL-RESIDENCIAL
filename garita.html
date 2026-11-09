@@ -155,8 +155,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261108e"></script>
-    <script src="sisdel-core.js?v=20261108d"></script>
+    <script src="privilegios.js?v=20261108f"></script>
+    <script src="sisdel-core.js?v=20261108f"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261108b"></script>
     <script>
@@ -166,6 +166,8 @@
 
             const condoId = session.condominioId;
             document.getElementById('condoName').textContent = session.condominioName;
+            // Nombres y mensajes los escriben otros usuarios (con privilegios menores): siempre se escapan
+            const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
             // Botones hacia los demas paneles a los que este usuario puede entrar
             const PANEL_ICONS = {
@@ -310,7 +312,7 @@
                             <p><strong>Casa:</strong> ${obj.casa}</p>
                             <hr style="margin:0.5rem 0; opacity:0.1;">
                             <p style="color:var(--danger); font-weight:bold;">⚠️ RESIDENTE MOROSO</p>
-                            <p class="text-xs">El residente ${resident.name} tiene pagos pendientes. No se permite el ingreso de visitas.</p>
+                            <p class="text-xs">El residente ${esc(resident.name)} tiene pagos pendientes. No se permite el ingreso de visitas.</p>
                         `;
                         btnConfirm.style.display = 'none';
                         showBigStatusScreen('warning', 'MOROSO', `Visita para: ${obj.casa}`);
@@ -353,16 +355,16 @@
                     title.style.color = 'var(--primary-light)';
                     const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
                     info.innerHTML = `
-                        <p><strong>Nombre:</strong> ${obj.name}</p>
+                        <p><strong>Nombre:</strong> ${esc(obj.name)}</p>
                         <p><strong>Casa:</strong> ${obj.casa || 'N/A'}</p>
                         <hr style="margin:0.5rem 0; opacity:0.1;">
                         ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
                     
                     if (isMoroso) {
-                        showBigStatusScreen('warning', 'MOROSO', `Vecino: ${obj.name}`);
+                        showBigStatusScreen('warning', 'MOROSO', `Vecino: ${esc(obj.name)}`);
                     } else {
-                        showBigStatusScreen('success', 'AL DÍA', `Vecino: ${obj.name}`);
+                        showBigStatusScreen('success', 'AL DÍA', `Vecino: ${esc(obj.name)}`);
                     }
                 }
             }
@@ -695,10 +697,10 @@
                         msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid #f59e0b;';
                         msgDiv.innerHTML = `
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                                <strong style="color:#f59e0b; font-size:1rem;">${m.subject}</strong>
+                                <strong style="color:#f59e0b; font-size:1rem;">${esc(m.subject)}</strong>
                                 <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
                             </div>
-                            <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${m.body}</p>
+                            <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${esc(m.body)}</p>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span class="text-xs text-muted">De: ${m.fromName}</span>
                                 <button class="btn btn-primary btn-sm" id="gMsgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>

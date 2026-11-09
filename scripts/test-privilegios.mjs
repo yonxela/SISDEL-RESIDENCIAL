@@ -30,6 +30,9 @@ equal('las claves no se repiten', new Set(P.KEYS).size, P.KEYS.length);
 yes('cada clave tiene la forma modulo.accion', P.KEYS.every((k) => /^[a-z]+\.[a-z]+$/.test(k)));
 yes('cada clave tiene etiqueta y descripcion', P.ITEMS.every((i) => i.label && i.description));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.roles.every((r) => P.ROLES.includes(r))));
+equal('asignar privilegios necesita editar usuarios (las reglas piden ambos)', P.itemOf('usuarios.privilegios').requires, ['usuarios.ver', 'usuarios.editar']);
+yes('las claves de rondas necesitan ver usuarios (RONDIN lista al personal)', ['rondas.ver', 'rondas.patrullar'].every((k) => P.itemOf(k).requires.includes('usuarios.ver')));
+yes('eliminar usuarios necesita ver codigos (el borrado limpia el codigo)', P.itemOf('usuarios.eliminar').requires.includes('usuarios.codigos'));
 yes('las dependencias (requires) existen', P.ITEMS.every((i) => (i.requires || []).every((r) => P.KEYS.includes(r))));
 yes('ninguna clave se requiere a si misma', P.ITEMS.every((i) => !(i.requires || []).includes(i.key)));
 yes('las paginas piden claves que existen', P.PAGES.every((p) => p.role || p.any.every((k) => P.KEYS.includes(k))));
@@ -75,6 +78,19 @@ equal('toOverrides del operador son sus claves', P.toOverrides('operador', ['gar
 equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false }), { 'garita.operar': true });
 equal('ida y vuelta: las diferencias reproducen el conjunto', keysOn('auditor', P.toOverrides('auditor', ['usuarios.ver', 'mensajes.enviar'])).join(), 'usuarios.ver,mensajes.enviar');
 equal('cleanOverrides descarta claves ajenas y valores que no son booleanos', P.cleanOverrides({ 'garita.operar': false, otra: true, 'usuarios.ver': 1 }), { 'garita.operar': false });
+
+// toOverrides acepta un Set (el editor de privilegios le pasa un Set: un error aqui borraba los privilegios al guardar)
+equal('toOverrides con un Set', P.toOverrides('operador', new Set(['usuarios.ver', 'garita.operar'])), { 'usuarios.ver': true, 'garita.operar': true });
+equal('toOverrides con un Set igual al rol es vacio', P.toOverrides('policia', new Set(keysOn('policia'))), {});
+equal('toOverrides con Set, arreglo y mapa dan lo mismo', [P.toOverrides('auditor', new Set(['usuarios.ver'])), P.toOverrides('auditor', { 'usuarios.ver': true })], [P.toOverrides('auditor', ['usuarios.ver']), P.toOverrides('auditor', ['usuarios.ver'])]);
+
+// Privilegios que solo pueden tener ciertos roles
+yes('usuarios.privilegios solo es para administradores y operadores', JSON.stringify(P.itemOf('usuarios.privilegios').onlyRoles) === JSON.stringify(['admin', 'operador']));
+equal('un guardia no puede tener usuarios.privilegios aunque se lo pongan', P.has('policia', { 'usuarios.privilegios': true }, 'usuarios.privilegios'), false);
+equal('un operador si', P.has('operador', { 'usuarios.privilegios': true }, 'usuarios.privilegios'), true);
+equal('toOverrides descarta lo que el rol no puede tener', P.toOverrides('policia', [...keysOn('policia'), 'usuarios.privilegios']), {});
+equal('allowedFor', [P.allowedFor('usuarios.privilegios', 'vecino'), P.allowedFor('usuarios.privilegios', 'admin'), P.allowedFor('garita.operar', 'vecino'), P.allowedFor('no.existe', 'admin')], [false, true, true, false]);
+equal('una clave heredada del prototipo no existe', [P.itemOf('constructor'), P.itemOf('__proto__'), P.cleanOverrides({ constructor: true })], [null, null, {}]);
 
 // Dependencias
 const set = new Set();
@@ -126,6 +142,14 @@ equal('cada privilegio del catalogo tiene su funcion en las reglas (salvo los de
 yes('cada funcion pXxx se usa en alguna regla', wrappers.every((w) => (rules.match(new RegExp(`\\b${w.fn}\\(`, 'g')) || []).length > 1));
 yes('las reglas ya no preguntan por el rol del usuario para dar acceso (isAdmin, isStaff...)', !/\b(isAdmin|isStaff|isGuard|isSupervisor|isAuditor)\(/.test(rules));
 yes('los roles validos de usuarios incluyen al operador', /role in \['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador'\]/.test(rules));
+yes('con usuarios.crear solo se crean vecinos; guardias con guardias.crear; los demas roles exigen asignar privilegios',
+    /role == 'vecino' && pUsuariosCrear\(c\)/.test(rules) && /role == 'policia' && \(pGuardiasCrear\(c\) \|\| \(pUsuariosCrear\(c\) && pUsuariosPrivilegios\(c\)\)\)/.test(rules)
+    && /role in \['auditor', 'supervisor', 'admin', 'operador'\] && pUsuariosCrear\(c\) && pUsuariosPrivilegios\(c\)/.test(rules));
+yes('quien ve codigos no ve los de administradores y operadores sin asignar privilegios', /pUsuariosCodigos\(resource\.data\.condominioId\)\s*&& \(pUsuariosPrivilegios\(resource\.data\.condominioId\) \|\| resource\.data\.role in \['vecino', 'policia', 'auditor', 'supervisor'\]\)/.test(rules));
+yes('borrar codigos exige poder manejar a ese rol', /\(pUsuariosCodigos\(resource\.data\.condominioId\) \|\| pUsuariosEliminar\(resource\.data\.condominioId\)\)\s*&& manageable\(resource\.data\.condominioId, resource\.data\.role\)/.test(rules));
+yes('usuarios.privilegios solo lo puede tener un administrador u operador', /get\('usuarios\.privilegios', false\) != true\s*\|\| request\.resource\.data\.role in \['admin', 'operador'\]/.test(rules));
+yes('usuarios.eliminar solo borra visitas, vehiculos y expedientes de un usuario que deja de existir', (rules.match(/pUsuariosEliminar\(condoId\) && ownerGone\(/g) || []).length === 4 && /!existsAfter\(/.test(rules));
+yes('el master tambien maneja las plantillas de privilegios', /isMaster\(\) \|\| pUsuariosPrivilegios\(condoId\)\) && request\.resource\.data\.condominioId == condoId/.test(rules));
 yes('nadie se cambia sus propios privilegios', /pUsuariosPrivilegios\(condoId\) && userId != request\.auth\.uid/.test(rules));
 yes('un codigo nuevo solo apunta a un usuario que se crea en la misma escritura (salvo usuarios.codigos)', /newUserCode\(\)/.test(rules) && /pUsuariosCodigos\(c\) && manageable\(c, codeTargetRole\(\)\)/.test(rules));
 

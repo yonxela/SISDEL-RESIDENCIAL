@@ -439,7 +439,9 @@
     on('POST', '/api/users', async (b) => {
         readOnlyGuard();
         const role = ROLE_IN[b.role || 'GUARDIA'] || 'policia';
-        if (role !== 'policia' && !can('usuarios.crear')) throw err('Solo puede registrar guardias', 403);
+        // Mismas reglas que firestore.rules: un guardia lo crea quien tiene guardias.crear; los demas roles exigen crear usuarios y asignar privilegios
+        const mayCreate = role === 'policia' ? (can('guardias.crear') || (can('usuarios.crear') && can('usuarios.privilegios'))) : (can('usuarios.crear') && can('usuarios.privilegios'));
+        if (!mayCreate) throw err('Solo puede registrar guardias', 403);
         const u = await SISDEL.createUser(condoId(), b.name, role, '', b.phone || '', b.email || '', b.pin || '');
         if (!u) throw err('No se pudo crear el usuario.');
         const profile = { ...(b.profile || {}) };

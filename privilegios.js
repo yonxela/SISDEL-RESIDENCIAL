@@ -38,12 +38,12 @@
             id: 'usuarios', title: 'Usuarios y vecinos', items: [
                 { key: 'usuarios.panel', label: 'Entrar al panel de administración', description: 'Abre admin.html: lista de usuarios, estadísticas y mensajes.', roles: ['admin'], requires: ['usuarios.ver'] },
                 { key: 'usuarios.ver', label: 'Ver usuarios y vecinos', description: 'Consultar la lista de vecinos y personal (sin códigos de acceso).', roles: ['admin', 'policia', 'supervisor', 'auditor'] },
-                { key: 'usuarios.crear', label: 'Crear usuarios', description: 'Registrar vecinos, auditores y supervisores con su código de acceso.', roles: ['admin'], requires: ['usuarios.ver'] },
-                { key: 'guardias.crear', label: 'Registrar guardias', description: 'Crear guardias (solo ese rol) y ver el código de acceso de los guardias.', roles: ['admin', 'supervisor'], requires: ['usuarios.ver'] },
-                { key: 'usuarios.editar', label: 'Editar usuarios', description: 'Cambiar nombre, casa, teléfono y estado de pago, y registrar placas de un vecino.', roles: ['admin'], requires: ['usuarios.ver'] },
+                { key: 'usuarios.crear', label: 'Crear usuarios', description: 'Registrar vecinos con su código de acceso. Crear guardias, auditores, supervisores, administradores y operadores exige además Asignar privilegios (los guardias también los crea quien tiene Registrar guardias).', roles: ['admin'], requires: ['usuarios.ver'] },
+                { key: 'guardias.crear', label: 'Registrar guardias', description: 'Crear guardias (solo ese rol) y ver el código de acceso de los guardias; con él se puede entrar como cualquier guardia.', roles: ['admin', 'supervisor'], requires: ['usuarios.ver'] },
+                { key: 'usuarios.editar', label: 'Editar usuarios', description: 'Cambiar nombre, casa, teléfono, cargo y estado de un usuario (activarlo o desactivarlo) y su estado de pago.', roles: ['admin'], requires: ['usuarios.ver'] },
                 { key: 'usuarios.eliminar', label: 'Eliminar usuarios', description: 'Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true },
-                { key: 'usuarios.codigos', label: 'Ver y cambiar códigos de acceso', description: 'Ver el código de cualquier usuario y reemplazarlo por otro. Con el código de otro se puede entrar como esa persona, incluido el administrador: darlo solo a administradores de confianza.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true },
-                { key: 'usuarios.privilegios', label: 'Asignar privilegios', description: 'Cambiar los privilegios de otros usuarios y crear administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true }
+                { key: 'usuarios.codigos', label: 'Ver y cambiar códigos de acceso', description: 'Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true },
+                { key: 'usuarios.privilegios', label: 'Asignar privilegios', description: 'Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador.', roles: ['admin'], onlyRoles: ['admin', 'operador'], requires: ['usuarios.ver', 'usuarios.editar'], sensitive: true }
             ]
         },
         {
@@ -85,9 +85,9 @@
         },
         {
             id: 'rondas', title: 'Rondas de vigilancia', items: [
-                { key: 'rondas.ver', label: 'Ver el panel de rondas', description: 'Consultar rutas, turnos, rondas, incidentes y la posición de los guardias (solo lectura).', roles: ['admin', 'supervisor', 'auditor'] },
+                { key: 'rondas.ver', label: 'Ver el panel de rondas', description: 'Consultar rutas, turnos, rondas, incidentes y la posición de los guardias (solo lectura).', roles: ['admin', 'supervisor', 'auditor'], requires: ['usuarios.ver'] },
                 { key: 'rondas.gestionar', label: 'Administrar rondas', description: 'Crear rutas y asignaciones, resolver incidentes, manejar drones y la configuración de rondas.', roles: ['admin', 'supervisor'], requires: ['rondas.ver'] },
-                { key: 'rondas.patrullar', label: 'Patrullar', description: 'Iniciar turnos y rondas, marcar puntos de control y reportar incidentes desde el teléfono.', roles: ['policia', 'supervisor'] }
+                { key: 'rondas.patrullar', label: 'Patrullar', description: 'Iniciar turnos y rondas, marcar puntos de control y reportar incidentes desde el teléfono.', roles: ['policia', 'supervisor'], requires: ['usuarios.ver'] }
             ]
         },
         {
@@ -99,7 +99,11 @@
     ];
 
     const ITEMS = GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.id, groupTitle: g.title })));
-    const BY_KEY = Object.fromEntries(ITEMS.map((i) => [i.key, i]));
+    // Sin prototipo: una clave como "constructor" no existe en el catalogo
+    const BY_KEY = Object.assign(Object.create(null), Object.fromEntries(ITEMS.map((i) => [i.key, i])));
+    const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+    // Algunos privilegios solo los puede tener ciertos roles (onlyRoles): asignarlos a otro rol no tiene efecto
+    const allowedFor = (key, role) => !!BY_KEY[key] && (!BY_KEY[key].onlyRoles || BY_KEY[key].onlyRoles.includes(role));
     const KEYS = ITEMS.map((i) => i.key);
 
     // Paginas y quien puede abrirlas. `any`: basta con una clave; `role`: solo ese rol.
@@ -167,7 +171,7 @@
     function cleanOverrides(overrides) {
         const out = {};
         if (!overrides || typeof overrides !== 'object') return out;
-        Object.keys(overrides).forEach((k) => { if (BY_KEY[k] && typeof overrides[k] === 'boolean') out[k] = overrides[k]; });
+        Object.keys(overrides).forEach((k) => { if (BY_KEY[k] && hasOwn(overrides, k) && typeof overrides[k] === 'boolean') out[k] = overrides[k]; });
         return out;
     }
 
@@ -177,24 +181,27 @@
         const base = defaultsOf(role);
         const own = cleanOverrides(overrides);
         const out = {};
-        KEYS.forEach((k) => { out[k] = k in own ? own[k] : base[k] === true; });
+        KEYS.forEach((k) => { out[k] = allowedFor(k, role) && (k in own ? own[k] : base[k] === true); });
         return out;
     }
 
     function has(role, overrides, key) {
         if (role === 'master') return true;
-        if (!BY_KEY[key]) return false;
+        if (!allowedFor(key, role)) return false;
         const own = cleanOverrides(overrides);
         return key in own ? own[key] : BY_KEY[key].roles.includes(role);
     }
 
-    // De un conjunto completo de claves activas (arreglo o { clave: bool }) a las diferencias con el rol
+    // De un conjunto completo de claves activas (arreglo, Set o { clave: bool }) a las diferencias con el rol
     function toOverrides(role, wanted) {
-        const set = new Set(Array.isArray(wanted) ? wanted : Object.keys(wanted || {}).filter((k) => wanted[k] === true));
+        const list = Array.isArray(wanted) ? wanted
+            : wanted instanceof Set ? [...wanted]
+                : Object.keys(wanted || {}).filter((k) => wanted[k] === true);
+        const set = new Set(list);
         const base = defaultsOf(role);
         const out = {};
         KEYS.forEach((k) => {
-            const want = set.has(k);
+            const want = set.has(k) && allowedFor(k, role);
             if (want !== (base[k] === true)) out[k] = want;
         });
         return out;
@@ -252,7 +259,7 @@
 
     return {
         ROLES, ROLE_LABELS, GROUPS, ITEMS, KEYS, PAGES, ROLE_HOME, TEMPLATES,
-        defaultsOf, cleanOverrides, effective, has, toOverrides, toggle, cascade,
+        defaultsOf, cleanOverrides, effective, has, allowedFor, toOverrides, toggle, cascade,
         canEnter, pagesFor, landing, itemOf, sensitiveKeys, templateById
     };
 }));

@@ -9,7 +9,7 @@ import {
     setDoc, updateDoc, deleteDoc, deleteField, writeBatch, query, where, orderBy
 } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { PROJECT_ID, EMULATOR, localDate, isoDaysAgo } from './lib.mjs';
+import { PROJECT_ID, EMULATOR, localDate, isoDaysAgo, sha256 } from './lib.mjs';
 
 const seed = JSON.parse(fs.readFileSync(new URL('./dev-seed.json', import.meta.url), 'utf8'));
 // Catalogo de privilegios (el mismo archivo que cargan las paginas)
@@ -282,6 +282,25 @@ async function run() {
     equal('lecturas sin condominio quedan para el master', orphans.size, 2);
 
     // ───────── Auditor: lee todo su condominio, no escribe nada ─────────
+    // Clave secreta de la camara: mientras el condominio no la tenga, entra como antes; con clave, solo con ella
+    {
+        const privado = `http://${EMULATOR.firestore}/v1/projects/${PROJECT_ID}/databases/(default)/documents/_privado/camaras/claves/${A}`;
+        const owner = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
+        await setDoc(doc(admin.db, `condominios/${A}/vehiculos/veh-key`), { id: 'veh-key', condominioId: A, userId: 'u-maria', plate: 'P-KEY001', plateNorm: 'PKEY001', brand: '', model: '', color: '', marbeteCode: 'MARKEY1', createdAt: new Date().toISOString() });
+        const put = await fetch(privado, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: { condominioId: { stringValue: A }, keyHash: { stringValue: sha256('ClaveDePrueba-2026-XYZ') }, updatedAt: { stringValue: new Date().toISOString() } } }) });
+        equal('la clave de la camara se guarda en _privado (solo el servidor la lee)', put.status, 200);
+        r = await camera({ condominioId: A }, itms('PKEY001'));
+        equal('con clave configurada, la camara sin clave no entra', [r.body.Command, /clave/i.test(r.body.Reason || '')], ['Close', true]);
+        r = await camera({ condominioId: A, key: 'otra-clave-equivocada' }, itms('PKEY001'));
+        equal('con la clave equivocada tampoco', r.body.Command, 'Close');
+        await denied('ni un administrador lee la clave de la camara', () => getDoc(doc(admin.db, `_privado/camaras/claves/${A}`)));
+        r = await camera({ condominioId: A, key: 'ClaveDePrueba-2026-XYZ' }, itms('PKEY001'));
+        equal('con la clave correcta abre al vecino', [r.body.Command, /María|Vecino permanente/.test(r.body.Reason || '')], ['Open', true]);
+        await fetch(privado, { method: 'DELETE', headers: owner });
+        r = await camera({ condominioId: A }, itms('PKEY001'));
+        equal('sin clave configurada (la misma placa en menos de 30 s se ignora), la camara sigue como antes', r.body.Command, 'OK');
+    }
+
     console.log('\nAuditor de Villa Ferrer');
     const tomorrowIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     await allowed('auditor lee su condominio', () => getDoc(doc(auditor.db, `condominios/${A}`)));

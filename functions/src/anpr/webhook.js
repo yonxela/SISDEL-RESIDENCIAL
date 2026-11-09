@@ -4,6 +4,7 @@ const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 const { parseRequest, condominioFromRequest } = require('./parse');
 const { decideAccess } = require('./decide');
+const { sha256, safeEqual } = require('../util');
 
 const DEDUP_MS = 30 * 1000;       // La camara manda 3 o mas avisos por cada deteccion
 const MAX_PAYLOAD_CHARS = 8000;
@@ -27,6 +28,21 @@ async function isDuplicate(condoRef, plate) {
 
 function reply(res, body) {
     res.status(200).json(body);
+}
+
+// Clave secreta de la camara del condominio: va en la URL que se configura en la camara (?key=) o en el encabezado
+// X-Camera-Key; solo se guarda su huella en _privado/camaras/claves/{condominioId} (scripts/set-camera-key.mjs). Mientras un
+// condominio no tenga clave, su camara entra como antes. Sin ella, cualquiera que supiera el id del condominio podia
+// mandar placas: no abria la puerta, pero consumia pases pendientes y llenaba el historial.
+function cameraKeyFromRequest(req) {
+    const value = req.query?.key || req.query?.token || req.get?.('x-camera-key') || '';
+    return String(Array.isArray(value) ? value[0] : value).trim();
+}
+async function cameraKeyAccepted(condominioId, req) {
+    const snap = await db.doc(`_privado/camaras/claves/${condominioId}`).get();
+    if (!snap.exists || !snap.data().keyHash) return true;
+    const key = cameraKeyFromRequest(req);
+    return !!key && safeEqual(sha256(key), snap.data().keyHash);
 }
 
 const anprWebhook = onRequest(
@@ -61,6 +77,15 @@ const anprWebhook = onRequest(
                     rawPayload: payloadText(rawData)
                 });
                 reply(res, { Command: 'Close', Message: 'Denied', Reason: 'Condominio no existe', Plate: plateNumber });
+                return;
+            }
+
+            if (!(await cameraKeyAccepted(condominioId, req))) {
+                await writeLog(orphans, {
+                    condominioId, plate: plateNumber, status: 'Error', reason: 'Clave de camara invalida',
+                    rawPayload: payloadText(rawData)
+                });
+                reply(res, { Command: 'Close', Message: 'Denied', Reason: 'Clave de cámara inválida', Plate: plateNumber });
                 return;
             }
 

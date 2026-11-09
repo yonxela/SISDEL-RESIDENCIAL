@@ -108,10 +108,55 @@ service cloud.firestore {
     // Sistema Financiero (OIKOS)
     function pFinanzasVer(c) { return can(c, 'finanzas.ver', ['admin', 'auditor']); }
     function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
+    function pFinanzasResidentesCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_crear'); }
+    function pFinanzasResidentesEditar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_editar'); }
+    function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_finiquitar'); }
+    function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_eliminar'); }
+    function pFinanzasCuotasMes(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_mes'); }
+    function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_meses'); }
+    function pFinanzasCuotasCorregir(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
+    function pFinanzasCargosCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_crear'); }
+    function pFinanzasCargosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_anular'); }
+    function pFinanzasPagosRegistrar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.pagos_registrar'); }
+    function pFinanzasPagosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.pagos_anular'); }
+    function pFinanzasEgresosRegistrar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_registrar'); }
+    function pFinanzasEgresosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_anular'); }
+    function pFinanzasConfigGeneral(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_general'); }
+    function pFinanzasConfigCuota(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_cuota'); }
+    function pFinanzasConfigConceptos(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_conceptos'); }
+    function pFinanzasDeshacer(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.deshacer'); }
     // Rondas de vigilancia (RONDIN)
     function pRondasVer(c) { return can(c, 'rondas.ver', ['admin', 'supervisor', 'auditor']); }
     function pRondasGestionar(c) { return can(c, 'rondas.gestionar', ['admin', 'supervisor']); }
     function pRondasPatrullar(c) { return can(c, 'rondas.patrullar', ['policia', 'supervisor']); }
+    function pRondasRutasVer(c) { return pRondasVer(c) && childOk(c, 'rondas.rutas_ver'); }
+    function pRondasRutasCrear(c) { return pRondasGestionar(c) && childOk(c, 'rondas.rutas_crear'); }
+    function pRondasRutasEliminar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.rutas_eliminar'); }
+    function pRondasPuntosCrear(c) { return pRondasGestionar(c) && childOk(c, 'rondas.puntos_crear'); }
+    function pRondasPuntosEditar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.puntos_editar'); }
+    function pRondasPuntosEliminar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.puntos_eliminar'); }
+    function pRondasAsignacionesVer(c) { return pRondasVer(c) && childOk(c, 'rondas.asignaciones_ver'); }
+    function pRondasAsignacionesCrear(c) { return pRondasGestionar(c) && childOk(c, 'rondas.asignaciones_crear'); }
+    function pRondasAsignacionesEditar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.asignaciones_editar'); }
+    function pRondasAsignacionesEliminar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.asignaciones_eliminar'); }
+    function pRondasMonitoreoVer(c) { return pRondasVer(c) && childOk(c, 'rondas.monitoreo_ver'); }
+    function pRondasMonitoreoHistorial(c) { return pRondasMonitoreoVer(c) && childOk(c, 'rondas.monitoreo_historial'); }
+    function pRondasRecorridosVer(c) { return pRondasVer(c) && childOk(c, 'rondas.recorridos_ver'); }
+    function pRondasDronesVer(c) { return pRondasVer(c) && childOk(c, 'rondas.drones_ver'); }
+    function pRondasDronesOperar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.drones_operar'); }
+    function pRondasDronesRegistrar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.drones_registrar'); }
+    function pRondasAlertasVer(c) { return pRondasVer(c) && childOk(c, 'rondas.alertas_ver'); }
+    function pRondasAlertasAtender(c) { return pRondasGestionar(c) && childOk(c, 'rondas.alertas_atender'); }
+    function pRondasAlertasEliminar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.alertas_eliminar'); }
+    function pRondasIncidentesVer(c) { return pRondasVer(c) && childOk(c, 'rondas.incidentes_ver'); }
+    function pRondasIncidentesResolver(c) { return pRondasGestionar(c) && childOk(c, 'rondas.incidentes_resolver'); }
+    function pRondasIncidentesReportar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.incidentes_reportar'); }
+    function pRondasSupervisoresAsignar(c) { return pRondasGestionar(c) && childOk(c, 'rondas.supervisores_asignar'); }
+    function pRondasAjustesPanicovecinos(c) { return pRondasGestionar(c) && childOk(c, 'rondas.ajustes_panicovecinos'); }
+    function pRondasPatrullaIniciar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_iniciar'); }
+    function pRondasPatrullaTerminar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_terminar'); }
+    function pRondasPatrullaMarcar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_marcar'); }
+    function pRondasPatrullaRastrear(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_rastrear'); }
     // ── END privilegios generados ──
 
     // Rondas: administran quienes tienen rondas.gestionar, patrullan quienes tienen rondas.patrullar,

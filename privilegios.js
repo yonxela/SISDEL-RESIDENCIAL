@@ -121,15 +121,102 @@
         },
         {
             id: 'finanzas', title: 'Sistema Financiero (OIKOS)', items: [
-                { key: 'finanzas.ver', label: 'Leer datos financieros', description: 'Ver cuotas, cargos y pagos de los residentes (solo lectura).', roles: ['admin', 'auditor'], enforce: 'reglas' },
-                { key: 'finanzas.usar', label: 'Usar el Sistema Financiero', description: 'Abre finanzas.html: cargos, pagos, egresos y reportes. Para registrar residentes nuevos o cambiar sus datos desde ahí también necesita Crear usuarios y Editar usuarios.', roles: ['admin'], requires: ['finanzas.ver', 'usuarios.ver'], sensitive: true, enforce: 'reglas' }
+                { key: 'finanzas.ver', sub: 'Acceso', label: 'Leer datos financieros', description: 'Leer cuotas, cargos, pagos y egresos (solo lectura). Las reglas dejan leer los datos a quien lo tiene; qué pantallas ve en OIKOS lo decide cada privilegio de abajo.', roles: ['admin', 'auditor'], enforce: 'reglas' },
+                { key: 'finanzas.usar', sub: 'Acceso', label: 'Usar el Sistema Financiero', description: 'Abre finanzas.html. Con él vienen todas las pantallas y acciones de abajo; se pueden quitar una por una. Para registrar residentes nuevos o cambiar sus datos desde ahí también necesita Crear usuarios y Editar usuarios.', roles: ['admin'], requires: ['finanzas.ver', 'usuarios.ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'finanzas.tablero_ver', sub: 'Tablero', parent: 'finanzas.usar', label: 'Ver el tablero', description: 'Saldo en caja, total de ingresos y gastos, gráfica de tendencia y alerta de residentes en mora.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+
+                { key: 'finanzas.residentes_ver', sub: 'Residentes', parent: 'finanzas.usar', label: 'Ver residentes', description: 'La lista de residentes con su saldo y mora, y el buscador.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.residentes_datos', sub: 'Residentes', parent: 'finanzas.usar', label: 'Ver DPI, lote y observaciones', description: 'Las columnas y campos de datos personales del residente (el DPI viaja con los datos financieros: esto solo lo oculta en pantalla).', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'pantalla' },
+                { key: 'finanzas.residentes_estado', sub: 'Residentes', parent: 'finanzas.usar', label: 'Ver estado de cuenta y detalle de movimientos', description: 'Abrir el estado de cuenta de un residente y el detalle de cada movimiento.', requires: ['finanzas.residentes_ver'], enforce: 'pantalla' },
+                { key: 'finanzas.residentes_crear', sub: 'Residentes', parent: 'finanzas.usar', label: 'Registrar residentes nuevos', description: 'Crea también al vecino en SISDEL con su código de acceso (que se muestra al guardar): equivale a poder entrar como ese vecino.', requires: ['finanzas.residentes_ver', 'usuarios.crear'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.residentes_editar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Editar residentes', description: 'Cambiar nombre, teléfono, DPI, lote y observaciones.', requires: ['finanzas.residentes_ver', 'usuarios.editar'], enforce: 'reglas' },
+                { key: 'finanzas.residentes_finiquitar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Finiquitar y reactivar residentes', description: 'Cerrar la relación con un residente (deja de cobrársele) o reactivarlo.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.residentes_eliminar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Eliminar residentes', description: 'Quitar del Sistema Financiero a un residente que no tiene movimientos.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.residentes_contactar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Recordatorios y WhatsApp', description: 'Avisar por WhatsApp a los residentes en mora o con saldo pendiente.', requires: ['finanzas.residentes_ver'], enforce: 'pantalla' },
+
+                { key: 'finanzas.cuotas_mes', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cobrar la cuota del mes a todos', description: 'El botón Cuota del mes y la generación automática de cuotas: afecta a todos los residentes.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.cuotas_meses', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cargar cuotas por mes a un residente', description: 'Elegir los meses que se le cobran al crear o editar un residente.', requires: ['finanzas.residentes_editar'], enforce: 'reglas' },
+                { key: 'finanzas.cuotas_corregir', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Corregir cuotas duplicadas', description: 'Anular en bloque las cuotas repetidas.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.cargos_crear', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Crear cargos especiales y multas', description: 'Un cargo a todos los residentes o a uno solo, con el concepto que se elija.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.cargos_anular', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Anular cargos', description: 'Anular una cuota o un cargo especial desde el estado de cuenta.', requires: ['finanzas.residentes_estado'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'finanzas.contabilidad_ver', sub: 'Contabilidad', parent: 'finanzas.usar', label: 'Ver la contabilidad', description: 'La lista de pagos y egresos con sus filtros y detalle.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.comprobantes', sub: 'Contabilidad', parent: 'finanzas.usar', label: 'Imprimir y descargar comprobantes', description: 'El comprobante de un ingreso o egreso y la imagen del documento adjunto.', requires: ['finanzas.contabilidad_ver'], enforce: 'pantalla' },
+
+                { key: 'finanzas.pagos_registrar', sub: 'Pagos', parent: 'finanzas.usar', label: 'Registrar pagos', description: 'Registrar el pago de un residente, con su documento y observaciones.', requires: ['finanzas.contabilidad_ver'], enforce: 'reglas' },
+                { key: 'finanzas.pagos_anular', sub: 'Pagos', parent: 'finanzas.usar', label: 'Anular pagos', description: 'Anular un pago ya registrado.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'finanzas.egresos_registrar', sub: 'Egresos', parent: 'finanzas.usar', label: 'Registrar egresos', description: 'Registrar un gasto del condominio, con su categoría y documento.', requires: ['finanzas.contabilidad_ver'], enforce: 'reglas' },
+                { key: 'finanzas.egresos_anular', sub: 'Egresos', parent: 'finanzas.usar', label: 'Anular egresos', description: 'Anular un gasto ya registrado.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'finanzas.reportes_ingresos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de ingresos por período', description: 'Ingresos por mes con el detalle de cada uno.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_morosos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de morosos', description: 'Residentes en mora y meses adeudados, y las listas de al día y morosos.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_gastos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de gastos por categoría', description: 'En qué se gasta el dinero del condominio.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_libro', sub: 'Reportes', parent: 'finanzas.usar', label: 'Estado de cuenta general', description: 'El libro cronológico de pagos y egresos con saldo acumulado.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_resumen', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte financiero mensual o por período', description: 'Ingresos netos, gastos y balance, con su resumen para WhatsApp.', requires: ['finanzas.contabilidad_ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_exportar', sub: 'Reportes', parent: 'finanzas.usar', label: 'Exportar e imprimir', description: 'Descargar o imprimir reportes, estados de cuenta y listas en PDF o Excel: saca datos del sistema.', requires: ['finanzas.ver'], sensitive: true, enforce: 'pantalla' },
+
+                { key: 'finanzas.config_ver', sub: 'Configuración', parent: 'finanzas.usar', label: 'Ver la configuración', description: 'La pantalla de configuración con la cuota, el cobro y los conceptos.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.config_general', sub: 'Configuración', parent: 'finanzas.usar', label: 'Cambiar nombre, idioma, moneda y tema', description: 'Estos datos son comunes a todos los usuarios del condominio.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
+                { key: 'finanzas.config_cuota', sub: 'Configuración', parent: 'finanzas.usar', label: 'Cambiar la cuota y el cobro', description: 'Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora.', requires: ['finanzas.config_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.config_conceptos', sub: 'Configuración', parent: 'finanzas.usar', label: 'Editar los conceptos frecuentes', description: 'Los conceptos de ingresos y egresos que se repiten.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
+
+                { key: 'finanzas.deshacer', sub: 'Datos', parent: 'finanzas.usar', label: 'Deshacer y rehacer', description: 'Los botones Deshacer y Rehacer (y Ctrl+Z): pueden devolver una anulación o quitar un alta.', requires: ['finanzas.ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.limpiar', sub: 'Datos', parent: 'finanzas.usar', label: 'Limpiar la base de datos de este equipo', description: 'Borra la copia local (los datos se restauran desde la nube, pero se pierden cambios pendientes). Pide una contraseña propia de OIKOS.', requires: ['finanzas.config_ver'], sensitive: true, enforce: 'pantalla' }
             ]
         },
         {
             id: 'rondas', title: 'Rondas de vigilancia (RONDIN)', items: [
-                { key: 'rondas.ver', label: 'Ver el panel de rondas', description: 'Consultar rutas, turnos, rondas, incidentes y la posición de los guardias (solo lectura).', roles: ['admin', 'supervisor', 'auditor'], requires: ['usuarios.ver'], enforce: 'reglas' },
-                { key: 'rondas.gestionar', label: 'Administrar rondas', description: 'Crear rutas y asignaciones, resolver incidentes, manejar drones y la configuración de rondas.', roles: ['admin', 'supervisor'], requires: ['rondas.ver'], enforce: 'reglas' },
-                { key: 'rondas.patrullar', label: 'Patrullar', description: 'Iniciar turnos y rondas, marcar puntos de control y reportar incidentes desde el teléfono.', roles: ['policia', 'supervisor'], requires: ['usuarios.ver'], enforce: 'reglas' }
+                { key: 'rondas.ver', sub: 'Acceso', label: 'Ver el panel de rondas', description: 'Abre RONDIN en solo lectura: rutas, turnos, rondas, incidentes y posición de los guardias. Con él vienen todas las pantallas de lectura de abajo.', roles: ['admin', 'supervisor', 'auditor'], requires: ['usuarios.ver'], enforce: 'reglas' },
+                { key: 'rondas.gestionar', sub: 'Acceso', label: 'Administrar rondas', description: 'Crear rutas y asignaciones, atender alertas, manejar drones y la configuración. Con él vienen todas las acciones de administración de abajo.', roles: ['admin', 'supervisor'], requires: ['rondas.ver'], enforce: 'reglas' },
+                { key: 'rondas.patrullar', sub: 'Acceso', label: 'Patrullar', description: 'La vista del guardia en el teléfono. Con él vienen todas las acciones de patrulla de abajo.', roles: ['policia', 'supervisor'], requires: ['usuarios.ver'], enforce: 'reglas' },
+
+                { key: 'rondas.panel_ver', sub: 'Panel y reportes', parent: 'rondas.ver', label: 'Ver el panel principal', description: 'Los indicadores, el cumplimiento por guardia y la actividad reciente.', enforce: 'pantalla' },
+                { key: 'rondas.reportes_ver', sub: 'Panel y reportes', parent: 'rondas.panel_ver', label: 'Ver la inteligencia operativa', description: 'El ranking de guardias, la salud de las rutas, la tendencia semanal y las recomendaciones.', enforce: 'pantalla' },
+                { key: 'rondas.reportes_imprimir', sub: 'Panel y reportes', parent: 'rondas.reportes_ver', label: 'Imprimir el reporte semanal', description: 'El reporte del Director General con el desempeño del personal y los incidentes.', sensitive: true, enforce: 'pantalla' },
+
+                { key: 'rondas.rutas_ver', sub: 'Rutas y puntos de control', parent: 'rondas.ver', label: 'Ver rutas y puntos', description: 'El menú Ruta de Monitoreo con sus rutas y puntos de control.', enforce: 'reglas' },
+                { key: 'rondas.rutas_crear', sub: 'Rutas y puntos de control', parent: 'rondas.gestionar', label: 'Crear y editar rutas', description: 'La ruta con su nombre, color y descripción.', requires: ['rondas.rutas_ver'], enforce: 'reglas' },
+                { key: 'rondas.rutas_eliminar', sub: 'Rutas y puntos de control', parent: 'rondas.gestionar', label: 'Eliminar rutas', description: 'Desactivar una ruta: deja de patrullarse.', requires: ['rondas.rutas_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'rondas.puntos_crear', sub: 'Rutas y puntos de control', parent: 'rondas.gestionar', label: 'Agregar puntos de control', description: 'Un punto nuevo con su ubicación y radio.', requires: ['rondas.rutas_ver'], enforce: 'reglas' },
+                { key: 'rondas.puntos_editar', sub: 'Rutas y puntos de control', parent: 'rondas.gestionar', label: 'Renombrar puntos de control', description: 'Cambiar el nombre de un punto.', requires: ['rondas.rutas_ver'], enforce: 'reglas' },
+                { key: 'rondas.puntos_eliminar', sub: 'Rutas y puntos de control', parent: 'rondas.gestionar', label: 'Eliminar puntos de control', description: 'Quitar un punto de la ruta.', requires: ['rondas.rutas_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'rondas.asignaciones_ver', sub: 'Asignaciones', parent: 'rondas.ver', label: 'Ver la programación de cobertura', description: 'Qué guardia cubre cada ruta y en qué fechas.', enforce: 'reglas' },
+                { key: 'rondas.asignaciones_crear', sub: 'Asignaciones', parent: 'rondas.gestionar', label: 'Asignar guardias a rutas', description: 'Programar el turno de un guardia (12 horas, 24x24 o personalizado).', requires: ['rondas.asignaciones_ver', 'rondas.guardias_ver'], enforce: 'reglas' },
+                { key: 'rondas.asignaciones_editar', sub: 'Asignaciones', parent: 'rondas.gestionar', label: 'Editar asignaciones', description: 'Cambiar fechas, horarios o guardia de una asignación.', requires: ['rondas.asignaciones_ver', 'rondas.guardias_ver'], enforce: 'reglas' },
+                { key: 'rondas.asignaciones_eliminar', sub: 'Asignaciones', parent: 'rondas.gestionar', label: 'Quitar asignaciones', description: 'Borrar una asignación (se borra el registro).', requires: ['rondas.asignaciones_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'rondas.monitoreo_ver', sub: 'Monitoreo en vivo', parent: 'rondas.ver', label: 'Ver el mapa en vivo', description: 'La posición de los guardias en el mapa (es información de ubicación del personal).', sensitive: true, enforce: 'reglas' },
+                { key: 'rondas.monitoreo_historial', sub: 'Monitoreo en vivo', parent: 'rondas.monitoreo_ver', label: 'Ver el historial de ubicaciones', description: 'Dónde estuvo cada guardia en las últimas horas.', sensitive: true, enforce: 'reglas' },
+                { key: 'rondas.recorridos_ver', sub: 'Monitoreo en vivo', parent: 'rondas.ver', label: 'Ver visitas a puntos (línea de tiempo, visitas y mapa)', description: 'Qué puntos se marcaron, quién y a qué hora.', enforce: 'reglas' },
+
+                { key: 'rondas.drones_ver', sub: 'Rondín Air (drones)', parent: 'rondas.ver', label: 'Ver Rondín Air', description: 'La pantalla de drones y su última telemetría.', enforce: 'reglas' },
+                { key: 'rondas.drones_operar', sub: 'Rondín Air (drones)', parent: 'rondas.gestionar', label: 'Operar y despachar drones', description: 'Los comandos del dron y el despliegue automático cuando suena un pánico.', requires: ['rondas.drones_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'rondas.drones_registrar', sub: 'Rondín Air (drones)', parent: 'rondas.gestionar', label: 'Registrar drones', description: 'Dar de alta un dron.', requires: ['rondas.drones_ver'], enforce: 'reglas' },
+
+                { key: 'rondas.alertas_ver', sub: 'Alertas', parent: 'rondas.ver', label: 'Ver las alertas de rondas', description: 'El menú Alertas, la campana y los avisos de turno iniciado, punto visitado o abandono.', enforce: 'reglas' },
+                { key: 'rondas.alertas_atender', sub: 'Alertas', parent: 'rondas.gestionar', label: 'Marcar alertas como atendidas', description: 'El botón de palomita de cada alerta.', requires: ['rondas.alertas_ver'], enforce: 'reglas' },
+                { key: 'rondas.alertas_eliminar', sub: 'Alertas', parent: 'rondas.gestionar', label: 'Borrar alertas', description: 'Quitar una alerta del panel (borra evidencia).', requires: ['rondas.alertas_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'rondas.incidentes_ver', sub: 'Incidentes', parent: 'rondas.ver', label: 'Ver incidentes', description: 'El menú Incidentes y los avisos de incidente nuevo.', enforce: 'reglas' },
+                { key: 'rondas.incidentes_resolver', sub: 'Incidentes', parent: 'rondas.gestionar', label: 'Resolver y cerrar incidentes', description: 'Cambiar el estado de un incidente.', requires: ['rondas.incidentes_ver'], enforce: 'reglas' },
+                { key: 'rondas.incidentes_reportar', sub: 'Incidentes', parent: 'rondas.patrullar', label: 'Reportar incidentes', description: 'El botón Reportar Incidente del guardia, con su foto.', enforce: 'reglas' },
+
+                { key: 'rondas.guardias_ver', sub: 'Guardias y supervisores', parent: 'rondas.ver', label: 'Ver la lista de guardias', description: 'El menú Guardias con su estado y teléfono.', enforce: 'pantalla' },
+                { key: 'rondas.guardias_expediente', sub: 'Guardias y supervisores', parent: 'rondas.guardias_ver', label: 'Ver el expediente del guardia', description: 'Sangre, edad, dirección, alergias y contacto de emergencia (datos personales y de salud: esto solo lo oculta en pantalla).', sensitive: true, enforce: 'pantalla' },
+                { key: 'rondas.supervisores_ver', sub: 'Guardias y supervisores', parent: 'rondas.ver', label: 'Ver supervisores', description: 'El menú Supervisores con los guardias que tiene cada uno.', enforce: 'pantalla' },
+                { key: 'rondas.supervisores_asignar', sub: 'Guardias y supervisores', parent: 'rondas.gestionar', label: 'Asignar guardias a supervisores', description: 'Poner o quitar a un guardia del equipo de un supervisor.', requires: ['rondas.supervisores_ver', 'rondas.guardias_ver'], enforce: 'reglas' },
+
+                { key: 'rondas.vecinos_ver', sub: 'Vecinos y ajustes', parent: 'rondas.ver', label: 'Ver los vecinos en RONDIN', description: 'El menú Vecinos con sus contactos de emergencia (datos personales).', sensitive: true, enforce: 'pantalla' },
+                { key: 'rondas.ajustes_ver', sub: 'Vecinos y ajustes', parent: 'rondas.ver', label: 'Ver la configuración de rondas', description: 'El menú Configuración.', enforce: 'pantalla' },
+                { key: 'rondas.ajustes_panicovecinos', sub: 'Vecinos y ajustes', parent: 'rondas.gestionar', label: 'Activar el botón de pánico de los vecinos', description: 'Habilita el botón de pánico para todos los vecinos y el menú Vecinos.', requires: ['rondas.ajustes_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'rondas.patrulla_iniciar', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Iniciar turno y ronda', description: 'El botón Iniciar Ronda, con su foto y ubicación.', enforce: 'reglas' },
+                { key: 'rondas.patrulla_terminar', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Terminar ronda y turno', description: 'El botón Terminar Ronda.', enforce: 'reglas' },
+                { key: 'rondas.patrulla_marcar', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Marcar puntos de control', description: 'Confirmar la visita a cada punto de la ruta.', enforce: 'reglas' },
+                { key: 'rondas.patrulla_rastrear', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Compartir la ubicación durante el turno', description: 'Si se quita, el guardia no aparece en el mapa en vivo.', sensitive: true, enforce: 'reglas' }
             ]
         },
         {
@@ -239,6 +326,28 @@
                 ...tree('usuarios.panel', 'usuarios.ver'), ...tree('visitas.ver'), 'garita.camara', 'garita.historial', 'mensajes.recibir',
                 'mensajes.historial', 'panico.ver', 'panico.contactos'
             ]
+        },
+        {
+            id: 'sys-cajero', name: 'Cajero (cobra pagos)', role: 'operador', system: true,
+            description: 'Solo registra y consulta pagos de los residentes en el Sistema Financiero, con sus comprobantes. No anula ni ve la configuración.',
+            claves: [
+                'usuarios.ver', 'mensajes.recibir', 'finanzas.ver', 'finanzas.usar', 'finanzas.residentes_ver', 'finanzas.residentes_estado',
+                'finanzas.contabilidad_ver', 'finanzas.comprobantes', 'finanzas.pagos_registrar', 'finanzas.reportes_morosos'
+            ]
+        },
+        {
+            id: 'sys-auditor-financiero', name: 'Auditor financiero (solo lectura)', role: 'operador', system: true,
+            description: 'Ve todo el Sistema Financiero y exporta reportes, sin registrar, anular ni cambiar nada.',
+            claves: [
+                'usuarios.ver', 'mensajes.recibir', 'finanzas.ver', 'finanzas.usar', 'finanzas.tablero_ver', 'finanzas.residentes_ver', 'finanzas.residentes_datos',
+                'finanzas.residentes_estado', 'finanzas.contabilidad_ver', 'finanzas.comprobantes', 'finanzas.reportes_ingresos', 'finanzas.reportes_morosos',
+                'finanzas.reportes_gastos', 'finanzas.reportes_libro', 'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.config_ver'
+            ]
+        },
+        {
+            id: 'sys-vigilancia-consulta', name: 'Vigilancia (solo lectura)', role: 'operador', system: true,
+            description: 'Ve las rondas, el mapa en vivo, los incidentes y las alertas, sin modificar nada.',
+            claves: ['usuarios.ver', 'mensajes.recibir', ...tree('rondas.ver'), 'panico.ver']
         },
         {
             id: 'sys-admin-delegado', name: 'Administrador delegado', role: 'admin', system: true,

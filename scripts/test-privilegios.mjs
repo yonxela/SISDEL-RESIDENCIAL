@@ -236,6 +236,10 @@ yes('el mapa de privilegios de un usuario admite hasta 300 claves (un operador e
 let generated = 'fallo';
 try { execFileSync('node', [new URL('./generar-reglas-privilegios.mjs', import.meta.url).pathname, '--check'], { stdio: 'pipe' }); generated = 'ok'; } catch (e) { generated = String(e.stdout || e.message); }
 equal('el bloque de privilegios de las reglas esta al dia con el catalogo (npm run reglas)', generated, 'ok');
+// La tabla de privilegios del README tambien se genera del catalogo
+let tableState = 'fallo';
+try { execFileSync('node', [new URL('./generar-tabla-privilegios.mjs', import.meta.url).pathname, '--check'], { stdio: 'pipe' }); tableState = 'ok'; } catch (e) { tableState = String(e.stderr || e.message); }
+equal('la tabla de privilegios del README esta al dia con el catalogo (node scripts/generar-tabla-privilegios.mjs)', tableState, 'ok');
 // Finanzas y Rondas: cada operacion tiene su privilegio en las reglas
 yes('Finanzas: cada tipo de movimiento exige su privilegio', ['pFinanzasPagosRegistrar', 'pFinanzasEgresosRegistrar', 'pFinanzasCargosCrear', 'pFinanzasCuotasMes', 'pFinanzasCuotasMeses'].every((fn) => used(fn) > 1));
 yes('Finanzas: anular y deshacer son privilegios aparte', ['pFinanzasPagosAnular', 'pFinanzasEgresosAnular', 'pFinanzasCargosAnular', 'pFinanzasCuotasCorregir', 'pFinanzasDeshacer'].every((fn) => used(fn) > 1));

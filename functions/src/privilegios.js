@@ -78,13 +78,13 @@
             ]
         },
         {
-            id: 'finanzas', title: 'Sistema Financiero', items: [
+            id: 'finanzas', title: 'Sistema Financiero (OIKOS)', items: [
                 { key: 'finanzas.ver', label: 'Leer datos financieros', description: 'Ver cuotas, cargos y pagos de los residentes (solo lectura).', roles: ['admin', 'auditor'] },
                 { key: 'finanzas.usar', label: 'Usar el Sistema Financiero', description: 'Abre finanzas.html: cargos, pagos, egresos y reportes. Para registrar residentes nuevos o cambiar sus datos desde ahí también necesita Crear usuarios y Editar usuarios.', roles: ['admin'], requires: ['finanzas.ver', 'usuarios.ver'], sensitive: true }
             ]
         },
         {
-            id: 'rondas', title: 'Rondas de vigilancia', items: [
+            id: 'rondas', title: 'Rondas de vigilancia (RONDIN)', items: [
                 { key: 'rondas.ver', label: 'Ver el panel de rondas', description: 'Consultar rutas, turnos, rondas, incidentes y la posición de los guardias (solo lectura).', roles: ['admin', 'supervisor', 'auditor'], requires: ['usuarios.ver'] },
                 { key: 'rondas.gestionar', label: 'Administrar rondas', description: 'Crear rutas y asignaciones, resolver incidentes, manejar drones y la configuración de rondas.', roles: ['admin', 'supervisor'], requires: ['rondas.ver'] },
                 { key: 'rondas.patrullar', label: 'Patrullar', description: 'Iniciar turnos y rondas, marcar puntos de control y reportar incidentes desde el teléfono.', roles: ['policia', 'supervisor'], requires: ['usuarios.ver'] }

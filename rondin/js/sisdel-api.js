@@ -1237,7 +1237,8 @@
             this.token = null; this.user = null;
             sessionStorage.removeItem('sisdel_neighbor');
             localStorage.removeItem('sisdel_token'); localStorage.removeItem('sisdel_user');
-            SISDEL.logout();
+            // RONDIN no tiene su propio formulario de clave: al salir va al login de SISDEL
+            SISDEL.logout('../index.html');
         },
         isLoggedIn() {
             const s = session();
@@ -1305,7 +1306,12 @@
     (function guardAccess() {
         const entry = SISDEL.PRIV.PAGES.find((p) => p.page === 'rondin/');
         const s0 = session();
-        if (!s0 || s0.role === 'master' || s0.role === 'vecino') return;
+        // Un solo formulario de ingreso: el de SISDEL. Sin sesion se va ahi y, al entrar, vuelve a RONDIN.
+        // La pagina se oculta mientras tanto para que no se vea la pantalla de clave de RONDIN.
+        if (!s0) { document.documentElement.style.visibility = 'hidden'; location.replace('../index.html?next=rondin/'); return; }
+        if (s0.role === 'master') { document.documentElement.style.visibility = 'hidden'; location.replace('../master.html'); return; }
+        // El vecino usa su boton de panico en su propio panel (vecino.html)
+        if (s0.role === 'vecino') { document.documentElement.style.visibility = 'hidden'; location.replace('../vecino.html'); return; }
         const leave = () => location.replace('../' + (SISDEL.homePage() || 'index.html'));
         if (!SISDEL.PRIV.canEnter(s0.role, s0.privilegios, entry)) { leave(); return; }
         SISDEL.refreshAccess().then((r) => {

@@ -834,10 +834,12 @@ const SISDEL = (() => {
         } catch { /* sin acceso a localStorage */ }
     }
 
-    function logout() {
+    // `to`: pagina a la que se va al salir (por defecto el login). RONDIN vive en rondin/ y sale a ../index.html
+    function logout(to) {
+        const destination = typeof to === 'string' && to ? to : 'index.html';
         clearSession();
         clearFinanceCache();
-        const leave = () => { window.location.href = 'index.html'; };
+        const leave = () => { window.location.href = destination; };
         try { services().auth.signOut().then(leave, leave); } catch { leave(); }
     }
 

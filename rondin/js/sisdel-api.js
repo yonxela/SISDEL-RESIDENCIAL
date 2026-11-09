@@ -151,6 +151,9 @@
         const p = (personal && personal.get(u.id)) || {};
         let profile = {};
         try { profile = JSON.parse(p.profile || '{}'); } catch { profile = {}; }
+        // El expediente (sangre, direccion, alergias, contacto de emergencia, documento) es un privilegio aparte
+        const dossier = can('rondas.guardias_expediente') || u.id === myId();
+        if (!dossier) profile = {};
         // Un solo codigo por persona: el de SISDEL (solo el admin lo puede leer)
         if (u.accessCode) profile.access_code = u.accessCode;
         else delete profile.access_code;
@@ -158,7 +161,7 @@
             id: u.id, company_id: condoId(), name: u.name, email: u.email || '', phone: u.phone || '',
             role: u.role === 'operador' ? rondinRoleFor(u.role, u.privilegios) : (ROLE_OUT[u.role] || String(u.role || '').toUpperCase()), photo_url: null,
             status: u.active === false ? 'INACTIVE' : 'ACTIVE', profile: JSON.stringify(profile),
-            document_id: p.document_id || null, supervisor_id: p.supervisor_id || null,
+            document_id: dossier ? (p.document_id || null) : null, supervisor_id: p.supervisor_id || null,
             pin_plain: u.accessCode || '', language: 'es', created_at: sqlFromIso(u.createdAt)
         };
     }
@@ -853,12 +856,17 @@
     });
 
     // ── Tablero y director general ──
+    // Una lectura sin privilegio (rutas, asignaciones, incidentes, alertas, panicos) queda vacia en vez de tumbar el tablero
+    const orEmpty = (promise) => promise.catch((e) => {
+        if (String((e && e.code) || '').includes('permission-denied') || (e && e.status === 403)) return [];
+        throw e;
+    });
     async function dgData() {
         const since7 = daysAgoSql(7);
         const [routesList, assignments, people, shifts, rounds7, incidents, alerts, panics] = await Promise.all([
-            activeRoutes(), assignmentsAll(), staff(), shiftsQuery({ days: 3 }), roundsSince(since7),
-            col('rondas_incidentes').get().then(list), col('rondas_alertas').where('created_at', '>=', daysAgoSql(30)).get().then(list),
-            panicsOf('guardia')
+            orEmpty(activeRoutes()), orEmpty(assignmentsAll()), orEmpty(staff()), orEmpty(shiftsQuery({ days: 3 })), orEmpty(roundsSince(since7)),
+            orEmpty(col('rondas_incidentes').get().then(list)), orEmpty(col('rondas_alertas').where('created_at', '>=', daysAgoSql(30)).get().then(list)),
+            orEmpty(panicsOf('guardia'))
         ]);
         return { routesList, assignments, people, shifts, rounds7, incidents, alerts, panics, guards: people.filter((u) => u.role === 'GUARDIA' && u.status === 'ACTIVE') };
     }
@@ -1129,6 +1137,8 @@
             const s = session();
             if (!s || !u || u.uid !== s.userId) throw err('Sesión vencida', 401);
         }
+        // Cada ruta exige su privilegio (ver privilegios-rondin.js): es la barrera de este lado; las reglas son la de verdad
+        if (window.RondinPrivilegios && !window.RondinPrivilegios.internals.canRoute(method, path, can)) throw err('Sin permisos para esta acción', 403);
         try {
             return await handler.handler(body || {}, path.match(handler.re).groups || {}, url.searchParams);
         } catch (e) { throw friendly(e); }
@@ -1152,10 +1162,10 @@
     }
     async function dispatchDrone(panic, type) {
         try {
+            if (!can('rondas.drones_operar')) return;
             const drones = list(await col('rondas_drones').get()).filter((d) => d.status === 'ACTIVE' && (d.battery_level ?? 100) > 20);
             if (!drones.length) return;
             const drone = drones[0];
-            if (!canManage()) return;
             await col('rondas_drones').doc(drone.id).update({ status: 'DISPATCHED' }).catch(() => {});
             socket.fire('drone:panic_dispatch', { drone_id: drone.id, drone_name: drone.name, company_id: condoId(), emergency_type: type, latitude: panic.lat, longitude: panic.lng, event_id: panic.id, timestamp: new Date().toISOString() });
         } catch (e) { console.warn('drones', e); }
@@ -1193,22 +1203,22 @@
                 });
             }
             if (!isManager()) return;
-            col('rondas_en_vivo').onSnapshot((snap) => {
+            if (can('rondas.monitoreo_ver')) col('rondas_en_vivo').onSnapshot((snap) => {
                 snap.docChanges().forEach((c) => {
                     if (c.type === 'removed') return;
                     const l = c.doc.data();
                     socket.fire('guard:location:update', { user_id: l.user_id, name: l.name, latitude: l.latitude, longitude: l.longitude, speed: l.speed, battery_level: l.battery_level, timestamp: l.timestamp });
                 });
             }, (e) => console.warn('en vivo', e.code || e.message));
-            listenAdded(col('rondas_visitas').where('arrived_at', '>=', sinceNow), (v) => socket.fire('checkpoint:visited', {
+            if (can('rondas.recorridos_ver')) listenAdded(col('rondas_visitas').where('arrived_at', '>=', sinceNow), (v) => socket.fire('checkpoint:visited', {
                 visit_id: v.id, guard_name: v.guard_name, guard_id: v.guard_id, checkpoint_name: v.checkpoint_name, checkpoint_id: v.checkpoint_id,
                 latitude: v.latitude, longitude: v.longitude, timestamp: new Date(ms(v.arrived_at)).toLocaleString('es-MX', { timeZone: TZ, hour12: true }), timestamp_utc: new Date(ms(v.arrived_at)).toISOString(), country: 'GT'
             }));
-            listenAdded(col('rondas_incidentes').where('created_at', '>=', sinceNow), (i) => socket.fire('incident:new', { incident: i, reporter: { id: i.reported_by, name: i.reporter_name } }));
-            listenAdded(col('rondas_alertas').where('created_at', '>=', sinceNow), (a) => {
+            if (can('rondas.incidentes_ver')) listenAdded(col('rondas_incidentes').where('created_at', '>=', sinceNow), (i) => socket.fire('incident:new', { incident: i, reporter: { id: i.reported_by, name: i.reporter_name } }));
+            if (can('rondas.alertas_ver')) listenAdded(col('rondas_alertas').where('created_at', '>=', sinceNow), (a) => {
                 if (a.alert_type === 'LOGOUT_DURING_SHIFT') socket.fire('new_alert', { id: a.id, title: a.title, message: a.message });
             });
-            col('rondas_drones').onSnapshot((snap) => snap.docChanges().forEach((c) => {
+            if (can('rondas.drones_ver')) col('rondas_drones').onSnapshot((snap) => snap.docChanges().forEach((c) => {
                 const d = c.doc.data();
                 if (c.type === 'modified' && d.last_telemetry_at) socket.fire('drone:telemetry', { drone_id: c.doc.id, latitude: d.last_latitude, longitude: d.last_longitude, altitude: d.last_altitude, speed: d.last_speed, battery_level: d.battery_level });
             }), () => {});
@@ -1270,6 +1280,16 @@
     // equipo; aqui quedan en emergencia/{id}, los mismos que avisa el boton de panico de SISDEL
     document.addEventListener('DOMContentLoaded', () => {
         if (typeof App === 'undefined') return;
+        // Privilegios en pantalla: solo las pantallas y botones que el usuario puede usar (ver privilegios-rondin.js)
+        if (window.RondinPrivilegios && session()) {
+            window.RondinPrivilegios.install(App, can, document, {
+                deny: () => Swal.fire('Sin permiso', 'Su usuario no tiene el privilegio para hacer esto.', 'warning'),
+                noPages: () => {
+                    const box = document.getElementById('page-content');
+                    if (box) box.textContent = 'Su usuario no tiene pantallas de RONDIN asignadas. Pida al administrador que le asigne privilegios.';
+                }
+            });
+        }
         // La sirena de panico de RONDIN debia apagarse sola al minuto, pero su codigo apunta a
         // variables que no existen y sonaba hasta tocar "ENTERADO". Se apaga a los 60 s; el aviso
         // rojo queda en pantalla hasta que alguien lo cierre

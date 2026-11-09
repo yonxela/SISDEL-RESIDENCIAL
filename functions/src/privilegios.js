@@ -89,6 +89,7 @@
                 { key: 'garita.escanear', sub: 'Operar la garita', parent: 'garita.operar', label: 'Usar el escáner QR', description: 'Abrir la cámara del dispositivo para leer códigos QR de visitas y marbetes.', enforce: 'pantalla' },
                 { key: 'garita.verificar', sub: 'Operar la garita', parent: 'garita.operar', label: 'Verificar un código a mano', description: 'Escribir el código de acceso, la placa o el QR para validar a una persona (lo valida el servidor).', enforce: 'reglas' },
                 { key: 'garita.ingreso', sub: 'Operar la garita', parent: 'garita.operar', label: 'Registrar ingresos', description: 'Confirmar el ingreso de una visita, un vehículo o un residente.', enforce: 'reglas' },
+                { key: 'garita.salida', sub: 'Operar la garita', parent: 'garita.operar', label: 'Registrar salidas', description: 'Confirmar la salida de una visita, un vehículo o un residente.', enforce: 'reglas' },
                 { key: 'garita.visitas_dia', sub: 'Operar la garita', parent: 'garita.operar', label: 'Ver las visitas del día', description: 'La lista de visitas esperadas hoy, con su botón Validar.', enforce: 'pantalla' },
                 { key: 'garita.morosos', sub: 'Operar la garita', parent: 'garita.operar', label: 'Ver el aviso de morosos', description: 'El recuento de vecinos morosos y la alerta de restricción de acceso.', enforce: 'pantalla' },
                 { key: 'garita.camara', sub: 'Cámara de placas', label: 'Ver el historial de la cámara', description: 'Consultar los accesos y lecturas de la cámara de placas.', roles: ['admin', 'policia', 'auditor'], enforce: 'reglas' },
@@ -234,6 +235,16 @@
                 { key: 'auditoria.exportar_visitas', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar visitas (CSV)', description: 'Las visitas del rango con quién las autorizó.', enforce: 'pantalla' },
                 { key: 'auditoria.exportar_usuarios', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar usuarios (CSV)', description: 'La lista de usuarios con teléfono, correo y estado de pago.', sensitive: true, enforce: 'pantalla' }
             ]
+        },
+        {
+            id: 'reportes', title: 'Reportes del administrador', items: [
+                { key: 'reportes.ver', sub: 'Acceso', label: 'Abrir el panel de Reportes', description: 'El botón Reportes del panel de administración. Cada sección pide además su privilegio y los de lectura de los datos que muestra.', roles: ['admin'], requires: ['usuarios.ver'], enforce: 'pantalla' },
+                { key: 'reportes.garita', sub: 'Secciones', parent: 'reportes.ver', label: 'Reportes de garita', description: 'Ingresos y salidas de vecinos y de visitas por período, placas, horas pico y visitas dentro (necesita ver visitas y el historial de la cámara).', requires: ['visitas.ver', 'garita.camara'], enforce: 'pantalla' },
+                { key: 'reportes.morosos', sub: 'Secciones', parent: 'reportes.ver', label: 'Listado de morosos a la fecha', description: 'Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago).', requires: ['usuarios.pagos_ver'], enforce: 'pantalla' },
+                { key: 'reportes.finanzas', sub: 'Secciones', parent: 'reportes.ver', label: 'Accesos a los reportes de Finanzas', description: 'Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas.', requires: ['finanzas.usar'], enforce: 'pantalla' },
+                { key: 'reportes.rondas', sub: 'Secciones', parent: 'reportes.ver', label: 'Acceso a los reportes de Rondas', description: 'Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas).', requires: ['rondas.panel_ver'], enforce: 'pantalla' },
+                { key: 'reportes.exportar', sub: 'Exportar', parent: 'reportes.ver', label: 'Exportar e imprimir', description: 'Descargar los reportes en CSV o imprimirlos en PDF: saca datos del sistema.', sensitive: true, enforce: 'pantalla' }
+            ]
         }
     ];
 
@@ -322,10 +333,10 @@
         },
         {
             id: 'sys-consulta', name: 'Consulta (solo lectura)', role: 'operador', system: true,
-            description: 'Ve usuarios, visitas, accesos y mensajes en el panel de administración, sin modificar nada.',
+            description: 'Ve usuarios, visitas, accesos, mensajes y los reportes de garita en el panel de administración, sin modificar nada.',
             claves: [
                 ...tree('usuarios.panel', 'usuarios.ver'), ...tree('visitas.ver'), 'garita.camara', 'garita.historial', 'mensajes.recibir',
-                'mensajes.historial', 'panico.ver', 'panico.contactos'
+                'mensajes.historial', 'panico.ver', 'panico.contactos', 'reportes.ver', 'reportes.garita'
             ]
         },
         {
@@ -370,7 +381,7 @@
         {
             id: 'sys-admin-sin-finanzas', name: 'Administrador sin finanzas', role: 'admin', system: true,
             description: 'Administrador completo, salvo el Sistema Financiero.',
-            claves: without(adminKeys, 'finanzas.ver', 'finanzas.usar')
+            claves: without(adminKeys, 'finanzas.ver', 'finanzas.usar', 'reportes.finanzas')
         }
     ];
     // Privilegios por defecto de un rol: los raiz segun `roles` y, con ellos, todas sus acciones

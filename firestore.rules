@@ -90,6 +90,7 @@ service cloud.firestore {
     function pGaritaOperar(c) { return can(c, 'garita.operar', ['admin', 'policia']); }
     function pGaritaVerificar(c) { return pGaritaOperar(c) && childOk(c, 'garita.verificar'); }
     function pGaritaIngreso(c) { return pGaritaOperar(c) && childOk(c, 'garita.ingreso'); }
+    function pGaritaSalida(c) { return pGaritaOperar(c) && childOk(c, 'garita.salida'); }
     function pGaritaCamara(c) { return can(c, 'garita.camara', ['admin', 'policia', 'auditor']); }
     // Panel del vecino
     function pVecinoVisitas(c) { return can(c, 'vecino.visitas', ['vecino']); }
@@ -317,6 +318,9 @@ service cloud.firestore {
         allow update: if isMaster()
           || pVisitasEditar(condoId)
           || (pGaritaIngreso(condoId) && onlyChanges(['status', 'enteredAt']))
+          // Salida de una visita que ya ingreso: la garita solo agrega la hora (exitedAt)
+          || (pGaritaSalida(condoId) && onlyChanges(['exitedAt']) && resource.data.status == 'entered'
+              && request.resource.data.exitedAt is string)
           || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner() && willOwn(condoId) && residentVisitOk(condoId));
         // Al eliminar un usuario se borran tambien sus visitas y vehiculos (usuarios.eliminar solo sirve para eso)
         allow delete: if isMaster()
@@ -357,6 +361,16 @@ service cloud.firestore {
       match /camera_logs/{logId} {
         allow read: if isMaster() || pGaritaCamara(condoId);
         allow create: if pGaritaIngreso(condoId) && request.resource.data.condominioId == condoId;
+        allow update: if false;
+        allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
+      }
+
+      // Salidas de vecinos (vehiculo o residente) que registra la garita. Las de las visitas van en visitas.exitedAt.
+      // Se leen como el historial de la camara; no se editan.
+      match /salidas/{exitId} {
+        allow read: if isMaster() || pGaritaCamara(condoId);
+        allow create: if pGaritaSalida(condoId) && request.resource.data.condominioId == condoId
+          && request.resource.data.kind in ['vehiculo', 'residente'];
         allow update: if false;
         allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
       }

@@ -16,7 +16,7 @@ const SISDEL = (() => {
 
     const COL = {
         condos: 'condominios', users: 'usuarios', visits: 'visitas', vehicles: 'vehiculos',
-        messages: 'mensajes', cameraLogs: 'camera_logs',
+        messages: 'mensajes', cameraLogs: 'camera_logs', exits: 'salidas',
         globalMessages: 'mensajes_globales', codes: 'codigos', templates: 'plantillas_privilegios'
     };
 
@@ -643,6 +643,16 @@ const SISDEL = (() => {
         return updateVisit(visitId, { status: VISIT_STATUS.ENTERED, enteredAt: nowIso() });
     }
 
+    // Salida de una visita que ya ingreso: solo agrega la hora (el estado sigue siendo "entered")
+    async function markVisitAsExited(visitId) {
+        return updateVisit(visitId, { exitedAt: nowIso() });
+    }
+
+    // Una visita esta dentro si ingreso y no ha salido despues de ese ingreso (un acceso temporal puede volver a entrar otro dia)
+    function isVisitInside(visit) {
+        return !!visit && !!visit.enteredAt && (!visit.exitedAt || visit.exitedAt < visit.enteredAt);
+    }
+
     // ══════════════════════════════════
     //  Vehicle / Marbete
     // ══════════════════════════════════
@@ -764,6 +774,42 @@ const SISDEL = (() => {
             await ref.set(data);
             return data;
         } catch (error) { reportError('createCameraLog', error); return null; }
+    }
+
+    // Salida de un vecino (kind: 'vehiculo' o 'residente'); las de las visitas se guardan en la propia visita (exitedAt)
+    async function createExit(condominioId, kind, { plate, name, casa, userId, reason } = {}) {
+        try {
+            await authReady();
+            const ref = sub(condominioId, COL.exits).doc();
+            const data = {
+                id: ref.id, condominioId, kind,
+                plate: String(plate || '').toUpperCase(), name: name || '', casa: casa || '', userId: userId || '',
+                reason: reason || '', createdAt: nowIso()
+            };
+            await ref.set(data);
+            return data;
+        } catch (error) { reportError('createExit', error); return null; }
+    }
+
+    // Salidas entre dos instantes ISO [desde, hasta), de la mas nueva a la mas vieja (null si la consulta falla)
+    async function getExitsBetween(condominioId, fromIso, toIso, max = 5000) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, COL.exits)
+                .where('createdAt', '>=', fromIso)
+                .where('createdAt', '<', toIso)
+                .orderBy('createdAt', 'desc')
+                .limit(max)
+                .get(SERVER);
+            return snap.docs.map((d) => toObj(COL.exits, d));
+        } catch (error) { reportError('getExitsBetween', error); return null; }
+    }
+
+    async function getExitsToday(condominioId, max = 15) {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+        return (await getExitsBetween(condominioId, start, end, max)) || [];
     }
 
     async function getCameraLogsToday(condominioId, max = 15) {
@@ -1061,10 +1107,11 @@ const SISDEL = (() => {
         PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
-        getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered,
+        getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered, markVisitAsExited, isVisitInside,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,
         createCameraLog, getCameraLogsToday, getCameraLogsBetween, subscribeCameraLogs,
+        createExit, getExitsBetween, getExitsToday,
         login, getSession, logout, requireAuth, reportPageLoad, localToday,
         showToast, copyText, copyButton, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };

@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 138 privilegios: 29 paraguas y 109 acciones', [P.KEYS.length, roots.length, kids.length], [138, 29, 109]);
+equal('hay 145 privilegios: 30 paraguas y 115 acciones', [P.KEYS.length, roots.length, kids.length], [145, 30, 115]);
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
 yes('el arbol tiene como maximo cuatro niveles (paraguas, pantalla, reporte, impresion)', P.ITEMS.every((i) => i.depth <= 3));
@@ -112,9 +112,9 @@ const withKids = (...list) => list.flatMap((k) => [k, ...P.descendantsOf(k)]);
 equal('toOverrides del operador son sus paraguas (las acciones vienen con el)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true });
 equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true });
 equal('toOverrides guarda una accion apagada como false', P.toOverrides('operador', ['usuarios.ver', 'garita.operar', 'mensajes.recibir']),
-    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false });
 equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false, 'mensajes.recibir': true }),
-    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false });
 {
     const wanted = new Set();
     P.toggle(wanted, 'usuarios.ver', true, { children: true });
@@ -302,13 +302,66 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         return a && m && a[1] === m[1];
     })());
 }
+{
+    // Panel de Reportes del administrador (admin.html + reportes-ui.js) y salidas de la garita
+    const admin = read('admin.html');
+    const rp = read('reportes-ui.js');
+    const garita = read('garita.html');
+    const core = read('sisdel-core.js');
+    const fin = read('finanzas.html');
+    const oikos = read('finanzas/index.html');
+    yes('admin.html tiene el boton Reportes junto a Configuracion, con icono SVG y sin emojis', /id="btnReports"[\s\S]*?<svg[\s\S]*?Reportes\s*<\/button>\s*<button class="btn btn-ghost btn-sm" id="btnConfig"/.test(admin));
+    yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes/seccion)', /id="viewReportes"/.test(admin) && /#reportes\(\?:\\\/\(garita\|morosos\|finanzas\|rondas\)\)\?\$/.test(admin) && /id="reportesMount"/.test(admin));
+    yes('admin.html carga reportes-ui.js antes del script de la pagina', admin.indexOf('reportes-ui.js') > 0 && admin.indexOf('reportes-ui.js') < admin.indexOf('SisdelReportes.available()'));
+    yes('el panel, Configuracion y Reportes son vistas exclusivas', /function paintViews\(\)/.test(admin) && /if \(open\) repOpen = false;/.test(admin) && /if \(open\) cfgOpen = false;/.test(admin));
+    yes('el boton Reportes solo aparece si hay alguna seccion disponible', /btnReports\.style\.display = canReports \? '' : 'none'/.test(admin) && /const canReports = reportIds\.length > 0/.test(admin));
+    yes('reportes-ui.js tiene un escape para cada dato escrito por usuarios (nombres, placas, motivos)', /function esc\(value\)/.test(rp) && /esc\(u\.name\)/.test(rp) && /esc\(v\.name\)/.test(rp) && /esc\(m\.who\)/.test(rp));
+    // SISDEL es una constante global de sisdel-core.js (no cuelga de window): leerlo solo de window dejaba el boton oculto
+    yes('reportes-ui.js lee SISDEL como constante global y no solo de window', /typeof SISDEL !== 'undefined' \? SISDEL : window\.SISDEL/.test(rp) && (rp.match(/window\.SISDEL/g) || []).length === 1);
+    // Cada clave que usa el modulo existe en el catalogo
+    const used = [...rp.matchAll(/can\('([a-z_]+\.[a-z_]+)'\)/g)].map((m) => m[1]);
+    yes('reportes-ui.js solo usa privilegios del catalogo', used.length > 10 && used.every((k) => P.itemOf(k)));
+    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 5);
+    // Los accesos directos llegan a pantallas que existen en OIKOS
+    const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
+    equal('los cinco reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'morosos', 'account-statement', 'resumen']);
+    yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
+    yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
+    yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));
+    // Quien ve cada seccion (se carga el modulo con privilegios de verdad)
+    const sandbox = { window: {}, document: {} };
+    vm.createContext(sandbox);
+    vm.runInContext(rp + '\nthis.SisdelReportes = SisdelReportes;', sandbox);
+    const reports = sandbox.SisdelReportes;
+    const sectionsFor = (role, overrides) => { sandbox.window.SISDEL = { can: (k) => P.has(role, overrides, k) }; return reports.available(); };
+    equal('el administrador ve las cuatro secciones', sectionsFor('admin', {}), ['garita', 'morosos', 'finanzas', 'rondas']);
+    equal('el administrador sin finanzas no ve los reportes de OIKOS', sectionsFor('admin', P.toOverrides('admin', P.templateKeys(P.templateById('sys-admin-sin-finanzas')))), ['garita', 'morosos', 'rondas']);
+    equal('el administrador delegado ve las cuatro', sectionsFor('admin', P.toOverrides('admin', P.templateKeys(P.templateById('sys-admin-delegado')))), ['garita', 'morosos', 'finanzas', 'rondas']);
+    equal('quien tiene la plantilla de consulta ve solo los reportes de garita', sectionsFor('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita']);
+    equal('el auditor tiene sus reportes en su panel: no ve el boton del administrador', sectionsFor('auditor', {}), []);
+    equal('un guardia o un vecino no ven Reportes', [sectionsFor('policia', {}), sectionsFor('vecino', {})], [[], []]);
+    equal('quitar reportes.garita lo oculta aunque pueda leer los datos', sectionsFor('admin', { 'reportes.garita': false }), ['morosos', 'finanzas', 'rondas']);
+    equal('sin el paraguas reportes.ver no hay ninguna seccion', sectionsFor('admin', { 'reportes.ver': false }), []);
+    equal('quitar la lectura del historial de la camara oculta la seccion de garita', sectionsFor('admin', { 'garita.camara': false }), ['morosos', 'finanzas', 'rondas']);
+    equal('de donde viene cada lectura (vecino, visita o placa desconocida)', ['Vecino permanente: Ana', 'Visita programada: Luis', 'Visita: Luis → Casa 4', 'Placa no registrada', 'Marbete QR: Toyota — Ana', 'Acceso QR: Ana — Casa 4', 'Ana - MOROSO'].map((reason) => reports.logKind({ reason, status: 'Authorized' })),
+        ['vecino', 'visita', 'visita', 'desconocido', 'vecino', 'vecino', 'vecino']);
+    // Salidas de la garita
+    yes('garita.salida es un privilegio con las reglas, dentro de operar la garita', P.itemOf('garita.salida').parent === 'garita.operar' && P.itemOf('garita.salida').enforce === 'reglas');
+    yes('el guardia y el administrador de siempre pueden registrar salidas (hereda de operar la garita)', P.has('policia', {}, 'garita.salida') && P.has('admin', {}, 'garita.salida'));
+    yes('un auditor no registra salidas', !P.has('auditor', {}, 'garita.salida'));
+    yes('garita.html ofrece Registrar Salida solo con el privilegio y confirma antes', /id="btnRegisterExit"/.test(garita) && /salida: SISDEL\.can\('garita\.salida'\)/.test(garita) && /btnExit\.style\.display = g\.salida/.test(garita));
+    yes('la visita dentro se reconoce por su ingreso y su salida (un acceso temporal puede volver a entrar)', /function isVisitInside\(visit\)/.test(core) && /exitedAt < visit\.enteredAt/.test(core));
+    yes('el nucleo guarda la salida de una visita en la propia visita y la de un vecino en salidas', /updateVisit\(visitId, \{ exitedAt: nowIso\(\) \}\)/.test(core) && /exits: 'salidas'/.test(core) && /createExit, getExitsBetween, getExitsToday/.test(core));
+    yes('el historial de la garita muestra las salidas', /badgeText = 'SALIDA'/.test(garita) && /getExitsToday/.test(garita));
+    yes('las reglas tienen el bloque de salidas y la salida de visitas', /match \/salidas\/\{exitId\}/.test(read('firestore.rules')) && /pGaritaSalida\(condoId\) && onlyChanges\(\['exitedAt'\]\)/.test(read('firestore.rules')));
+}
 yes('el servidor pide garita.verificar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.verificar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));
 
 // ───────── Sintaxis de las paginas y modulos ─────────
 console.log('\nSintaxis');
 const syntaxOk = (name, code) => { try { new vm.Script(code, { filename: name }); return true; } catch (e) { console.log(`    ${name}: ${e.message}`); return false; } };
-for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
+for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'reportes-ui.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
     yes(`${file} no tiene errores de sintaxis`, syntaxOk(file, read(file)));
 }
 for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html', 'finanzas/index.html']) {

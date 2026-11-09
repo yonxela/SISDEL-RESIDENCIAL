@@ -42,6 +42,11 @@
                     </svg>
                 </button>
                 <span id="panelLinks" style="display:contents;"></span>
+                <button class="btn btn-ghost btn-sm" id="btnReports" title="Reportes: garita, morosos, finanzas y rondas" aria-label="Reportes"
+                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    Reportes
+                </button>
                 <button class="btn btn-ghost btn-sm" id="btnConfig" title="Configuración: usuarios, privilegios y plantillas" aria-label="Configuración"
                     style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -134,6 +139,18 @@
                 <div id="sentMsgList"></div>
             </div>
           </div><!-- /panelMain -->
+
+            <!-- Reportes: garita, morosos y accesos a los de Finanzas y Rondas (reportes-ui.js) -->
+            <div id="viewReportes" style="display:none;">
+                <div class="rp-noprint" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem;">
+                    <div>
+                        <h2 style="font-size:1.4rem; margin:0;">Reportes</h2>
+                        <p class="text-xs text-muted" style="margin:0.25rem 0 0;">Garita, morosos, finanzas y rondas del condominio</p>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="btnReportsBack" style="border:1px solid var(--border-strong);">Volver al panel</button>
+                </div>
+                <div id="reportesMount"></div>
+            </div>
 
             <!-- Configuracion: usuarios, privilegios y plantillas (estructura del modulo de MULTISYS) -->
             <div id="viewConfig" style="display:none;">
@@ -309,9 +326,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109f"></script>
-    <script src="sisdel-core.js?v=20261109f"></script>
+    <script src="privilegios.js?v=20261110a"></script>
+    <script src="sisdel-core.js?v=20261110a"></script>
     <script src="privilegios-ui.js?v=20261108i"></script>
+    <script src="reportes-ui.js?v=20261110a"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261109f"></script>
     <script>
@@ -966,23 +984,65 @@
                 if (tab === 'plantillas' && !tplTab) await mountTplTab();
             }
 
+            // El panel, Configuracion y Reportes son vistas exclusivas: solo una se ve a la vez
+            let repOpen = false;
+            function paintViews() {
+                document.getElementById('panelMain').style.display = cfgOpen || repOpen ? 'none' : '';
+                document.getElementById('viewConfig').style.display = cfgOpen ? '' : 'none';
+                document.getElementById('viewReportes').style.display = repOpen ? '' : 'none';
+                btnConfig.style.background = cfgOpen ? 'var(--primary-light)' : '';
+                btnConfig.style.color = cfgOpen ? 'white' : '';
+                btnReports.style.background = repOpen ? 'var(--primary-light)' : '';
+                btnReports.style.color = repOpen ? 'white' : '';
+            }
             function showConfigView(open) {
                 cfgOpen = open;
-                document.getElementById('panelMain').style.display = open ? 'none' : '';
-                document.getElementById('viewConfig').style.display = open ? '' : 'none';
-                btnConfig.style.background = open ? 'var(--primary-light)' : '';
-                btnConfig.style.color = open ? 'white' : '';
+                if (open) repOpen = false;
+                paintViews();
                 if (open) window.scrollTo(0, 0);
+            }
+            function showReportsView(open) {
+                repOpen = open;
+                if (open) cfgOpen = false;
+                paintViews();
+                if (open) window.scrollTo(0, 0);
+            }
+            function leaveToPanel() {
+                history.replaceState(null, '', location.pathname + location.search);
+                showConfigView(false);
+                showReportsView(false);
+            }
+
+            // ── Reportes: se monta la primera vez que se abre ──
+            const btnReports = document.getElementById('btnReports');
+            const reportIds = SisdelReportes.available();
+            const canReports = reportIds.length > 0;
+            btnReports.style.display = canReports ? '' : 'none';
+            let reports = null;
+            let reportsTab = null;
+            function openReports(tab) {
+                if (!reports) {
+                    reports = SisdelReportes.mount(document.getElementById('reportesMount'), {
+                        condominioId: condoId, condoName: session.condominioName, userName: session.userName,
+                        getUsers: () => allUsersCache
+                    });
+                }
+                showReportsView(true);
+                reportsTab = reports.show(tab || reportsTab);
             }
 
             // La vista vive en la dirección (#configuracion/privilegios): se puede abrir, recargar y volver atrás
             async function applyHash() {
                 const match = /^#configuracion(?:\/(usuarios|privilegios|plantillas))?$/.exec(location.hash);
+                const reportMatch = /^#reportes(?:\/(garita|morosos|finanzas|rondas))?$/.exec(location.hash);
                 if (match && canConfig) {
                     showConfigView(true);
                     await showConfigTab(match[1] || cfgTab);
-                } else if (cfgOpen) {
+                } else if (reportMatch && canReports) {
+                    openReports(reportMatch[1] || reportsTab);
+                } else if (cfgOpen || repOpen) {
                     showConfigView(false);
+                    showReportsView(false);
                 }
             }
             window.addEventListener('hashchange', applyHash);
@@ -992,11 +1052,16 @@
             });
             document.getElementById('btnConfigBack').addEventListener('click', () => {
                 if (unsaved() && !confirm('Hay cambios sin guardar. ¿Salir de Configuración de todos modos?')) return;
-                history.replaceState(null, '', location.pathname + location.search);
-                showConfigView(false);
+                leaveToPanel();
             });
-            // Si el usuario abre Mensajes estando en Configuración, vuelve primero al panel
-            document.getElementById('btnMessages').addEventListener('click', () => { if (cfgOpen) { history.replaceState(null, '', location.pathname + location.search); showConfigView(false); } }, true);
+            btnReports.addEventListener('click', () => {
+                if (repOpen) { document.getElementById('btnReportsBack').click(); return; }
+                if (cfgOpen && unsaved() && !confirm('Hay cambios sin guardar. ¿Salir de Configuración de todos modos?')) return;
+                location.hash = `#reportes/${reportsTab || reportIds[0]}`;
+            });
+            document.getElementById('btnReportsBack').addEventListener('click', leaveToPanel);
+            // Si el usuario abre Mensajes estando en Configuración o Reportes, vuelve primero al panel
+            document.getElementById('btnMessages').addEventListener('click', () => { if (cfgOpen || repOpen) leaveToPanel(); }, true);
 
             await Promise.all([renderStats(), renderUsers(), loadMoraMode()]);
             applyHash();

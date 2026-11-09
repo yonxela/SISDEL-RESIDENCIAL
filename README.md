@@ -9,7 +9,7 @@ Cada administrador decide, usuario por usuario, qué módulos y acciones puede v
 | --- | --- | --- |
 | `master` | `master.html` | Todos los condominios. |
 | `admin` | `admin.html` | Su condominio: usuarios, códigos, vehículos, visitas y mensajes. |
-| `policia` | `garita.html` | Verifica códigos y QR, registra ingresos. |
+| `policia` | `garita.html` | Verifica códigos y QR, registra ingresos y salidas. |
 | `vecino` | `vecino.html` | Sus visitas, vehículos y mensajes. |
 | `admin` (finanzas) | `finanzas.html` | Sistema Financiero del condominio (OIKOS): cuotas, ingresos, egresos, estados de cuenta y reportes. |
 | `supervisor` | `rondin/` | SISDEL RONDÍN: rutas de monitoreo, guardias en vivo, Rondín Air, alertas, incidentes y vecinos. El admin entra como Director General y el auditor en solo lectura. |
@@ -23,8 +23,8 @@ El rol da los privilegios por defecto y la página de inicio. Encima de eso, el 
 
 Idea tomada del módulo de Configuración de MULTISYS (catálogo de privilegios por módulo, plantillas y editor por tarjetas), adaptada a SISDEL.
 
-- **Catálogo:** `privilegios.js` (138 privilegios agrupados por módulo: SISDEL, Sistema Financiero y RONDIN; ninguna opción queda sin privilegio). Es la fuente única: lo cargan las páginas y `functions/src/privilegios.js` es una copia idéntica (una prueba falla si difieren).
-- **Paraguas y acciones:** hay 29 paraguas (los 26 de siempre y tres de lectura de mensajes y del vecino) y 109 acciones que cuelgan de uno (`parent` en el catálogo, hasta cuatro niveles). Sin el paraguas no hay ninguna acción; con él vienen todas, salvo las que el administrador quite (`{ "finanzas.pagos_anular": false }`). Así quien ya tenía el privilegio amplio no pierde nada, y el administrador puede ir quitando de a una. Las acciones heredan los roles por defecto de su paraguas. En el editor, al marcar una acción se marca su paraguas y lo que necesita (`requires`), y al quitarla se quitan las que dependen de ella.
+- **Catálogo:** `privilegios.js` (145 privilegios agrupados por módulo: SISDEL, Sistema Financiero y RONDIN; ninguna opción queda sin privilegio). Es la fuente única: lo cargan las páginas y `functions/src/privilegios.js` es una copia idéntica (una prueba falla si difieren).
+- **Paraguas y acciones:** hay 30 paraguas (los 26 de siempre, tres de lectura de mensajes y del vecino y `reportes.ver`) y 115 acciones que cuelgan de uno (`parent` en el catálogo, hasta cuatro niveles). Sin el paraguas no hay ninguna acción; con él vienen todas, salvo las que el administrador quite (`{ "finanzas.pagos_anular": false }`). Así quien ya tenía el privilegio amplio no pierde nada, y el administrador puede ir quitando de a una. Las acciones heredan los roles por defecto de su paraguas. En el editor, al marcar una acción se marca su paraguas y lo que necesita (`requires`), y al quitarla se quitan las que dependen de ella.
 - **Cada rol trae los suyos por defecto** y son exactamente los accesos que el rol ya tenía. Un usuario sin privilegios asignados no pierde ni gana nada.
 - **Lo que asigna el administrador se guarda en `usuarios/{id}.privilegios`**, solo las diferencias con su rol: `{ "finanzas.usar": false }` quita un privilegio, `{ "visitas.gestionar": true }` lo agrega. Vacío = los del rol.
 - **Las reglas de Firestore lo leen del documento del usuario** (como ya hacían con `role` y `active`): el cambio aplica al instante, sin volver a iniciar sesión, y no depende del token. Las funciones `pXxx` de `firestore.rules` llevan los roles por defecto de cada clave; `scripts/test-privilegios.mjs` verifica que coincidan con el catálogo.
@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-138 privilegios: 29 paraguas y 109 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+145 privilegios: 30 paraguas y 115 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Usuarios y vecinos
 
@@ -95,6 +95,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `garita.escanear` | Usar el escáner QR. Abrir la cámara del dispositivo para leer códigos QR de visitas y marbetes. | los de su paraguas | Pantalla |
 | `garita.verificar` | Verificar un código a mano. Escribir el código de acceso, la placa o el QR para validar a una persona (lo valida el servidor). | los de su paraguas | Reglas |
 | `garita.ingreso` | Registrar ingresos. Confirmar el ingreso de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
+| `garita.salida` | Registrar salidas. Confirmar la salida de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
 | `garita.visitas_dia` | Ver las visitas del día. La lista de visitas esperadas hoy, con su botón Validar. | los de su paraguas | Pantalla |
 | `garita.morosos` | Ver el aviso de morosos. El recuento de vecinos morosos y la alerta de restricción de acceso. | los de su paraguas | Pantalla |
 | `garita.camara` | Ver el historial de la cámara. Consultar los accesos y lecturas de la cámara de placas. | `admin`, `policia`, `auditor` | Reglas |
@@ -226,6 +227,17 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `auditoria.exportar_visitas` | Exportar visitas (CSV). Las visitas del rango con quién las autorizó. | los de su paraguas | Pantalla |
 | `auditoria.exportar_usuarios` | Exportar usuarios (CSV) **(sensible)**. La lista de usuarios con teléfono, correo y estado de pago. | los de su paraguas | Pantalla |
 
+### Reportes del administrador
+
+| Privilegio | Qué permite | Por defecto | Garantía |
+| --- | --- | --- | --- |
+| `reportes.ver` | Abrir el panel de Reportes. El botón Reportes del panel de administración. Cada sección pide además su privilegio y los de lectura de los datos que muestra. | `admin` | Pantalla |
+| `reportes.garita` | Reportes de garita. Ingresos y salidas de vecinos y de visitas por período, placas, horas pico y visitas dentro (necesita ver visitas y el historial de la cámara). | los de su paraguas | Pantalla |
+| `reportes.morosos` | Listado de morosos a la fecha. Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago). | los de su paraguas | Pantalla |
+| `reportes.finanzas` | Accesos a los reportes de Finanzas. Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas. | los de su paraguas | Pantalla |
+| `reportes.rondas` | Acceso a los reportes de Rondas. Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas). | los de su paraguas | Pantalla |
+| `reportes.exportar` | Exportar e imprimir **(sensible)**. Descargar los reportes en CSV o imprimirlos en PDF: saca datos del sistema. | los de su paraguas | Pantalla |
+
 <!-- END tabla-privilegios -->
 
 ### Cómo se hace cumplir en el Sistema Financiero (OIKOS) y en RONDIN
@@ -289,6 +301,7 @@ condominios/{condoId}
     vehiculos/{vehicleId}
     mensajes/{msgId}
     camera_logs/{logId}
+    salidas/{id}                    salidas de vecinos (vehículo o residente) que registra la garita; las de las visitas van en `visitas.exitedAt`
     finanzas_residentes/{userId}    datos financieros del vecino (DPI, lote, notas, finiquito)
     finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
@@ -364,5 +377,9 @@ La cámara envía a `https://garita.app/api/lpr?condominioId=<id del condominio>
 También se aceptan `/api/anpr`, `/LAPI/*` y `/NotificationInfo/*`.
 
 Decisión de la cámara (`functions/src/anpr/decide.js`): vehículo registrado de un vecino al día abre; moroso con gracia abre con aviso; moroso sin gracia, vecino desactivado o eliminado no abre. Un pase de visita vale lo que vale el vecino que lo dio: si ese vecino está moroso sin gracia o inactivo, su visita tampoco abre (así nadie registra su propia placa como "visita"). La coincidencia parcial de placas exige al menos 6 caracteres. Cada condominio puede tener una **clave secreta de cámara**: se fija con `cd scripts && npm run camera-key -- --condo=<id> --target=prod --generate` (muestra la clave una sola vez y guarda solo su huella en `_privado/camaras/claves/{id}`) y se configura en la cámara como `https://garita.app/api/lpr?condominioId=<id>&key=<clave>` (o encabezado `X-Camera-Key`). Con clave, la cámara de ese condominio solo entra con ella (`--quitar` la vuelve a abrir, `--ver` dice si tiene); sin clave sigue entrando como antes. Sin clave, cualquiera que conozca el id del condominio puede mandarle placas: no abre la puerta, pero consume pases pendientes y llena el historial.
+
+Salidas: la garita (`garita.salida`) confirma la salida de una visita que ya ingresó (`visitas/{id}.exitedAt`, el estado sigue siendo `entered`; una visita está dentro si ingresó y no salió después de ese ingreso) y la de un vecino por marbete o código (`salidas/{id}` con `kind` `vehiculo` o `residente`). Las reglas solo dejan agregar la hora de salida a una visita que ya ingresó y no dejan editar una salida registrada. La cámara solo lee entradas.
+
+Reportes del administrador (`admin.html#reportes`, botón **Reportes** junto a Configuración, `reportes-ui.js`): Garita (ingresos y salidas de vecinos y de visitas por período, visitas dentro, horas con más ingresos, placas con más ingresos y denegadas, visitas por casa, detalle de vecinos y de visitas, con CSV e impresión), Morosos a la fecha (con CSV), Finanzas (accesos directos a los reportes de OIKOS: ingresos, gastos por categoría, morosos con meses adeudados, estado de cuenta general y reporte financiero; se abren con `finanzas.html#reportes/<reporte>` y OIKOS sigue calculando las cifras) y Rondas (acceso a RONDIN). Cada sección pide su privilegio `reportes.*` y los de lectura de sus datos; exportar es `reportes.exportar`.
 
 En la garita (`garita.html`): un pase QR vale solo su día (o su rango, si es temporal) y una sola vez; un marbete o código de un vecino desactivado no abre; la verificación manual de códigos (`verifyAccessCode`) solo confirma vecinos, nunca códigos de guardias o administradores, y admite 60 intentos cada 10 minutos por usuario.

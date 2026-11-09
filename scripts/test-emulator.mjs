@@ -1294,6 +1294,36 @@ async function run() {
     await denied('garita: verificar no escribe el historial', () => setDoc(rref(gVer, 'camera_logs', 'log-ver'), { id: 'log-ver', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
     await allowed('garita: ingreso escribe el historial', () => setDoc(rref(gIng, 'camera_logs', 'log-ing'), { id: 'log-ing', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
 
+    // Garita: salidas (la hora de salida de una visita y las salidas de vecinos en `salidas`)
+    const gSal = await opWith('u-gsa', 'PGSA1', 'Registra salidas', ['garita.salida']);
+    const exitDoc = (id, kind, extra = {}) => ({ id, condominioId: A, kind, plate: 'P123ABC', name: 'Ana García', casa: 'Casa 12', userId: 'u-ana', reason: 'Marbete QR', createdAt: ts(), ...extra });
+    await setDoc(rref(admin, 'visitas', 'vis-sal2'), { id: 'vis-sal2', condominioId: A, userId: 'u-ana', visitorName: 'Aun no llega', visitorInfo: '', vehiclePlate: '', plateNorm: '', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSAL2', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: ts() });
+    await allowed('garita: salida marca la hora de salida de una visita que ya ingreso', () => updateDoc(rref(gSal, 'visitas', 'vis-sec'), { exitedAt: ts() }));
+    await denied('garita: salida no cambia el estado de la visita a la vez', () => updateDoc(rref(gSal, 'visitas', 'vis-sec'), { exitedAt: ts(), status: 'pending' }));
+    await denied('garita: salida no cambia otros datos de la visita', () => updateDoc(rref(gSal, 'visitas', 'vis-sec'), { exitedAt: ts(), visitorName: 'Otro' }));
+    await denied('garita: la hora de salida es un texto', () => updateDoc(rref(gSal, 'visitas', 'vis-sec'), { exitedAt: 12345 }));
+    await denied('garita: no hay salida de una visita que no ha ingresado', () => updateDoc(rref(gSal, 'visitas', 'vis-sal2'), { exitedAt: ts() }));
+    await denied('garita: registrar ingresos no marca salidas', () => updateDoc(rref(gIng, 'visitas', 'vis-sec'), { exitedAt: ts() }));
+    await allowed('garita: salida registra la salida de un vehiculo', () => setDoc(rref(gSal, 'salidas', 'sal-1'), exitDoc('sal-1', 'vehiculo')));
+    await allowed('garita: salida registra la salida de un residente', () => setDoc(rref(gSal, 'salidas', 'sal-2'), exitDoc('sal-2', 'residente', { plate: '' })));
+    await denied('garita: una salida de vecino es de vehiculo o de residente', () => setDoc(rref(gSal, 'salidas', 'sal-3'), exitDoc('sal-3', 'visita')));
+    await denied('garita: no escribe salidas de otro condominio', () => setDoc(rref(gSal, 'salidas', 'sal-4'), exitDoc('sal-4', 'vehiculo', { condominioId: B })));
+    await denied('garita: registrar ingresos no registra salidas de vecinos', () => setDoc(rref(gIng, 'salidas', 'sal-5'), exitDoc('sal-5', 'vehiculo')));
+    await denied('garita: salida sola no escribe el historial de ingresos', () => setDoc(rref(gSal, 'camera_logs', 'log-sal'), { id: 'log-sal', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
+    await denied('garita: salida sin ver el historial no lee las salidas', () => getDocs(rcol(gSal, 'salidas')));
+    await denied('garita: una salida registrada no se edita', () => updateDoc(rref(gSal, 'salidas', 'sal-1'), { name: 'Otro' }));
+    await createUserAs(admin, mkUser('u-gar2', 'Garitero de plantilla', 'operador', { privilegios: overridesOf('sys-garitero') }), 'PGAR2');
+    const gar2 = await loginAs('PGAR2');
+    await allowed('el garitero de la plantilla registra salidas', () => setDoc(rref(gar2, 'salidas', 'sal-6'), exitDoc('sal-6', 'vehiculo')));
+    await allowed('el garitero de la plantilla lee las salidas del dia', () => getDocs(rcol(gar2, 'salidas')));
+    await allowed('el administrador lee las salidas (reportes)', () => getDocs(rcol(admin, 'salidas')));
+    await allowed('el auditor lee las salidas', () => getDocs(rcol(auditor, 'salidas')));
+    await denied('el auditor no registra salidas', () => setDoc(rref(auditor, 'salidas', 'sal-7'), exitDoc('sal-7', 'vehiculo')));
+    await denied('un vecino no lee las salidas', () => getDocs(rcol(ana, 'salidas')));
+    await denied('un vecino no registra salidas', () => setDoc(rref(ana, 'salidas', 'sal-8'), exitDoc('sal-8', 'vehiculo')));
+    await denied('ni el administrador edita una salida registrada', () => updateDoc(rref(admin, 'salidas', 'sal-1'), { name: 'Otro' }));
+    await allowed('el administrador borra una salida (historial)', () => deleteDoc(rref(admin, 'salidas', 'sal-6')));
+
     // Vecino: historial, visitas temporales, contactos y quitar vehiculos
     await createUserAs(admin, mkUser('u-v33', 'Vecino sin historial', 'vecino', { casa: 'Casa 33', privilegios: { 'vecino.historial': false } }), 'PV033');
     await createUserAs(admin, mkUser('u-v34', 'Vecino sin temporales', 'vecino', { casa: 'Casa 34', privilegios: { 'vecino.temporal': false } }), 'PV034');

@@ -98,8 +98,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109f"></script>
-    <script src="sisdel-core.js?v=20261109f"></script>
+    <script src="privilegios.js?v=20261110a"></script>
+    <script src="sisdel-core.js?v=20261110a"></script>
     <script src="finanzas-sync.js?v=20261109f"></script>
     <script src="finanzas-bloqueo.js?v=20261109f"></script>
     <script>
@@ -125,6 +125,28 @@
             const message = document.getElementById('frameMessage');
             let iframe = null;
 
+            // Acceso directo desde el panel Reportes del administrador (admin.html): finanzas.html#reportes/<reporte>.
+            // Solo la primera vez que se abre; OIKOS decide si el usuario puede ver ese reporte (finanzas-bloqueo.js).
+            let deepLinkDone = false;
+            function openReportFromHash(win) {
+                if (deepLinkDone) return;
+                deepLinkDone = true;
+                const match = /^#reportes\/(income|expense-cat|morosos|account-statement|resumen)$/.exec(window.location.hash);
+                if (!match) return;
+                try {
+                    if (match[1] === 'resumen') {
+                        if (!SISDEL.can('finanzas.reportes_resumen')) return;
+                        win.navigate('accounting');
+                        win.openReportModal();
+                    } else {
+                        win.navigate('reports');
+                        win.selectReport(match[1]);
+                    }
+                } catch (error) {
+                    console.error('Sistema Financiero: no se pudo abrir el reporte pedido', error);
+                }
+            }
+
             // OIKOS se abre con el condominio en la URL: su bloque de entrada salta el login
             // propio y aterriza en el panel del condominio (ver finanzas/index.html).
             function mountOikos() {
@@ -148,6 +170,7 @@
                         console.error('Sistema Financiero: no se pudieron aplicar los privilegios en pantalla', error);
                     }
                     try { exitToHome(mounted.contentWindow); } catch (error) { console.error('Sistema Financiero: no se pudo cambiar el boton de salida', error); }
+                    openReportFromHash(mounted.contentWindow);
                     mounted.classList.remove('pendiente');
                 });
                 // Mismo aislamiento que en MULTISYS: sin allow-top-navigation, OIKOS no puede navegar esta pagina

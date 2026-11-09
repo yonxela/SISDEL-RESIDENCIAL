@@ -55,6 +55,10 @@
                     <div class="stat-value" style="color:var(--primary-light)" id="pendingCount">0</div>
                     <div class="stat-label">Pendientes</div>
                 </div>
+                <div class="stat-card" id="insideCard">
+                    <div class="stat-value" style="color:var(--accent)" id="insideCount">0</div>
+                    <div class="stat-label">Visitas Dentro</div>
+                </div>
                 <div class="stat-card">
                     <div class="stat-value" style="color:var(--danger)" id="morososCount">0</div>
                     <div class="stat-label">Vecinos Morosos</div>
@@ -138,6 +142,7 @@
             </div>
             <div id="resultActions">
                 <button class="btn btn-primary" style="width:100%;" id="btnConfirmEntry">Confirmar Ingreso</button>
+                <button class="btn btn-ghost" style="width:100%; margin-top:0.5rem; border:1px solid var(--border-strong); display:none;" id="btnRegisterExit">Registrar Salida</button>
                 <button class="btn btn-ghost" style="width:100%; margin-top:0.5rem;" id="btnCloseResult">Cerrar</button>
             </div>
         </div>
@@ -155,8 +160,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261109f"></script>
-    <script src="sisdel-core.js?v=20261109f"></script>
+    <script src="privilegios.js?v=20261110a"></script>
+    <script src="sisdel-core.js?v=20261110a"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261109f"></script>
     <script>
@@ -184,7 +189,7 @@
             // Cada accion de la garita es un privilegio (garita.*): se oculta lo que este usuario no puede usar
             const seesCamera = SISDEL.can('garita.camara');
             const g = {
-                escanear: SISDEL.can('garita.escanear'), verificar: SISDEL.can('garita.verificar'), ingreso: SISDEL.can('garita.ingreso'),
+                escanear: SISDEL.can('garita.escanear'), verificar: SISDEL.can('garita.verificar'), ingreso: SISDEL.can('garita.ingreso'), salida: SISDEL.can('garita.salida'),
                 visitasDia: SISDEL.can('garita.visitas_dia'), morosos: SISDEL.can('garita.morosos'),
                 vivo: seesCamera && SISDEL.can('garita.vivo'), historial: seesCamera && SISDEL.can('garita.historial'),
                 mensajes: SISDEL.can('mensajes.recibir')
@@ -193,6 +198,7 @@
             if (!g.visitasDia) document.getElementById('todayVisitsList').parentElement.style.display = 'none';
             if (!g.historial) document.getElementById('historyMonitorContainer').style.display = 'none';
             if (!g.ingreso) document.getElementById('btnConfirmEntry').style.display = 'none';
+            if (!g.salida) document.getElementById('insideCard').style.display = 'none';
 
             // --- Theme Support ---
             const themeToggle = document.getElementById('themeToggle');
@@ -249,6 +255,7 @@
 
                 document.getElementById('enteredCount').textContent = entered;
                 document.getElementById('pendingCount').textContent = visits.length - entered;
+                document.getElementById('insideCount').textContent = visits.filter((v) => SISDEL.isVisitInside(v)).length;
                 document.getElementById('morososCount').textContent = morosos;
 
                 const warnings = document.getElementById('urgentWarnings');
@@ -282,7 +289,9 @@
                         </div>
                         <div>
                             ${v.status === SISDEL.VISIT_STATUS.ENTERED
-                        ? '<span class="badge badge-success">Ingresó</span>'
+                        ? (SISDEL.isVisitInside(v)
+                            ? `<span class="badge badge-success">Ingresó</span>${g.salida ? ` <button class="btn btn-ghost btn-sm" data-visit="${esc(v.id)}">Registrar salida</button>` : ''}`
+                            : `<span class="badge badge-info">Salió ${esc(new Date(v.exitedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>`)
                         : `<button class="btn btn-ghost btn-sm" data-visit="${esc(v.id)}">Validar</button>`}
                         </div>
                     </div>
@@ -311,9 +320,29 @@
                 const icon = document.getElementById('resultIcon');
                 const info = document.getElementById('resultInfo');
                 const btnConfirm = document.getElementById('btnConfirmEntry');
+                const btnExit = document.getElementById('btnRegisterExit');
 
                 modal.style.display = 'flex';
-                btnConfirm.style.display = 'block';
+                btnConfirm.style.display = g.ingreso ? 'block' : 'none';
+                // La salida se ofrece a vecinos (vehiculo o residente) y a visitas que estan dentro
+                btnExit.style.display = g.salida && (type !== 'visit' || SISDEL.isVisitInside(obj)) ? 'block' : 'none';
+
+                if (type === 'visit' && SISDEL.isVisitInside(obj)) {
+                    // La visita ya ingreso: lo que corresponde es registrar su salida
+                    const entered = new Date(obj.enteredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    icon.textContent = '🚪';
+                    title.textContent = 'VISITA DENTRO';
+                    title.style.color = 'var(--accent)';
+                    info.innerHTML = `
+                        <p><strong>Invitado:</strong> ${esc(obj.visitorName)}</p>
+                        <p><strong>Casa:</strong> ${esc(obj.casa || 'N/A')}</p>
+                        <p><strong>Placa:</strong> ${esc(obj.vehiclePlate || 'N/A')}</p>
+                        <hr style="margin:0.5rem 0; opacity:0.1;">
+                        <p>Ingresó a las ${esc(entered)} — confirme su salida al retirarse.</p>
+                    `;
+                    btnConfirm.style.display = 'none';
+                    return;
+                }
 
                 if (type === 'visit') {
                     // Check resident status
@@ -486,6 +515,39 @@
                 await renderHistory();
             });
 
+            document.getElementById('btnRegisterExit').addEventListener('click', async () => {
+                if (!currentVerification) return;
+                const { obj, type } = currentVerification;
+                const button = document.getElementById('btnRegisterExit');
+                button.disabled = true;
+                try {
+                    let saved = null;
+                    if (type === 'visit') {
+                        saved = await SISDEL.markVisitAsExited(obj.id);
+                        if (saved) SISDEL.showToast('Salida de visita registrada', 'success');
+                    } else if (type === 'vehicle') {
+                        const resident = await SISDEL.getUserById(obj.userId);
+                        saved = await SISDEL.createExit(condoId, 'vehiculo', {
+                            plate: obj.plate, name: resident ? resident.name : '', casa: resident ? resident.casa : '', userId: obj.userId,
+                            reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})`.trim()
+                        });
+                        if (saved) SISDEL.showToast('Salida de vehículo registrada', 'success');
+                    } else if (type === 'resident') {
+                        saved = await SISDEL.createExit(condoId, 'residente', {
+                            name: obj.name, casa: obj.casa, userId: obj.id, reason: 'Acceso QR'
+                        });
+                        if (saved) SISDEL.showToast('Salida de residente registrada', 'success');
+                    }
+                    if (!saved) { SISDEL.showToast('No se pudo registrar la salida', 'danger'); return; }
+                    document.getElementById('modalResult').style.display = 'none';
+                    await renderStats();
+                    await renderVisits();
+                    await renderHistory();
+                } finally {
+                    button.disabled = false;
+                }
+            });
+
             document.getElementById('btnCloseResult').addEventListener('click', () => {
                 document.getElementById('modalResult').style.display = 'none';
             });
@@ -604,9 +666,10 @@
                     // 1. Fetch Camera/LPR Logs (Today)
                     const cameraLogs = g.historial ? await SISDEL.getCameraLogsToday(condoId, 15) : [];
 
-                    // 2. Fetch Entered Visits (Today)
+                    // 2. Fetch Entered Visits (Today) y las salidas de hoy
                     const visits = await SISDEL.getTodayVisits(condoId);
                     const enteredVisits = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED && v.enteredAt);
+                    const exits = g.historial ? await SISDEL.getExitsToday(condoId, 15) : [];
 
                     // 3. Merge and Sort
                     const allEntries = [];
@@ -631,6 +694,24 @@
                         id: v.id
                     }));
 
+                    // Salidas: de visitas (exitedAt) y de vecinos
+                    visits.filter(v => v.exitedAt).forEach(v => allEntries.push({
+                        type: 'exit',
+                        plate: v.vehiclePlate || 'SIN PLACA',
+                        time: new Date(v.exitedAt),
+                        status: 'Exit',
+                        reason: `Salida de visita: ${v.visitorName}`,
+                        id: `exit-${v.id}`
+                    }));
+                    exits.forEach(x => allEntries.push({
+                        type: 'exit',
+                        plate: x.plate || 'RESIDENTE',
+                        time: new Date(x.createdAt),
+                        status: 'Exit',
+                        reason: `Salida de ${x.kind === 'vehiculo' ? 'vehículo' : 'residente'}: ${x.name || ''}${x.casa ? ' — ' + x.casa : ''}`.trim(),
+                        id: x.id
+                    }));
+
                     allEntries.sort((a, b) => b.time - a.time);
 
                     if (allEntries.length === 0) {
@@ -645,12 +726,17 @@
                         const timeStr = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                         const isAuth = entry.status === 'Authorized';
                         const isReminder = entry.status === 'Reminder';
+                        const isExit = entry.status === 'Exit';
                         
                         let badgeClass = 'badge-danger';
                         let badgeText = 'DENEGADO';
                         let bgColor = 'transparent';
 
-                        if (isAuth) {
+                        if (isExit) {
+                            badgeClass = 'badge-info';
+                            badgeText = 'SALIDA';
+                            bgColor = 'rgba(59, 130, 246, 0.05)';
+                        } else if (isAuth) {
                             badgeClass = 'badge-success';
                             badgeText = entry.type === 'camera' ? 'CÁMARA LPR' : 'MANUAL/QR';
                             bgColor = 'rgba(16, 185, 129, 0.05)';

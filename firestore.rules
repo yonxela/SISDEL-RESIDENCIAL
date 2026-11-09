@@ -407,20 +407,27 @@ service cloud.firestore {
                         || (request.resource.data.get('auto', false) != true && (pFinanzasCuotasMeses(condoId) || pFinanzasCargosCrear(condoId)))))
                   || (request.resource.data.get('kind', '') == 'extra' && pFinanzasCargosCrear(condoId))));
       }
+      // "Deshacer" (Ctrl+Z en OIKOS) solo alcanza lo hecho hace poco: la pila de deshacer vive en la memoria de la pagina.
+      // Sin este limite, quien tiene "deshacer" anularia cualquier movimiento aunque no tenga "anular pagos". La fecha la
+      // sella el cliente, pero al anular o devolver solo se pueden tocar los campos de la anulacion, no la fecha de alta.
+      function undoWindow(field) {
+        return request.time < timestamp.value(resource.data.get(field, '1970-01-01T00:00:00Z')) + duration.value(2, 'h');
+      }
       function movementUpdateOk() {
         return finChanged().hasOnly(['updated_at'])
           || (resource.data.get('type', '') == 'charge' && finChanged().hasOnly(['period', 'kind', 'updated_at']))
           // Anular: el mismo documento con deleted:true (nunca se borra)
           || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
               && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])
-              && (pFinanzasDeshacer(condoId)
+              && ((pFinanzasDeshacer(condoId) && undoWindow('created_at'))
                   || (resource.data.get('type', '') == 'income' && pFinanzasPagosAnular(condoId))
                   || (resource.data.get('type', '') == 'expense' && pFinanzasEgresosAnular(condoId))
                   || (resource.data.get('type', '') == 'charge'
                       && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId))))))
           // Devolver una anulacion es "deshacer"
           || (resource.data.get('deleted', false) == true && request.resource.data.get('deleted', false) != true
-              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at']) && pFinanzasDeshacer(condoId));
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])
+              && pFinanzasDeshacer(condoId) && undoWindow('updated_at'));
       }
       match /finanzas_movimientos/{docId} {
         allow read: if canReadFinance();

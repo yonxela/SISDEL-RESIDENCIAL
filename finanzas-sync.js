@@ -217,6 +217,8 @@ const SisdelFinanzas = (() => {
     const RESIDENT_STATE_KEYS = ['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom'];
     const RESIDENT_DELETE_KEYS = ['deleted', 'deleted_at'];
     const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'updated_at'];
+    // "Deshacer" solo alcanza lo hecho hace poco (igual que firestore.rules): la pila de deshacer vive en la memoria de la pagina
+    const UNDO_WINDOW_MS = 2 * 60 * 60 * 1000;
     const SETTINGS_FEE_KEYS = ['fee', 'chargeDay', 'graceDays', 'feeMode'];
     const SETTINGS_GENERAL_KEYS = ['currency', 'lang', 'name', 'theme'];
     const SETTINGS_OPERATION_KEYS = ['receiptCounter', 'chargedMonths', 'lastChargedMonth'];
@@ -252,7 +254,8 @@ const SisdelFinanzas = (() => {
         return needs;
     }
 
-    function movementNeeds(next, prev) {
+    function movementNeeds(next, prev, now = Date.now()) {
+        const recent = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) && now - t < UNDO_WINDOW_MS; };
         const type = next && next.type;
         if (!prev) {
             if (type === 'income') return [['finanzas.pagos_registrar']];
@@ -276,9 +279,9 @@ const SisdelFinanzas = (() => {
                 const own = prev.type === 'income' ? ['finanzas.pagos_anular']
                     : prev.type === 'expense' ? ['finanzas.egresos_anular']
                         : prev.type === 'charge' ? (prev.kind === 'fee' ? ['finanzas.cargos_anular', 'finanzas.cuotas_corregir'] : ['finanzas.cargos_anular']) : [];
-                return [['finanzas.deshacer', ...own]];
+                return [[...(recent(prev.created_at) ? ['finanzas.deshacer'] : []), ...own]];
             }
-            if (prev.deleted === true && next.deleted !== true) return [['finanzas.deshacer']];
+            if (prev.deleted === true && next.deleted !== true) return recent(prev.updated_at) ? [['finanzas.deshacer']] : [[]];
         }
         return [[]];
     }

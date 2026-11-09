@@ -865,6 +865,401 @@ async function run() {
     const goneLogin = await httpsCallable(nobody.functions, 'login')({ code: 'PS001' });
     equal('un usuario eliminado ya no entra', goneLogin.data.success, false);
 
+    // ───────── Privilegios por accion: Sistema Financiero (OIKOS), RONDIN y las llaves nuevas de SISDEL ─────────
+    console.log('\nPrivilegios por accion');
+    // Operador con solo las acciones indicadas (al activar una accion se activa su paraguas y lo que necesita);
+    // recibe mensajes como todos los operadores
+    const opWith = async (id, code, name, keys) => {
+        const wanted = new Set(['mensajes.recibir']);
+        keys.forEach((k) => PRIV.toggle(wanted, k, true));
+        if (!PRIV.landing('operador', PRIV.toOverrides('operador', wanted))) PRIV.toggle(wanted, 'usuarios.panel', true);
+        await createUserAs(admin, mkUser(id, name, 'operador', { privilegios: PRIV.toOverrides('operador', wanted) }), code);
+        return loginAs(code);
+    };
+    const nowT = ts();
+    const mv = (id, extra) => ({ id, date: nowT, amount: 100, concept: 'Prueba', resiId: 'u-ana', created_at: nowT, updated_at: nowT, ...extra });
+    const annul = () => ({ deleted: true, deleted_at: ts(), deleted_reason: 'prueba', updated_at: ts() });
+    const unannul = () => ({ deleted: false, updated_at: ts() });
+    const mref = (c, id) => rref(c, 'finanzas_movimientos', id);
+    const xref = (c, id) => rref(c, 'finanzas_residentes', id);
+    const cfgRef = (c) => rref(c, 'finanzas_config', 'oikos_settings');
+    const patchCfg = (c, fields) => setDoc(cfgRef(c), { ...fields, updated_at: ts() }, { merge: true });
+    const setupDocs = [
+        mv('fin-in-1', { type: 'income', receiptNum: 'T-1' }), mv('fin-in-2', { type: 'income', receiptNum: 'T-2' }), mv('fin-in-3', { type: 'income', receiptNum: 'T-3' }),
+        mv('fin-in-4', { type: 'income', receiptNum: 'T-4' }), mv('fin-eg-1', { type: 'expense', resiId: null }), mv('fin-eg-2', { type: 'expense', resiId: null }),
+        mv('fin-eg-3', { type: 'expense', resiId: null }), mv('fin-ch-1', { type: 'charge', kind: 'extra' }), mv('fin-ch-2', { type: 'charge', kind: 'fee', period: '2030-01', manual: true }),
+        mv('fin-ch-2b', { type: 'charge', kind: 'fee', period: '2030-02', manual: true }), mv('fin-ch-3', { type: 'charge', kind: 'extra' })
+    ];
+    for (const d of setupDocs) await setDoc(mref(admin, d.id), d);
+    // Un pago viejo (de enero): "deshacer" ya no lo alcanza
+    await setDoc(mref(admin, 'fin-in-old'), mv('fin-in-old', { type: 'income', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' }));
+    for (const id of ['res-t1', 'res-t2', 'res-t3', 'res-t4']) await setDoc(xref(admin, id), { id, dpi: '111', notes: '', status: 'active', feeFrom: '2026-11', updated_at: nowT });
+    await setDoc(mref(admin, 'fin-in-2'), { ...setupDocs[1], ...annul() });
+    await allowed('admin (acceso de siempre) registra todos los tipos de movimiento', async () => {
+        await setDoc(mref(admin, 'adm-in'), mv('adm-in', { type: 'income' }));
+        await setDoc(mref(admin, 'adm-eg'), mv('adm-eg', { type: 'expense', resiId: null }));
+        await setDoc(mref(admin, 'adm-ch'), mv('adm-ch', { type: 'charge', kind: 'extra' }));
+        await setDoc(mref(admin, 'adm-fee'), mv('adm-fee', { type: 'charge', kind: 'fee', period: '2029-01', auto: true }));
+    });
+    await allowed('admin anula un movimiento de cada tipo', async () => {
+        await updateDoc(mref(admin, 'adm-in'), annul());
+        await updateDoc(mref(admin, 'adm-eg'), annul());
+        await updateDoc(mref(admin, 'adm-ch'), annul());
+    });
+    await allowed('admin cambia la cuota y los datos generales', () => patchCfg(admin, { fee: 300, chargeDay: 2, currency: 'GTQ', customIncomeConcepts: ['Parqueo'], customExpenseConcepts: ['Jardin'] }));
+    await allowed('admin edita y finiquita residentes', async () => {
+        await updateDoc(xref(admin, 'res-t4'), { dpi: '444', updated_at: ts() });
+        await updateDoc(xref(admin, 'res-t4'), { status: 'closed', closedAt: ts(), closeReason: 'x', updated_at: ts() });
+    });
+
+    // Cajero: solo registra pagos
+    const cajero = await opWith('u-caj', 'PCAJ1', 'Cajero', ['finanzas.pagos_registrar']);
+    await allowed('cajero lee los movimientos', () => getDocs(rcol(cajero, 'finanzas_movimientos')));
+    await allowed('cajero registra un pago', () => setDoc(mref(cajero, 'caj-in'), mv('caj-in', { type: 'income', receiptNum: 'C-1', receiptImg: 'data:image/jpeg;base64,AAAA' })));
+    await allowed('cajero deja su sello en un residente (registrar un pago lo re-sella)', () => updateDoc(xref(cajero, 'res-t1'), { updated_at: ts() }));
+    await allowed('cajero avanza el contador de recibos', () => patchCfg(cajero, { receiptCounter: 7 }));
+    await allowed('cajero marca un vecino nuevo para cobrarse desde este mes', () => setDoc(xref(cajero, 'res-min'), { id: 'res-min', feeFrom: '2026-11', updated_at: ts() }));
+    await denied('cajero no registra egresos', () => setDoc(mref(cajero, 'caj-eg'), mv('caj-eg', { type: 'expense', resiId: null })));
+    await denied('cajero no crea cargos especiales', () => setDoc(mref(cajero, 'caj-ch'), mv('caj-ch', { type: 'charge', kind: 'extra' })));
+    await denied('cajero no genera cuotas automaticas', () => setDoc(mref(cajero, 'fee_u-ana_2031-01'), mv('fee_u-ana_2031-01', { type: 'charge', kind: 'fee', period: '2031-01', auto: true })));
+    await denied('cajero no anula pagos', () => updateDoc(mref(cajero, 'fin-in-1'), annul()));
+    await denied('cajero no cambia el monto de un pago', () => updateDoc(mref(cajero, 'fin-in-1'), { amount: 5000, updated_at: ts() }));
+    await denied('cajero no cambia la cuota', () => patchCfg(cajero, { fee: 999 }));
+    await denied('cajero no cambia la moneda', () => patchCfg(cajero, { currency: 'USD' }));
+    await denied('cajero no agrega conceptos de ingreso', () => patchCfg(cajero, { customIncomeConcepts: ['Otro'] }));
+    await denied('cajero no cambia el DPI de un residente', () => updateDoc(xref(cajero, 'res-t1'), { dpi: '999', updated_at: ts() }));
+    await denied('cajero no finiquita residentes', () => updateDoc(xref(cajero, 'res-t1'), { status: 'closed', closedAt: ts(), updated_at: ts() }));
+    await denied('cajero no registra residentes con datos', () => setDoc(xref(cajero, 'res-nuevo'), { id: 'res-nuevo', dpi: '555', updated_at: ts() }));
+    await denied('cajero no borra movimientos', () => deleteDoc(mref(cajero, 'caj-in')));
+    await denied('un usuario de otro condominio no escribe movimientos', async () => { const otro = await loginAs('LJ201'); return setDoc(doc(otro.db, `condominios/${A}/finanzas_movimientos/x`), mv('x', { type: 'income' })); });
+
+    // Anular: pagos, egresos y cargos son privilegios distintos
+    const anulaPagos = await opWith('u-anp', 'PANU1', 'Anula pagos', ['finanzas.pagos_anular']);
+    await allowed('quien anula pagos anula un pago', () => updateDoc(mref(anulaPagos, 'fin-in-1'), annul()));
+    await denied('pero no un egreso', () => updateDoc(mref(anulaPagos, 'fin-eg-1'), annul()));
+    await denied('ni un cargo', () => updateDoc(mref(anulaPagos, 'fin-ch-1'), annul()));
+    await denied('ni devuelve una anulacion (eso es deshacer)', () => updateDoc(mref(anulaPagos, 'fin-in-1'), unannul()));
+    await denied('ni registra pagos', () => setDoc(mref(anulaPagos, 'anp-in'), mv('anp-in', { type: 'income' })));
+    const anulaEgresos = await opWith('u-ane', 'PANU2', 'Anula egresos', ['finanzas.egresos_anular']);
+    await allowed('quien anula egresos anula un egreso', () => updateDoc(mref(anulaEgresos, 'fin-eg-1'), annul()));
+    await denied('pero no un pago', () => updateDoc(mref(anulaEgresos, 'fin-in-3'), annul()));
+    const egresero = await opWith('u-egr', 'PEGR1', 'Egresos', ['finanzas.egresos_registrar']);
+    await allowed('quien registra egresos registra un egreso', () => setDoc(mref(egresero, 'egr-eg'), mv('egr-eg', { type: 'expense', resiId: null })));
+    await allowed('y agrega categorias de egreso', () => patchCfg(egresero, { customExpenseConcepts: ['Reparaciones'] }));
+    await denied('pero no registra pagos', () => setDoc(mref(egresero, 'egr-in'), mv('egr-in', { type: 'income' })));
+    await denied('ni anula egresos', () => updateDoc(mref(egresero, 'fin-eg-2'), annul()));
+    await denied('ni agrega conceptos de ingreso', () => patchCfg(egresero, { customIncomeConcepts: ['Otro'] }));
+
+    // Cuotas y cargos
+    const cuotero = await opWith('u-cuo', 'PCUO1', 'Cuota del mes', ['finanzas.cuotas_mes']);
+    await allowed('cuota del mes: genera la cuota automatica', () => setDoc(mref(cuotero, 'fee_u-ana_2031-01'), mv('fee_u-ana_2031-01', { type: 'charge', kind: 'fee', period: '2031-01', auto: true })));
+    await allowed('cuota del mes: aplica la cuota manual', () => setDoc(mref(cuotero, 'fee_u-ana_2031-02'), mv('fee_u-ana_2031-02', { type: 'charge', kind: 'fee', period: '2031-02', manual: true, auto: false })));
+    await denied('cuota del mes: no crea cargos especiales', () => setDoc(mref(cuotero, 'cuo-ch'), mv('cuo-ch', { type: 'charge', kind: 'extra' })));
+    await denied('cuota del mes: no registra pagos', () => setDoc(mref(cuotero, 'cuo-in'), mv('cuo-in', { type: 'income' })));
+    await denied('cuota del mes: no anula cargos', () => updateDoc(mref(cuotero, 'fin-ch-3'), annul()));
+    const cargos = await opWith('u-car', 'PCAR1', 'Cargos', ['finanzas.cargos_crear']);
+    await allowed('cargos: crea un cargo especial', () => setDoc(mref(cargos, 'car-ch'), mv('car-ch', { type: 'charge', kind: 'extra' })));
+    await allowed('cargos: crea una cuota manual', () => setDoc(mref(cargos, 'fee_u-ana_2031-03'), mv('fee_u-ana_2031-03', { type: 'charge', kind: 'fee', period: '2031-03', manual: true, auto: false })));
+    await allowed('cargos: agrega conceptos de ingreso', () => patchCfg(cargos, { customIncomeConcepts: ['Multa'] }));
+    await denied('cargos: no genera cuotas automaticas', () => setDoc(mref(cargos, 'fee_u-ana_2031-04'), mv('fee_u-ana_2031-04', { type: 'charge', kind: 'fee', period: '2031-04', auto: true })));
+    await denied('cargos: no anula cargos', () => updateDoc(mref(cargos, 'fin-ch-3'), annul()));
+    await denied('cargos: no agrega conceptos de egreso', () => patchCfg(cargos, { customExpenseConcepts: ['Otro'] }));
+    const anulaCargos = await opWith('u-anc', 'PANC1', 'Anula cargos', ['finanzas.cargos_anular']);
+    await allowed('anular cargos: anula un cargo especial', () => updateDoc(mref(anulaCargos, 'fin-ch-1'), annul()));
+    await allowed('anular cargos: anula una cuota', () => updateDoc(mref(anulaCargos, 'fin-ch-2'), annul()));
+    await denied('anular cargos: no anula pagos', () => updateDoc(mref(anulaCargos, 'fin-in-3'), annul()));
+    const corrige = await opWith('u-cor', 'PCOR1', 'Corrige cuotas', ['finanzas.cuotas_corregir']);
+    await allowed('corregir cuotas: anula una cuota duplicada', () => updateDoc(mref(corrige, 'fin-ch-2b'), annul()));
+    await denied('corregir cuotas: no anula cargos especiales', () => updateDoc(mref(corrige, 'fin-ch-3'), annul()));
+    const deshace = await opWith('u-des', 'PDES1', 'Deshacer', ['finanzas.deshacer']);
+    await allowed('deshacer: devuelve una anulacion', () => updateDoc(mref(deshace, 'fin-in-2'), unannul()));
+    await allowed('deshacer: quita un alta (la anula)', () => updateDoc(mref(deshace, 'fin-in-3'), annul()));
+    await denied('deshacer: no anula un pago viejo (solo alcanza lo hecho en las ultimas 2 horas)', () => updateDoc(mref(deshace, 'fin-in-old'), annul()));
+    await denied('deshacer: no cambia montos', () => updateDoc(mref(deshace, 'fin-in-4'), { amount: 1, updated_at: ts() }));
+    await denied('deshacer: no registra pagos', () => setDoc(mref(deshace, 'des-in'), mv('des-in', { type: 'income' })));
+
+    // Configuracion: cuota y cobro, datos generales y conceptos
+    const cfgCuota = await opWith('u-cfc', 'PCFC1', 'Cuota y cobro', ['finanzas.config_cuota']);
+    await allowed('config cuota: cambia cuota, dia, gracia y modo', () => patchCfg(cfgCuota, { fee: 350, chargeDay: 5, graceDays: 3, feeMode: 'manual' }));
+    await denied('config cuota: no cambia la moneda', () => patchCfg(cfgCuota, { currency: 'USD' }));
+    await denied('config cuota: no cambia el nombre', () => patchCfg(cfgCuota, { name: 'Otro' }));
+    const cfgGen = await opWith('u-cfg', 'PCFG1', 'Datos generales', ['finanzas.config_general']);
+    await allowed('config general: cambia moneda, idioma, nombre y tema', () => patchCfg(cfgGen, { currency: 'GTQ', lang: 'es', name: 'Villa Ferrer', theme: 'light' }));
+    await denied('config general: no cambia la cuota', () => patchCfg(cfgGen, { fee: 1 }));
+    await denied('config general: no cambia el modo de cobro', () => patchCfg(cfgGen, { feeMode: 'auto' }));
+    const cfgCon = await opWith('u-cfn', 'PCFN1', 'Conceptos', ['finanzas.config_conceptos']);
+    await allowed('config conceptos: edita ambas listas', () => patchCfg(cfgCon, { customIncomeConcepts: ['A'], customExpenseConcepts: ['B'] }));
+    await denied('config conceptos: no cambia la cuota', () => patchCfg(cfgCon, { fee: 1 }));
+    await denied('config conceptos: no cambia datos desconocidos (se tratan como generales)', () => patchCfg(cfgCon, { campoNuevo: 1 }));
+
+    // Residentes: editar, finiquitar y eliminar son privilegios distintos
+    const resEd = await opWith('u-red', 'PRED1', 'Edita residentes', ['finanzas.residentes_editar']);
+    await allowed('residentes: editar cambia el DPI', () => updateDoc(xref(resEd, 'res-t1'), { dpi: '222', notes: 'n', updated_at: ts() }));
+    await denied('residentes: editar no finiquita', () => updateDoc(xref(resEd, 'res-t1'), { status: 'closed', closedAt: ts(), updated_at: ts() }));
+    await denied('residentes: editar no elimina', () => updateDoc(xref(resEd, 'res-t1'), { deleted: true, updated_at: ts() }));
+    const resFin = await opWith('u-rfi', 'PRFI1', 'Finiquita', ['finanzas.residentes_finiquitar']);
+    await allowed('residentes: finiquitar cierra la relacion', () => updateDoc(xref(resFin, 'res-t2'), { status: 'closed', closedAt: ts(), closeReason: 'Mudanza', closeNotes: '', updated_at: ts() }));
+    await allowed('residentes: finiquitar reactiva', () => updateDoc(xref(resFin, 'res-t2'), { status: 'active', reactivatedAt: ts(), feeFrom: '2026-12', updated_at: ts() }));
+    await denied('residentes: finiquitar no edita el DPI', () => updateDoc(xref(resFin, 'res-t2'), { dpi: '9', updated_at: ts() }));
+    await denied('residentes: finiquitar no elimina', () => updateDoc(xref(resFin, 'res-t2'), { deleted: true, updated_at: ts() }));
+    const resEl = await opWith('u-rel', 'PREL1', 'Elimina residentes', ['finanzas.residentes_eliminar']);
+    await denied('residentes: eliminar no edita el DPI', () => updateDoc(xref(resEl, 'res-t3'), { dpi: '9', updated_at: ts() }));
+    await allowed('residentes: eliminar marca al residente como eliminado', () => updateDoc(xref(resEl, 'res-t3'), { deleted: true, updated_at: ts() }));
+    await denied('residentes: nunca se borra el documento', () => deleteDoc(xref(resEl, 'res-t3')));
+    const resCr = await opWith('u-rcr', 'PRCR1', 'Registra residentes', ['finanzas.residentes_crear']);
+    await allowed('residentes: crear registra los datos financieros de uno nuevo', () => setDoc(xref(resCr, 'res-t5'), { id: 'res-t5', dpi: '555', notes: '', feeFrom: '2026-11', updated_at: ts() }));
+    await denied('residentes: crear no edita a uno existente', () => updateDoc(xref(resCr, 'res-t4'), { dpi: '9', updated_at: ts() }));
+
+    // Un administrador con una accion quitada conserva todo lo demas
+    await allowed('admin: crea un administrador sin "anular pagos"', () => createUserAs(admin, mkUser('u-adm5', 'Admin sin anular', 'admin', { privilegios: { 'finanzas.pagos_anular': false } }), 'PA050'));
+    const adm5 = await loginAs('PA050');
+    await denied('admin sin "anular pagos" no anula un pago viejo (aunque tenga "deshacer")', () => updateDoc(mref(adm5, 'fin-in-old'), annul()));
+    await allowed('pero si deshace un pago que acaba de registrar', () => updateDoc(mref(adm5, 'fin-in-4'), annul()));
+    await allowed('pero anula un egreso', () => updateDoc(mref(adm5, 'fin-eg-3'), annul()));
+    await allowed('y registra pagos', () => setDoc(mref(adm5, 'adm5-in'), mv('adm5-in', { type: 'income' })));
+    await allowed('y cambia la cuota', () => patchCfg(adm5, { fee: 320 }));
+    await denied('admin sin finanzas.usar: ninguna accion de finanzas', async () => { await createUserAs(admin, mkUser('u-adm6', 'Admin sin finanzas', 'admin', { privilegios: { 'finanzas.usar': false } }), 'PA060'); const a6 = await loginAs('PA060'); return setDoc(mref(a6, 'adm6-in'), mv('adm6-in', { type: 'income' })); });
+    await denied('lo mismo con las acciones sueltas aunque se las pongan (sin el paraguas)', async () => { const a6 = await loginAs('PA060'); return updateDoc(xref(a6, 'res-t1'), { dpi: '1', updated_at: ts() }); });
+
+    // ───────── Rondas: una llave por operacion ─────────
+    console.log('\nPrivilegios por accion: rondas');
+    const cp = (id, name) => ({ id, route_id: 'ruta-test', name, latitude: 14.5, longitude: -90.4, radius_meters: 15, checkpoint_order: 2, is_mandatory: 1, status: 'ACTIVE' });
+    const cp1 = rutaTest.checkpoints[0];
+    const rutero = await opWith('u-rut', 'PRUT1', 'Crea rutas', ['rondas.rutas_crear']);
+    await allowed('rutas: crear crea una ruta', () => setDoc(rref(rutero, 'rondas_rutas', 'ruta-op1'), { ...rutaTest, id: 'ruta-op1', route_code: 'R-950', checkpoints: [] }));
+    await allowed('rutas: crear edita nombre y color', () => updateDoc(rref(rutero, 'rondas_rutas', 'ruta-op1'), { name: 'Renombrada', color: '#fff', updated_at: sqlTs() }));
+    await denied('rutas: crear no desactiva rutas', () => updateDoc(rref(rutero, 'rondas_rutas', 'ruta-op1'), { status: 'INACTIVE', updated_at: sqlTs() }));
+    await denied('rutas: crear no agrega puntos', () => updateDoc(rref(rutero, 'rondas_rutas', 'ruta-op1'), { checkpoints: [cp('cpx', 'X')], updated_at: sqlTs() }));
+    await denied('rutas: crear no asigna guardias', () => setDoc(rref(rutero, 'rondas_asignaciones', 'asig-rut'), { ...asig, id: 'asig-rut' }));
+    const rutaElim = await opWith('u-rel2', 'PRUT2', 'Elimina rutas', ['rondas.rutas_eliminar']);
+    await allowed('rutas: eliminar desactiva una ruta', () => updateDoc(rref(rutaElim, 'rondas_rutas', 'ruta-op1'), { status: 'INACTIVE', updated_at: sqlTs() }));
+    await denied('rutas: eliminar no crea rutas', () => setDoc(rref(rutaElim, 'rondas_rutas', 'ruta-op2'), { ...rutaTest, id: 'ruta-op2', route_code: 'R-951' }));
+    await denied('rutas: eliminar no cambia el nombre', () => updateDoc(rref(rutaElim, 'rondas_rutas', 'ruta-op1'), { name: 'Otra', updated_at: sqlTs() }));
+    const ptC = await opWith('u-ptc', 'PPTC1', 'Agrega puntos', ['rondas.puntos_crear']);
+    const ptE = await opWith('u-pte', 'PPTE1', 'Renombra puntos', ['rondas.puntos_editar']);
+    const ptD = await opWith('u-ptd', 'PPTD1', 'Quita puntos', ['rondas.puntos_eliminar']);
+    const withPoints = (list) => ({ checkpoints: list, updated_at: sqlTs() });
+    await denied('puntos: renombrar no agrega', () => updateDoc(rref(ptE, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos')])));
+    await denied('puntos: eliminar no agrega', () => updateDoc(rref(ptD, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos')])));
+    await allowed('puntos: agregar agrega un punto', () => updateDoc(rref(ptC, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos')])));
+    await denied('puntos: agregar no renombra', () => updateDoc(rref(ptC, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos bis')])));
+    await denied('puntos: eliminar no renombra', () => updateDoc(rref(ptD, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos bis')])));
+    await allowed('puntos: renombrar cambia el nombre', () => updateDoc(rref(ptE, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp2', 'Dos bis')])));
+    await denied('puntos: agregar no quita', () => updateDoc(rref(ptC, 'rondas_rutas', 'ruta-test'), withPoints([cp1])));
+    await denied('puntos: renombrar no quita', () => updateDoc(rref(ptE, 'rondas_rutas', 'ruta-test'), withPoints([cp1])));
+    await allowed('puntos: eliminar quita un punto', () => updateDoc(rref(ptD, 'rondas_rutas', 'ruta-test'), withPoints([cp1])));
+
+    const asC = await opWith('u-asc', 'PASC1', 'Crea asignaciones', ['rondas.asignaciones_crear']);
+    const asE = await opWith('u-ase', 'PASE1', 'Edita asignaciones', ['rondas.asignaciones_editar']);
+    const asD = await opWith('u-asd', 'PASD1', 'Quita asignaciones', ['rondas.asignaciones_eliminar']);
+    const asigOp = { ...asig, id: 'asig-op' };
+    await denied('asignaciones: editar no crea', () => setDoc(rref(asE, 'rondas_asignaciones', 'asig-op'), asigOp));
+    await allowed('asignaciones: crear asigna una ruta', () => setDoc(rref(asC, 'rondas_asignaciones', 'asig-op'), asigOp));
+    await denied('asignaciones: crear no edita', () => updateDoc(rref(asC, 'rondas_asignaciones', 'asig-op'), { hour_end: '21:00' }));
+    await allowed('asignaciones: editar cambia el horario', () => updateDoc(rref(asE, 'rondas_asignaciones', 'asig-op'), { hour_end: '21:00' }));
+    await denied('asignaciones: crear no quita', () => deleteDoc(rref(asC, 'rondas_asignaciones', 'asig-op')));
+    await allowed('asignaciones: quitar borra la asignacion', () => deleteDoc(rref(asD, 'rondas_asignaciones', 'asig-op')));
+
+    await setDoc(rref(guard, 'rondas_alertas', 'al-op'), { ...alerta, id: 'al-op' });
+    const alVer = await opWith('u-alv', 'PALV1', 'Ve alertas', ['rondas.alertas_ver']);
+    const alAck = await opWith('u-ala', 'PALA1', 'Atiende alertas', ['rondas.alertas_atender']);
+    const alDel = await opWith('u-ald', 'PALD1', 'Borra alertas', ['rondas.alertas_eliminar']);
+    const ack = (uid) => ({ acknowledged: 1, acknowledged_by: uid, acknowledged_at: sqlTs() });
+    await allowed('alertas: ver lee el panel de alertas', () => getDocs(rcol(alVer, 'rondas_alertas')));
+    await denied('alertas: ver no atiende', () => updateDoc(rref(alVer, 'rondas_alertas', 'al-op'), ack('u-alv')));
+    await denied('alertas: borrar no atiende', () => updateDoc(rref(alDel, 'rondas_alertas', 'al-op'), ack('u-ald')));
+    await allowed('alertas: atender marca la alerta', () => updateDoc(rref(alAck, 'rondas_alertas', 'al-op'), ack('u-ala')));
+    await denied('alertas: atender no borra', () => deleteDoc(rref(alAck, 'rondas_alertas', 'al-op')));
+    await allowed('alertas: borrar quita la alerta', () => deleteDoc(rref(alDel, 'rondas_alertas', 'al-op')));
+
+    const monitor = await opWith('u-mon', 'PMON1', 'Mapa en vivo', ['rondas.monitoreo_ver']);
+    const monHist = await opWith('u-mnh', 'PMNH1', 'Historial de ubicaciones', ['rondas.monitoreo_historial']);
+    await allowed('monitoreo: ver lee las posiciones en vivo', () => getDocs(rcol(monitor, 'rondas_en_vivo')));
+    await denied('monitoreo: ver no lee el historial de ubicaciones', () => getDocs(rcol(monitor, 'rondas_ubicaciones')));
+    await denied('monitoreo: ver no lee las alertas', () => getDocs(rcol(monitor, 'rondas_alertas')));
+    await denied('monitoreo: ver no lee los incidentes', () => getDocs(rcol(monitor, 'rondas_incidentes')));
+    await denied('monitoreo: ver no lee los drones', () => getDocs(rcol(monitor, 'rondas_drones')));
+    await allowed('monitoreo: el historial lee las ubicaciones', () => getDocs(rcol(monHist, 'rondas_ubicaciones')));
+    await allowed('monitoreo: el historial tambien trae el mapa en vivo (cuelga de el)', () => getDocs(rcol(monHist, 'rondas_en_vivo')));
+    const rutV = await opWith('u-rtv', 'PRTV1', 'Ve rutas', ['rondas.rutas_ver']);
+    const asV = await opWith('u-asv', 'PASV1', 'Ve asignaciones', ['rondas.asignaciones_ver']);
+    const recV = await opWith('u-rcv', 'PRCV1', 'Ve recorridos', ['rondas.recorridos_ver']);
+    await allowed('rutas: ver lee rutas', () => getDocs(rcol(rutV, 'rondas_rutas')));
+    await denied('rutas: ver no lee asignaciones', () => getDocs(rcol(rutV, 'rondas_asignaciones')));
+    await denied('rutas: ver no lee recorridos', () => getDocs(rcol(rutV, 'rondas_visitas')));
+    await allowed('asignaciones: ver lee la programacion', () => getDocs(rcol(asV, 'rondas_asignaciones')));
+    await denied('asignaciones: ver no lee rutas', () => getDocs(rcol(asV, 'rondas_rutas')));
+    await allowed('recorridos: ver lee las visitas a puntos', () => getDocs(rcol(recV, 'rondas_visitas')));
+    await denied('recorridos: ver no lee rutas', () => getDocs(rcol(recV, 'rondas_rutas')));
+
+    await setDoc(rref(guard, 'rondas_incidentes', 'inc-op'), { ...incidente, id: 'inc-op' });
+    const incV = await opWith('u-inv', 'PINV1', 'Ve incidentes', ['rondas.incidentes_ver']);
+    const incR = await opWith('u-inr', 'PINR1', 'Resuelve incidentes', ['rondas.incidentes_resolver']);
+    const incRep = await opWith('u-inp', 'PINP1', 'Reporta incidentes', ['rondas.incidentes_reportar']);
+    await allowed('incidentes: ver lee los incidentes', () => getDocs(rcol(incV, 'rondas_incidentes')));
+    await denied('incidentes: ver no los resuelve', () => updateDoc(rref(incV, 'rondas_incidentes', 'inc-op'), { status: 'CLOSED' }));
+    await allowed('incidentes: resolver cierra el incidente', () => updateDoc(rref(incR, 'rondas_incidentes', 'inc-op'), { status: 'CLOSED', resolved_by: 'u-inr', resolved_at: sqlTs() }));
+    await allowed('incidentes: reportar abre uno a su nombre', () => setDoc(rref(incRep, 'rondas_incidentes', 'inc-rep'), { ...incidente, id: 'inc-rep', reported_by: 'u-inp' }));
+    await denied('incidentes: reportar no resuelve', () => updateDoc(rref(incRep, 'rondas_incidentes', 'inc-rep'), { status: 'RESOLVED' }));
+
+    const drOp = await opWith('u-dro', 'PDRO1', 'Opera drones', ['rondas.drones_operar']);
+    const drReg = await opWith('u-drr', 'PDRR1', 'Registra drones', ['rondas.drones_registrar']);
+    await allowed('drones: operar cambia el estado', () => updateDoc(rref(drOp, 'rondas_drones', 'dron-test'), { status: 'ACTIVE' }));
+    await denied('drones: operar no registra', () => setDoc(rref(drOp, 'rondas_drones', 'dron-op'), { ...dron, id: 'dron-op' }));
+    await allowed('drones: registrar da de alta uno', () => setDoc(rref(drReg, 'rondas_drones', 'dron-op'), { ...dron, id: 'dron-op' }));
+    await denied('drones: registrar no los opera', () => updateDoc(rref(drReg, 'rondas_drones', 'dron-op'), { status: 'DISPATCHED' }));
+
+    // Patrulla: iniciar, marcar, terminar y compartir la ubicacion
+    const turnoDe = (uid, id, extra = {}) => ({ id, company_id: A, guard_id: uid, route_id: 'ruta-test', scheduled_start: sqlTs(), status: 'SCHEDULED', created_at: sqlTs(), ...extra });
+    const p1 = await opWith('u-p1', 'PPA01', 'Patrulla iniciar', ['rondas.patrulla_iniciar']);
+    const p2 = await opWith('u-p2', 'PPA02', 'Patrulla marcar', ['rondas.patrulla_marcar']);
+    const p3 = await opWith('u-p3', 'PPA03', 'Patrulla terminar', ['rondas.patrulla_terminar']);
+    const p4 = await opWith('u-p4', 'PPA04', 'Patrulla rastrear', ['rondas.patrulla_rastrear']);
+    await allowed('patrulla: iniciar crea su turno', () => setDoc(rref(p1, 'rondas_turnos', 'turno-p1'), turnoDe('u-p1', 'turno-p1')));
+    await allowed('patrulla: iniciar hace el check-in', () => updateDoc(rref(p1, 'rondas_turnos', 'turno-p1'), { status: 'ACTIVE', actual_start: sqlTs() }));
+    await allowed('patrulla: iniciar abre una ronda', () => setDoc(rref(p1, 'rondas_rondas', 'ronda-p1'), { ...ronda, id: 'ronda-p1', shift_id: 'turno-p1', guard_id: 'u-p1' }));
+    await denied('patrulla: iniciar no marca puntos', () => setDoc(rref(p1, 'rondas_visitas', 'visita-p1'), { ...visita, id: 'visita-p1', guard_id: 'u-p1' }));
+    await denied('patrulla: iniciar no termina el turno', () => updateDoc(rref(p1, 'rondas_turnos', 'turno-p1'), { status: 'COMPLETED', actual_end: sqlTs() }));
+    await denied('patrulla: iniciar no comparte la ubicacion', () => setDoc(rref(p1, 'rondas_en_vivo', 'u-p1'), { ...posicion, user_id: 'u-p1' }));
+    await allowed('patrulla: marcar registra la visita a un punto', () => setDoc(rref(p2, 'rondas_visitas', 'visita-p2'), { ...visita, id: 'visita-p2', guard_id: 'u-p2' }));
+    await denied('patrulla: marcar no abre rondas', () => setDoc(rref(p2, 'rondas_rondas', 'ronda-p2'), { ...ronda, id: 'ronda-p2', guard_id: 'u-p2' }));
+    await denied('patrulla: marcar no crea turnos', () => setDoc(rref(p2, 'rondas_turnos', 'turno-p2'), turnoDe('u-p2', 'turno-p2')));
+    await setDoc(rref(admin, 'rondas_turnos', 'turno-p3'), turnoDe('u-p3', 'turno-p3', { status: 'ACTIVE' }));
+    await denied('patrulla: terminar no inicia el turno', () => updateDoc(rref(p3, 'rondas_turnos', 'turno-p3'), { status: 'ACTIVE', actual_start: sqlTs() }));
+    await allowed('patrulla: terminar cierra su turno', () => updateDoc(rref(p3, 'rondas_turnos', 'turno-p3'), { status: 'COMPLETED', actual_end: sqlTs() }));
+    await allowed('patrulla: rastrear comparte la ubicacion en vivo', () => setDoc(rref(p4, 'rondas_en_vivo', 'u-p4'), { ...posicion, user_id: 'u-p4' }));
+    await allowed('patrulla: rastrear guarda el historial', () => setDoc(rref(p4, 'rondas_ubicaciones', 'ubi-p4'), { ...posicion, user_id: 'u-p4' }));
+    await denied('patrulla: rastrear no inicia turnos', () => setDoc(rref(p4, 'rondas_turnos', 'turno-p4'), turnoDe('u-p4', 'turno-p4')));
+    await allowed('patrulla: quien patrulla borra su posicion al terminar', () => deleteDoc(rref(p4, 'rondas_en_vivo', 'u-p4')));
+
+    // Personal y configuracion
+    const supAs = await opWith('u-sas', 'PSAS1', 'Asigna supervisores', ['rondas.supervisores_asignar']);
+    await allowed('supervisores: asignar pone al guardia a cargo de un supervisor', () => setDoc(rref(supAs, 'rondas_personal', 'u-pedro'), { id: 'u-pedro', company_id: A, supervisor_id: 'u-samuel', updated_at: sqlTs() }, { merge: true }));
+    await denied('supervisores: asignar no edita el expediente', () => setDoc(rref(supAs, 'rondas_personal', 'u-pedro'), { id: 'u-pedro', company_id: A, document_id: '123', updated_at: sqlTs() }, { merge: true }));
+    const cfgRondas = await opWith('u-crn', 'PCRN1', 'Config de rondas', ['rondas.ajustes_panicovecinos']);
+    await allowed('rondas: guardar la configuracion', () => setDoc(rref(cfgRondas, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 1, updated_at: sqlTs() }, { merge: true }));
+    await denied('rondas: quien solo ve alertas no guarda la configuracion', () => setDoc(rref(alVer, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 0 }, { merge: true }));
+    await allowed('rondas: el administrador de siempre conserva todo (rutas, puntos, asignaciones, alertas, drones, configuracion)', async () => {
+        await updateDoc(rref(admin, 'rondas_rutas', 'ruta-test'), withPoints([cp1, cp('cp9', 'Nueve')]));
+        await updateDoc(rref(admin, 'rondas_rutas', 'ruta-test'), withPoints([cp1]));
+        await setDoc(rref(admin, 'rondas_asignaciones', 'asig-adm'), { ...asig, id: 'asig-adm' });
+        await deleteDoc(rref(admin, 'rondas_asignaciones', 'asig-adm'));
+        await setDoc(rref(admin, 'rondas_config', 'general'), { company_id: A, neighbor_panic_enabled: 1, updated_at: sqlTs() }, { merge: true });
+        await updateDoc(rref(admin, 'rondas_drones', 'dron-test'), { status: 'ACTIVE' });
+    });
+    await allowed('rondas: el supervisor de siempre sigue patrullando y administrando', async () => {
+        await setDoc(rref(sup, 'rondas_turnos', 'turno-sup'), turnoDe('u-samuel', 'turno-sup'));
+        await setDoc(rref(sup, 'rondas_visitas', 'visita-sup'), { ...visita, id: 'visita-sup', guard_id: 'u-samuel' });
+        await setDoc(rref(sup, 'rondas_en_vivo', 'u-samuel'), { ...posicion, user_id: 'u-samuel' });
+        await setDoc(rref(sup, 'rondas_rutas', 'ruta-sup'), { ...rutaTest, id: 'ruta-sup', route_code: 'R-960' });
+    });
+    await denied('rondas: un supervisor al que se le quita "marcar puntos" ya no marca', async () => {
+        await createUserAs(admin, mkUser('u-sup2', 'Supervisor sin marcar', 'supervisor', { privilegios: { 'rondas.patrulla_marcar': false } }), 'PSU20');
+        const s2 = await loginAs('PSU20');
+        return setDoc(rref(s2, 'rondas_visitas', 'visita-s2'), { ...visita, id: 'visita-s2', guard_id: 'u-sup2' });
+    });
+    await allowed('rondas: ese mismo supervisor sigue iniciando turnos', async () => {
+        const s2 = await loginAs('PSU20');
+        return setDoc(rref(s2, 'rondas_turnos', 'turno-s2'), turnoDe('u-sup2', 'turno-s2'));
+    });
+
+    // ───────── SISDEL: llaves nuevas ─────────
+    console.log('\nPrivilegios por accion: SISDEL');
+    await createUserAs(admin, mkUser('u-v30', 'Vecino Treinta', 'vecino', { casa: 'Casa 30' }), 'PV030');
+    const sinEstado = await opWith('u-ses', 'PSES1', 'Edita sin estado', ['usuarios.editar']);
+    const conEstado = await opWith('u-ces', 'PCES1', 'Edita con estado', ['usuarios.estado']);
+    await allowed('usuarios: editar cambia el telefono', () => updateDoc(uref(sinEstado, 'u-v30'), { phone: '5555-3030' }));
+    await denied('usuarios: editar sin "estado" no desactiva', () => updateDoc(uref(sinEstado, 'u-v30'), { active: false }));
+    await allowed('usuarios: "estado" desactiva a un usuario', () => updateDoc(uref(conEstado, 'u-v30'), { active: false }));
+    await allowed('usuarios: "estado" lo reactiva', () => updateDoc(uref(conEstado, 'u-v30'), { active: true }));
+    await denied('usuarios: sin "pago" nadie cambia el estado de pago a mano', () => updateDoc(uref(sinEstado, 'u-v30'), { paymentStatus: 'moroso' }));
+
+    const vehNuevo = (id, owner = 'u-ana') => ({ id, condominioId: A, userId: owner, plate: `P-${id}`, plateNorm: `P${id}`.replace(/-/g, ''), brand: '', model: '', color: '', marbeteCode: `M${id}`.slice(0, 8), createdAt: ts() });
+    const vehC = await opWith('u-vc', 'PVEC1', 'Crea vehiculos', ['vehiculos.crear']);
+    const vehE = await opWith('u-ve', 'PVEE1', 'Edita vehiculos', ['vehiculos.editar']);
+    const vehD = await opWith('u-vd', 'PVED1', 'Elimina vehiculos', ['vehiculos.eliminar']);
+    await allowed('vehiculos: crear registra un vehiculo', () => setDoc(rref(vehC, 'vehiculos', 'veh-op'), vehNuevo('veh-op')));
+    await denied('vehiculos: crear no edita', () => updateDoc(rref(vehC, 'vehiculos', 'veh-op'), { color: 'rojo' }));
+    await denied('vehiculos: crear no elimina', () => deleteDoc(rref(vehC, 'vehiculos', 'veh-op')));
+    await allowed('vehiculos: editar cambia el color', () => updateDoc(rref(vehE, 'vehiculos', 'veh-op'), { color: 'azul' }));
+    await denied('vehiculos: editar no crea', () => setDoc(rref(vehE, 'vehiculos', 'veh-op2'), vehNuevo('veh-op2')));
+    await denied('vehiculos: eliminar no edita', () => updateDoc(rref(vehD, 'vehiculos', 'veh-op'), { color: 'verde' }));
+    await allowed('vehiculos: eliminar quita el vehiculo', () => deleteDoc(rref(vehD, 'vehiculos', 'veh-op')));
+    await denied('vehiculos: quien gestiona visitas no crea visitas sin "crear visitas"', () => setDoc(rref(vehC, 'visitas', 'vis-veh'), { id: 'vis-veh', condominioId: A, userId: 'u-ana', visitorName: 'x', visitDate: localDate(0), status: 'pending', createdAt: ts() }));
+
+    const msgEnv = await opWith('u-men', 'PMEN1', 'Envia mensajes', ['mensajes.enviar']);
+    const msgDel = await opWith('u-mel', 'PMEL1', 'Elimina mensajes', ['mensajes.eliminar']);
+    const msgOne = (id) => ({ id, condominioId: A, fromName: 'Prueba', toRole: 'all', subject: 'Aviso', body: 'x', read: false, createdAt: ts() });
+    await allowed('mensajes: enviar publica un mensaje', () => setDoc(rref(msgEnv, 'mensajes', 'msg-op'), msgOne('msg-op')));
+    await denied('mensajes: enviar no elimina', () => deleteDoc(rref(msgEnv, 'mensajes', 'msg-op')));
+    await allowed('mensajes: eliminar borra un mensaje', () => deleteDoc(rref(msgDel, 'mensajes', 'msg-op')));
+    await denied('mensajes: quien no recibe mensajes no los lee', async () => { const sinMsg = await (async () => { await createUserAs(admin, mkUser('u-nom', 'No recibe', 'operador', { privilegios: { 'mensajes.recibir': false, 'usuarios.panel': true, 'usuarios.ver': true } }), 'PNOM1'); return loginAs('PNOM1'); })(); return getDocs(query(rcol(sinMsg, 'mensajes'), where('toRole', 'in', ['all', 'operador']))); });
+
+    // Panico: atender, resolver, cancelar, contactos
+    await setDoc(rref(ana, 'alertas_panico', 'pan-x1'), panico('pan-x1'));
+    await setDoc(rref(ana, 'alertas_panico', 'pan-x2'), panico('pan-x2'));
+    const pAt = await opWith('u-pat', 'PPAT1', 'Atiende panico', ['panico.atender']);
+    const pRes = await opWith('u-pre', 'PPRE1', 'Resuelve panico', ['panico.resolver']);
+    await allowed('panico: atender marca la alerta como atendida', () => updateDoc(rref(pAt, 'alertas_panico', 'pan-x1'), { status: 'ATTENDED', attendedBy: 'u-pat', attendedByName: 'Atiende', attendedAt: ts() }));
+    await denied('panico: atender no la resuelve', () => updateDoc(rref(pAt, 'alertas_panico', 'pan-x2'), { status: 'RESOLVED', resolvedBy: 'u-pat', resolvedByName: 'Atiende', resolvedAt: ts() }));
+    await allowed('panico: resolver la cierra', () => updateDoc(rref(pRes, 'alertas_panico', 'pan-x2'), { status: 'RESOLVED', resolvedBy: 'u-pre', resolvedByName: 'Resuelve', resolvedAt: ts() }));
+    await createUserAs(admin, mkUser('u-v31', 'Vecino sin cancelar', 'vecino', { casa: 'Casa 31', privilegios: { 'panico.cancelar': false } }), 'PV031');
+    await createUserAs(admin, mkUser('u-v32', 'Vecino que cancela', 'vecino', { casa: 'Casa 32' }), 'PV032');
+    const v31 = await loginAs('PV031');
+    const v32 = await loginAs('PV032');
+    await setDoc(rref(v31, 'alertas_panico', 'pan-x3'), panico('pan-x3', { userId: 'u-v31', userName: 'Vecino sin cancelar' }));
+    await setDoc(rref(v32, 'alertas_panico', 'pan-x4'), panico('pan-x4', { userId: 'u-v32', userName: 'Vecino que cancela' }));
+    await denied('panico: un vecino sin "cancelar" no cancela su alerta', () => updateDoc(rref(v31, 'alertas_panico', 'pan-x3'), { status: 'CANCELLED', cancelledAt: ts() }));
+    await allowed('panico: el vecino de siempre si la cancela', () => updateDoc(rref(v32, 'alertas_panico', 'pan-x4'), { status: 'CANCELLED', cancelledAt: ts() }));
+    const pVer = await opWith('u-pvr', 'PPVR1', 'Ve panico', ['panico.ver']);
+    const pCon = await opWith('u-pcn', 'PPCN1', 'Ve contactos', ['panico.contactos']);
+    await allowed('panico: ver lee las alertas', () => getDocs(query(rcol(pVer, 'alertas_panico'), where('status', 'in', ['ACTIVE', 'ATTENDED']))));
+    await denied('panico: ver sin "contactos" no lee los familiares', () => getDocs(rcol(pVer, 'emergencia')));
+    await allowed('panico: contactos lee los familiares de emergencia', () => getDocs(rcol(pCon, 'emergencia')));
+
+    // Garita: verificar codigos e ingresos
+    const gVer = await opWith('u-gve', 'PGVE1', 'Verifica codigos', ['garita.verificar']);
+    const gIng = await opWith('u-gin', 'PGIN1', 'Registra ingresos', ['garita.ingreso']);
+    equal('garita: verificar valida un codigo de vecino', (await httpsCallable(gVer.functions, 'verifyAccessCode')({ code: 'VA101' })).data.user?.name, 'Ana García');
+    await denied('garita: registrar ingresos no valida codigos', () => httpsCallable(gIng.functions, 'verifyAccessCode')({ code: 'VA101' }));
+    await allowed('garita: ingreso marca la entrada de una visita', () => updateDoc(rref(gIng, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
+    await denied('garita: verificar no marca entradas', () => updateDoc(rref(gVer, 'visitas', 'vis-sec'), { status: 'entered', enteredAt: ts() }));
+    await denied('garita: verificar no escribe el historial', () => setDoc(rref(gVer, 'camera_logs', 'log-ver'), { id: 'log-ver', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
+    await allowed('garita: ingreso escribe el historial', () => setDoc(rref(gIng, 'camera_logs', 'log-ing'), { id: 'log-ing', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
+
+    // Vecino: historial, visitas temporales, contactos y quitar vehiculos
+    await createUserAs(admin, mkUser('u-v33', 'Vecino sin historial', 'vecino', { casa: 'Casa 33', privilegios: { 'vecino.historial': false } }), 'PV033');
+    await createUserAs(admin, mkUser('u-v34', 'Vecino sin temporales', 'vecino', { casa: 'Casa 34', privilegios: { 'vecino.temporal': false } }), 'PV034');
+    await createUserAs(admin, mkUser('u-v35', 'Vecino sin contactos', 'vecino', { casa: 'Casa 35', privilegios: { 'vecino.contactos': false } }), 'PV035');
+    await createUserAs(admin, mkUser('u-v36', 'Vecino sin quitar vehiculos', 'vecino', { casa: 'Casa 36', privilegios: { 'vecino.vehiculos_quitar': false } }), 'PV036');
+    const v33 = await loginAs('PV033');
+    const v34 = await loginAs('PV034');
+    const v35 = await loginAs('PV035');
+    const v36 = await loginAs('PV036');
+    await allowed('vecino: ver su historial de visitas', () => getDocs(query(rcol(ana, 'visitas'), where('userId', '==', 'u-ana'))));
+    await denied('vecino: sin "historial" no lee sus visitas', () => getDocs(query(rcol(v33, 'visitas'), where('userId', '==', 'u-v33'))));
+    const visitaVecino = (uid, id, extra = {}) => ({ id, condominioId: A, userId: uid, visitorName: 'Visita', visitorInfo: '', vehiclePlate: '', plateNorm: '', visitDate: localDate(0), visitTime: null, casa: '', qrCode: id.toUpperCase(), status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: ts(), ...extra });
+    await allowed('vecino: sin "temporales" si registra una visita de un dia', () => setDoc(rref(v34, 'visitas', 'vis-v34'), visitaVecino('u-v34', 'vis-v34')));
+    await denied('vecino: sin "temporales" no registra un acceso temporal', () => setDoc(rref(v34, 'visitas', 'vis-v34b'), visitaVecino('u-v34', 'vis-v34b', { visitType: 'temporal', endDate: localDate(5) })));
+    await allowed('vecino: de siempre registra un acceso temporal', () => setDoc(rref(ana, 'visitas', 'vis-ana-temp'), visitaVecino('u-ana', 'vis-ana-temp', { visitType: 'temporal', endDate: localDate(5) })));
+    await denied('vecino: sin "contactos" no guarda sus contactos de emergencia', () => setDoc(rref(v35, 'emergencia', 'u-v35'), { userId: 'u-v35', contacts: [] }));
+    await allowed('vecino: de siempre guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', contacts: [] }));
+    await setDoc(rref(v36, 'vehiculos', 'veh-v36'), vehNuevo('veh-v36', 'u-v36'));
+    await denied('vecino: sin "quitar vehiculos" no borra su vehiculo', () => deleteDoc(rref(v36, 'vehiculos', 'veh-v36')));
+    await setDoc(rref(ana, 'vehiculos', 'veh-ana-q'), vehNuevo('veh-ana-q', 'u-ana'));
+    await allowed('vecino: de siempre quita su vehiculo', () => deleteDoc(rref(ana, 'vehiculos', 'veh-ana-q')));
+
+    // Privilegios y plantillas
+    const plPriv = await opWith('u-ppr', 'PPPR1', 'Asigna privilegios', ['usuarios.privilegios']);
+    const plTpl = await opWith('u-ppt', 'PPPT1', 'Asigna y gestiona plantillas', ['usuarios.privilegios', 'plantillas.gestionar']);
+    const plantillaOp = { id: 'plt-op', condominioId: A, name: 'De prueba', role: 'operador', description: '', claves: ['usuarios.ver'], updatedAt: ts() };
+    await allowed('plantillas: asignar privilegios lee las plantillas', () => getDocs(rcol(plPriv, 'plantillas_privilegios')));
+    await denied('plantillas: asignar privilegios sin "gestionar plantillas" no las guarda', () => setDoc(rref(plPriv, 'plantillas_privilegios', 'plt-op'), plantillaOp));
+    await allowed('plantillas: gestionar plantillas las guarda', () => setDoc(rref(plTpl, 'plantillas_privilegios', 'plt-op'), plantillaOp));
+    await denied('plantillas: sin gestionarlas no las borra', () => deleteDoc(rref(plPriv, 'plantillas_privilegios', 'plt-op')));
+    await allowed('plantillas: gestionar plantillas las borra', () => deleteDoc(rref(plTpl, 'plantillas_privilegios', 'plt-op')));
+    await denied('plantillas: una accion suelta sin su paraguas no sirve', () => createUserAs(admin, mkUser('u-nope', 'Sin paraguas', 'operador', { privilegios: { 'plantillas.gestionar': true, 'usuarios.panel': true, 'usuarios.ver': true } }), 'PNOP1').then(async () => { const nope = await loginAs('PNOP1'); return setDoc(rref(nope, 'plantillas_privilegios', 'plt-nope'), { ...plantillaOp, id: 'plt-nope' }); }));
+
     // ───────── Revocacion inmediata ─────────
     console.log('\nRevocacion');
     await allowed('admin desactiva a un vecino', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/u-nuevo`), { active: false }));

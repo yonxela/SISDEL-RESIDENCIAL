@@ -923,6 +923,16 @@ async function run() {
     await denied('cajero no crea cargos especiales', () => setDoc(mref(cajero, 'caj-ch'), mv('caj-ch', { type: 'charge', kind: 'extra' })));
     await denied('cajero no genera cuotas automaticas', () => setDoc(mref(cajero, 'fee_u-ana_2031-01'), mv('fee_u-ana_2031-01', { type: 'charge', kind: 'fee', period: '2031-01', auto: true })));
     await denied('cajero no anula pagos', () => updateDoc(mref(cajero, 'fin-in-1'), annul()));
+    await denied('cajero no reasigna el periodo de una cuota', () => updateDoc(mref(cajero, 'fin-ch-2'), { period: '2030-05', updated_at: ts() }));
+    await allowed('cajero si migra un cargo viejo sin periodo (lo hace OIKOS al abrir)', async () => {
+        // Un cargo de antes de que OIKOS guardara periodo y tipo: ya no se puede crear asi, se siembra sin pasar por las reglas
+        const legacy = await fetch(`http://${EMULATOR.firestore}/v1/projects/${PROJECT_ID}/databases/(default)/documents/condominios/${A}/finanzas_movimientos/fin-ch-old`, {
+            method: 'PATCH', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: { id: { stringValue: 'fin-ch-old' }, type: { stringValue: 'charge' }, amount: { integerValue: '100' }, concept: { stringValue: 'Cuota - Enero 2026' }, resiId: { stringValue: 'u-ana' }, updated_at: { stringValue: ts() } } })
+        });
+        if (!legacy.ok) throw new Error(`no se pudo sembrar el cargo viejo: ${legacy.status}`);
+        await updateDoc(mref(cajero, 'fin-ch-old'), { period: '2026-01', kind: 'fee', updated_at: ts() });
+    });
     await denied('cajero no cambia el monto de un pago', () => updateDoc(mref(cajero, 'fin-in-1'), { amount: 5000, updated_at: ts() }));
     await denied('cajero no cambia la cuota', () => patchCfg(cajero, { fee: 999 }));
     await denied('cajero no cambia la moneda', () => patchCfg(cajero, { currency: 'USD' }));

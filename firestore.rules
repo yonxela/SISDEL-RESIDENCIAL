@@ -415,7 +415,8 @@ service cloud.firestore {
       }
       function movementUpdateOk() {
         return finChanged().hasOnly(['updated_at'])
-          || (resource.data.get('type', '') == 'charge' && finChanged().hasOnly(['period', 'kind', 'updated_at']))
+          // OIKOS le pone periodo y tipo a un cargo viejo que no lo tiene (migracion); uno que ya lo tiene no se reasigna
+          || (resource.data.get('type', '') == 'charge' && resource.data.get('period', '') == '' && finChanged().hasOnly(['period', 'kind', 'updated_at']))
           // Anular: el mismo documento con deleted:true (nunca se borra)
           || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
               && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])

@@ -127,6 +127,7 @@ equal('cambiar el monto de un movimiento no lo permite nadie', ok(F.movementNeed
 equal('solo la fecha de modificacion no pide nada', F.movementNeeds({ ...income, updated_at: T2 }, income), []);
 const legacyCharge = { id: 'old', type: 'charge', amount: 100, concept: 'Cuota - Enero 2026', updated_at: T1 };
 equal('migrar periodo y tipo de un cargo viejo no pide nada', F.movementNeeds({ ...legacyCharge, period: '2026-01', kind: 'fee', updated_at: T2 }, legacyCharge), []);
+equal('reasignar el periodo de una cuota que ya lo tiene no lo permite nadie', ok(F.movementNeeds({ ...autoFee, period: '2026-05', updated_at: T2 }, autoFee), 'finanzas.deshacer', 'finanzas.cuotas_corregir', 'finanzas.pagos_registrar'), false);
 
 console.log('\nPrivilegios: residentes');
 const resNow = { id: 'u1', name: 'Ana', unit: 'Casa 1', contact: '+50255555678', dpi: '111', status: 'active', feeFrom: '2026-11', createdAt: T1, updated_at: T1 };

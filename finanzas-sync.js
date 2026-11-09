@@ -273,7 +273,7 @@ const SisdelFinanzas = (() => {
         }
         const keys = changedKeys(next, prev);
         if (keys.every((k) => k === 'updated_at')) return [];
-        if (prev.type === 'charge' && keys.every((k) => ['period', 'kind', 'updated_at'].includes(k))) return [];
+        if (prev.type === 'charge' && !prev.period && keys.every((k) => ['period', 'kind', 'updated_at'].includes(k))) return [];
         if (keys.every((k) => MOVEMENT_ANNUL_KEYS.includes(k))) {
             if (next.deleted === true && prev.deleted !== true) {
                 const own = prev.type === 'income' ? ['finanzas.pagos_anular']

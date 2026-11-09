@@ -91,6 +91,60 @@ equal('lo ya anulado no se vuelve a anular', d.changed.length, 0);
 d = F.diffList([base[0], { id: '2', amount: 200, updated_at: T1 }], syncedMap(withTomb), NOW);
 equal('"rehacer" revive el registro con sello nuevo', [d.changed[0].deleted, d.changed[0].updated_at], [undefined, NOW]);
 
+// ── Privilegios exigidos por cada escritura (espejo de firestore.rules) ──
+const allow = (...keys) => (key) => keys.includes(key);
+const ok = (needs, ...keys) => F.satisfied(needs, allow(...keys));
+
+console.log('\nPrivilegios: movimientos');
+const income = { id: 'p1', type: 'income', amount: 500, resiId: 'u1', updated_at: T1 };
+equal('registrar un pago exige pagos_registrar', [ok(F.movementNeeds(income, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds(income, null), 'finanzas.egresos_registrar')], [true, false]);
+const expense = { id: 'e1', type: 'expense', amount: 90, concept: 'Luz', updated_at: T1 };
+equal('registrar un egreso exige egresos_registrar', [ok(F.movementNeeds(expense, null), 'finanzas.egresos_registrar'), ok(F.movementNeeds(expense, null), 'finanzas.pagos_registrar')], [true, false]);
+const initialDebt = { id: 'e2', type: 'expense', amount: 90, concept: 'Saldo Inicial Adeudado', category: 'Ajuste', updated_at: T1 };
+equal('el saldo inicial adeudado lo asienta quien registra residentes', ok(F.movementNeeds(initialDebt, null), 'finanzas.residentes_crear'), true);
+const autoFee = { id: 'fee_u1_2026-11', type: 'charge', kind: 'fee', period: '2026-11', auto: true, amount: 300, resiId: 'u1', updated_at: T1 };
+equal('la cuota automatica exige cuota del mes', [ok(F.movementNeeds(autoFee, null), 'finanzas.cuotas_mes'), ok(F.movementNeeds(autoFee, null), 'finanzas.cuotas_meses', 'finanzas.cargos_crear')], [true, false]);
+const manualFee = { ...autoFee, auto: false, manual: true };
+equal('la cuota manual la cobra cualquiera de las tres vias', [ok(F.movementNeeds(manualFee, null), 'finanzas.cuotas_mes'), ok(F.movementNeeds(manualFee, null), 'finanzas.cuotas_meses'), ok(F.movementNeeds(manualFee, null), 'finanzas.cargos_crear'), ok(F.movementNeeds(manualFee, null), 'finanzas.pagos_registrar')], [true, true, true, false]);
+const extraCharge = { id: 'c1', type: 'charge', kind: 'extra', amount: 100, concept: 'Multa', resiId: 'u1', updated_at: T1 };
+equal('un cargo especial exige cargos_crear', [ok(F.movementNeeds(extraCharge, null), 'finanzas.cargos_crear'), ok(F.movementNeeds(extraCharge, null), 'finanzas.cuotas_mes')], [true, false]);
+equal('un tipo desconocido no se acepta', ok(F.movementNeeds({ id: 'x', type: 'otro' }, null), 'finanzas.pagos_registrar', 'finanzas.cargos_crear'), false);
+const annulled = (tx, extra = {}) => ({ ...tx, deleted: true, deleted_at: T2, deleted_reason: 'error', updated_at: T2, ...extra });
+equal('anular un pago exige anular pagos o deshacer (quitar un alta propia)', [ok(F.movementNeeds(annulled(income), income), 'finanzas.pagos_anular'), ok(F.movementNeeds(annulled(income), income), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(income), income), 'finanzas.egresos_anular', 'finanzas.cargos_anular')], [true, true, false]);
+equal('anular un egreso exige su propio privilegio', [ok(F.movementNeeds(annulled(expense), expense), 'finanzas.egresos_anular'), ok(F.movementNeeds(annulled(expense), expense), 'finanzas.pagos_anular', 'finanzas.cargos_anular')], [true, false]);
+equal('anular un cargo especial exige anular cargos', [ok(F.movementNeeds(annulled(extraCharge), extraCharge), 'finanzas.cargos_anular'), ok(F.movementNeeds(annulled(extraCharge), extraCharge), 'finanzas.cuotas_corregir', 'finanzas.pagos_anular')], [true, false]);
+equal('corregir cuotas duplicadas alcanza para anular una cuota', ok(F.movementNeeds(annulled(autoFee), autoFee), 'finanzas.cuotas_corregir'), true);
+equal('devolver una anulacion es deshacer', [ok(F.movementNeeds(income, annulled(income)), 'finanzas.deshacer'), ok(F.movementNeeds(income, annulled(income)), 'finanzas.pagos_anular')], [true, false]);
+equal('cambiar el monto de un movimiento no lo permite nadie', ok(F.movementNeeds({ ...income, amount: 5000, updated_at: T2 }, income), 'finanzas.deshacer', 'finanzas.pagos_registrar', 'finanzas.pagos_anular'), false);
+equal('solo la fecha de modificacion no pide nada', F.movementNeeds({ ...income, updated_at: T2 }, income), []);
+const legacyCharge = { id: 'old', type: 'charge', amount: 100, concept: 'Cuota - Enero 2026', updated_at: T1 };
+equal('migrar periodo y tipo de un cargo viejo no pide nada', F.movementNeeds({ ...legacyCharge, period: '2026-01', kind: 'fee', updated_at: T2 }, legacyCharge), []);
+
+console.log('\nPrivilegios: residentes');
+const resNow = { id: 'u1', name: 'Ana', unit: 'Casa 1', contact: '+50255555678', dpi: '111', status: 'active', feeFrom: '2026-11', createdAt: T1, updated_at: T1 };
+equal('registrar un residente nuevo exige residentes_crear', [ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_editar')], [true, false]);
+equal('cambiar el DPI exige residentes_editar', [ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false]);
+equal('cambiar el nombre (vive en SISDEL) tambien exige residentes_editar', ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar'), false);
+const closed = { ...resNow, status: 'closed', closedAt: T2, closeReason: 'Mudanza', closeNotes: '', updated_at: T2 };
+equal('finiquitar exige residentes_finiquitar y no residentes_editar', [ok(F.residentNeeds(closed, resNow, true), 'finanzas.residentes_finiquitar'), ok(F.residentNeeds(closed, resNow, true), 'finanzas.residentes_editar')], [true, false]);
+const reactivated = { ...closed, status: 'active', reactivatedAt: T2, feeFrom: '2026-12', updated_at: T2 };
+equal('reactivar tambien es de finiquitar', ok(F.residentNeeds(reactivated, closed, true), 'finanzas.residentes_finiquitar'), true);
+equal('eliminar un residente exige residentes_eliminar', [ok(F.residentNeeds({ ...resNow, deleted: true, updated_at: T2 }, resNow, true), 'finanzas.residentes_eliminar'), ok(F.residentNeeds({ ...resNow, deleted: true, updated_at: T2 }, resNow, true), 'finanzas.residentes_editar')], [true, false]);
+equal('solo la fecha de modificacion no pide nada', F.residentNeeds({ ...resNow, updated_at: T2 }, resNow, true), []);
+equal('el saldo no cuenta como cambio', F.residentNeeds({ ...resNow, balance: -300 }, resNow, true), []);
+
+console.log('\nPrivilegios: configuracion');
+const settingsNow = { currency: 'GTQ', lang: 'es', name: 'Condo', theme: 'light', fee: 300, chargeDay: 1, graceDays: 5, feeMode: 'manual', chargedMonths: [], updated_at: T1 };
+equal('cambiar la cuota exige config_cuota', [ok(F.settingsNeeds({ ...settingsNow, fee: 350, updated_at: T2 }, settingsNow), 'finanzas.config_cuota'), ok(F.settingsNeeds({ ...settingsNow, fee: 350, updated_at: T2 }, settingsNow), 'finanzas.config_general')], [true, false]);
+equal('cambiar el modo de cobro tambien es de la cuota', ok(F.settingsNeeds({ ...settingsNow, feeMode: 'auto', updated_at: T2 }, settingsNow), 'finanzas.config_general'), false);
+equal('cambiar moneda, idioma, nombre o tema exige config_general', [ok(F.settingsNeeds({ ...settingsNow, currency: 'USD', updated_at: T2 }, settingsNow), 'finanzas.config_general'), ok(F.settingsNeeds({ ...settingsNow, theme: 'dark', updated_at: T2 }, settingsNow), 'finanzas.config_cuota')], [true, false]);
+equal('un concepto de ingresos lo puede agregar quien crea cargos', [ok(F.settingsNeeds({ ...settingsNow, customIncomeConcepts: ['Parqueo'] }, settingsNow), 'finanzas.cargos_crear'), ok(F.settingsNeeds({ ...settingsNow, customIncomeConcepts: ['Parqueo'] }, settingsNow), 'finanzas.config_conceptos'), ok(F.settingsNeeds({ ...settingsNow, customIncomeConcepts: ['Parqueo'] }, settingsNow), 'finanzas.egresos_registrar')], [true, true, false]);
+equal('un concepto de egresos lo puede agregar quien registra egresos', [ok(F.settingsNeeds({ ...settingsNow, customExpenseConcepts: ['Jardin'] }, settingsNow), 'finanzas.egresos_registrar'), ok(F.settingsNeeds({ ...settingsNow, customExpenseConcepts: ['Jardin'] }, settingsNow), 'finanzas.cargos_crear')], [true, false]);
+equal('el contador de recibos y los meses cobrados los mueve operar', F.settingsNeeds({ ...settingsNow, receiptCounter: 7, chargedMonths: ['2026-11'], updated_at: T2 }, settingsNow), []);
+equal('una clave desconocida se trata como configuracion general', ok(F.settingsNeeds({ ...settingsNow, nueva: 1 }, settingsNow), 'finanzas.config_conceptos'), false);
+equal('la primera configuracion de un condominio no pide nada', F.settingsNeeds(settingsNow, null), []);
+equal('claves cambiadas: ignora undefined frente a null', F.changedKeys({ a: undefined, b: 1 }, { a: null, b: 1 }), []);
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

@@ -207,6 +207,95 @@ const SisdelFinanzas = (() => {
         return { items: out, changed, rewrite };
     }
 
+    // ── Privilegios: que privilegio exige cada escritura ──
+    // Es el espejo, en el navegador, de las reglas de firestore.rules (finanzas_residentes, finanzas_movimientos y
+    // finanzas_config): las reglas son la barrera real; esto evita subir lo que se sabe que no se aceptara y deja la
+    // copia local igual que la nube (sin datos fantasma) cuando OIKOS escribio algo que el usuario no puede hacer.
+    // Una "necesidad" es una lista de condiciones que se cumplen TODAS; cada condicion es una lista de claves de las que
+    // basta UNA. [] = sin requisito extra; [[]] = no se permite.
+    const TOUCH_KEYS = ['updated_at', 'created_at', 'createdAt', 'id'];
+    const RESIDENT_STATE_KEYS = ['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom'];
+    const RESIDENT_DELETE_KEYS = ['deleted', 'deleted_at'];
+    const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'updated_at'];
+    const SETTINGS_FEE_KEYS = ['fee', 'chargeDay', 'graceDays', 'feeMode'];
+    const SETTINGS_GENERAL_KEYS = ['currency', 'lang', 'name', 'theme'];
+    const SETTINGS_OPERATION_KEYS = ['receiptCounter', 'chargedMonths', 'lastChargedMonth'];
+
+    // Claves cuyo valor difiere entre dos objetos (JSON)
+    function changedKeys(next, prev) {
+        const a = next || {};
+        const b = prev || {};
+        const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        return [...keys].filter((k) => JSON.stringify(a[k] === undefined ? null : a[k]) !== JSON.stringify(b[k] === undefined ? null : b[k]));
+    }
+
+    // Datos financieros de un residente de OIKOS (todo menos nombre, casa, telefono y saldo)
+    function extraOf(resident) {
+        const extra = { ...(resident || {}) };
+        CORE_FIELDS.concat('balance').forEach((k) => delete extra[k]);
+        return extra;
+    }
+
+    function satisfied(needs, can) {
+        return needs.every((clause) => clause.some((key) => can(key)));
+    }
+
+    // next/prev: residente de OIKOS (mezcla de vecino y datos financieros); prev = null si es nuevo en la nube
+    function residentNeeds(next, prev, userExists) {
+        if (!userExists || !prev) return [['finanzas.residentes_crear']];
+        const needs = [];
+        if (changedKeys(next, prev).some((k) => CORE_FIELDS.includes(k))) needs.push(['finanzas.residentes_editar']);
+        const keys = changedKeys(extraOf(next), extraOf(prev)).filter((k) => !TOUCH_KEYS.includes(k));
+        if (keys.some((k) => RESIDENT_STATE_KEYS.includes(k))) needs.push(['finanzas.residentes_finiquitar']);
+        if (keys.some((k) => RESIDENT_DELETE_KEYS.includes(k))) needs.push(['finanzas.residentes_eliminar']);
+        if (keys.some((k) => !RESIDENT_STATE_KEYS.includes(k) && !RESIDENT_DELETE_KEYS.includes(k))) needs.push(['finanzas.residentes_editar']);
+        return needs;
+    }
+
+    function movementNeeds(next, prev) {
+        const type = next && next.type;
+        if (!prev) {
+            if (type === 'income') return [['finanzas.pagos_registrar']];
+            if (type === 'expense') {
+                const initial = next.concept === 'Saldo Inicial Adeudado';
+                return [initial ? ['finanzas.egresos_registrar', 'finanzas.residentes_crear'] : ['finanzas.egresos_registrar']];
+            }
+            if (type === 'charge') {
+                if (next.kind === 'fee') {
+                    return next.auto === true ? [['finanzas.cuotas_mes']] : [['finanzas.cuotas_mes', 'finanzas.cuotas_meses', 'finanzas.cargos_crear']];
+                }
+                if (next.kind === 'extra') return [['finanzas.cargos_crear']];
+            }
+            return [[]];
+        }
+        const keys = changedKeys(next, prev);
+        if (keys.every((k) => k === 'updated_at')) return [];
+        if (prev.type === 'charge' && keys.every((k) => ['period', 'kind', 'updated_at'].includes(k))) return [];
+        if (keys.every((k) => MOVEMENT_ANNUL_KEYS.includes(k))) {
+            if (next.deleted === true && prev.deleted !== true) {
+                const own = prev.type === 'income' ? ['finanzas.pagos_anular']
+                    : prev.type === 'expense' ? ['finanzas.egresos_anular']
+                        : prev.type === 'charge' ? (prev.kind === 'fee' ? ['finanzas.cargos_anular', 'finanzas.cuotas_corregir'] : ['finanzas.cargos_anular']) : [];
+                return [['finanzas.deshacer', ...own]];
+            }
+            if (prev.deleted === true && next.deleted !== true) return [['finanzas.deshacer']];
+        }
+        return [[]];
+    }
+
+    function settingsNeeds(next, prev) {
+        if (!prev) return [];
+        const needs = [];
+        const keys = changedKeys(next, prev).filter((k) => !TOUCH_KEYS.includes(k));
+        if (keys.some((k) => SETTINGS_FEE_KEYS.includes(k))) needs.push(['finanzas.config_cuota']);
+        if (keys.some((k) => SETTINGS_GENERAL_KEYS.includes(k))) needs.push(['finanzas.config_general']);
+        if (keys.includes('customIncomeConcepts')) needs.push(['finanzas.config_conceptos', 'finanzas.cargos_crear']);
+        if (keys.includes('customExpenseConcepts')) needs.push(['finanzas.config_conceptos', 'finanzas.egresos_registrar']);
+        const known = [...SETTINGS_FEE_KEYS, ...SETTINGS_GENERAL_KEYS, ...SETTINGS_OPERATION_KEYS, 'customIncomeConcepts', 'customExpenseConcepts'];
+        if (keys.some((k) => !known.includes(k))) needs.push(['finanzas.config_general']);
+        return needs;
+    }
+
     // ── Sincronizacion en el navegador ──
 
     function start(condoId, handlers = {}) {
@@ -216,6 +305,10 @@ const SisdelFinanzas = (() => {
         const onRemoteChange = handlers.onRemoteChange || (() => {});
         const onResidentCreated = handlers.onResidentCreated || (() => {});
         const newAccessCode = handlers.newAccessCode;
+        // can(clave) -> bool. Sin ella no se filtra nada (las reglas igual rechazan lo que no corresponde).
+        const can = typeof handlers.can === 'function' ? handlers.can : null;
+        // onBlocked({ kind, count, silent }): se descartaron cambios que el usuario no puede hacer
+        const onBlocked = handlers.onBlocked || (() => {});
 
         // Ultima version conocida de la nube
         const cloud = { users: new Map(), extras: new Map(), transactions: new Map(), settings: null };
@@ -329,9 +422,56 @@ const SisdelFinanzas = (() => {
             cloud.settings = item;
         }
 
+        // ¿Puede este usuario escribir este cambio? Se compara con lo ultimo que sabemos de la nube.
+        function allowedItem(kind, item) {
+            if (!can) return true;
+            const id = docIdOf(item);
+            if (kind === 'settings') {
+                const prev = synced.settings ? JSON.parse(synced.settings) : null;
+                return satisfied(settingsNeeds(item, prev), can);
+            }
+            const prevCanon = synced[kind].get(id);
+            const prev = prevCanon ? JSON.parse(prevCanon) : null;
+            if (kind === 'transactions') return satisfied(movementNeeds(item, prev), can);
+            return satisfied(residentNeeds(item, prev, cloud.users.has(id)), can);
+        }
+
+        // Lo que el usuario no puede hacer se descarta y la copia local vuelve a ser la de la nube:
+        // sin datos fantasma que alteren saldos, morosos o reportes en este equipo.
+        function revertRejected(kind, rejected) {
+            if (kind === 'settings') {
+                writeRaw('settings', cloud.settings || INITIAL_SETTINGS);
+                synced.settings = cloud.settings ? canon(cloud.settings) : null;
+                return;
+            }
+            const byId = kind === 'residents' ? cloudResidents() : cloud.transactions;
+            const gone = new Set(rejected.map(docIdOf));
+            const next = (parseArray(readRaw(kind)) || []).filter((x) => !(x && x.id !== undefined && x.id !== null && gone.has(docIdOf(x))));
+            gone.forEach((id) => {
+                const mine = byId.get(id);
+                if (mine) { next.push(mine); synced[kind].set(id, canon(mine)); } else synced[kind].delete(id);
+            });
+            writeRaw(kind, next);
+        }
+
+        function gate(kind, items) {
+            if (!can) return items;
+            const allowed = [];
+            const rejected = [];
+            items.forEach((item) => (allowedItem(kind, item) ? allowed : rejected).push(item));
+            if (rejected.length) {
+                revertRejected(kind, rejected);
+                // Las cuotas automaticas que OIKOS genera al abrir (si el usuario no puede cobrarlas) no son una accion suya
+                const silent = rejected.every((item) => item && item.type === 'charge' && item.auto === true);
+                onBlocked({ kind, count: rejected.length, silent });
+            }
+            return allowed;
+        }
+
         // Sube cambios. Se marcan como sincronizados al enviarlos:
         // asi un "deshacer" inmediato todavia detecta que hay que anularlos.
         async function push(kind, items) {
+            items = gate(kind, items);
             if (!items.length) return;
             items.forEach((item) => {
                 if (kind === 'settings') synced.settings = canon(item);
@@ -607,7 +747,8 @@ const SisdelFinanzas = (() => {
         start,
         internals: {
             oikosCompanyId, storageKey, pendingKey, docIdOf, stampOf, periodOf, canon, parseArray,
-            toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS
+            toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS,
+            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds
         }
     };
 })();

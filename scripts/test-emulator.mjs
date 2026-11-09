@@ -726,7 +726,7 @@ async function run() {
     await allowed('con los privilegios del rol, el co-administrador escribe finanzas', () => setDoc(rref(adm2, 'finanzas_movimientos', 'tx-adm2'), { ...finTx, id: 'tx-adm2' }));
     await denied('los privilegios deben ser un mapa', () => setPriv(admin, 'u-adm2', 'todo'));
     await denied('los privilegios no pueden ser un arreglo', () => setPriv(admin, 'u-adm2', ['finanzas.usar']));
-    await denied('los privilegios tienen un tope de tamano', () => setPriv(admin, 'u-adm2', Object.fromEntries(Array.from({ length: 41 }, (_, i) => [`x${i}`, true]))));
+    await denied('los privilegios tienen un tope de tamano', () => setPriv(admin, 'u-adm2', Object.fromEntries(Array.from({ length: 301 }, (_, i) => [`x${i}`, true]))));
     await allowed('admin elimina al co-administrador de prueba', () => deleteDoc(uref(admin, 'u-adm2')));
 
     // Administrador restringido que pierde el panel: cae en la primera pagina que si le toca

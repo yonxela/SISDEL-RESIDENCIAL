@@ -48,6 +48,9 @@ const SisdelPrivilegiosUI = (() => {
         .pv-all { font-size:0.68rem; font-weight:700; color:var(--primary-light); background:transparent; border:1px solid var(--primary); border-radius:var(--radius-sm); padding:0.15rem 0.5rem; cursor:pointer; }
         .pv-all:disabled { opacity:0.4; cursor:not-allowed; }
         .pv-rows { padding:0.35rem; display:flex; flex-direction:column; gap:2px; }
+        .pv-sub { margin:0.5rem 0.4rem 0.1rem; font-size:0.66rem; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; color:var(--primary-light); }
+        .pv-child { margin-left:1.1rem; width:calc(100% - 1.1rem); padding-top:0.4rem; padding-bottom:0.4rem; }
+        .pv-child .pv-label { font-size:0.83rem; }
         .pv-row { display:flex; align-items:flex-start; gap:0.6rem; padding:0.55rem 0.6rem; border-radius:var(--radius-md); border:1px solid transparent; background:transparent; color:var(--text-primary); text-align:left; cursor:pointer; width:100%; font:inherit; }
         .pv-row:hover:not(:disabled) { background:var(--bg-item); }
         .pv-row:disabled { cursor:default; }
@@ -149,7 +152,8 @@ const SisdelPrivilegiosUI = (() => {
                             ${opts.disabled || !usable.length ? '' : `<button type="button" class="pv-all" data-group="${g.id}" data-on="${allOn ? '0' : '1'}">${allOn ? 'Quitar todo' : 'Marcar todo'}</button>`}
                         </span>
                     </div>
-                    <div class="pv-rows">${g.items.map((i) => {
+                    <div class="pv-rows">${g.items.map((i, index) => {
+                        const subHeading = i.sub && (index === 0 || g.items[index - 1].sub !== i.sub) ? `<div class="pv-sub">${esc(i.sub)}</div>` : '';
                         const locked = !PRIV.allowedFor(i.key, opts.role);
                         const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
@@ -157,7 +161,7 @@ const SisdelPrivilegiosUI = (() => {
                         const state = marks && on && !inRole ? ' is-added' : (marks && !on && inRole ? ' is-removed' : '');
                         const tag = marks && on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (marks && !on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
                         const lockTag = locked ? '<span class="pv-tag removed">Solo administradores y operadores</span>' : '';
-                        return `<button type="button" class="pv-row${on ? ' is-on' : ''}${state}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}">
+                        return `${subHeading}<button type="button" class="pv-row${on ? ' is-on' : ''}${state}${i.parent ? ' pv-child' : ''}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}" ${i.depth > 1 ? `style="margin-left:${(i.depth - 1) * 1.1}rem;"` : ''}>
                             ${on ? ICONS.on : ICONS.off}
                             <span style="flex:1; min-width:0;">
                                 <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${tag}${lockTag}</span>
@@ -173,8 +177,10 @@ const SisdelPrivilegiosUI = (() => {
             button.addEventListener('click', () => {
                 const key = button.dataset.key;
                 const turnOn = !opts.set.has(key);
-                const cascade = PRIV.cascade(opts.set, key, turnOn);
-                PRIV.toggle(opts.set, key, turnOn);
+                // Un paraguas se marca con todas sus acciones (se pueden quitar una por una); una accion marca su paraguas
+                const withChildren = turnOn && PRIV.childrenOf(key).length > 0;
+                const cascade = PRIV.cascade(opts.set, key, turnOn, { children: withChildren });
+                PRIV.toggle(opts.set, key, turnOn, { children: withChildren });
                 opts.onChange(opts.set, { key, on: turnOn, cascade });
             });
         });
@@ -183,7 +189,7 @@ const SisdelPrivilegiosUI = (() => {
                 const turnOn = button.dataset.on === '1';
                 PRIV.GROUPS.find((g) => g.id === button.dataset.group).items
                     .filter((i) => PRIV.allowedFor(i.key, opts.role))
-                    .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn));
+                    .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn, { children: turnOn }));
                 opts.onChange(opts.set, { group: button.dataset.group, on: turnOn, cascade: [] });
             });
         });
@@ -327,7 +333,7 @@ const SisdelPrivilegiosUI = (() => {
             bar.querySelector('[data-act=delTemplate]').style.display = tpl && tpl.custom ? '' : 'none';
             if (!tpl) return;
             set.clear();
-            (tpl.claves || []).filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
+            PRIV.templateKeys(tpl).filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
             draw(`Plantilla "${tpl.name}" aplicada; falta guardar`);
         });
 
@@ -515,7 +521,7 @@ const SisdelPrivilegiosUI = (() => {
         function mountForm(tpl) {
             const readOnly = tpl.system || !canManage;
             const form = { name: tpl.name || '', role: PRIV.ROLES.includes(tpl.role) ? tpl.role : 'operador', description: tpl.description || '' };
-            const set = new Set((tpl.claves || []).filter((k) => PRIV.itemOf(k) && PRIV.allowedFor(k, form.role)));
+            const set = new Set(PRIV.templateKeys({ ...tpl, claves: tpl.claves || [] }).filter((k) => PRIV.itemOf(k) && PRIV.allowedFor(k, form.role)));
             const snap = () => JSON.stringify([form.name, form.role, form.description, [...set].sort()]);
             const baseline = snap();
             dirty = () => !readOnly && snap() !== baseline;

@@ -259,8 +259,24 @@
             const canVisits = SISDEL.can('vecino.visitas');
             const canVehicles = SISDEL.can('vecino.vehiculos');
             const canPanic = SISDEL.can('panico.activar');
+            // Cada accion del panel es un privilegio (vecino.*, panico.*): se oculta lo que el administrador no le dio
+            const canTemporal = SISDEL.can('vecino.temporal');
+            const canShare = SISDEL.can('vecino.compartir');
+            const canHistory = SISDEL.can('vecino.historial');
+            const canRemoveVehicle = SISDEL.can('vecino.vehiculos_quitar');
+            const canMarbete = SISDEL.can('vecino.marbete');
+            const canContacts = SISDEL.can('vecino.contactos');
+            const canCancelPanic = SISDEL.can('panico.cancelar');
             if (!canVisits) document.getElementById('cardNewVisit').style.display = 'none';
-            if (!canVehicles) document.getElementById('cardNewVehicle').style.display = 'none';
+            if (!canVehicles && !canMarbete) document.getElementById('cardNewVehicle').style.display = 'none';
+            if (!canVehicles) document.getElementById('vehicleForm').parentElement.style.display = 'none';
+            if (!canTemporal) document.getElementById('vExtended').closest('div').style.display = 'none';
+            if (!canShare) document.getElementById('btnWhatsApp').parentElement.style.display = 'none';
+            if (!canContacts) document.getElementById('btnContacts').style.display = 'none';
+            if (!canHistory) {
+                document.getElementById('visitasList').style.display = 'none';
+                document.getElementById('visitasList').previousElementSibling.style.display = 'none';
+            }
 
             document.getElementById('userName').textContent = session.userName;
             document.getElementById('userCasa').textContent = session.userCasa || 'Pendiente';
@@ -315,7 +331,7 @@
                 const who = alert.status === 'ATTENDED' && alert.attendedByName ? ` por ${escHtml(alert.attendedByName)}.` : '';
                 panicStatus.innerHTML = `<strong>${escHtml(PANIC_TEXT[alert.status] || alert.status)}${who}</strong>
                     <div class="text-xs text-muted" style="margin-top:0.25rem;">${escHtml(SISDEL.formatDateTime(alert.createdAt))}${alert.lat == null ? ' · sin ubicación GPS' : ''}</div>
-                    ${alert.status === 'ACTIVE' ? '<button class="btn btn-ghost btn-sm" id="btnCancelPanic" type="button" style="margin-top:0.5rem;">Fue un error: cancelar la alerta</button>' : ''}`;
+                    ${alert.status === 'ACTIVE' && canCancelPanic ? '<button class="btn btn-ghost btn-sm" id="btnCancelPanic" type="button" style="margin-top:0.5rem;">Fue un error: cancelar la alerta</button>' : ''}`;
                 const cancel = document.getElementById('btnCancelPanic');
                 if (cancel) cancel.addEventListener('click', async () => {
                     if (!confirm('¿Cancelar la alerta de pánico?')) return;
@@ -542,6 +558,9 @@
                         </div>
                     </div>
                 `).join('');
+                // Cada boton del vehiculo depende de su privilegio
+                if (!canMarbete) list.querySelectorAll('[onclick^="showQR"]').forEach((b) => b.remove());
+                if (!canRemoveVehicle) list.querySelectorAll('[onclick^="deleteResidentVehicle"]').forEach((b) => b.remove());
             }
 
             window.deleteResidentVehicle = async function(vehicleId) {
@@ -728,6 +747,7 @@
 
             // --- Check for unread messages from admin ---
             async function checkUnreadMessages() {
+                if (!SISDEL.can('mensajes.recibir')) return;
                 const allMsgs = await SISDEL.getMessages(session.condominioId);
                 const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.VECINO));
                 if (myMsgs.length === 0) return;

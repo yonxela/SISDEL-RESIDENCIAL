@@ -110,7 +110,7 @@ const verifyAccessCode = onCall(async (request) => {
 
     const me = await db.doc(`condominios/${condominioId}/usuarios/${uid}`).get();
     const allowed = me.exists && me.data().active !== false
-        && privilegios.has(me.data().role, me.data().privilegios, 'garita.operar');
+        && privilegios.has(me.data().role, me.data().privilegios, 'garita.verificar');
     if (!allowed) throw new HttpsError('permission-denied', 'Sin permisos');
 
     if (await rateLimit.isBlocked('verify', uid, VERIFY_LIMIT)) {

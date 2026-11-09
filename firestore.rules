@@ -48,37 +48,71 @@ service cloud.firestore {
       return isMember(condoId)
         && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
     }
+    // Una accion dentro de un paraguas vale si el usuario no la tiene quitada en su mapa de privilegios
+    // (el paraguas se comprueba aparte, en la propia funcion pXxx)
+    function childOk(condoId, key) {
+      return isMember(condoId)
+        && memberDoc(condoId).get('privilegios', {}).get(key, true) == true;
+    }
+    // Las funciones pXxx (una por clave de privilegios.js que las reglas aplican) se generan con
+    // `cd scripts && npm run reglas`; scripts/test-privilegios.mjs verifica que esten al dia.
+    // ── BEGIN privilegios generados (scripts/generar-reglas-privilegios.mjs) ──
+    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada.
     // Usuarios y vecinos
     function pUsuariosVer(c) { return can(c, 'usuarios.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
     function pUsuariosCrear(c) { return can(c, 'usuarios.crear', ['admin']); }
     function pGuardiasCrear(c) { return can(c, 'guardias.crear', ['admin', 'supervisor']); }
     function pUsuariosEditar(c) { return can(c, 'usuarios.editar', ['admin']); }
+    function pUsuariosEstado(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.estado'); }
+    function pUsuariosPago(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.pago'); }
+    function pUsuariosEmergencia(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.emergencia'); }
     function pUsuariosEliminar(c) { return can(c, 'usuarios.eliminar', ['admin']); }
     function pUsuariosCodigos(c) { return can(c, 'usuarios.codigos', ['admin']); }
     function pUsuariosPrivilegios(c) { return can(c, 'usuarios.privilegios', ['admin']); }
+    function pPlantillasGestionar(c) { return pUsuariosPrivilegios(c) && childOk(c, 'plantillas.gestionar'); }
     // Mensajes
+    function pMensajesRecibir(c) { return can(c, 'mensajes.recibir', ['admin', 'policia', 'supervisor', 'auditor', 'vecino', 'operador']); }
     function pMensajesEnviar(c) { return can(c, 'mensajes.enviar', ['admin']); }
+    function pMensajesEliminar(c) { return pMensajesEnviar(c) && childOk(c, 'mensajes.eliminar'); }
     function pMensajesHistorial(c) { return can(c, 'mensajes.historial', ['admin', 'auditor']); }
-    // Visitas y vehiculos
+    // Visitas y vehículos
     function pVisitasVer(c) { return can(c, 'visitas.ver', ['admin', 'policia', 'auditor']); }
+    function pVehiculosVer(c) { return pVisitasVer(c) && childOk(c, 'vehiculos.ver'); }
     function pVisitasGestionar(c) { return can(c, 'visitas.gestionar', ['admin']); }
-    // Garita y camara
+    function pVisitasCrear(c) { return pVisitasGestionar(c) && childOk(c, 'visitas.crear'); }
+    function pVisitasEditar(c) { return pVisitasGestionar(c) && childOk(c, 'visitas.editar'); }
+    function pVisitasEliminar(c) { return pVisitasGestionar(c) && childOk(c, 'visitas.eliminar'); }
+    function pVehiculosCrear(c) { return pVisitasGestionar(c) && childOk(c, 'vehiculos.crear'); }
+    function pVehiculosEditar(c) { return pVisitasGestionar(c) && childOk(c, 'vehiculos.editar'); }
+    function pVehiculosEliminar(c) { return pVisitasGestionar(c) && childOk(c, 'vehiculos.eliminar'); }
+    function pGaritaHistorialBorrar(c) { return pVisitasGestionar(c) && childOk(c, 'garita.historial_borrar'); }
+    // Garita y cámara
     function pGaritaOperar(c) { return can(c, 'garita.operar', ['admin', 'policia']); }
+    function pGaritaVerificar(c) { return pGaritaOperar(c) && childOk(c, 'garita.verificar'); }
+    function pGaritaIngreso(c) { return pGaritaOperar(c) && childOk(c, 'garita.ingreso'); }
     function pGaritaCamara(c) { return can(c, 'garita.camara', ['admin', 'policia', 'auditor']); }
     // Panel del vecino
     function pVecinoVisitas(c) { return can(c, 'vecino.visitas', ['vecino']); }
+    function pVecinoTemporal(c) { return pVecinoVisitas(c) && childOk(c, 'vecino.temporal'); }
+    function pVecinoHistorial(c) { return can(c, 'vecino.historial', ['vecino']); }
     function pVecinoVehiculos(c) { return can(c, 'vecino.vehiculos', ['vecino']); }
+    function pVecinoVehiculosQuitar(c) { return pVecinoVehiculos(c) && childOk(c, 'vecino.vehiculos_quitar'); }
+    function pVecinoContactos(c) { return can(c, 'vecino.contactos', ['vecino']); }
     function pPanicoActivar(c) { return can(c, 'panico.activar', ['vecino', 'policia', 'supervisor']); }
-    // Alertas de panico
+    function pPanicoCancelar(c) { return pPanicoActivar(c) && childOk(c, 'panico.cancelar'); }
+    // Alertas de pánico
     function pPanicoVer(c) { return can(c, 'panico.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
+    function pPanicoContactos(c) { return pPanicoVer(c) && childOk(c, 'panico.contactos'); }
     function pPanicoAtender(c) { return can(c, 'panico.atender', ['admin', 'policia', 'supervisor']); }
-    // Sistema Financiero
+    function pPanicoResolver(c) { return pPanicoAtender(c) && childOk(c, 'panico.resolver'); }
+    // Sistema Financiero (OIKOS)
     function pFinanzasVer(c) { return can(c, 'finanzas.ver', ['admin', 'auditor']); }
     function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
-    // Rondas de vigilancia
+    // Rondas de vigilancia (RONDIN)
     function pRondasVer(c) { return can(c, 'rondas.ver', ['admin', 'supervisor', 'auditor']); }
     function pRondasGestionar(c) { return can(c, 'rondas.gestionar', ['admin', 'supervisor']); }
     function pRondasPatrullar(c) { return can(c, 'rondas.patrullar', ['policia', 'supervisor']); }
+    // ── END privilegios generados ──
 
     // Rondas: administran quienes tienen rondas.gestionar, patrullan quienes tienen rondas.patrullar,
     // y las alertas de panico las atienden quienes tienen panico.atender
@@ -151,10 +185,10 @@ service cloud.firestore {
 
     // ── Mensajes para todos los condominios ──
     match /mensajes_globales/{msgId} {
-      allow read: if isMaster() || isMember(request.auth.token.get('condominioId', ''));
+      allow read: if isMaster() || pMensajesRecibir(request.auth.token.get('condominioId', ''));
       allow create, delete: if isMaster();
       allow update: if isMaster()
-        || (isMember(request.auth.token.get('condominioId', ''))
+        || (pMensajesRecibir(request.auth.token.get('condominioId', ''))
             && notAuditor(request.auth.token.get('condominioId', ''))
             && onlyChanges(['read']));
     }
@@ -188,7 +222,7 @@ service cloud.firestore {
             && request.resource.data.role in ['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador']
             && !('accessCode' in request.resource.data)
             && (!('privilegios' in request.resource.data)
-                || (request.resource.data.privilegios is map && request.resource.data.privilegios.size() <= 40
+                || (request.resource.data.privilegios is map && request.resource.data.privilegios.size() <= 300
                     && (request.resource.data.privilegios.get('usuarios.privilegios', false) != true
                         || request.resource.data.role in ['admin', 'operador'])));
         }
@@ -204,6 +238,11 @@ service cloud.firestore {
           return condoDoc(condoId).get('moraAutomatica', false) != true
             || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'morosoSince']);
         }
+        // Activar o desactivar a un usuario y cambiar su estado de pago son privilegios aparte (usuarios.estado, usuarios.pago)
+        function stateRights() {
+          return (request.resource.data.get('active', true) == resource.data.get('active', true) || pUsuariosEstado(condoId))
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'morosoSince']) || pUsuariosPago(condoId));
+        }
         // Cada miembro lee su propia ficha (de ahi salen sus privilegios); las demas, con usuarios.ver
         allow read: if isMaster()
           || (isMember(condoId) && request.auth.uid == userId)
@@ -212,7 +251,7 @@ service cloud.firestore {
           || (validUser() && canCreateRole(condoId, request.resource.data.role)
               && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
         allow update: if isMaster()
-          || (pUsuariosEditar(condoId) && validUser() && paymentByHand()
+          || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights()
               && manageable(condoId, resource.data.role) && manageable(condoId, request.resource.data.role)
               && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)));
         allow delete: if isMaster()
@@ -220,57 +259,61 @@ service cloud.firestore {
       }
 
       match /visitas/{visitId} {
+        // Un acceso temporal (varios dias) es un privilegio aparte del vecino (vecino.temporal)
+        function residentVisitOk(c) {
+          return request.resource.data.get('visitType', null) != 'temporal' || pVecinoTemporal(c);
+        }
         allow read: if isMaster()
           || pVisitasVer(condoId)
-          || (isResident(condoId) && isOwner());
+          || (isResident(condoId) && pVecinoHistorial(condoId) && isOwner());
         allow create: if isMaster()
-          || pVisitasGestionar(condoId)
-          || (isResident(condoId) && pVecinoVisitas(condoId) && willOwn(condoId));
+          || pVisitasCrear(condoId)
+          || (isResident(condoId) && pVecinoVisitas(condoId) && willOwn(condoId) && residentVisitOk(condoId));
         allow update: if isMaster()
-          || pVisitasGestionar(condoId)
-          || (pGaritaOperar(condoId) && onlyChanges(['status', 'enteredAt']))
-          || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner() && willOwn(condoId));
+          || pVisitasEditar(condoId)
+          || (pGaritaIngreso(condoId) && onlyChanges(['status', 'enteredAt']))
+          || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner() && willOwn(condoId) && residentVisitOk(condoId));
         // Al eliminar un usuario se borran tambien sus visitas y vehiculos (usuarios.eliminar solo sirve para eso)
         allow delete: if isMaster()
-          || pVisitasGestionar(condoId)
+          || pVisitasEliminar(condoId)
           || (pUsuariosEliminar(condoId) && ownerGone(resource.data.userId))
           || (isResident(condoId) && pVecinoVisitas(condoId) && isOwner());
       }
 
       match /vehiculos/{vehicleId} {
         allow read: if isMaster()
-          || pVisitasVer(condoId)
-          || (isResident(condoId) && isOwner());
-        allow create: if isMaster()
-          || (pVisitasGestionar(condoId) && request.resource.data.condominioId == condoId)
-          || (isResident(condoId) && pVecinoVehiculos(condoId) && willOwn(condoId));
-        allow update: if isMaster() || pVisitasGestionar(condoId);
-        allow delete: if isMaster()
-          || pVisitasGestionar(condoId)
-          || (pUsuariosEliminar(condoId) && ownerGone(resource.data.userId))
+          || pVehiculosVer(condoId)
           || (isResident(condoId) && pVecinoVehiculos(condoId) && isOwner());
+        allow create: if isMaster()
+          || (pVehiculosCrear(condoId) && request.resource.data.condominioId == condoId)
+          || (isResident(condoId) && pVecinoVehiculos(condoId) && willOwn(condoId));
+        allow update: if isMaster() || pVehiculosEditar(condoId);
+        allow delete: if isMaster()
+          || pVehiculosEliminar(condoId)
+          || (pUsuariosEliminar(condoId) && ownerGone(resource.data.userId))
+          || (isResident(condoId) && pVecinoVehiculosQuitar(condoId) && isOwner());
       }
 
       match /mensajes/{msgId} {
         allow read: if isMaster()
           || pMensajesHistorial(condoId)
-          || (isMember(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
+          || (pMensajesRecibir(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
         allow create: if isMaster()
           || (pMensajesEnviar(condoId) && request.resource.data.condominioId == condoId);
         allow update: if isMaster()
           || pMensajesEnviar(condoId)
-          || (isMember(condoId)
+          || (pMensajesRecibir(condoId)
               && notAuditor(condoId)
               && resource.data.toRole in ['all', memberRole(condoId)]
               && onlyChanges(['read']));
-        allow delete: if isMaster() || pMensajesEnviar(condoId);
+        allow delete: if isMaster() || pMensajesEliminar(condoId);
       }
 
       match /camera_logs/{logId} {
         allow read: if isMaster() || pGaritaCamara(condoId);
-        allow create: if pGaritaOperar(condoId) && request.resource.data.condominioId == condoId;
+        allow create: if pGaritaIngreso(condoId) && request.resource.data.condominioId == condoId;
         allow update: if false;
-        allow delete: if isMaster() || pVisitasGestionar(condoId);
+        allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
       }
 
       // ── Sistema Financiero (OIKOS, ver finanzas-sync.js) ──
@@ -402,16 +445,16 @@ service cloud.firestore {
               || (!isResident(condoId) && request.resource.data.source == 'guardia'));
         allow update: if (isResponder(condoId)
               && onlyChanges(['status', 'attendedBy', 'attendedByName', 'attendedAt', 'resolvedBy', 'resolvedByName', 'resolvedAt', 'notes'])
-              && request.resource.data.status in ['ATTENDED', 'RESOLVED'])
-          || (isResident(condoId) && resource.data.userId == request.auth.uid && resource.data.status == 'ACTIVE'
+              && ((request.resource.data.status == 'ATTENDED') || (request.resource.data.status == 'RESOLVED' && pPanicoResolver(condoId))))
+          || (isResident(condoId) && pPanicoCancelar(condoId) && resource.data.userId == request.auth.uid && resource.data.status == 'ACTIVE'
               && onlyChanges(['status', 'cancelledAt']) && request.resource.data.status == 'CANCELLED');
         allow delete: if false;
       }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
-        allow read: if isMaster() || pPanicoVer(condoId)
-          || (isResident(condoId) && request.auth.uid == userId);
-        allow create, update: if ((isResident(condoId) && request.auth.uid == userId) || pUsuariosEditar(condoId))
+        allow read: if isMaster() || pPanicoContactos(condoId)
+          || (isResident(condoId) && pVecinoContactos(condoId) && request.auth.uid == userId);
+        allow create, update: if ((isResident(condoId) && pVecinoContactos(condoId) && request.auth.uid == userId) || pUsuariosEmergencia(condoId))
           && request.resource.data.contacts is list && request.resource.data.contacts.size() <= 5;
         allow delete: if pUsuariosEliminar(condoId) && ownerGone(userId);
       }
@@ -419,10 +462,10 @@ service cloud.firestore {
       // Plantillas de privilegios propias del condominio (las del sistema viven en privilegios.js)
       match /plantillas_privilegios/{docId} {
         allow read: if isMaster() || pUsuariosPrivilegios(condoId);
-        allow create, update: if (isMaster() || pUsuariosPrivilegios(condoId)) && request.resource.data.condominioId == condoId
+        allow create, update: if (isMaster() || pPlantillasGestionar(condoId)) && request.resource.data.condominioId == condoId
           && request.resource.data.name is string && request.resource.data.name.size() <= 60
-          && request.resource.data.claves is list && request.resource.data.claves.size() <= 40;
-        allow delete: if isMaster() || pUsuariosPrivilegios(condoId);
+          && request.resource.data.claves is list && request.resource.data.claves.size() <= 300;
+        allow delete: if isMaster() || pPlantillasGestionar(condoId);
       }
 
       match /finanzas_config/{docId} {

@@ -293,15 +293,23 @@
             if (!session) return;
 
             // Cada pestana pide el privilegio de lectura de sus datos (las reglas de Firestore exigen lo mismo)
+            // Cada pestana necesita su privilegio de la auditoria (auditoria.*) y el de leer sus datos
             const can = {
-                usuarios: SISDEL.can('usuarios.ver'),
-                visitas: SISDEL.can('visitas.ver'),
-                accesos: SISDEL.can('garita.camara'),
-                mensajes: SISDEL.can('mensajes.historial'),
-                exportar: SISDEL.can('auditoria.exportar')
+                usuarios: SISDEL.can('usuarios.ver') && SISDEL.can('auditoria.usuarios'),
+                visitas: SISDEL.can('visitas.ver') && SISDEL.can('auditoria.visitas'),
+                vehiculos: SISDEL.can('vehiculos.ver') && SISDEL.can('auditoria.vehiculos'),
+                accesos: SISDEL.can('garita.camara') && SISDEL.can('auditoria.accesos'),
+                mensajes: SISDEL.can('mensajes.historial') && SISDEL.can('auditoria.mensajes'),
+                exportar: SISDEL.can('auditoria.exportar'),
+                exportarAccesos: SISDEL.can('auditoria.exportar_accesos'),
+                exportarVisitas: SISDEL.can('auditoria.exportar_visitas'),
+                exportarUsuarios: SISDEL.can('auditoria.exportar_usuarios'),
+                imprimir: SISDEL.can('auditoria.imprimir'),
+                contacto: SISDEL.can('usuarios.contacto'),
+                pagos: SISDEL.can('usuarios.pagos_ver')
             };
-            can.reportes = can.usuarios && can.visitas && can.accesos;
-            const VIEW_ALLOWED = { usuarios: can.usuarios, visitas: can.visitas, vehiculos: can.visitas, accesos: can.accesos, mensajes: can.mensajes, reportes: can.reportes };
+            can.reportes = SISDEL.can('usuarios.ver') && SISDEL.can('visitas.ver') && SISDEL.can('garita.camara') && SISDEL.can('auditoria.reportes');
+            const VIEW_ALLOWED = { usuarios: can.usuarios, visitas: can.visitas, vehiculos: can.vehiculos, accesos: can.accesos, mensajes: can.mensajes, reportes: can.reportes };
             document.querySelectorAll('#mainTabs .tab').forEach((t) => { if (!VIEW_ALLOWED[t.dataset.view]) t.style.display = 'none'; });
             const firstView = Object.keys(VIEW_ALLOWED).find((v) => VIEW_ALLOWED[v]) || null;
             document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('auditor.html').map((p) => `
@@ -465,7 +473,7 @@
                 box.innerHTML = list.map((u) => {
                     const moroso = u.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
                     const days = moroso ? morosoDays(u) : null;
-                    const contact = [u.phone && `Tel. ${esc(u.phone)}`, u.email && esc(u.email)].filter(Boolean).join(' · ');
+                    const contact = can.contacto ? [u.phone && `Tel. ${esc(u.phone)}`, u.email && esc(u.email)].filter(Boolean).join(' · ') : '';
                     return `
                     <div class="list-item">
                         <div class="avatar" style="${moroso ? 'background:var(--danger);' : ''}">${esc(u.name.charAt(0))}</div>
@@ -475,7 +483,7 @@
                             ${contact ? `<div class="item-detail">${contact}</div>` : ''}
                         </div>
                         <div class="item-meta">
-                            ${u.paymentStatus ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
+                            ${u.paymentStatus && can.pagos ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
                             ${u.active === false ? '<span class="badge badge-danger">Inactivo</span>' : ''}
                             ${days !== null ? `<span class="text-xs text-muted">Moroso hace ${days} día(s)</span>` : ''}
                         </div>
@@ -550,7 +558,7 @@
                         <div class="item-meta">
                             <span class="text-sm">${esc(owner ? owner.name : 'Propietario no encontrado')}</span>
                             ${owner && owner.casa ? `<span class="text-xs text-muted">${esc(owner.casa)}</span>` : ''}
-                            ${owner && owner.paymentStatus ? SISDEL.getPaymentBadge(owner.paymentStatus) : ''}
+                            ${owner && owner.paymentStatus && can.pagos ? SISDEL.getPaymentBadge(owner.paymentStatus) : ''}
                         </div>
                     </div>`;
                 }).join('');
@@ -739,10 +747,10 @@
                             ${report.capped ? `<p class="result-note warn">El periodo tiene más de ${MAX_LOGS} accesos; los totales cubren solo los ${MAX_LOGS} más recientes. Reduzca el rango para un total exacto.</p>` : ''}
                         </div>
                         <div class="report-actions no-print">
-                            ${can.exportar ? `<button class="btn btn-ghost btn-sm" data-export="logs">${ICONS.download} Accesos (CSV)</button>
-                            <button class="btn btn-ghost btn-sm" data-export="visits">${ICONS.download} Visitas (CSV)</button>
-                            <button class="btn btn-ghost btn-sm" data-export="users">${ICONS.download} Usuarios (CSV)</button>` : ''}
-                            <button class="btn btn-primary btn-sm" data-export="print">${ICONS.print} Imprimir / PDF</button>
+                            ${can.exportar && can.exportarAccesos ? `<button class="btn btn-ghost btn-sm" data-export="logs">${ICONS.download} Accesos (CSV)</button>` : ''}
+                            ${can.exportar && can.exportarVisitas ? `<button class="btn btn-ghost btn-sm" data-export="visits">${ICONS.download} Visitas (CSV)</button>` : ''}
+                            ${can.exportar && can.exportarUsuarios ? `<button class="btn btn-ghost btn-sm" data-export="users">${ICONS.download} Usuarios (CSV)</button>` : ''}
+                            ${can.imprimir ? `<button class="btn btn-primary btn-sm" data-export="print">${ICONS.print} Imprimir / PDF</button>` : ''}
                         </div>
                     </div>
                     <div class="stats-grid compact report-kpis">
@@ -798,7 +806,7 @@
                 } else if (kind === 'users') {
                     downloadCsv(`usuarios-${fileSlug}-${ymd(today())}.csv`,
                         ['Nombre', 'Rol', 'Casa', 'Teléfono', 'Email', 'Estado de pago', 'Moroso desde', 'Activo'],
-                        users.map((u) => [u.name, SISDEL.getRoleName(u.role), u.casa || '', u.phone || '', u.email || '',
+                        users.map((u) => [u.name, SISDEL.getRoleName(u.role), u.casa || '', can.contacto ? (u.phone || '') : '', can.contacto ? (u.email || '') : '',
                             u.paymentStatus === 'moroso' ? 'Moroso' : u.paymentStatus === 'al_dia' ? 'Al día' : '',
                             u.morosoSince ? ymd(new Date(u.morosoSince)) : '', u.active === false ? 'No' : 'Sí']));
                 }

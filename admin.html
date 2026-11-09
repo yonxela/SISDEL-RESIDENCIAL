@@ -331,11 +331,20 @@
                 editar: SISDEL.can('usuarios.editar'),
                 eliminar: SISDEL.can('usuarios.eliminar'),
                 privilegios: SISDEL.can('usuarios.privilegios'),
-                placas: SISDEL.can('visitas.gestionar'),
+                placasVer: SISDEL.can('vehiculos.ver'),
+                placasCrear: SISDEL.can('vehiculos.crear'),
+                placasQuitar: SISDEL.can('vehiculos.eliminar'),
                 visitas: SISDEL.can('visitas.ver'),
                 enviar: SISDEL.can('mensajes.enviar'),
-                mensajes: SISDEL.can('mensajes.enviar') || SISDEL.can('mensajes.historial')
+                borrarMensajes: SISDEL.can('mensajes.eliminar'),
+                mensajes: SISDEL.can('mensajes.enviar') || SISDEL.can('mensajes.historial'),
+                estadisticas: SISDEL.can('usuarios.estadisticas'),
+                contacto: SISDEL.can('usuarios.contacto'),
+                pagosVer: SISDEL.can('usuarios.pagos_ver'),
+                estado: SISDEL.can('usuarios.estado'),
+                pago: SISDEL.can('usuarios.pago')
             };
+            let editing = null; // usuario que se esta editando (para enviar solo lo que cambio)
             let customTemplates = [];
 
             // Botones hacia los demas paneles a los que este usuario puede entrar
@@ -403,7 +412,7 @@
 
             // Alertas de panico de vecinos y guardias
             SisdelRondas.init(session);
-            if (SISDEL.can('panico.ver')) SisdelPanico.watch({ canResolve: SISDEL.can('panico.atender'), readOnly: !SISDEL.can('panico.atender') });
+            if (SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) SisdelPanico.watch({ canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender') });
 
             // Messages button toggles to messages view
             let showingMessages = false;
@@ -460,10 +469,11 @@
                 const morosos = vecinos.filter(v => v.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO).length;
                 const todayVisits = caps.visitas ? await SISDEL.getTodayVisits(condoId) : null;
 
+                if (!caps.estadisticas) { document.getElementById('statsGrid').style.display = 'none'; return; }
                 document.getElementById('statsGrid').innerHTML = `
                     <div class="stat-card"><div class="stat-value" style="color:var(--primary-light)">${users.length}</div><div class="stat-label">Usuarios</div></div>
                     <div class="stat-card"><div class="stat-value" style="color:var(--accent)">${vecinos.length}</div><div class="stat-label">Vecinos</div></div>
-                    <div class="stat-card"><div class="stat-value" style="color:var(--danger)">${morosos}</div><div class="stat-label">Morosos</div></div>
+                    ${caps.pagosVer ? `<div class="stat-card"><div class="stat-value" style="color:var(--danger)">${morosos}</div><div class="stat-label">Morosos</div></div>` : ''}
                     <div class="stat-card"><div class="stat-value" style="color:var(--warning)">${todayVisits ? todayVisits.length : '—'}</div><div class="stat-label">Visitas Hoy</div></div>
                 `;
             }
@@ -503,8 +513,8 @@
                         <div style="display:flex; gap:0.5rem; align-items:center;">
                             ${u.active === false ? '<span class="badge badge-danger">Inactivo</span>' : ''}
                             ${privilegeBadge(u)}
-                            ${u.paymentStatus ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
-                            <div class="custom-tooltip">
+                            ${u.paymentStatus && caps.pagosVer ? SISDEL.getPaymentBadge(u.paymentStatus) : ''}
+                            ${caps.contacto ? `<div class="custom-tooltip">
                                 <button class="btn btn-ghost btn-icon">
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--primary-light);">
                                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -517,7 +527,7 @@
                                     Email: ${esc(u.email || 'N/A')}<br>
                                     Casa: ${esc(u.casa || 'N/A')}
                                 </div>
-                            </div>
+                            </div>` : ''}
                             ${canSeePrivileges(u) ? `<button class="btn btn-ghost btn-icon" data-priv="${esc(u.id)}" title="${caps.privilegios && u.id !== session.userId ? 'Privilegios' : 'Mis privilegios'}" aria-label="Privilegios">${SisdelPrivilegiosUI.ICONS.shield}</button>` : ''}
                             ${(canEditUser(u) || canDeleteUser(u)) ? `<button class="btn btn-ghost btn-icon" data-edit="${esc(u.id)}" title="Editar" aria-label="Editar">✏️</button>` : ''}
                         </div>
@@ -598,12 +608,12 @@
                     }
 
                     // Solo se guardan las diferencias con los privilegios del rol
-                    const extra = { cargo, privilegios: template ? PRIV.toOverrides(role, template.claves || []) : {} };
+                    const extra = { cargo, privilegios: template ? PRIV.toOverrides(role, PRIV.templateKeys(template)) : {} };
                     const user = await SISDEL.createUser(condoId, name, role, casa, phone, email, '', extra);
                     if (user) {
                         // Auto-register vehicle plates if provided
                         let plateCount = 0;
-                        if (platesRaw && role === 'vecino' && caps.placas) {
+                        if (platesRaw && role === 'vecino' && caps.placasCrear) {
                             const plates = platesRaw.split(',').map(p => p.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(p => p.length > 0);
                             for (const plate of plates) {
                                 const vehicle = await SISDEL.createVehicle(user.id, condoId, plate, '', '', '');
@@ -640,7 +650,7 @@
                 const role = document.getElementById('newUserRole').value;
                 const isVecino = role === 'vecino';
                 document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
-                document.getElementById('groupPlates').style.display = isVecino && caps.placas ? 'block' : 'none';
+                document.getElementById('groupPlates').style.display = isVecino && caps.placasCrear ? 'block' : 'none';
                 document.getElementById('newUserCasa').required = isVecino;
                 document.getElementById('newUserPhone').required = isVecino;
 
@@ -674,7 +684,7 @@
                 // La ayuda describe la plantilla elegida
                 if (template) {
                     document.getElementById('newUserTemplateHelp').textContent =
-                        (template.description ? template.description + ' ' : '') + `Incluye ${(template.claves || []).length} privilegios.`;
+                        (template.description ? template.description + ' ' : '') + `Incluye ${PRIV.templateKeys(template).length} privilegios.`;
                 }
             });
 
@@ -707,9 +717,13 @@
                 document.getElementById('editUserCasa').value = user.casa || '';
                 document.getElementById('editUserCargo').value = user.cargo || '';
                 document.getElementById('editUserActive').checked = user.active !== false;
+                editing = user;
                 // Cada acción aparece solo si este usuario puede hacerla
                 const editable = canEditUser(user);
                 editUserForm.querySelectorAll('input:not([type=hidden]):not(#editUserCode), select').forEach((el) => { el.disabled = !editable; });
+                // Activar o desactivar y cambiar el estado de pago son privilegios aparte (usuarios.estado y usuarios.pago)
+                document.getElementById('editUserActive').disabled = !editable || !caps.estado;
+                document.getElementById('editUserPayment').disabled = !editable || !caps.pago;
                 // Nadie se desactiva a si mismo
                 if (user.id === session.userId) {
                     document.getElementById('editUserActive').disabled = true;
@@ -722,7 +736,7 @@
                 document.getElementById('btnEditPrivileges').textContent = caps.privilegios && user.id !== session.userId ? 'Privilegios de este usuario…' : 'Ver mis privilegios…';
                 document.getElementById('deleteBox').style.display = canDeleteUser(user) ? '' : 'none';
                 document.getElementById('editUserPayment').value = user.paymentStatus || 'al_dia';
-                document.getElementById('editUserPayment').parentElement.style.display = user.role === 'vecino' ? 'block' : 'none';
+                document.getElementById('editUserPayment').parentElement.style.display = user.role === 'vecino' && caps.pagosVer ? 'block' : 'none';
                 // Con mora automatica el estado de pago lo calcula el Sistema Financiero: solo se muestra
                 document.getElementById('editUserPayment').style.display = moraAutomatica ? 'none' : '';
                 const paymentAuto = document.getElementById('editUserPaymentAuto');
@@ -733,8 +747,10 @@
                 
                 // Show plates section only for vecinos
                 const platesSection = document.getElementById('editGroupPlates');
-                platesSection.style.display = user.role === 'vecino' && caps.placas ? 'block' : 'none';
-                if (user.role === 'vecino' && caps.placas) {
+                platesSection.style.display = user.role === 'vecino' && caps.placasVer ? 'block' : 'none';
+                // Agregar y quitar placas son privilegios aparte (vehiculos.crear y vehiculos.eliminar)
+                document.getElementById('editNewPlate').parentElement.style.display = caps.placasCrear ? 'flex' : 'none';
+                if (user.role === 'vecino' && caps.placasVer) {
                     await renderEditPlates(user.id);
                 }
                 
@@ -752,7 +768,7 @@
                 list.innerHTML = vehicles.map(v => `
                     <div style="display:flex; align-items:center; justify-content:space-between; padding:0.4rem 0.75rem; background:var(--bg-item); border-radius:8px; margin-bottom:0.35rem;">
                         <span style="font-weight:600; font-family:monospace; letter-spacing:1px;">🚗 ${v.plate}</span>
-                        <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick="removePlate('${v.id}')" title="Eliminar placa" style="color:var(--danger); font-size:1rem;">×</button>
+                        ${caps.placasQuitar ? `<button type="button" class="btn btn-ghost btn-icon btn-sm" onclick="removePlate('${v.id}')" title="Eliminar placa" style="color:var(--danger); font-size:1rem;">×</button>` : ''}
                     </div>
                 `).join('');
             }
@@ -804,10 +820,13 @@
                 const updates = {
                     name: document.getElementById('editUserName').value,
                     casa: document.getElementById('editUserCasa').value,
-                    cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60),
-                    active: document.getElementById('editUserActive').checked
+                    cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60)
                 };
-                if (!moraAutomatica) updates.paymentStatus = document.getElementById('editUserPayment').value;
+                // Activar o desactivar y el estado de pago son privilegios aparte: solo se envian si cambiaron
+                const active = document.getElementById('editUserActive').checked;
+                if (caps.estado && editing && active !== (editing.active !== false)) updates.active = active;
+                const payment = document.getElementById('editUserPayment').value;
+                if (caps.pago && !moraAutomatica && editing && editing.role === SISDEL.ROLES.VECINO && payment !== (editing.paymentStatus || 'al_dia')) updates.paymentStatus = payment;
                 if (await SISDEL.updateUser(id, updates)) {
                     SISDEL.showToast('Usuario actualizado', 'success');
                     modalEditUser.style.display = 'none';
@@ -852,7 +871,7 @@
                             </div>
                             <div style="display:flex; align-items:center; gap:0.5rem;">
                                 <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
-                                ${caps.enviar ? `<button class="btn btn-ghost btn-icon btn-sm" data-del-msg="${esc(m.id)}" title="Eliminar" style="color:var(--danger);">🗑️</button>` : ''}
+                                ${caps.borrarMensajes ? `<button class="btn btn-ghost btn-icon btn-sm" data-del-msg="${esc(m.id)}" title="Eliminar" style="color:var(--danger);">🗑️</button>` : ''}
                             </div>
                         </div>
                         <p style="margin:0; color:var(--text-secondary); font-size:0.9rem;">${esc(m.body)}</p>

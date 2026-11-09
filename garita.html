@@ -181,7 +181,18 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PANEL_ICONS[p.page] || ''}</svg>
                     ${p.label}
                 </a>`).join('');
+            // Cada accion de la garita es un privilegio (garita.*): se oculta lo que este usuario no puede usar
             const seesCamera = SISDEL.can('garita.camara');
+            const g = {
+                escanear: SISDEL.can('garita.escanear'), verificar: SISDEL.can('garita.verificar'), ingreso: SISDEL.can('garita.ingreso'),
+                visitasDia: SISDEL.can('garita.visitas_dia'), morosos: SISDEL.can('garita.morosos'),
+                vivo: seesCamera && SISDEL.can('garita.vivo'), historial: seesCamera && SISDEL.can('garita.historial'),
+                mensajes: SISDEL.can('mensajes.recibir')
+            };
+            if (!g.morosos) document.getElementById('morososCount').closest('.stat-card').style.display = 'none';
+            if (!g.visitasDia) document.getElementById('todayVisitsList').parentElement.style.display = 'none';
+            if (!g.historial) document.getElementById('historyMonitorContainer').style.display = 'none';
+            if (!g.ingreso) document.getElementById('btnConfirmEntry').style.display = 'none';
 
             // --- Theme Support ---
             const themeToggle = document.getElementById('themeToggle');
@@ -213,8 +224,8 @@
                 }
             } catch(e) { console.error("Error loading condo settings:", e); }
 
-            if (hasQR) document.getElementById('sectionQR').style.display = 'block';
-            if (hasManual) document.getElementById('sectionManual').style.display = 'block';
+            if (hasQR && g.escanear) document.getElementById('sectionQR').style.display = 'block';
+            if (hasManual && g.verificar) document.getElementById('sectionManual').style.display = 'block';
             if (hasLPR) document.getElementById('sectionLPR').style.display = 'block';
 
             if (!hasQR && !hasManual) {
@@ -225,15 +236,15 @@
 
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
-            if (SISDEL.can('panico.ver')) SisdelPanico.watch({
-                canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.atender'), readOnly: !SISDEL.can('panico.atender')
+            if (SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) SisdelPanico.watch({
+                canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender')
             });
 
             // --- Stats & Rendering ---
             async function renderStats() {
                 const visits = await SISDEL.getTodayVisits(condoId);
                 const entered = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED).length;
-                const morososList = await SISDEL.getUsersByPaymentStatus(condoId, SISDEL.PAYMENT_STATUS.MOROSO);
+                const morososList = g.morosos ? await SISDEL.getUsersByPaymentStatus(condoId, SISDEL.PAYMENT_STATUS.MOROSO) : [];
                 const morosos = morososList.length;
 
                 document.getElementById('enteredCount').textContent = entered;
@@ -534,7 +545,7 @@
             async function renderHistory() {
                 try {
                     // 1. Fetch Camera/LPR Logs (Today)
-                    const cameraLogs = seesCamera ? await SISDEL.getCameraLogsToday(condoId, 15) : [];
+                    const cameraLogs = g.historial ? await SISDEL.getCameraLogsToday(condoId, 15) : [];
 
                     // 2. Fetch Entered Visits (Today)
                     const visits = await SISDEL.getTodayVisits(condoId);
@@ -615,7 +626,7 @@
             }
 
             // Realtime monitoring for new logs (if LPR enabled)
-            if (hasLPR && seesCamera) {
+            if (hasLPR && g.vivo) {
                 // Subscribe to NEW logs
                 SISDEL.subscribeCameraLogs(condoId, (log) => {
                     // Refresh history
@@ -673,6 +684,7 @@
 
             // --- Check for unread messages from admin ---
             (async function checkUnreadMessages() {
+                if (!g.mensajes) return;
                 try {
                     const allMsgs = await SISDEL.getMessages(condoId);
                     const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.POLICIA));

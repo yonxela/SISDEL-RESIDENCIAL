@@ -11,6 +11,7 @@
     "test:finanzas": "node test-finanzas-sync.mjs && node test-finanzas-mora.mjs",
     "test:rondas": "node test-rondas-servidor.mjs",
     "test:privilegios": "node test-privilegios.mjs",
+    "reglas": "node generar-reglas-privilegios.mjs",
     "whatsapp": "node set-whatsapp.mjs"
   },
   "dependencies": {

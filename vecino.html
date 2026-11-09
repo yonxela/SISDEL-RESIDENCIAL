@@ -48,6 +48,7 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                     </svg>
                 </button>
+                <span id="panelLinks" style="display:contents;"></span>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
             </div>
         </header>
@@ -247,8 +248,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261108i"></script>
-    <script src="sisdel-core.js?v=20261108i"></script>
+    <script src="privilegios.js?v=20261109a"></script>
+    <script src="sisdel-core.js?v=20261109a"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -301,6 +302,17 @@
             });
 
             document.getElementById('btnLogout').addEventListener('click', () => SISDEL.logout());
+
+            // Un vecino con privilegios de otros paneles (p. ej. fiscalizador: reportes en solo lectura) los ve como botones
+            const PANEL_ICONS = {
+                'auditor.html': '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/>',
+                'finanzas.html': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'
+            };
+            document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('vecino.html').map((p) => `
+                <a class="btn btn-ghost btn-sm" href="${p.page}" title="${p.label}" style="gap:0.4rem; border:1px solid var(--border-strong);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PANEL_ICONS[p.page] || ''}</svg>
+                    ${p.label}
+                </a>`).join('');
 
             // --- Boton de panico ---
             SisdelRondas.init(session);

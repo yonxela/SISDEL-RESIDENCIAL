@@ -112,6 +112,17 @@ const unreferenced = names.filter((n) => !['ver', 'usar'].includes(n) && !refere
 equal('toda clave finanzas.* (salvo el acceso) se usa en el bloqueo de pantalla', unreferenced, []);
 const unknown = [...referenced].filter((n) => !names.includes(n));
 equal('el bloqueo no menciona claves que no existen en el catalogo', unknown, []);
+{
+    // Fiscalizador: un vecino con el Sistema Financiero en solo lectura
+    const fiscalOv = PRIV.toOverrides('vecino', PRIV.templateKeys(PRIV.templateById('sys-fiscalizador')));
+    const fiscal = (key) => PRIV.has('vecino', fiscalOv, key);
+    const css = B.cssFor(fiscal);
+    equal('fiscalizador: abre el tablero y ve todas las pantallas de lectura', [B.firstView(fiscal), ['dashboard', 'residents', 'accounting', 'reports', 'settings'].every((v) => B.viewAllowed(v, fiscal))], ['dashboard', true]);
+    equal('fiscalizador: no ve botones de escribir ni guardar la configuracion', ["openModal('modal-income')", "openModal('modal-expense')", "openModal('modal-bulk-charge')", "openModal('modal-resident')", 'openFeeRun()', '#btn-save-cfg', '#btn-undo-header', '#btn-clear'].every((s) => css.includes(s)), true);
+    equal('fiscalizador: no ve el DPI ni los recordatorios por WhatsApp', ['#res-dpi', 'openReminders()'].every((s) => css.includes(s)), true);
+    equal('fiscalizador: puede ver estado de cuenta, comprobantes y exportar reportes', ['modal-estado-cuenta', 'modal-voucher-options', 'printReport()'].some((s) => css.includes(s)), false);
+    equal('fiscalizador: ninguna accion de escribir pasa el bloqueo de clic', ["openModal('modal-income')", "deleteTransaction('x')", 'applyFeeRun()', 'saveSettings()', 'clearDB()', 'History.undo()'].every((a) => B.checkAttribute(a, fiscal) !== null), true);
+}
 equal('un administrador (acceso de siempre) no pierde nada en pantalla', B.cssFor((key) => PRIV.has('admin', {}, key)), '');
 equal('un auditor ve las pantallas pero no puede usar el sistema financiero', B.firstView((key) => PRIV.has('auditor', {}, key)), null);
 

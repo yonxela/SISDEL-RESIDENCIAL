@@ -288,6 +288,7 @@
     // Cada condominio puede crear las suyas (condominios/{id}/plantillas_privilegios).
     const tree = (...keys) => keys.flatMap((k) => [k, ...descendantsOf(k)]);
     const adminKeys = ITEMS.filter((i) => i.defaultRoles.includes('admin')).map((i) => i.key);
+    const vecinoKeys = ITEMS.filter((i) => i.defaultRoles.includes('vecino')).map((i) => i.key);
     const without = (list, ...drop) => list.filter((k) => !drop.includes(k) && !drop.some((d) => ancestorsOf(k).includes(d)));
     const TEMPLATES = [
         {
@@ -348,6 +349,18 @@
             id: 'sys-vigilancia-consulta', name: 'Vigilancia (solo lectura)', role: 'operador', system: true,
             description: 'Ve las rondas, el mapa en vivo, los incidentes y las alertas, sin modificar nada.',
             claves: ['usuarios.ver', 'mensajes.recibir', ...tree('rondas.ver'), 'panico.ver']
+        },
+        {
+            id: 'sys-fiscalizador', name: 'Fiscalizador (vecino, solo lectura)', role: 'vecino', system: true,
+            description: 'Un vecino que conserva su panel y además consulta los reportes del condominio sin poder cambiar nada: auditoría (usuarios, visitas, vehículos, accesos, mensajes y reportes) y Sistema Financiero (tablero, residentes sin DPI, estado de cuenta, contabilidad y reportes). En pantalla no muestra teléfonos, correos ni DPI; las reglas le niegan los códigos de acceso y los contactos de emergencia.',
+            claves: [
+                ...vecinoKeys,
+                'usuarios.ver', 'usuarios.pagos_ver', 'visitas.ver', 'vehiculos.ver', 'garita.camara', 'garita.historial', 'mensajes.historial',
+                ...tree('auditoria.ver'), 'auditoria.exportar', 'auditoria.exportar_accesos', 'auditoria.exportar_visitas',
+                'finanzas.ver', 'finanzas.usar', 'finanzas.tablero_ver', 'finanzas.residentes_ver', 'finanzas.residentes_estado', 'finanzas.contabilidad_ver',
+                'finanzas.comprobantes', 'finanzas.reportes_ingresos', 'finanzas.reportes_morosos', 'finanzas.reportes_gastos', 'finanzas.reportes_libro',
+                'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.config_ver'
+            ]
         },
         {
             id: 'sys-admin-delegado', name: 'Administrador delegado', role: 'admin', system: true,

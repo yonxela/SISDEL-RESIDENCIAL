@@ -188,6 +188,18 @@ yes('ninguna plantilla de operador trae privilegios que un operador no puede ten
 yes('hay plantillas de Sistema Financiero y de rondas', ['sys-cajero', 'sys-auditor-financiero', 'sys-vigilancia-consulta'].every((id) => P.templateById(id)));
 yes('el cajero cobra pagos pero no anula ni ve la configuracion', (() => { const k = P.templateById('sys-cajero').claves; return k.includes('finanzas.pagos_registrar') && !k.includes('finanzas.pagos_anular') && !k.some((x) => x.startsWith('finanzas.config')); })());
 yes('el auditor financiero no escribe nada', P.templateById('sys-auditor-financiero').claves.every((k) => !/(_registrar|_crear|_editar|_anular|_eliminar|_finiquitar|_corregir|_general|_cuota|_conceptos|deshacer|limpiar|cuotas_)/.test(k)));
+{
+    const fiscal = P.templateById('sys-fiscalizador');
+    const ov = P.toOverrides('vecino', P.templateKeys(fiscal));
+    const has = (k) => P.has('vecino', ov, k);
+    equal('el fiscalizador es una plantilla de vecino: el vecino sigue siendo vecino', [fiscal.role, fiscal.system, P.landing('vecino', ov)], ['vecino', true, 'vecino.html']);
+    yes('el fiscalizador conserva todo lo de su panel de vecino (visitas, vehiculos, contactos, pánico, mensajes)', P.ITEMS.filter((i) => i.defaultRoles.includes('vecino')).every((i) => has(i.key)));
+    equal('ademas abre la auditoria y el Sistema Financiero', P.pagesFor('vecino', ov).map((p) => p.page), ['vecino.html', 'auditor.html', 'finanzas.html']);
+    yes('todas las claves de la plantilla son validas para un vecino (ninguna queda sin efecto)', P.templateKeys(fiscal).every((k) => has(k)));
+    equal('el fiscalizador no escribe nada ni asigna privilegios', ['usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios', 'guardias.crear', 'mensajes.enviar', 'visitas.gestionar', 'vehiculos.crear', 'finanzas.pagos_registrar', 'finanzas.egresos_registrar', 'finanzas.cargos_crear', 'finanzas.cuotas_mes', 'finanzas.config_cuota', 'finanzas.config_general', 'finanzas.residentes_crear', 'finanzas.residentes_editar', 'finanzas.deshacer', 'finanzas.limpiar', 'rondas.ver', 'garita.operar'].filter(has), []);
+    equal('el fiscalizador no ve datos personales en pantalla ni contactos de emergencia', ['usuarios.contacto', 'finanzas.residentes_datos', 'finanzas.residentes_contactar', 'panico.contactos', 'auditoria.exportar_usuarios'].filter(has), []);
+    yes('un vecino sin la plantilla no abre ningun panel de reportes', P.pagesFor('vecino', {}).map((p) => p.page).join() === 'vecino.html');
+}
 yes('la plantilla de vigilancia de consulta no administra ni patrulla', P.templateById('sys-vigilancia-consulta').claves.every((k) => !/(gestionar|patrullar|_crear|_editar|_eliminar|_atender|_resolver|_operar|_registrar|_asignar)/.test(k)));
 yes('los ids de las plantillas no se repiten', new Set(P.TEMPLATES.map((t) => t.id)).size === P.TEMPLATES.length);
 yes('cada plantilla cumple sus dependencias', P.TEMPLATES.every((t) => t.claves.every((k) => (P.itemOf(k).requires || []).every((r) => t.claves.includes(r)))));
@@ -380,6 +392,17 @@ equal('el master no tiene paneles de condominio', core.SISDEL.otherPanels('x'), 
 core = makeCore({ session: null });
 yes('sin sesion no puede nada', !core.SISDEL.can('usuarios.ver'));
 equal('sin sesion el inicio es el login', core.SISDEL.homePage(), 'index.html');
+
+// Un vecino con la plantilla de fiscalizador ve botones hacia sus paneles de reportes y puede volver a su panel
+{
+    const fiscalOv = P.toOverrides('vecino', P.templateKeys(P.templateById('sys-fiscalizador')));
+    const c = makeCore({ session: sess('vecino', fiscalOv) });
+    equal('fiscalizador: desde su panel ve los de reportes', c.SISDEL.otherPanels('vecino.html').map((p) => p.page), ['auditor.html', 'finanzas.html']);
+    equal('fiscalizador: desde la auditoria puede volver a su panel', c.SISDEL.otherPanels('auditor.html').map((p) => p.page), ['vecino.html', 'finanzas.html']);
+    equal('fiscalizador: su inicio sigue siendo su panel de vecino', c.SISDEL.homePage(), 'vecino.html');
+    equal('un vecino de siempre no tiene otros paneles', makeCore({ session: sess('vecino') }).SISDEL.otherPanels('vecino.html'), []);
+    equal('los demas roles no cambian: la garita sigue ofreciendo solo rondas al guardia', makeCore({ session: sess('policia') }).SISDEL.otherPanels('garita.html').map((p) => p.page), ['rondin/']);
+}
 
 // requireAuth: lee de nuevo el usuario, aplica los privilegios vigentes y manda a cada quien a su pagina
 core = makeCore({ session: sess('policia'), authUid: 'u1', docs: userDoc('policia') });

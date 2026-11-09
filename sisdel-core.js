@@ -129,7 +129,8 @@ const SISDEL = (() => {
     function otherPanels(currentPage) {
         const session = getSession();
         if (!session || session.role === ROLES.MASTER) return [];
-        return PRIV.pagesFor(session.role, session.privilegios).filter((p) => p.page !== currentPage && p.page !== 'vecino.html');
+        // El panel del vecino (vecino.html) solo se ofrece a un vecino que tiene ademas otros paneles (p. ej. un fiscalizador)
+        return PRIV.pagesFor(session.role, session.privilegios).filter((p) => p.page !== currentPage && (p.page !== 'vecino.html' || session.role === ROLES.VECINO));
     }
 
     // Ubica un documento por id. El master no tiene condominio fijo: se busca en todos

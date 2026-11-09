@@ -1259,6 +1259,44 @@ async function run() {
     await setDoc(rref(ana, 'vehiculos', 'veh-ana-q'), vehNuevo('veh-ana-q', 'u-ana'));
     await allowed('vecino: de siempre quita su vehiculo', () => deleteDoc(rref(ana, 'vehiculos', 'veh-ana-q')));
 
+    // Fiscalizador: un vecino con la plantilla del sistema (reportes en solo lectura)
+    const fiscalOv = PRIV.toOverrides('vecino', PRIV.templateKeys(PRIV.templateById('sys-fiscalizador')));
+    await allowed('admin crea a un vecino con la plantilla de fiscalizador', () => createUserAs(admin, mkUser('u-fis', 'Vecino fiscal', 'vecino', { casa: 'Casa 40', privilegios: fiscalOv }), 'PFIS1'));
+    const fis = await loginAs('PFIS1');
+    equal('fiscalizador: sigue siendo vecino y entra a su panel', [fis.login.role, fis.login.redirect], ['vecino', 'vecino.html']);
+    equal('fiscalizador: la sesion trae sus diferencias con el rol', fis.login.session.privilegios, fiscalOv);
+    await allowed('fiscalizador lee los usuarios', () => getDocs(rcol(fis, 'usuarios')));
+    await allowed('fiscalizador lee las visitas de todos', () => getDocs(rcol(fis, 'visitas')));
+    await allowed('fiscalizador lee los vehiculos', () => getDocs(rcol(fis, 'vehiculos')));
+    await allowed('fiscalizador lee el historial de la camara', () => getDocs(rcol(fis, 'camera_logs')));
+    await allowed('fiscalizador lee todos los mensajes', () => getDocs(rcol(fis, 'mensajes')));
+    await allowed('fiscalizador lee los movimientos y los residentes del Sistema Financiero', async () => {
+        await getDocs(rcol(fis, 'finanzas_movimientos'));
+        await getDocs(rcol(fis, 'finanzas_residentes'));
+        await getDoc(cfgRef(fis));
+    });
+    await denied('fiscalizador no lee los codigos de acceso', () => getDocs(query(collection(fis.db, 'codigos'), where('condominioId', '==', A))));
+    await denied('fiscalizador no lee los contactos de emergencia', () => getDocs(rcol(fis, 'emergencia')));
+    await denied('fiscalizador no lee las rutas ni el personal de rondas', async () => { await getDocs(rcol(fis, 'rondas_rutas')); });
+    await denied('fiscalizador no lee las plantillas de privilegios', () => getDocs(rcol(fis, 'plantillas_privilegios')));
+    await denied('fiscalizador no edita usuarios', () => updateDoc(uref(fis, 'u-ana'), { phone: '5555-0000' }));
+    await denied('fiscalizador no crea usuarios', () => createUserAs(fis, mkUser('u-fis2', 'Otro', 'vecino', { casa: 'Casa 41' }), 'PFIS2'));
+    await denied('fiscalizador no se cambia los privilegios', () => setPriv(fis, 'u-fis', {}));
+    await denied('fiscalizador no crea visitas para otros', () => setDoc(rref(fis, 'visitas', 'vis-fis-x'), visitaVecino('u-ana', 'vis-fis-x')));
+    await denied('fiscalizador no envia mensajes', () => setDoc(rref(fis, 'mensajes', 'msg-fis'), msgOne('msg-fis')));
+    await denied('fiscalizador no registra pagos', () => setDoc(mref(fis, 'fis-in'), mv('fis-in', { type: 'income' })));
+    await denied('fiscalizador no registra egresos', () => setDoc(mref(fis, 'fis-eg'), mv('fis-eg', { type: 'expense', resiId: null })));
+    await denied('fiscalizador no crea cargos ni cuotas', () => setDoc(mref(fis, 'fis-ch'), mv('fis-ch', { type: 'charge', kind: 'extra' })));
+    await denied('fiscalizador no anula movimientos', () => updateDoc(mref(fis, 'adm-in'), unannul()));
+    await denied('fiscalizador no cambia la cuota', () => patchCfg(fis, { fee: 1 }));
+    await denied('fiscalizador no cambia los datos de un residente', () => updateDoc(xref(fis, 'res-t1'), { dpi: '9', updated_at: ts() }));
+    await denied('fiscalizador no borra nada', () => deleteDoc(mref(fis, 'adm-in')));
+    // Lo suyo de vecino sigue funcionando
+    await allowed('fiscalizador crea su propia visita', () => setDoc(rref(fis, 'visitas', 'vis-fis'), visitaVecino('u-fis', 'vis-fis')));
+    await allowed('fiscalizador registra su propio vehiculo', () => setDoc(rref(fis, 'vehiculos', 'veh-fis'), vehNuevo('veh-fis', 'u-fis')));
+    await allowed('fiscalizador usa su boton de panico', () => setDoc(rref(fis, 'alertas_panico', 'pan-fis'), panico('pan-fis', { userId: 'u-fis', userName: 'Vecino fiscal' })));
+    await allowed('fiscalizador guarda sus contactos de emergencia', () => setDoc(rref(fis, 'emergencia', 'u-fis'), { userId: 'u-fis', contacts: [] }));
+
     // Privilegios y plantillas
     const plPriv = await opWith('u-ppr', 'PPPR1', 'Asigna privilegios', ['usuarios.privilegios']);
     const plTpl = await opWith('u-ppt', 'PPPT1', 'Asigna y gestiona plantillas', ['usuarios.privilegios', 'plantillas.gestionar']);

@@ -211,7 +211,7 @@
 
                 { key: 'rondas.vecinos_ver', sub: 'Vecinos y ajustes', parent: 'rondas.ver', label: 'Ver los vecinos en RONDIN', description: 'El menú Vecinos con sus contactos de emergencia (datos personales).', sensitive: true, enforce: 'pantalla' },
                 { key: 'rondas.ajustes_ver', sub: 'Vecinos y ajustes', parent: 'rondas.ver', label: 'Ver la configuración de rondas', description: 'El menú Configuración.', enforce: 'pantalla' },
-                { key: 'rondas.ajustes_panicovecinos', sub: 'Vecinos y ajustes', parent: 'rondas.gestionar', label: 'Activar el botón de pánico de los vecinos', description: 'Habilita el botón de pánico para todos los vecinos y el menú Vecinos.', requires: ['rondas.ajustes_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'rondas.ajustes_panicovecinos', sub: 'Vecinos y ajustes', parent: 'rondas.gestionar', label: 'Guardar la configuración de rondas', description: 'Activa o desactiva el botón de pánico de todos los vecinos (y con él el menú Vecinos) y guarda el país y el logo de RONDIN.', requires: ['rondas.ajustes_ver'], sensitive: true, enforce: 'reglas' },
 
                 { key: 'rondas.patrulla_iniciar', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Iniciar turno y ronda', description: 'El botón Iniciar Ronda, con su foto y ubicación.', enforce: 'reglas' },
                 { key: 'rondas.patrulla_terminar', sub: 'Vista del guardia (patrulla)', parent: 'rondas.patrullar', label: 'Terminar ronda y turno', description: 'El botón Terminar Ronda.', enforce: 'reglas' },
@@ -229,7 +229,7 @@
                 { key: 'auditoria.mensajes', sub: 'Pestañas', parent: 'auditoria.ver', label: 'Pestaña Mensajes', description: 'Todos los mensajes enviados (necesita Ver todos los mensajes).', enforce: 'pantalla' },
                 { key: 'auditoria.reportes', sub: 'Pestañas', parent: 'auditoria.ver', label: 'Pestaña Reportes', description: 'El reporte por rango de fechas con gráficas y tablas (necesita ver usuarios, visitas y accesos).', enforce: 'pantalla' },
                 { key: 'auditoria.imprimir', sub: 'Reportes', parent: 'auditoria.ver', label: 'Imprimir o guardar en PDF', description: 'El botón Imprimir / PDF del reporte.', enforce: 'pantalla' },
-                { key: 'auditoria.exportar', sub: 'Exportar', label: 'Exportar reportes', description: 'Acceso a descargar los reportes del panel de auditoría en CSV.', roles: ['auditor'], requires: ['auditoria.ver'], enforce: 'pantalla' },
+                { key: 'auditoria.exportar', sub: 'Exportar', label: 'Exportar reportes', description: 'Acceso a descargar los reportes del panel de auditoría en CSV.', roles: ['auditor'], requires: ['auditoria.ver'], sensitive: true, enforce: 'pantalla' },
                 { key: 'auditoria.exportar_accesos', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar accesos (CSV)', description: 'Las lecturas de la cámara y los ingresos del rango.', enforce: 'pantalla' },
                 { key: 'auditoria.exportar_visitas', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar visitas (CSV)', description: 'Las visitas del rango con quién las autorizó.', enforce: 'pantalla' },
                 { key: 'auditoria.exportar_usuarios', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar usuarios (CSV)', description: 'La lista de usuarios con teléfono, correo y estado de pago.', sensitive: true, enforce: 'pantalla' }

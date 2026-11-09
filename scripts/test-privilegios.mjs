@@ -5,6 +5,7 @@
 // Uso: node test-privilegios.mjs (tambien corre con npm test).
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -26,20 +27,50 @@ const keysOn = (role, overrides) => P.KEYS.filter((k) => P.effective(role, overr
 
 // ───────── Catalogo ─────────
 console.log('\nCatalogo');
+// Los 26 privilegios de antes de las acciones: su acceso por rol no puede cambiar
+const LEGACY = ['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'guardias.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios',
+    'mensajes.enviar', 'mensajes.historial', 'visitas.ver', 'visitas.gestionar', 'garita.operar', 'garita.camara', 'panico.activar', 'panico.ver', 'panico.atender',
+    'finanzas.ver', 'finanzas.usar', 'rondas.ver', 'rondas.gestionar', 'rondas.patrullar', 'vecino.visitas', 'vecino.vehiculos', 'auditoria.ver', 'auditoria.exportar'];
+const roots = P.ITEMS.filter((i) => !i.parent);
+const kids = P.ITEMS.filter((i) => i.parent);
 equal('las claves no se repiten', new Set(P.KEYS).size, P.KEYS.length);
-yes('cada clave tiene la forma modulo.accion', P.KEYS.every((k) => /^[a-z]+\.[a-z]+$/.test(k)));
+yes('cada clave tiene la forma modulo.accion', P.KEYS.every((k) => /^[a-z]+\.[a-z_]+$/.test(k)));
 yes('cada clave tiene etiqueta y descripcion', P.ITEMS.every((i) => i.label && i.description));
-yes('los roles por defecto existen', P.ITEMS.every((i) => i.roles.every((r) => P.ROLES.includes(r))));
+yes('cada clave dice si la garantizan las reglas o solo la pantalla', P.ITEMS.every((i) => ['reglas', 'pantalla'].includes(i.enforce)));
+yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
+yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
+yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
+yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
+equal('hay 138 privilegios: 29 paraguas y 109 acciones', [P.KEYS.length, roots.length, kids.length], [138, 29, 109]);
+yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
+yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
+yes('el arbol tiene como maximo cuatro niveles (paraguas, pantalla, reporte, impresion)', P.ITEMS.every((i) => i.depth <= 3));
+yes('una accion es del modulo de su paraguas, salvo vehiculos, plantillas y borrar el historial de la garita', kids.every((i) => i.key.split('.')[0] === i.parent.split('.')[0] || ['vehiculos.ver', 'vehiculos.crear', 'vehiculos.editar', 'vehiculos.eliminar', 'plantillas.gestionar', 'garita.historial_borrar'].includes(i.key)));
 equal('asignar privilegios necesita editar usuarios (las reglas piden ambos)', P.itemOf('usuarios.privilegios').requires, ['usuarios.ver', 'usuarios.editar']);
 yes('las claves de rondas necesitan ver usuarios (RONDIN lista al personal)', ['rondas.ver', 'rondas.patrullar'].every((k) => P.itemOf(k).requires.includes('usuarios.ver')));
 yes('eliminar usuarios necesita ver codigos (el borrado limpia el codigo)', P.itemOf('usuarios.eliminar').requires.includes('usuarios.codigos'));
 yes('las dependencias (requires) existen', P.ITEMS.every((i) => (i.requires || []).every((r) => P.KEYS.includes(r))));
 yes('ninguna clave se requiere a si misma', P.ITEMS.every((i) => !(i.requires || []).includes(i.key)));
 yes('las paginas piden claves que existen', P.PAGES.every((p) => p.role || p.any.every((k) => P.KEYS.includes(k))));
-equal('el operador no trae privilegios por defecto', Object.keys(P.defaultsOf('operador')), []);
-equal('hay 26 privilegios', P.KEYS.length, 26);
+equal('el operador solo trae por defecto recibir mensajes (lo que ya leia) y ninguna pagina', [Object.keys(P.defaultsOf('operador')), P.landing('operador', {})], [['mensajes.recibir'], null]);
 yes('las dependencias por defecto se cumplen en cada rol (si tiene X tiene lo que X necesita)',
     P.ROLES.every((role) => keysOn(role).every((k) => (P.itemOf(k).requires || []).every((r) => keysOn(role).includes(r)))));
+yes('cada rol que tiene un paraguas recibe todas sus acciones', P.ROLES.every((role) => roots.filter((r) => P.has(role, {}, r.key)).every((r) => P.descendantsOf(r.key).every((c) => P.has(role, {}, c)))));
+equal('las claves delicadas estan marcadas como sensibles', ['usuarios.privilegios', 'usuarios.codigos', 'finanzas.usar', 'finanzas.residentes_crear', 'finanzas.deshacer', 'rondas.monitoreo_ver', 'rondas.alertas_eliminar', 'auditoria.exportar'].map((k) => !!P.itemOf(k).sensitive), Array(8).fill(true));
+yes('sensitiveKeys devuelve solo claves del catalogo', P.sensitiveKeys().length > 20 && P.sensitiveKeys().every((k) => P.KEYS.includes(k)));
+yes('los grupos cubren todas las claves una sola vez', (() => { const seen = P.GROUPS.flatMap((g) => g.items.map((i) => i.key)); return seen.length === P.KEYS.length && new Set(seen).size === P.KEYS.length; })());
+
+// Motor de paraguas
+console.log('\nParaguas y acciones');
+equal('apagar una accion no toca al paraguas ni a las demas', [P.has('admin', { 'usuarios.estadisticas': false }, 'usuarios.estadisticas'), P.has('admin', { 'usuarios.estadisticas': false }, 'usuarios.panel'), P.has('admin', { 'usuarios.estadisticas': false }, 'usuarios.contacto')], [false, true, true]);
+equal('sin el paraguas no hay acciones, aunque se las pongan', [P.has('policia', { 'finanzas.pagos_registrar': true }, 'finanzas.pagos_registrar'), P.has('operador', { 'finanzas.pagos_registrar': true }, 'finanzas.pagos_registrar')], [false, false]);
+equal('quitar el paraguas apaga todas sus acciones', P.descendantsOf('finanzas.usar').filter((k) => P.has('admin', { 'finanzas.usar': false }, k)), []);
+equal('un operador con el paraguas recibe todas sus acciones', P.descendantsOf('rondas.ver').every((k) => P.has('operador', { 'rondas.ver': true }, k)), true);
+equal('el operador con el paraguas y una accion apagada la pierde', P.has('operador', { 'rondas.ver': true, 'rondas.panel_ver': false }, 'rondas.panel_ver'), false);
+equal('una accion apagada tambien apaga sus hijas', P.has('operador', { 'rondas.ver': true, 'rondas.monitoreo_ver': false }, 'rondas.monitoreo_historial'), false);
+equal('childrenOf / descendantsOf / ancestorsOf', [P.childrenOf('rondas.monitoreo_ver'), P.descendantsOf('rondas.panel_ver'), P.ancestorsOf('rondas.reportes_imprimir')], [['rondas.monitoreo_historial'], ['rondas.reportes_ver', 'rondas.reportes_imprimir'], ['rondas.ver', 'rondas.panel_ver', 'rondas.reportes_ver']]);
+yes('las acciones de usuarios.privilegios siguen siendo solo de administradores y operadores', P.descendantsOf('usuarios.privilegios').every((k) => !P.has('policia', { [k]: true, 'usuarios.privilegios': true }, k)));
+equal('las acciones heredan el rol por defecto de su paraguas', roots.every((r) => P.ROLES.every((role) => P.descendantsOf(r.key).every((k) => P.has(role, {}, k) === P.has(role, {}, r.key)))), true);
 
 // ───────── Copia en las functions ─────────
 console.log('\nCopia en las functions');
@@ -47,13 +78,16 @@ equal('functions/src/privilegios.js es identico a privilegios.js', read('functio
 
 // ───────── Compatibilidad: los privilegios por defecto de cada rol son el acceso que tenia ─────────
 console.log('\nCompatibilidad con los roles de siempre');
-equal('admin', keysOn('admin'), ['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'guardias.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios', 'mensajes.enviar', 'mensajes.historial', 'visitas.ver', 'visitas.gestionar', 'garita.operar', 'garita.camara', 'panico.ver', 'panico.atender', 'finanzas.ver', 'finanzas.usar', 'rondas.ver', 'rondas.gestionar']);
-equal('policia', keysOn('policia'), ['usuarios.ver', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.patrullar']);
-equal('supervisor', keysOn('supervisor'), ['usuarios.ver', 'guardias.crear', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.ver', 'rondas.gestionar', 'rondas.patrullar']);
-equal('auditor', keysOn('auditor'), ['usuarios.ver', 'mensajes.historial', 'visitas.ver', 'garita.camara', 'panico.ver', 'finanzas.ver', 'rondas.ver', 'auditoria.ver', 'auditoria.exportar']);
-equal('vecino', keysOn('vecino'), ['vecino.visitas', 'vecino.vehiculos', 'panico.activar']);
+// Los 26 privilegios de siempre: el mismo acceso por rol que antes de las acciones
+const legacyOn = (role) => sorted(keysOn(role).filter((k) => LEGACY.includes(k)));
+equal('admin', legacyOn('admin'), sorted(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'guardias.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios', 'mensajes.enviar', 'mensajes.historial', 'visitas.ver', 'visitas.gestionar', 'garita.operar', 'garita.camara', 'panico.ver', 'panico.atender', 'finanzas.ver', 'finanzas.usar', 'rondas.ver', 'rondas.gestionar']));
+equal('policia', legacyOn('policia'), sorted(['usuarios.ver', 'visitas.ver', 'garita.operar', 'garita.camara', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.patrullar']));
+equal('supervisor', legacyOn('supervisor'), sorted(['usuarios.ver', 'guardias.crear', 'panico.activar', 'panico.ver', 'panico.atender', 'rondas.ver', 'rondas.gestionar', 'rondas.patrullar']));
+equal('auditor', legacyOn('auditor'), sorted(['usuarios.ver', 'mensajes.historial', 'visitas.ver', 'garita.camara', 'panico.ver', 'finanzas.ver', 'rondas.ver', 'auditoria.ver', 'auditoria.exportar']));
+equal('vecino', legacyOn('vecino'), sorted(['vecino.visitas', 'vecino.vehiculos', 'panico.activar']));
+yes('recibir mensajes es de todos los roles que ya los leian', ['admin', 'policia', 'supervisor', 'auditor', 'vecino', 'operador'].every((r) => P.has(r, {}, 'mensajes.recibir')));
 yes('el auditor sigue siendo solo lectura (ningun privilegio de escritura)',
-    !keysOn('auditor').some((k) => /\.(crear|editar|eliminar|gestionar|enviar|usar|atender|patrullar|operar|activar|privilegios|codigos)$/.test(k)));
+    !keysOn('auditor').some((k) => /\.(crear|editar|eliminar|gestionar|enviar|usar|atender|patrullar|operar|activar|privilegios|codigos|registrar|anular|resolver|asignar|reportar|iniciar|terminar|marcar|rastrear|cancelar|ingreso|verificar|deshacer|limpiar|finiquitar|corregir|estado|pago|compartir|quitar|temporal)$/.test(k)));
 yes('solo el admin asigna privilegios por defecto', P.ROLES.filter((r) => P.has(r, {}, 'usuarios.privilegios')).join() === 'admin');
 equal('sin privilegios asignados el efectivo es el del rol', P.effective('policia', undefined), P.effective('policia', {}));
 equal('un campo vacio o invalido no cambia nada', keysOn('policia', { 'no.existe': true, 'garita.operar': 'si', 'usuarios.ver': null }), keysOn('policia'));
@@ -74,22 +108,39 @@ equal('quitar un privilegio del rol', P.has('admin', { 'finanzas.usar': false },
 equal('lo demas no cambia al quitar uno', P.has('admin', { 'finanzas.usar': false }, 'usuarios.crear'), true);
 equal('toOverrides guarda solo las diferencias', P.toOverrides('admin', keysOn('admin').filter((k) => k !== 'finanzas.usar')), { 'finanzas.usar': false });
 equal('toOverrides de un conjunto igual al rol es vacio', P.toOverrides('policia', keysOn('policia')), {});
-equal('toOverrides del operador son sus claves', P.toOverrides('operador', ['garita.operar', 'usuarios.ver']), { 'usuarios.ver': true, 'garita.operar': true });
-equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false }), { 'garita.operar': true });
-equal('ida y vuelta: las diferencias reproducen el conjunto', keysOn('auditor', P.toOverrides('auditor', ['usuarios.ver', 'mensajes.enviar'])).join(), 'usuarios.ver,mensajes.enviar');
+const withKids = (...list) => list.flatMap((k) => [k, ...P.descendantsOf(k)]);
+equal('toOverrides del operador son sus paraguas (las acciones vienen con el)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true });
+equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true });
+equal('toOverrides guarda una accion apagada como false', P.toOverrides('operador', ['usuarios.ver', 'garita.operar', 'mensajes.recibir']),
+    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false, 'mensajes.recibir': true }),
+    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+{
+    const wanted = new Set();
+    P.toggle(wanted, 'usuarios.ver', true, { children: true });
+    P.toggle(wanted, 'mensajes.enviar', true, { children: true });
+    equal('ida y vuelta: las diferencias reproducen el conjunto', sorted(keysOn('auditor', P.toOverrides('auditor', wanted))), sorted([...wanted]));
+}
+yes('ida y vuelta de cada plantilla del sistema: las diferencias reproducen exactamente su conjunto', P.TEMPLATES.every((t) => {
+    const wanted = new Set(P.templateKeys(t));
+    const got = keysOn(t.role, P.toOverrides(t.role, wanted));
+    // lo que da el rol por defecto (p. ej. recibir mensajes) viene aparte de la plantilla
+    return sorted(got.filter((k) => !P.defaultsOf(t.role)[k] || wanted.has(k))).join() === sorted([...wanted]).join();
+}));
 equal('cleanOverrides descarta claves ajenas y valores que no son booleanos', P.cleanOverrides({ 'garita.operar': false, otra: true, 'usuarios.ver': 1 }), { 'garita.operar': false });
 
 // toOverrides acepta un Set (el editor de privilegios le pasa un Set: un error aqui borraba los privilegios al guardar)
-equal('toOverrides con un Set', P.toOverrides('operador', new Set(['usuarios.ver', 'garita.operar'])), { 'usuarios.ver': true, 'garita.operar': true });
+equal('toOverrides con un Set', P.toOverrides('operador', new Set(withKids('usuarios.ver', 'garita.operar', 'mensajes.recibir'))), { 'usuarios.ver': true, 'garita.operar': true });
 equal('toOverrides con un Set igual al rol es vacio', P.toOverrides('policia', new Set(keysOn('policia'))), {});
 equal('toOverrides con Set, arreglo y mapa dan lo mismo', [P.toOverrides('auditor', new Set(['usuarios.ver'])), P.toOverrides('auditor', { 'usuarios.ver': true })], [P.toOverrides('auditor', ['usuarios.ver']), P.toOverrides('auditor', ['usuarios.ver'])]);
+equal('toOverrides no guarda acciones de un paraguas que no se muestra', P.toOverrides('operador', ['rondas.panel_ver', 'mensajes.recibir']), {});
 
 // Privilegios que solo pueden tener ciertos roles
 yes('usuarios.privilegios solo es para administradores y operadores', JSON.stringify(P.itemOf('usuarios.privilegios').onlyRoles) === JSON.stringify(['admin', 'operador']));
 equal('un guardia no puede tener usuarios.privilegios aunque se lo pongan', P.has('policia', { 'usuarios.privilegios': true }, 'usuarios.privilegios'), false);
 equal('un operador si', P.has('operador', { 'usuarios.privilegios': true }, 'usuarios.privilegios'), true);
-equal('toOverrides descarta lo que el rol no puede tener', P.toOverrides('policia', [...keysOn('policia'), 'usuarios.privilegios']), {});
-equal('allowedFor', [P.allowedFor('usuarios.privilegios', 'vecino'), P.allowedFor('usuarios.privilegios', 'admin'), P.allowedFor('garita.operar', 'vecino'), P.allowedFor('no.existe', 'admin')], [false, true, true, false]);
+equal('toOverrides descarta lo que el rol no puede tener', P.toOverrides('policia', [...keysOn('policia'), 'usuarios.privilegios', 'plantillas.gestionar']), {});
+equal('allowedFor', [P.allowedFor('usuarios.privilegios', 'vecino'), P.allowedFor('usuarios.privilegios', 'admin'), P.allowedFor('garita.operar', 'vecino'), P.allowedFor('no.existe', 'admin'), P.allowedFor('plantillas.gestionar', 'policia')], [false, true, true, false, false]);
 equal('una clave heredada del prototipo no existe', [P.itemOf('constructor'), P.itemOf('__proto__'), P.cleanOverrides({ constructor: true })], [null, null, {}]);
 
 // Dependencias
@@ -98,7 +149,20 @@ P.toggle(set, 'finanzas.usar', true);
 equal('activar finanzas.usar activa lo que necesita', sorted([...set]), sorted(['finanzas.usar', 'finanzas.ver', 'usuarios.ver']));
 P.toggle(set, 'usuarios.ver', false);
 equal('quitar usuarios.ver quita lo que depende de el', [...set], ['finanzas.ver']);
-equal('cascade avisa que se activaria', sorted(P.cascade(new Set(), 'garita.operar', true)), sorted(['usuarios.ver', 'visitas.ver']));
+const acciones = new Set();
+P.toggle(acciones, 'finanzas.reportes_libro', true);
+equal('activar una accion activa su paraguas y lo que necesita', sorted([...acciones]), sorted(['finanzas.reportes_libro', 'finanzas.usar', 'finanzas.ver', 'usuarios.ver']));
+P.toggle(acciones, 'finanzas.usar', false);
+equal('quitar el paraguas quita sus acciones (y deja lo que necesitaba)', sorted([...acciones]), sorted(['finanzas.ver', 'usuarios.ver']));
+const todo = new Set();
+P.toggle(todo, 'finanzas.usar', true, { children: true });
+equal('activar el paraguas con { children: true } trae todas sus acciones', P.descendantsOf('finanzas.usar').every((k) => todo.has(k)), true);
+const sin = new Set(todo);
+P.toggle(sin, 'finanzas.residentes_ver', false);
+equal('quitar una accion quita las que la necesitan (ver residentes)', ['finanzas.residentes_datos', 'finanzas.residentes_crear', 'finanzas.cuotas_mes'].map((k) => sin.has(k)), [false, false, false]);
+equal('expandTemplate amplia una plantilla vieja (solo paraguas) con todas sus acciones', sorted(P.expandTemplate(['usuarios.ver', 'finanzas.usar', 'finanzas.ver'])), sorted([...withKids('usuarios.ver'), 'finanzas.ver', ...withKids('finanzas.usar')]));
+equal('expandTemplate respeta una plantilla que ya nombra acciones', sorted(P.expandTemplate(['finanzas.usar', 'finanzas.pagos_registrar'])), sorted(['finanzas.usar', 'finanzas.pagos_registrar']));
+equal('cascade avisa que se activaria', sorted(P.cascade(new Set(), 'garita.operar', true)), sorted(['usuarios.ver', 'visitas.ver', 'vehiculos.ver']));
 
 // ───────── Paginas ─────────
 console.log('\nPaginas');
@@ -118,6 +182,13 @@ equal('quien tiene privilegios de varias paginas las ve todas (admin)', P.pagesF
 // ───────── Plantillas ─────────
 console.log('\nPlantillas del sistema');
 yes('cada plantilla tiene nombre, rol valido y claves existentes', P.TEMPLATES.every((t) => t.id && t.name && P.ROLES.includes(t.role) && t.claves.every((k) => P.KEYS.includes(k))));
+yes('las plantillas del sistema estan marcadas como tales', P.TEMPLATES.every((t) => t.system === true));
+yes('cada plantilla trae el paraguas de cada accion que nombra', P.TEMPLATES.every((t) => t.claves.every((k) => !P.itemOf(k).parent || t.claves.includes(P.itemOf(k).parent))));
+yes('ninguna plantilla de operador trae privilegios que un operador no puede tener', P.TEMPLATES.filter((t) => t.role === 'operador').every((t) => t.claves.every((k) => P.allowedFor(k, 'operador'))));
+yes('hay plantillas de Sistema Financiero y de rondas', ['sys-cajero', 'sys-auditor-financiero', 'sys-vigilancia-consulta'].every((id) => P.templateById(id)));
+yes('el cajero cobra pagos pero no anula ni ve la configuracion', (() => { const k = P.templateById('sys-cajero').claves; return k.includes('finanzas.pagos_registrar') && !k.includes('finanzas.pagos_anular') && !k.some((x) => x.startsWith('finanzas.config')); })());
+yes('el auditor financiero no escribe nada', P.templateById('sys-auditor-financiero').claves.every((k) => !/(_registrar|_crear|_editar|_anular|_eliminar|_finiquitar|_corregir|_general|_cuota|_conceptos|deshacer|limpiar|cuotas_)/.test(k)));
+yes('la plantilla de vigilancia de consulta no administra ni patrulla', P.templateById('sys-vigilancia-consulta').claves.every((k) => !/(gestionar|patrullar|_crear|_editar|_eliminar|_atender|_resolver|_operar|_registrar|_asignar)/.test(k)));
 yes('los ids de las plantillas no se repiten', new Set(P.TEMPLATES.map((t) => t.id)).size === P.TEMPLATES.length);
 yes('cada plantilla cumple sus dependencias', P.TEMPLATES.every((t) => t.claves.every((k) => (P.itemOf(k).requires || []).every((r) => t.claves.includes(r)))));
 yes('toda plantilla de operador deja entrar a alguna pagina', P.TEMPLATES.filter((t) => t.role === 'operador').every((t) => P.landing('operador', P.toOverrides('operador', t.claves))));
@@ -128,18 +199,26 @@ equal('buscar una plantilla propia', P.templateById('mia', [{ id: 'mia', name: '
 // ───────── Reglas de Firestore ─────────
 console.log('\nReglas de Firestore');
 const rules = read('firestore.rules');
-const camel = (key) => 'p' + key.split('.').map((s) => s[0].toUpperCase() + s.slice(1)).join('');
-const wrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return can\(c, '([a-z.]+)', \[([^\]]*)\]\); \}/g)]
+const camel = (key) => 'p' + key.split('.').map((x) => x.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join('')).join('');
+// Paraguas: can(c, 'clave', [roles]); acciones: pPadre(c) && childOk(c, 'clave')
+const rootWrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return can\(c, '([a-z._]+)', \[([^\]]*)\]\); \}/g)]
     .map((m) => ({ fn: m[1], key: m[2], roles: m[3].split(',').map((r) => r.trim().replace(/'/g, '')).filter(Boolean) }));
-// Privilegios que solo deciden que pagina se abre: las reglas no tienen nada que cuidar
-const PAGE_ONLY = ['usuarios.panel', 'auditoria.ver', 'auditoria.exportar'];
-yes('las reglas definen can(condoId, clave, roles)', /function can\(condoId, key, roles\)/.test(rules));
+const childWrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return (p[A-Z]\w*)\(c\) && childOk\(c, '([a-z._]+)'\); \}/g)]
+    .map((m) => ({ fn: m[1], parentFn: m[2], key: m[3] }));
+const wrappers = [...rootWrappers, ...childWrappers];
+const used = (fn) => (rules.match(new RegExp(`\\b${fn}\\(`, 'g')) || []).length;
+yes('las reglas definen can(condoId, clave, roles) y childOk(condoId, clave)', /function can\(condoId, key, roles\)/.test(rules) && /function childOk\(condoId, key\)/.test(rules));
 yes('can() lee el mapa privilegios del documento del usuario', /memberDoc\(condoId\)\.get\('privilegios', \{\}\)\.get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
+yes('childOk() deja pasar una accion salvo que este apagada (false) en el documento del usuario', /function childOk\(condoId, key\) \{[\s\S]*?get\(key, true\) == true/.test(rules));
 yes('cada funcion pXxx usa el nombre de su clave', wrappers.every((w) => w.fn === camel(w.key)));
 yes('cada clave de las reglas existe en el catalogo', wrappers.every((w) => P.KEYS.includes(w.key)));
-yes('los roles por defecto de las reglas son los del catalogo', wrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));
-equal('cada privilegio del catalogo tiene su funcion en las reglas (salvo los de pagina)', sorted(P.KEYS.filter((k) => !PAGE_ONLY.includes(k))), sorted(wrappers.map((w) => w.key)));
-yes('cada funcion pXxx se usa en alguna regla', wrappers.every((w) => (rules.match(new RegExp(`\\b${w.fn}\\(`, 'g')) || []).length > 1));
+yes('los roles por defecto de las reglas son los del catalogo', rootWrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));
+yes('solo los paraguas llevan roles en las reglas; cada accion usa a su paraguas', rootWrappers.every((w) => !P.itemOf(w.key).parent) && childWrappers.every((w) => P.itemOf(w.key).parent && camel(P.itemOf(w.key).parent) === w.parentFn));
+yes('toda clave que dice garantizarse por reglas tiene su funcion en las reglas', P.ITEMS.filter((i) => i.enforce === 'reglas').every((i) => wrappers.some((w) => w.key === i.key)));
+yes('toda clave sin funcion en las reglas es solo de pantalla', P.KEYS.filter((k) => !wrappers.some((w) => w.key === k)).every((k) => P.itemOf(k).enforce === 'pantalla'));
+const serverSrc = ['functions/src/auth.js', 'functions/src/index.js', 'functions/src/rondas.js'].map((f) => { try { return read(f); } catch { return ''; } }).join('\n');
+yes('toda funcion de una accion de reglas se usa en alguna regla o la clave la aplica el servidor', childWrappers.every((w) => used(w.fn) > 1 || serverSrc.includes(`'${w.key}'`)));
+yes('todo paraguas con funcion se usa en alguna regla o en la de una accion', rootWrappers.every((w) => used(w.fn) > 1));
 yes('las reglas ya no preguntan por el rol del usuario para dar acceso (isAdmin, isStaff...)', !/\b(isAdmin|isStaff|isGuard|isSupervisor|isAuditor)\(/.test(rules));
 yes('los roles validos de usuarios incluyen al operador', /role in \['vecino', 'policia', 'admin', 'auditor', 'supervisor', 'operador'\]/.test(rules));
 yes('con usuarios.crear solo se crean vecinos; guardias con guardias.crear; los demas roles exigen asignar privilegios',
@@ -149,9 +228,22 @@ yes('quien ve codigos no ve los de administradores y operadores sin asignar priv
 yes('borrar codigos exige poder manejar a ese rol', /\(pUsuariosCodigos\(resource\.data\.condominioId\) \|\| pUsuariosEliminar\(resource\.data\.condominioId\)\)\s*&& manageable\(resource\.data\.condominioId, resource\.data\.role\)/.test(rules));
 yes('usuarios.privilegios solo lo puede tener un administrador u operador', /get\('usuarios\.privilegios', false\) != true\s*\|\| request\.resource\.data\.role in \['admin', 'operador'\]/.test(rules));
 yes('usuarios.eliminar solo borra visitas, vehiculos y expedientes de un usuario que deja de existir', (rules.match(/pUsuariosEliminar\(condoId\) && ownerGone\(/g) || []).length === 4 && /!existsAfter\(/.test(rules));
-yes('el master tambien maneja las plantillas de privilegios', /isMaster\(\) \|\| pUsuariosPrivilegios\(condoId\)\) && request\.resource\.data\.condominioId == condoId/.test(rules));
+yes('el master tambien maneja las plantillas de privilegios', /isMaster\(\) \|\| pPlantillasGestionar\(condoId\)\) && request\.resource\.data\.condominioId == condoId/.test(rules) && /allow read: if isMaster\(\) \|\| pUsuariosPrivilegios\(condoId\);/.test(rules));
 yes('nadie se cambia sus propios privilegios', /pUsuariosPrivilegios\(condoId\) && userId != request\.auth\.uid/.test(rules));
 yes('un codigo nuevo solo apunta a un usuario que se crea en la misma escritura (salvo usuarios.codigos)', /newUserCode\(\)/.test(rules) && /pUsuariosCodigos\(c\) && manageable\(c, codeTargetRole\(\)\)/.test(rules));
+yes('el mapa de privilegios de un usuario admite hasta 300 claves (un operador estrecho guarda cerca de cien en false)', /privilegios\.size\(\) <= 300/.test(rules));
+// El bloque de funciones pXxx lo genera scripts/generar-reglas-privilegios.mjs: no se edita a mano
+let generated = 'fallo';
+try { execFileSync('node', [new URL('./generar-reglas-privilegios.mjs', import.meta.url).pathname, '--check'], { stdio: 'pipe' }); generated = 'ok'; } catch (e) { generated = String(e.stdout || e.message); }
+equal('el bloque de privilegios de las reglas esta al dia con el catalogo (npm run reglas)', generated, 'ok');
+// Finanzas y Rondas: cada operacion tiene su privilegio en las reglas
+yes('Finanzas: cada tipo de movimiento exige su privilegio', ['pFinanzasPagosRegistrar', 'pFinanzasEgresosRegistrar', 'pFinanzasCargosCrear', 'pFinanzasCuotasMes', 'pFinanzasCuotasMeses'].every((fn) => used(fn) > 1));
+yes('Finanzas: anular y deshacer son privilegios aparte', ['pFinanzasPagosAnular', 'pFinanzasEgresosAnular', 'pFinanzasCargosAnular', 'pFinanzasCuotasCorregir', 'pFinanzasDeshacer'].every((fn) => used(fn) > 1));
+yes('Finanzas: configuracion separada en cuota, datos generales y conceptos', ['pFinanzasConfigCuota', 'pFinanzasConfigGeneral', 'pFinanzasConfigConceptos'].every((fn) => used(fn) > 1));
+yes('Finanzas: finiquitar y eliminar residentes son privilegios aparte', used('pFinanzasResidentesFiniquitar') > 1 && used('pFinanzasResidentesEliminar') > 1);
+yes('Finanzas: nada se borra, OIKOS anula', (rules.match(/match \/finanzas_(residentes|movimientos|config)\/\{docId\} \{[\s\S]*?allow delete: if false;/g) || []).length === 3);
+yes('Rondas: rutas, puntos, asignaciones, alertas, incidentes, drones y patrulla tienen su privilegio', ['pRondasRutasCrear', 'pRondasPuntosCrear', 'pRondasAsignacionesCrear', 'pRondasAlertasAtender', 'pRondasIncidentesResolver', 'pRondasDronesOperar', 'pRondasPatrullaIniciar', 'pRondasPatrullaMarcar', 'pRondasPatrullaRastrear'].every((fn) => used(fn) > 1));
+yes('Rondas: ver el mapa en vivo y el historial de ubicaciones son privilegios aparte', used('pRondasMonitoreoVer') > 1 && used('pRondasMonitoreoHistorial') > 1);
 
 // ───────── Paginas y modulos ─────────
 console.log('\nPaginas y modulos');
@@ -180,7 +272,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('el panel de siempre queda aparte de la vista Configuracion', /<div id="panelMain">/.test(admin) && /<\/div><!-- \/panelMain -->/.test(admin));
     yes('las pestanas del panel y las de Configuracion no se mezclan', !/querySelectorAll\('\.tab'\)/.test(admin) && (admin.match(/querySelectorAll\('#mainTabs \.tab'\)/g) || []).length === 2);
     const shown = (admin.match(/SISDEL\.canAny\(\[('usuarios\.[a-z]+'(?:, )?)+\]\)/) || [''])[0].match(/usuarios\.[a-z]+/g) || [];
-    equal('el boton Configuracion lo ve quien tenga algun usuarios.*', sorted(shown), sorted(P.KEYS.filter((k) => k.startsWith('usuarios.'))));
+    equal('el boton Configuracion lo ve quien tenga algun paraguas usuarios.* (las acciones cuelgan de ellos)', sorted(shown), sorted(P.ITEMS.filter((i) => i.key.startsWith('usuarios.') && !i.parent).map((i) => i.key)));
     yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\)\)\?\$/.test(admin) && /hashchange/.test(admin));
     yes('Configuracion reutiliza la lista, Agregar Usuario y el editor (sin duplicarlos)', /async function openNewUser\(\)/.test(admin) && /btnCfgNewUser'\)\.addEventListener\('click', openNewUser\)/.test(admin)
         && /mountPrivilegesTab\(/.test(admin) && /mountTemplatesTab\(/.test(admin) && (admin.match(/const userRow = /g) || []).length === 1);
@@ -194,13 +286,13 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         return a && m && a[1] === m[1];
     })());
 }
-yes('el servidor pide garita.operar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.operar'\)/.test(read('functions/src/auth.js')));
+yes('el servidor pide garita.verificar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.verificar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));
 
 // ───────── Sintaxis de las paginas y modulos ─────────
 console.log('\nSintaxis');
 const syntaxOk = (name, code) => { try { new vm.Script(code, { filename: name }); return true; } catch (e) { console.log(`    ${name}: ${e.message}`); return false; } };
-for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'rondin/js/sisdel-api.js', 'finanzas-sync.js', 'panico-alertas.js', 'rondas-core.js']) {
+for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
     yes(`${file} no tiene errores de sintaxis`, syntaxOk(file, read(file)));
 }
 for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html']) {
@@ -208,6 +300,29 @@ for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', '
     yes(`${file}: sus scripts no tienen errores de sintaxis`, inline.length > 0 && inline.every((code, i) => syntaxOk(`${file}#${i}`, code)));
 }
 yes('master.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(read('master.html')));
+
+// Sistema Financiero y RONDIN: los bloqueos de pantalla estan cargados y conectados
+console.log('\nBloqueos de Finanzas y Rondas');
+{
+    const fin = read('finanzas.html');
+    const ver = (html, file) => (html.match(new RegExp(file.replace('.', '\\.') + '\\?v=(\\w+)')) || [])[1];
+    yes('finanzas.html carga finanzas-bloqueo.js y finanzas-sync.js con la misma version', ver(fin, 'finanzas-bloqueo.js') && ver(fin, 'finanzas-bloqueo.js') === ver(fin, 'finanzas-sync.js'));
+    yes('finanzas.html carga el bloqueo antes de usarlo', fin.indexOf('finanzas-bloqueo.js') > 0 && fin.indexOf('finanzas-bloqueo.js') < fin.indexOf('SisdelFinanzasBloqueo.install'));
+    yes('finanzas.html aplica los privilegios al cargar OIKOS y oculta el iframe hasta entonces', /SisdelFinanzasBloqueo\.install\(mounted\.contentWindow, \(key\) => SISDEL\.can\(key\)\)/.test(fin) && /iframe\.classList\.add\('pendiente'\)/.test(fin) && /visibility: hidden/.test(fin));
+    yes('finanzas.html le pasa los privilegios a la sincronizacion', /can: \(key\) => SISDEL\.can\(key\)/.test(fin) && /onBlocked:/.test(fin));
+    const sync = read('finanzas-sync.js');
+    yes('la sincronizacion filtra cada subida con los privilegios (push pasa por gate)', /items = gate\(kind, items\);/.test(sync) && /function revertRejected\(/.test(sync));
+    yes('las cuotas automaticas rechazadas no avisan (no son una accion del usuario)', /item\.type === 'charge' && item\.auto === true/.test(sync));
+    const bloqueo = read('finanzas-bloqueo.js');
+    yes('el bloqueo de OIKOS dice que es de pantalla y que las reglas son la barrera real', /no seguridad/.test(bloqueo) && /firestore\.rules/.test(bloqueo));
+    yes('el modulo de RONDIN se carga antes que el adaptador, con la misma version', (() => { const h = read('rondin/index.html'); return h.indexOf('privilegios-rondin.js') > 0 && h.indexOf('privilegios-rondin.js') < h.indexOf('sisdel-api.js') && ver(h, 'privilegios-rondin.js') === ver(h, 'sisdel-api.js'); })());
+    yes('app.js, style.css, i18n.js de RONDIN y finanzas/ siguen sin tocar respecto a main', (() => {
+        try {
+            const out = execFileSync('git', ['diff', '--stat', 'main', '--', 'rondin/js/app.js', 'rondin/css/style.css', 'rondin/js/i18n.js', 'finanzas/'], { cwd: new URL('../', import.meta.url).pathname, encoding: 'utf8' });
+            return out.trim() === '';
+        } catch { return true; }
+    })());
+}
 
 // ───────── Nucleo de SISDEL (sisdel-core.js) con un navegador y una base simulados ─────────
 console.log('\nNucleo de SISDEL');
@@ -253,7 +368,7 @@ core = makeCore({ session: sess('operador', secOverrides) });
 yes('la secretaria puede crear usuarios', core.SISDEL.can('usuarios.crear'));
 yes('la secretaria no asigna privilegios', !core.SISDEL.can('usuarios.privilegios'));
 equal('inicio de la secretaria', core.SISDEL.homePage(), 'admin.html');
-equal('privilegios efectivos de la secretaria (cantidad)', Object.values(core.SISDEL.effectivePrivileges()).filter(Boolean).length, secretaria.claves.length);
+equal('privilegios efectivos de la secretaria (cantidad)', Object.values(core.SISDEL.effectivePrivileges()).filter(Boolean).length, new Set([...secretaria.claves, ...Object.keys(P.defaultsOf('operador'))]).size);
 core = makeCore({ session: { role: 'master' } });
 yes('el master lo puede todo', core.SISDEL.can('usuarios.privilegios') && core.SISDEL.can('finanzas.usar'));
 equal('inicio del master', core.SISDEL.homePage(), 'master.html');

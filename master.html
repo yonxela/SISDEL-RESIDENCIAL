@@ -8,6 +8,27 @@
     <meta name="description" content="Panel de administración master de SISDEL para gestionar todos los condominios.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Acciones de cada condominio de la lista: estado, Detalles y Eliminar */
+        .condo-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+        .btn-delete-condo { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+        .btn-delete-condo:hover:not(:disabled) { background: var(--danger-bg); }
+        .btn-delete-condo svg { flex-shrink: 0; }
+        .list-item.condo-deleting { opacity: 0.55; pointer-events: none; }
+        /* Ventanas: titulo y boton de cerrar en la misma linea; un boton bloqueado se ve bloqueado */
+        .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .modal .btn:disabled, .modal input:disabled { opacity: 0.45; cursor: not-allowed; }
+        /* Avance mientras se elimina */
+        .delete-progress { display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 1rem; margin: 0 0 1rem; border-radius: 8px; background: var(--danger-bg); color: var(--danger); font-weight: 600; }
+        .delete-progress svg { animation: delete-spin 0.9s linear infinite; flex-shrink: 0; }
+        @keyframes delete-spin { to { transform: rotate(360deg); } }
+        @media (max-width: 640px) {
+            #condoList .list-item { flex-wrap: wrap; row-gap: 0.75rem; }
+            #condoList .item-info { flex: 1 1 calc(100% - 80px); min-width: 0; }
+            #condoList .condo-actions { width: 100%; display: grid; grid-template-columns: auto 1fr 1fr; }
+            #condoList .condo-actions .btn { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
+        }
+    </style>
 </head>
 
 <body>
@@ -151,6 +172,10 @@
             <form id="deleteCondoForm" style="padding:1.5rem;" autocomplete="off">
                 <p id="deleteCondoSummary" class="text-sm" style="line-height:1.5; margin:0 0 1rem;"></p>
                 <p class="text-sm" style="line-height:1.5; margin:0 0 1rem; color:var(--danger); font-weight:600;">Esta acción no se puede deshacer.</p>
+                <div id="deleteCondoProgress" class="delete-progress text-sm" style="display:none;" role="status" aria-live="polite">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
+                    <span id="deleteCondoProgressText">Eliminando...</span>
+                </div>
                 <div class="form-group">
                     <label for="deleteCondoName">Para confirmar, escriba el nombre del condominio: <strong id="deleteCondoNameHint"></strong></label>
                     <input type="text" class="form-input" id="deleteCondoName" autocomplete="off" spellcheck="false">
@@ -319,20 +344,34 @@
                 const condos = await SISDEL.getCondominios();
                 const list = document.getElementById('condoList');
                 if (condos.length === 0) return list.innerHTML = '<p class="text-center text-muted">Sin condominios registrados.</p>';
+                // Los ids van en data-* (no dentro de onclick) y un solo escuchador atiende Detalles y Eliminar
                 list.innerHTML = condos.map(c => `
-                    <div class="list-item">
-                        <div class="avatar">${c.name.charAt(0)}</div>
+                    <div class="list-item" data-condo-row="${esc(c.id)}">
+                        <div class="avatar">${esc(String(c.name || '?').charAt(0).toUpperCase())}</div>
                         <div class="item-info">
                             <div class="item-name">${esc(c.name)}</div>
-                            <div class="item-detail">${c.address || 'Sin dirección'}</div>
+                            <div class="item-detail">${esc(c.address || 'Sin dirección')}</div>
                         </div>
-                        <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <div class="condo-actions">
                             <span class="badge ${c.active ? 'badge-success' : 'badge-danger'}">${c.active ? 'Activo' : 'Inactivo'}</span>
-                            <button class="btn btn-primary btn-sm" onclick="viewCondoDetails('${c.id}')">Detalles</button>
+                            <button type="button" class="btn btn-primary btn-sm" data-condo-action="details" data-condo-id="${esc(c.id)}">Detalles</button>
+                            <button type="button" class="btn btn-sm btn-delete-condo" data-condo-action="delete" data-condo-id="${esc(c.id)}" title="Eliminar este condominio por completo (pide la clave master)" aria-label="Eliminar ${esc(c.name)}">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+                                </svg>
+                                Eliminar
+                            </button>
                         </div>
                     </div>
                 `).join('');
             }
+            document.getElementById('condoList').addEventListener('click', (event) => {
+                const button = event.target.closest('[data-condo-action]');
+                if (!button || button.disabled) return;
+                const id = button.getAttribute('data-condo-id');
+                if (button.getAttribute('data-condo-action') === 'delete') window.deleteCondominio(id);
+                else window.viewCondoDetails(id);
+            });
 
             window.viewCondoDetails = async function (condoId) {
                 const condo = await SISDEL.getCondominio(condoId);
@@ -492,59 +531,109 @@
                 await renderCondos(); await renderStats();
             };
 
-            // Eliminar un condominio: ventana con lo que se borra, el nombre del condominio y la clave master (el servidor la verifica)
+            // Eliminar un condominio (boton Eliminar de la lista o de los detalles): ventana con lo que se borra, el nombre
+            // del condominio y la clave master. El servidor vuelve a verificar las dos cosas (deleteCondominio).
             let deleteTarget = null;
-            const delNorm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            let deleteBusy = false;
+            let deleteOpening = false;
+            let deleteTimer = null;
+            const delNorm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const deleteModal = document.getElementById('modalDeleteCondo');
             function refreshDeleteButton() {
                 const okName = deleteTarget && delNorm(document.getElementById('deleteCondoName').value) === delNorm(deleteTarget.name);
-                document.getElementById('btnConfirmDeleteCondo').disabled = !(okName && document.getElementById('deleteCondoCode').value.trim());
+                document.getElementById('btnConfirmDeleteCondo').disabled = deleteBusy || !(okName && document.getElementById('deleteCondoCode').value.trim());
+            }
+            // Mientras se elimina: la ventana no se cierra, los campos quedan bloqueados y se ve cuanto lleva
+            function setDeleteBusy(busy) {
+                deleteBusy = busy;
+                ['deleteCondoName', 'deleteCondoCode', 'btnCancelDeleteCondo', 'btnCloseDeleteCondo'].forEach((fieldId) => { document.getElementById(fieldId).disabled = busy; });
+                const row = deleteTarget && document.querySelector(`[data-condo-row="${CSS.escape(deleteTarget.id)}"]`);
+                if (row) row.classList.toggle('condo-deleting', busy);
+                clearInterval(deleteTimer);
+                document.getElementById('deleteCondoProgress').style.display = busy ? 'flex' : 'none';
+                if (busy) {
+                    const started = Date.now();
+                    const name = deleteTarget.name;
+                    const tick = () => {
+                        document.getElementById('deleteCondoProgressText').textContent = `Eliminando ${name}... ${Math.round((Date.now() - started) / 1000)} s. Puede tardar hasta un minuto: no cierre esta ventana.`;
+                    };
+                    tick();
+                    deleteTimer = setInterval(tick, 1000);
+                }
+                document.getElementById('btnConfirmDeleteCondo').textContent = busy ? 'Eliminando...' : 'Eliminar definitivamente';
+                refreshDeleteButton();
             }
             function closeDeleteCondo() {
+                if (deleteBusy) return;
                 deleteTarget = null;
-                document.getElementById('modalDeleteCondo').style.display = 'none';
+                deleteModal.style.display = 'none';
                 document.getElementById('deleteCondoCode').value = '';
                 document.getElementById('deleteCondoName').value = '';
+                document.getElementById('deleteCondoError').textContent = '';
             }
             window.deleteCondominio = async function (id) {
-                const condo = await SISDEL.getCondominio(id);
-                if (!condo) { SISDEL.showToast('El condominio ya no existe', 'warning'); return; }
-                const users = await SISDEL.getUsers(id);
-                const byRole = {};
-                users.forEach((u) => { byRole[u.role] = (byRole[u.role] || 0) + 1; });
-                const parts = Object.entries(byRole).map(([role, n]) => `${n} ${SISDEL.getRoleName(role).toLowerCase()}${n === 1 ? '' : 's'}`);
-                deleteTarget = { id, name: condo.name };
-                document.getElementById('deleteCondoSummary').innerHTML = `Se eliminará <strong>${esc(condo.name)}</strong> con todo lo que contiene: ${users.length} usuario(s)${parts.length ? ` (${esc(parts.join(', '))})` : ''} y sus códigos de acceso, vehículos, visitas, mensajes, cámara, el Sistema Financiero (OIKOS) completo, las rondas y las alertas de pánico.`;
-                document.getElementById('deleteCondoNameHint').textContent = condo.name;
-                document.getElementById('deleteCondoError').textContent = '';
-                document.getElementById('deleteCondoName').value = '';
-                document.getElementById('deleteCondoCode').value = '';
-                refreshDeleteButton();
-                document.getElementById('modalCondoDetail').style.display = 'none';
-                document.getElementById('modalDeleteCondo').style.display = 'flex';
-                document.getElementById('deleteCondoName').focus();
+                if (deleteBusy) { SISDEL.showToast('Espere a que termine la eliminación en curso', 'info'); return; }
+                if (deleteOpening) return;
+                deleteOpening = true;
+                try {
+                    const condo = await SISDEL.getCondominio(id);
+                    if (!condo) {
+                        SISDEL.showToast('El condominio ya no existe', 'warning');
+                        await renderCondos(); await renderStats();
+                        return;
+                    }
+                    const users = await SISDEL.getUsers(id);
+                    const byRole = {};
+                    users.forEach((u) => { byRole[u.role] = (byRole[u.role] || 0) + 1; });
+                    const parts = Object.entries(byRole).map(([role, n]) => `${n} ${SISDEL.getRoleName(role).toLowerCase()}${n === 1 ? '' : 's'}`);
+                    deleteTarget = { id, name: condo.name };
+                    document.getElementById('deleteCondoSummary').innerHTML = `Se eliminará <strong>${esc(condo.name)}</strong> con todo lo que contiene: ${users.length} usuario(s)${parts.length ? ` (${esc(parts.join(', '))})` : ''} y sus códigos de acceso, vehículos, visitas, mensajes, cámara, el Sistema Financiero (OIKOS) completo, las rondas y las alertas de pánico.`;
+                    document.getElementById('deleteCondoNameHint').textContent = condo.name;
+                    document.getElementById('deleteCondoError').textContent = '';
+                    document.getElementById('deleteCondoName').value = '';
+                    document.getElementById('deleteCondoCode').value = '';
+                    refreshDeleteButton();
+                    document.getElementById('modalCondoDetail').style.display = 'none';
+                    deleteModal.style.display = 'flex';
+                    document.getElementById('deleteCondoName').focus();
+                } finally {
+                    deleteOpening = false;
+                }
             };
             ['deleteCondoName', 'deleteCondoCode'].forEach((fieldId) => document.getElementById(fieldId).addEventListener('input', refreshDeleteButton));
             document.getElementById('btnCloseDeleteCondo').addEventListener('click', closeDeleteCondo);
             document.getElementById('btnCancelDeleteCondo').addEventListener('click', closeDeleteCondo);
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && deleteModal.style.display === 'flex') closeDeleteCondo(); });
+            // Si se intenta cerrar o recargar la pagina a mitad del borrado, el navegador pregunta antes
+            window.addEventListener('beforeunload', (event) => { if (deleteBusy) { event.preventDefault(); event.returnValue = ''; } });
             document.getElementById('deleteCondoForm').addEventListener('submit', async (event) => {
                 event.preventDefault();
-                if (!deleteTarget) return;
-                const button = document.getElementById('btnConfirmDeleteCondo');
+                if (!deleteTarget || deleteBusy) return;
+                const target = deleteTarget;
                 const errorBox = document.getElementById('deleteCondoError');
                 errorBox.textContent = '';
-                button.disabled = true;
-                button.textContent = 'Eliminando...';
-                const result = await SISDEL.deleteCondominio(deleteTarget.id, document.getElementById('deleteCondoCode').value, document.getElementById('deleteCondoName').value);
-                button.textContent = 'Eliminar definitivamente';
+                setDeleteBusy(true);
+                const result = await SISDEL.deleteCondominio(target.id, document.getElementById('deleteCondoCode').value, document.getElementById('deleteCondoName').value);
+                setDeleteBusy(false);
                 if (result.ok) {
                     closeDeleteCondo();
-                    SISDEL.showToast('Condominio eliminado por completo', 'warning');
+                    const users = Number(result.usuarios) || 0;
+                    const codes = Number(result.codigos) || 0;
+                    SISDEL.showToast(`${esc(target.name)} se eliminó por completo (${users} usuario${users === 1 ? '' : 's'} y ${codes} código${codes === 1 ? '' : 's'})`, 'warning');
                     await renderCondos(); await renderStats(); await populateSelectors();
-                } else {
-                    errorBox.textContent = result.error;
-                    document.getElementById('deleteCondoCode').value = '';
-                    refreshDeleteButton();
+                    return;
                 }
+                if (/no existe/i.test(result.error)) {
+                    // Lo elimino otra persona mientras tanto: se cierra y la lista se pone al dia
+                    closeDeleteCondo();
+                    SISDEL.showToast('Ese condominio ya no existe', 'warning');
+                    await renderCondos(); await renderStats(); await populateSelectors();
+                    return;
+                }
+                errorBox.textContent = result.error;
+                document.getElementById('deleteCondoCode').value = '';
+                refreshDeleteButton();
+                document.getElementById(/nombre/i.test(result.error) ? 'deleteCondoName' : 'deleteCondoCode').focus();
             });
 
             // --- Tab: Users Logic ---

@@ -505,6 +505,9 @@ equal('sin sesion el inicio es el login', core.SISDEL.homePage(), 'index.html');
     const adminPage = read('admin.html');
     yes('master.html: cada usuario, el administrador de cada condominio y la ventana de edicion traen Copiar', (master.match(/SISDEL\.copyButton\(/g) || []).length === 2 && /id="btnCopyEditCode"/.test(master) && /btnCopyEditCode'\)\.setAttribute\('data-copy'/.test(master));
     yes('master.html escapa el codigo, la casa y el telefono al pintarlos', /Code: \$\{esc\(u\.accessCode\)\}/.test(master) && /esc\(u\.casa\)/.test(master) && /Tel: \$\{esc\(a\.phone/.test(master));
+    yes('master.html: cada condominio de la lista trae Eliminar junto a Detalles (por data-*, sin el id dentro de onclick)', /data-condo-action="details" data-condo-id="\$\{esc\(c\.id\)\}"/.test(master) && /data-condo-action="delete" data-condo-id="\$\{esc\(c\.id\)\}"/.test(master) && !/onclick="viewCondoDetails\(/.test(master));
+    yes('master.html: la lista de condominios escapa nombre y direccion', /<div class="item-name">\$\{esc\(c\.name\)\}/.test(master) && /esc\(c\.address \|\| 'Sin dirección'\)/.test(master));
+    yes('master.html: la ventana de borrado no se cierra mientras elimina', /function closeDeleteCondo\(\) \{\s*if \(deleteBusy\) return;/.test(master) && /if \(!deleteTarget \|\| deleteBusy\) return;/.test(master));
     yes('admin.html: Copiar solo aparece donde el usuario ya ve el codigo', /\$\{u\.accessCode \? `<code[^`]*\$\{SISDEL\.copyButton\(u\.accessCode\)\}` : ''\}/.test(adminPage) && /copyEditCode\.style\.display = user\.accessCode \? '' : 'none'/.test(adminPage));
 }
 

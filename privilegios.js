@@ -229,11 +229,11 @@
                 { key: 'auditoria.accesos', sub: 'Pestañas', parent: 'auditoria.ver', label: 'Pestaña Accesos', description: 'El historial de la cámara y la garita por rango de fechas (necesita Ver el historial de la cámara).', enforce: 'pantalla' },
                 { key: 'auditoria.mensajes', sub: 'Pestañas', parent: 'auditoria.ver', label: 'Pestaña Mensajes', description: 'Todos los mensajes enviados (necesita Ver todos los mensajes).', enforce: 'pantalla' },
                 { key: 'auditoria.reportes', sub: 'Pestañas', parent: 'auditoria.ver', label: 'Pestaña Reportes', description: 'El reporte por rango de fechas con gráficas y tablas (necesita ver usuarios, visitas y accesos).', enforce: 'pantalla' },
-                { key: 'auditoria.imprimir', sub: 'Reportes', parent: 'auditoria.ver', label: 'Imprimir o guardar en PDF', description: 'El botón Imprimir / PDF del reporte.', enforce: 'pantalla' },
-                { key: 'auditoria.exportar', sub: 'Exportar', label: 'Exportar reportes', description: 'Acceso a descargar los reportes del panel de auditoría en CSV.', roles: ['auditor'], requires: ['auditoria.ver'], sensitive: true, enforce: 'pantalla' },
-                { key: 'auditoria.exportar_accesos', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar accesos (CSV)', description: 'Las lecturas de la cámara y los ingresos del rango.', enforce: 'pantalla' },
-                { key: 'auditoria.exportar_visitas', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar visitas (CSV)', description: 'Las visitas del rango con quién las autorizó.', enforce: 'pantalla' },
-                { key: 'auditoria.exportar_usuarios', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Exportar usuarios (CSV)', description: 'La lista de usuarios con teléfono, correo y estado de pago.', sensitive: true, enforce: 'pantalla' }
+                { key: 'auditoria.imprimir', sub: 'Reportes', parent: 'auditoria.ver', label: 'Imprimir y descargar en PDF', description: 'Los botones Imprimir y Descargar PDF del reporte.', enforce: 'pantalla' },
+                { key: 'auditoria.exportar', sub: 'Exportar', label: 'Exportar reportes', description: 'Los botones Exportar a Excel y Enviar por WhatsApp del reporte del panel de auditoría: sacan datos del sistema.', roles: ['auditor'], requires: ['auditoria.ver'], sensitive: true, enforce: 'pantalla' },
+                { key: 'auditoria.exportar_accesos', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Excel con los accesos completos', description: 'Las lecturas de la cámara y los ingresos del rango.', enforce: 'pantalla' },
+                { key: 'auditoria.exportar_visitas', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Excel con las visitas completas', description: 'Las visitas del rango con quién las autorizó.', enforce: 'pantalla' },
+                { key: 'auditoria.exportar_usuarios', sub: 'Exportar', parent: 'auditoria.exportar', label: 'Excel con la lista de usuarios', description: 'La lista de usuarios con teléfono, correo y estado de pago.', sensitive: true, enforce: 'pantalla' }
             ]
         },
         {
@@ -243,7 +243,7 @@
                 { key: 'reportes.morosos', sub: 'Secciones', parent: 'reportes.ver', label: 'Listado de morosos a la fecha', description: 'Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago).', requires: ['usuarios.pagos_ver'], enforce: 'pantalla' },
                 { key: 'reportes.finanzas', sub: 'Secciones', parent: 'reportes.ver', label: 'Accesos a los reportes de Finanzas', description: 'Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas.', requires: ['finanzas.usar'], enforce: 'pantalla' },
                 { key: 'reportes.rondas', sub: 'Secciones', parent: 'reportes.ver', label: 'Acceso a los reportes de Rondas', description: 'Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas).', requires: ['rondas.panel_ver'], enforce: 'pantalla' },
-                { key: 'reportes.exportar', sub: 'Exportar', parent: 'reportes.ver', label: 'Exportar e imprimir', description: 'Descargar los reportes en CSV o imprimirlos en PDF: saca datos del sistema.', sensitive: true, enforce: 'pantalla' }
+                { key: 'reportes.exportar', sub: 'Exportar', parent: 'reportes.ver', label: 'Imprimir, PDF, WhatsApp y Excel', description: 'Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema.', sensitive: true, enforce: 'pantalla' }
             ]
         }
     ];

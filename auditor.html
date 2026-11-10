@@ -285,8 +285,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110a"></script>
-    <script src="sisdel-core.js?v=20261110a"></script>
+    <script src="privilegios.js?v=20261110b"></script>
+    <script src="sisdel-core.js?v=20261110b"></script>
+    <script src="reportes-export.js?v=20261110b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'auditor.html');
@@ -373,7 +374,7 @@
                 if (!iso) return '';
                 return new Date(iso).toLocaleString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             }
-            // Fecha y hora ordenable para los CSV
+            // Fecha y hora ordenable (Excel y PDF)
             function stamp(iso) {
                 if (!iso) return '';
                 const d = new Date(iso);
@@ -402,24 +403,6 @@
             function visitStatus(s) { return VISIT_STATUS[s] || { label: s || 'Sin estado', cls: 'badge-info' }; }
             function badge(info) { return `<span class="badge ${info.cls}">${esc(info.label)}</span>`; }
 
-            // CSV para Excel: UTF-8 con BOM. Las celdas que empiezan con = + - @ no se interpretan como formulas
-            function csvCell(value) {
-                let text = String(value ?? '');
-                if (/^[=+\-@\t\r]/.test(text) && !/^[+-]?[\d\s().-]+$/.test(text)) text = "'" + text;
-                return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-            }
-            function downloadCsv(filename, header, rows) {
-                const lines = [header, ...rows].map((row) => row.map(csvCell).join(','));
-                const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }
             const fileSlug = condoName.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'condominio';
 
             // --- Datos base: usuarios (sin codigos de acceso) ---
@@ -707,8 +690,8 @@
                     else if (l.status === 'Reminder') row.rem++;
                     else row.den++;
                 });
-                const dayRows = [...days.entries()].reverse().filter(([, r]) => r.total > 0)
-                    .map(([d, r]) => [esc(SISDEL.formatDate(d)), r.total, r.ok, r.rem, r.den]);
+                const dayRaw = [...days.entries()].reverse().filter(([, r]) => r.total > 0).map(([d, r]) => [d, r.total, r.ok, r.rem, r.den]);
+                const dayRows = dayRaw.map((r) => [esc(SISDEL.formatDate(r[0])), r[1], r[2], r[3], r[4]]);
 
                 // Placas con mas ingresos y placas denegadas
                 const plateStats = new Map();
@@ -720,23 +703,42 @@
                     if (l.createdAt > s.last) s.last = l.createdAt;
                     plateStats.set(l.plate, s);
                 });
-                const topPlates = [...plateStats.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10)
-                    .map(([p, s]) => [`<span class="plate">${esc(p)}</span>`, s.total, esc(dateTime(s.last))]);
-                const deniedPlates = [...plateStats.entries()].filter(([, s]) => s.denied > 0)
-                    .sort((a, b) => b[1].denied - a[1].denied).slice(0, 10)
-                    .map(([p, s]) => [`<span class="plate">${esc(p)}</span>`, s.denied, esc(s.reason)]);
+                const plateRaw = [...plateStats.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 10);
+                const topPlates = plateRaw.map(([p, s]) => [`<span class="plate">${esc(p)}</span>`, s.total, esc(dateTime(s.last))]);
+                const deniedRaw = [...plateStats.entries()].filter(([, s]) => s.denied > 0)
+                    .sort((a, b) => b[1].denied - a[1].denied).slice(0, 10);
+                const deniedPlates = deniedRaw.map(([p, s]) => [`<span class="plate">${esc(p)}</span>`, s.denied, esc(s.reason)]);
 
                 // Visitas por casa
-                const byHouse = [...countBy(rangeVisits, (v) => v.casa || 'Sin casa').entries()]
-                    .sort((a, b) => b[1] - a[1]).slice(0, 10).map(([c, n]) => [esc(c), n]);
+                const houseRaw = [...countBy(rangeVisits, (v) => v.casa || 'Sin casa').entries()]
+                    .sort((a, b) => b[1] - a[1]).slice(0, 10);
+                const byHouse = houseRaw.map(([c, n]) => [esc(c), n]);
 
                 // Morosos al momento de generar el reporte
-                const morosos = users.filter((u) => u.role === SISDEL.ROLES.VECINO && u.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO)
-                    .sort((a, b) => (morosoDays(b) || 0) - (morosoDays(a) || 0))
-                    .map((u) => [esc(u.name), esc(u.casa || ''), esc(u.morosoSince ? SISDEL.formatDate(u.morosoSince) : '—'), morosoDays(u) ?? '—']);
+                const morosoUsers = users.filter((u) => u.role === SISDEL.ROLES.VECINO && u.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO)
+                    .sort((a, b) => (morosoDays(b) || 0) - (morosoDays(a) || 0));
+                const morosos = morosoUsers.map((u) => [esc(u.name), esc(u.casa || ''), esc(u.morosoSince ? SISDEL.formatDate(u.morosoSince) : '—'), morosoDays(u) ?? '—']);
 
                 const kpi = (label, value, color) => `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value" style="color:${color}">${value}</div></div>`;
                 const rangeText = from === to ? longDate(from) : `${longDate(from)} al ${longDate(to)}`;
+                // Modelo del reporte (datos en bruto) para Imprimir, PDF, WhatsApp y Excel (reportes-export.js)
+                report.model = {
+                    title: 'Reporte de auditoría', subtitle: rangeText, condoName, userName: session.userName || 'Auditor', at: report.at,
+                    kpis: [
+                        { label: 'Accesos registrados', value: rangeLogs.length }, { label: 'Autorizados', value: authorized },
+                        { label: 'Con aviso de mora', value: reminder }, { label: 'Denegados', value: denied },
+                        { label: 'Visitas programadas', value: rangeVisits.length }, { label: 'Visitas que ingresaron', value: entered },
+                        { label: 'Visitas sin ingreso', value: pending }, { label: 'Morosos actuales', value: morosoUsers.length }
+                    ],
+                    tables: [
+                        { title: 'Accesos por día', headers: ['Fecha', 'Total', 'Autorizados', 'Con mora', 'Denegados'], rows: dayRaw, numeric: [1, 2, 3, 4] },
+                        { title: 'Placas con más registros', headers: ['Placa', 'Registros', 'Último'], rows: plateRaw.map(([p, s]) => [p, s.total, stamp(s.last)]), numeric: [1] },
+                        { title: 'Placas denegadas', headers: ['Placa', 'Veces', 'Motivo'], rows: deniedRaw.map(([p, s]) => [p, s.denied, s.reason]), numeric: [1] },
+                        { title: 'Visitas por casa', headers: ['Casa', 'Visitas'], rows: houseRaw, numeric: [1] },
+                        { title: 'Vecinos morosos (hoy)', headers: ['Nombre', 'Casa', 'Desde', 'Días'], rows: morosoUsers.map((u) => [u.name, u.casa || '', u.morosoSince ? ymd(new Date(u.morosoSince)) : '—', morosoDays(u) ?? '—']), numeric: [3] }
+                    ],
+                    fileName: `auditoria-${fileSlug}-${from === to ? from : `${from}_a_${to}`}`
+                };
 
                 out.innerHTML = `
                     <div class="report-head">
@@ -747,10 +749,7 @@
                             ${report.capped ? `<p class="result-note warn">El periodo tiene más de ${MAX_LOGS} accesos; los totales cubren solo los ${MAX_LOGS} más recientes. Reduzca el rango para un total exacto.</p>` : ''}
                         </div>
                         <div class="report-actions no-print">
-                            ${can.exportar && can.exportarAccesos ? `<button class="btn btn-ghost btn-sm" data-export="logs">${ICONS.download} Accesos (CSV)</button>` : ''}
-                            ${can.exportar && can.exportarVisitas ? `<button class="btn btn-ghost btn-sm" data-export="visits">${ICONS.download} Visitas (CSV)</button>` : ''}
-                            ${can.exportar && can.exportarUsuarios ? `<button class="btn btn-ghost btn-sm" data-export="users">${ICONS.download} Usuarios (CSV)</button>` : ''}
-                            ${can.imprimir ? `<button class="btn btn-primary btn-sm" data-export="print">${ICONS.print} Imprimir / PDF</button>` : ''}
+                            ${SisdelReportExport.actionsHtml({ print: can.imprimir, pdf: can.imprimir, whatsapp: can.exportar, excel: can.exportar })}
                         </div>
                     </div>
                     <div class="stats-grid compact report-kpis">
@@ -786,30 +785,31 @@
                         </div>
                     </div>`;
 
-                out.querySelectorAll('[data-export]').forEach((btn) => btn.addEventListener('click', () => exportReport(btn.dataset.export)));
+                SisdelReportExport.bind(out, currentModel);
             }
 
-            function exportReport(kind) {
-                if (kind === 'print') { window.print(); return; }
-                if (!report) return;
-                const suffix = report.from === report.to ? report.from : `${report.from}_a_${report.to}`;
-                if (kind === 'logs') {
-                    downloadCsv(`accesos-${fileSlug}-${suffix}.csv`,
-                        ['Fecha y hora', 'Placa', 'Resultado', 'Detalle'],
-                        report.logs.map((l) => [stamp(l.createdAt), l.plate, logStatus(l.status).label, l.reason || '']));
-                } else if (kind === 'visits') {
-                    downloadCsv(`visitas-${fileSlug}-${suffix}.csv`,
-                        ['Fecha', 'Hora', 'Visitante', 'Detalle', 'Casa', 'Autoriza', 'Placa', 'Estado', 'Ingreso', 'Temporal hasta'],
-                        report.visits.map((v) => [v.visitDate, v.visitTime ? String(v.visitTime).slice(0, 5) : '', v.visitorName, v.visitorInfo || '',
-                            v.casa || '', userLabel(v.userId), v.vehiclePlate || '', visitStatus(v.status).label,
-                            v.enteredAt ? stamp(v.enteredAt) : '', v.visitType === 'temporal' ? (v.endDate || '') : '']));
-                } else if (kind === 'users') {
-                    downloadCsv(`usuarios-${fileSlug}-${ymd(today())}.csv`,
-                        ['Nombre', 'Rol', 'Casa', 'Teléfono', 'Email', 'Estado de pago', 'Moroso desde', 'Activo'],
-                        users.map((u) => [u.name, SISDEL.getRoleName(u.role), u.casa || '', can.contacto ? (u.phone || '') : '', can.contacto ? (u.email || '') : '',
-                            u.paymentStatus === 'moroso' ? 'Moroso' : u.paymentStatus === 'al_dia' ? 'Al día' : '',
-                            u.morosoSince ? ymd(new Date(u.morosoSince)) : '', u.active === false ? 'No' : 'Sí']));
+            // Modelo del reporte para los botones. El Excel suma los listados completos que el usuario puede exportar
+            // (accesos, visitas y usuarios); el PDF y el mensaje de WhatsApp llevan solo el resumen
+            function currentModel() {
+                if (!report || !report.model) return null;
+                const extra = [];
+                if (can.exportar && can.exportarAccesos) {
+                    extra.push({ title: 'Accesos', headers: ['Fecha y hora', 'Placa', 'Resultado', 'Detalle'],
+                        rows: report.logs.map((l) => [stamp(l.createdAt), l.plate, logStatus(l.status).label, l.reason || '']) });
                 }
+                if (can.exportar && can.exportarVisitas) {
+                    extra.push({ title: 'Visitas', headers: ['Fecha', 'Hora', 'Visitante', 'Detalle', 'Casa', 'Autoriza', 'Placa', 'Estado', 'Ingreso', 'Temporal hasta'],
+                        rows: report.visits.map((v) => [v.visitDate, v.visitTime ? String(v.visitTime).slice(0, 5) : '', v.visitorName, v.visitorInfo || '',
+                            v.casa || '', userLabel(v.userId), v.vehiclePlate || '', visitStatus(v.status).label,
+                            v.enteredAt ? stamp(v.enteredAt) : '', v.visitType === 'temporal' ? (v.endDate || '') : '']) });
+                }
+                if (can.exportar && can.exportarUsuarios) {
+                    extra.push({ title: 'Usuarios', headers: ['Nombre', 'Rol', 'Casa', 'Teléfono', 'Email', 'Estado de pago', 'Moroso desde', 'Activo'],
+                        rows: users.map((u) => [u.name, SISDEL.getRoleName(u.role), u.casa || '', can.contacto ? (u.phone || '') : '', can.contacto ? (u.email || '') : '',
+                            u.paymentStatus === 'moroso' ? 'Moroso' : u.paymentStatus === 'al_dia' ? 'Al día' : '',
+                            u.morosoSince ? ymd(new Date(u.morosoSince)) : '', u.active === false ? 'No' : 'Sí']) });
+                }
+                return { ...report.model, excelExtra: extra };
             }
 
             // --- Pestanas: cada vista se carga la primera vez que se abre, ya con los usuarios cargados ---

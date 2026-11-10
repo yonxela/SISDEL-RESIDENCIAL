@@ -145,7 +145,7 @@
                 <div class="rp-noprint" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem;">
                     <div>
                         <h2 style="font-size:1.4rem; margin:0;">Reportes</h2>
-                        <p class="text-xs text-muted" style="margin:0.25rem 0 0;">Garita, morosos, finanzas y rondas del condominio</p>
+                        <p class="text-xs text-muted" style="margin:0.25rem 0 0;">Análisis y reportes del condominio</p>
                     </div>
                     <button class="btn btn-ghost btn-sm" id="btnReportsBack" style="border:1px solid var(--border-strong);">Volver al panel</button>
                 </div>
@@ -326,10 +326,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110a"></script>
-    <script src="sisdel-core.js?v=20261110a"></script>
+    <script src="privilegios.js?v=20261110b"></script>
+    <script src="sisdel-core.js?v=20261110b"></script>
     <script src="privilegios-ui.js?v=20261108i"></script>
-    <script src="reportes-ui.js?v=20261110a"></script>
+    <script src="reportes-export.js?v=20261110b"></script>
+    <script src="reportes-ui.js?v=20261110c"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script src="panico-alertas.js?v=20261109f"></script>
     <script>
@@ -1019,8 +1020,8 @@
             const canReports = reportIds.length > 0;
             btnReports.style.display = canReports ? '' : 'none';
             let reports = null;
-            let reportsTab = null;
-            function openReports(tab) {
+            // id vacio = catalogo en acordeon; un id de categoria lo abre desplegado; un id de reporte abre ese reporte
+            function openReports(id) {
                 if (!reports) {
                     reports = SisdelReportes.mount(document.getElementById('reportesMount'), {
                         condominioId: condoId, condoName: session.condominioName, userName: session.userName,
@@ -1028,18 +1029,18 @@
                     });
                 }
                 showReportsView(true);
-                reportsTab = reports.show(tab || reportsTab);
+                reports.show(id || '');
             }
 
             // La vista vive en la dirección (#configuracion/privilegios): se puede abrir, recargar y volver atrás
             async function applyHash() {
                 const match = /^#configuracion(?:\/(usuarios|privilegios|plantillas))?$/.exec(location.hash);
-                const reportMatch = /^#reportes(?:\/(garita|morosos|finanzas|rondas))?$/.exec(location.hash);
+                const reportMatch = /^#reportes(?:\/([a-z-]+))?$/.exec(location.hash);
                 if (match && canConfig) {
                     showConfigView(true);
                     await showConfigTab(match[1] || cfgTab);
                 } else if (reportMatch && canReports) {
-                    openReports(reportMatch[1] || reportsTab);
+                    openReports(reportMatch[1]);
                 } else if (cfgOpen || repOpen) {
                     showConfigView(false);
                     showReportsView(false);
@@ -1057,7 +1058,7 @@
             btnReports.addEventListener('click', () => {
                 if (repOpen) { document.getElementById('btnReportsBack').click(); return; }
                 if (cfgOpen && unsaved() && !confirm('Hay cambios sin guardar. ¿Salir de Configuración de todos modos?')) return;
-                location.hash = `#reportes/${reportsTab || reportIds[0]}`;
+                location.hash = '#reportes';
             });
             document.getElementById('btnReportsBack').addEventListener('click', leaveToPanel);
             // Si el usuario abre Mensajes estando en Configuración o Reportes, vuelve primero al panel

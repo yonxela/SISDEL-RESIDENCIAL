@@ -221,11 +221,11 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `auditoria.accesos` | Pestaña Accesos. El historial de la cámara y la garita por rango de fechas (necesita Ver el historial de la cámara). | los de su paraguas | Pantalla |
 | `auditoria.mensajes` | Pestaña Mensajes. Todos los mensajes enviados (necesita Ver todos los mensajes). | los de su paraguas | Pantalla |
 | `auditoria.reportes` | Pestaña Reportes. El reporte por rango de fechas con gráficas y tablas (necesita ver usuarios, visitas y accesos). | los de su paraguas | Pantalla |
-| `auditoria.imprimir` | Imprimir o guardar en PDF. El botón Imprimir / PDF del reporte. | los de su paraguas | Pantalla |
-| `auditoria.exportar` | Exportar reportes **(sensible)**. Acceso a descargar los reportes del panel de auditoría en CSV. | `auditor` | Pantalla |
-| `auditoria.exportar_accesos` | Exportar accesos (CSV). Las lecturas de la cámara y los ingresos del rango. | los de su paraguas | Pantalla |
-| `auditoria.exportar_visitas` | Exportar visitas (CSV). Las visitas del rango con quién las autorizó. | los de su paraguas | Pantalla |
-| `auditoria.exportar_usuarios` | Exportar usuarios (CSV) **(sensible)**. La lista de usuarios con teléfono, correo y estado de pago. | los de su paraguas | Pantalla |
+| `auditoria.imprimir` | Imprimir y descargar en PDF. Los botones Imprimir y Descargar PDF del reporte. | los de su paraguas | Pantalla |
+| `auditoria.exportar` | Exportar reportes **(sensible)**. Los botones Exportar a Excel y Enviar por WhatsApp del reporte del panel de auditoría: sacan datos del sistema. | `auditor` | Pantalla |
+| `auditoria.exportar_accesos` | Excel con los accesos completos. Las lecturas de la cámara y los ingresos del rango. | los de su paraguas | Pantalla |
+| `auditoria.exportar_visitas` | Excel con las visitas completas. Las visitas del rango con quién las autorizó. | los de su paraguas | Pantalla |
+| `auditoria.exportar_usuarios` | Excel con la lista de usuarios **(sensible)**. La lista de usuarios con teléfono, correo y estado de pago. | los de su paraguas | Pantalla |
 
 ### Reportes del administrador
 
@@ -236,7 +236,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `reportes.morosos` | Listado de morosos a la fecha. Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago). | los de su paraguas | Pantalla |
 | `reportes.finanzas` | Accesos a los reportes de Finanzas. Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas. | los de su paraguas | Pantalla |
 | `reportes.rondas` | Acceso a los reportes de Rondas. Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas). | los de su paraguas | Pantalla |
-| `reportes.exportar` | Exportar e imprimir **(sensible)**. Descargar los reportes en CSV o imprimirlos en PDF: saca datos del sistema. | los de su paraguas | Pantalla |
+| `reportes.exportar` | Imprimir, PDF, WhatsApp y Excel **(sensible)**. Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema. | los de su paraguas | Pantalla |
 
 <!-- END tabla-privilegios -->
 
@@ -380,6 +380,6 @@ Decisión de la cámara (`functions/src/anpr/decide.js`): vehículo registrado d
 
 Salidas: la garita (`garita.salida`) confirma la salida de una visita que ya ingresó (`visitas/{id}.exitedAt`, el estado sigue siendo `entered`; una visita está dentro si ingresó y no salió después de ese ingreso) y la de un vecino por marbete o código (`salidas/{id}` con `kind` `vehiculo` o `residente`). Las reglas solo dejan agregar la hora de salida a una visita que ya ingresó y no dejan editar una salida registrada. La cámara solo lee entradas.
 
-Reportes del administrador (`admin.html#reportes`, botón **Reportes** junto a Configuración, `reportes-ui.js`): Garita (ingresos y salidas de vecinos y de visitas por período, visitas dentro, horas con más ingresos, placas con más ingresos y denegadas, visitas por casa, detalle de vecinos y de visitas, con CSV e impresión), Morosos a la fecha (con CSV), Finanzas (accesos directos a los reportes de OIKOS: ingresos, gastos por categoría, morosos con meses adeudados, estado de cuenta general y reporte financiero; se abren con `finanzas.html#reportes/<reporte>` y OIKOS sigue calculando las cifras) y Rondas (acceso a RONDIN). Cada sección pide su privilegio `reportes.*` y los de lectura de sus datos; exportar es `reportes.exportar`.
+Reportes del administrador (`admin.html#reportes`, botón **Reportes** junto a Configuración, `reportes-ui.js`): un catálogo en acordeón, como el módulo de Reportes de MULTISYS (las categorías arrancan cerradas, se abre una a la vez y cada reporte se abre con «Volver al catálogo»). Garita y accesos (resumen por día, ingresos y salidas de vecinos, visitas del período, horas con más ingresos, placas con más ingresos, placas denegadas y visitas por casa, con el mismo rango de fechas), Morosos (morosos a la fecha), Finanzas (OIKOS) (accesos directos a sus reportes: ingresos, gastos por categoría, morosos con meses adeudados, estado de cuenta general y reporte financiero; se abren con `finanzas.html#reportes/<reporte>` y OIKOS sigue calculando las cifras) y Rondas (RONDIN) (acceso al panel y al reporte semanal). Todo reporte propio ofrece **Imprimir, Descargar PDF, Enviar por WhatsApp y Exportar a Excel** (`reportes-export.js`; también el reporte del panel del auditor). El Excel es un `.xlsx` real (una hoja por tabla), el PDF trae el encabezado del condominio y numeración de páginas, y WhatsApp envía un resumen en texto (para el documento completo, PDF o Excel). Cada categoría pide su privilegio `reportes.*` y los de lectura de sus datos; los cuatro botones los da `reportes.exportar` (en el auditor, imprimir y PDF son `auditoria.imprimir`; WhatsApp y Excel, `auditoria.exportar`).
 
 En la garita (`garita.html`): un pase QR vale solo su día (o su rango, si es temporal) y una sola vez; un marbete o código de un vecino desactivado no abre; la verificación manual de códigos (`verifyAccessCode`) solo confirma vecinos, nunca códigos de guardias o administradores, y admite 60 intentos cada 10 minutos por usuario.

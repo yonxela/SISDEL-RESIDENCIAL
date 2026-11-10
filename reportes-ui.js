@@ -1,16 +1,19 @@
 /* ═══════════════════════════════════════════════════════════════
    SISDEL - Panel de Reportes del administrador (admin.html, boton "Reportes")
    ───────────────────────────────────────────────────────────────
-   Un solo lugar para los reportes del condominio:
-   - Garita: ingresos y salidas de vecinos y de visitas por periodo, visitas dentro, horas pico, placas y visitas por casa
-     (se construye aqui con los datos de camera_logs, visitas y salidas).
+   Catalogo en acordeon (como el modulo de Reportes de MULTISYS): las categorias arrancan cerradas, al pulsar una se
+   ven sus reportes y al elegir uno se abre con "Volver al catalogo".
+   - Garita y accesos: resumen por dia, ingresos y salidas de vecinos, visitas del periodo, horas pico, placas con mas
+     ingresos, placas denegadas y visitas por casa (con datos de camera_logs, visitas y salidas).
    - Morosos: el listado de vecinos en mora a la fecha.
-   - Finanzas: accesos directos a los reportes de OIKOS (ingresos, gastos, morosos con meses adeudados, estado de cuenta y
-     reporte financiero). La contabilidad no se vuelve a calcular aqui: asi las cifras son siempre las de OIKOS.
-   - Rondas: acceso directo al panel y al reporte semanal de RONDIN.
+   - Finanzas (OIKOS): accesos directos a sus reportes (ingresos, gastos, morosos con meses adeudados, estado de cuenta y
+     reporte financiero). La contabilidad no se vuelve a calcular aqui: asi las cifras son siempre las de OIKOS, que ya
+     trae sus propios botones de imprimir, PDF, WhatsApp y Excel.
+   - Rondas (RONDIN): acceso directo al panel y al reporte semanal.
 
-   Cada seccion pide su privilegio (reportes.*) y los de lectura de los datos que muestra. Exportar a CSV e imprimir son
-   el privilegio reportes.exportar. Requiere privilegios.js, sisdel-core.js y styles.css.
+   Cada reporte propio ofrece Imprimir, Descargar PDF, Enviar por WhatsApp y Exportar a Excel (reportes-export.js) con el
+   privilegio reportes.exportar. Cada categoria pide su privilegio (reportes.*) y los de lectura de los datos que muestra.
+   Requiere privilegios.js, sisdel-core.js, reportes-export.js y styles.css.
    ═══════════════════════════════════════════════════════════════ */
 
 const SisdelReportes = (() => {
@@ -27,17 +30,39 @@ const SisdelReportes = (() => {
         { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' }
     ];
 
-    const SECTIONS = [
-        { id: 'garita', label: 'Garita', allowed: (can) => can('reportes.garita') && can('usuarios.ver') && can('visitas.ver') && can('garita.camara') },
-        { id: 'morosos', label: 'Morosos', allowed: (can) => can('reportes.morosos') && can('usuarios.ver') && can('usuarios.pagos_ver') },
-        { id: 'finanzas', label: 'Finanzas', allowed: (can) => can('reportes.finanzas') && can('finanzas.usar') && FIN_REPORTS.some((r) => can(r.key)) },
-        { id: 'rondas', label: 'Rondas', allowed: (can) => can('reportes.rondas') && can('rondas.panel_ver') }
+    // Reportes de garita: todos usan el mismo rango de fechas y los mismos datos
+    const GARITA_REPORTS = [
+        { id: 'garita-resumen', label: 'Resumen de garita por día', text: 'Ingresos, salidas y denegados de vecinos y visitas, día por día.' },
+        { id: 'garita-vecinos', label: 'Ingresos y salidas de vecinos', text: 'Cada ingreso, salida o acceso denegado de los vecinos, con su placa.' },
+        { id: 'garita-visitas', label: 'Visitas del período', text: 'Las visitas del rango: quién las autorizó, cuándo entraron y salieron y cuánto estuvieron.' },
+        { id: 'garita-horas', label: 'Horas con más ingresos', text: 'En qué horas del día entran más vecinos y visitas.' },
+        { id: 'garita-placas', label: 'Placas con más ingresos', text: 'Las 10 placas que más entraron.' },
+        { id: 'garita-denegadas', label: 'Placas denegadas', text: 'Las placas a las que más veces se les negó el paso y por qué.' },
+        { id: 'garita-casas', label: 'Visitas por casa', text: 'Las casas que más visitas reciben.' }
     ];
 
+    // Categorias del catalogo. `allowed` decide si el usuario la ve; `reports(can)` da lo que puede abrir en ella.
+    // Los reportes con href se abren en OIKOS o en RONDIN; los demas se arman aqui.
+    const SECTIONS = [
+        { id: 'garita', label: 'Garita y accesos', icon: 'gate', allowed: (can) => can('reportes.garita') && can('usuarios.ver') && can('visitas.ver') && can('garita.camara'), reports: () => GARITA_REPORTS },
+        { id: 'morosos', label: 'Morosos', icon: 'alert', allowed: (can) => can('reportes.morosos') && can('usuarios.ver') && can('usuarios.pagos_ver'),
+            reports: () => [{ id: 'morosos-fecha', label: 'Morosos a la fecha', text: 'Los vecinos en mora hoy, con su casa y los días de atraso.' }] },
+        { id: 'finanzas', label: 'Finanzas (OIKOS)', icon: 'money', allowed: (can) => can('reportes.finanzas') && can('finanzas.usar') && FIN_REPORTS.some((r) => can(r.key)),
+            reports: (can) => FIN_REPORTS.filter((r) => can(r.key)).map((r) => ({ id: `fin-${r.id}`, label: r.title, text: r.text, href: `finanzas.html#reportes/${r.id}` })) },
+        { id: 'rondas', label: 'Rondas (RONDIN)', icon: 'route', allowed: (can) => can('reportes.rondas') && can('rondas.panel_ver'),
+            reports: () => [{ id: 'rondas-panel', label: 'Panel y reporte semanal de Rondas', text: 'Cumplimiento de rondas por guardia, incidentes, alertas y el reporte semanal del Director General.', href: 'rondin/' }] }
+    ];
+
+    const svg = (inner, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
     const ICONS = {
-        download: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
-        print: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
-        open: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>'
+        gate: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),
+        alert: svg('<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
+        money: svg('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+        route: svg('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'),
+        down: svg('<polyline points="6 9 12 15 18 9"/>', 16),
+        up: svg('<polyline points="18 15 12 9 6 15"/>', 16),
+        back: svg('<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>', 15),
+        open: svg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h11"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>', 15)
     };
 
     function esc(value) {
@@ -52,32 +77,13 @@ const SisdelReportes = (() => {
     const today = () => parseYmd(sisdel().localToday());
     const longDate = (text) => parseYmd(text).toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' });
     const dateTime = (iso) => (iso ? new Date(iso).toLocaleString('es-GT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
-    const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '');
+    const hm = (iso) => (iso ? `${pad(new Date(iso).getHours())}:${pad(new Date(iso).getMinutes())}` : '');
     // Fecha y hora ordenable para los CSV
     const stamp = (iso) => { if (!iso) return ''; const d = new Date(iso); return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
     function stay(visit) {
         if (!visit.enteredAt || !visit.exitedAt || visit.exitedAt < visit.enteredAt) return '';
         const minutes = Math.round((new Date(visit.exitedAt) - new Date(visit.enteredAt)) / 60000);
         return minutes >= 60 ? `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min` : `${minutes} min`;
-    }
-
-    // CSV para Excel: UTF-8 con BOM. Las celdas que empiezan con = + - @ no se interpretan como formulas
-    function csvCell(value) {
-        let text = String(value ?? '');
-        if (/^[=+\-@\t\r]/.test(text) && !/^[+-]?[\d\s().-]+$/.test(text)) text = "'" + text;
-        return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    }
-    function downloadCsv(filename, header, rows) {
-        const lines = [header, ...rows].map((row) => row.map(csvCell).join(','));
-        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     // De donde viene cada lectura de la camara o de la garita: visita, vecino o placa que no esta registrada
@@ -137,6 +143,22 @@ const SisdelReportes = (() => {
         .rp-link h4 { margin:0; font-size:1rem; }
         .rp-link p { margin:0; font-size:0.85rem; color:var(--text-muted); flex:1; }
         .rp-link .btn { align-self:flex-start; gap:0.4rem; }
+        .rp-hint { color:var(--text-muted); font-size:0.9rem; margin:0 0 1rem; }
+        .rp-acc { display:flex; flex-direction:column; gap:0.5rem; }
+        .rp-acc-group { background:var(--bg-surface); border:1px solid var(--border-strong); border-radius:0.75rem; overflow:hidden; transition:border-color 0.15s; }
+        .rp-acc-group.open { border-color:var(--primary); }
+        .rp-acc-header { display:flex; align-items:center; gap:0.75rem; width:100%; padding:0.9rem 1rem; background:transparent; border:none; cursor:pointer; font:inherit; font-size:0.95rem; font-weight:700; color:var(--text-primary); text-align:left; }
+        .rp-acc-header:hover, .rp-acc-group.open .rp-acc-header { background:rgba(148,163,184,0.12); }
+        .rp-acc-group.open .rp-acc-header { border-bottom:1px solid var(--border-strong); }
+        .rp-acc-title { flex:1; }
+        .rp-acc-count { font-size:0.7rem; font-weight:700; color:var(--text-muted); border:1px solid var(--border-strong); border-radius:var(--radius-full); padding:0.1rem 0.55rem; min-width:1.5rem; text-align:center; }
+        .rp-acc-group.open .rp-acc-count { color:var(--primary-light); border-color:var(--primary); }
+        .rp-acc-items { list-style:none; margin:0; padding:0.4rem; }
+        .rp-acc-item { display:flex; align-items:center; justify-content:space-between; width:100%; padding:0.6rem 0.75rem; background:transparent; border:none; border-radius:0.5rem; cursor:pointer; font:inherit; font-size:0.85rem; font-weight:500; color:var(--text-primary); text-align:left; text-decoration:none; }
+        .rp-acc-item:hover { background:rgba(148,163,184,0.12); color:var(--primary-light); }
+        .rp-acc-label { flex:1; }
+        .rp-acc-arrow { color:var(--text-muted); font-size:1.15rem; line-height:1; }
+        .rp-back { margin-bottom:1rem; }
         .rp-printonly { display:none; }
         @media (max-width:640px) {
             .rp-grid { grid-template-columns:1fr; }
@@ -158,37 +180,125 @@ const SisdelReportes = (() => {
         document.head.appendChild(style);
     }
 
-    // Que secciones puede ver el usuario actual (el boton Reportes aparece solo si hay al menos una)
+    // Que categorias puede ver el usuario actual (el boton Reportes aparece solo si hay al menos una)
     function available() {
         const can = (key) => sisdel().can(key);
         if (!can('reportes.ver')) return [];
         return SECTIONS.filter((s) => s.allowed(can)).map((s) => s.id);
     }
 
+    // Catalogo: categorias con los reportes que el usuario puede abrir (sin DOM: se prueba en Node)
+    function catalogFor(can) {
+        if (!can('reportes.ver')) return [];
+        return SECTIONS.filter((s) => s.allowed(can))
+            .map((s) => ({ id: s.id, label: s.label, icon: s.icon, items: s.reports(can) }))
+            .filter((c) => c.items.length);
+    }
+
+    // Acciones comunes (reportes-export.js)
+    const exporter = () => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport : window.SisdelReportExport);
+
+    // Tabla del modelo -> HTML. Los datos van escapados; `plate` pone la placa en letra monoespaciada y `bar` dibuja una barra
+    function tableHtml(t) {
+        const rows = t.limit ? t.rows.slice(0, t.limit) : t.rows;
+        const peak = t.bar !== undefined ? Math.max(1, ...t.rows.map((r) => Number(r[t.bar]) || 0)) : 1;
+        const cell = (value, i) => {
+            if (t.plate && t.plate.includes(i)) return `<span class="rp-plate">${esc(value)}</span>`;
+            if (t.bar === i) { const n = Number(value) || 0; return `<span class="rp-bar" style="width:${Math.round((n / peak) * 100)}px"></span> ${n}`; }
+            return esc(value);
+        };
+        return table(t.headers, rows.map((r) => r.map(cell)), t.numeric || []);
+    }
+    function modelHtml(m) {
+        const kpis = (m.kpis || []).length ? `<div class="rp-kpis">${m.kpis.map((k) => kpi(k.label, k.value, k.color)).join('')}</div>` : '';
+        const tables = (m.tables || []).map((t) => `
+            <div class="card rp-card" style="margin-bottom:1.25rem;">
+                ${t.title && t.title !== m.title ? `<h4>${esc(t.title)}</h4>` : ''}
+                ${t.limit && t.rows.length > t.limit ? note(`En pantalla se muestran los ${t.limit} más recientes de ${t.rows.length}; el PDF y el Excel traen todos.`) : ''}
+                ${tableHtml(t)}
+            </div>`).join('');
+        return kpis + tables;
+    }
+
     function mount(container, opts) {
         injectStyles();
         const S = sisdel();
+        const RX = exporter();
         const can = (key) => S.can(key);
         const condoId = opts.condominioId;
         const condoName = opts.condoName || 'Condominio';
+        const userName = opts.userName || 'Administrador';
         const slug = condoName.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'condominio';
-        const sections = SECTIONS.filter((s) => available().includes(s.id));
+        const catalogs = catalogFor(can);
         const canExport = can('reportes.exportar');
-        let current = null;
-        let report = null;
-        let seq = 0; // descarta respuestas de un reporte anterior si el usuario cambio de rango o de pestana
+        // Imprimir, PDF, WhatsApp y Excel sacan datos del sistema: los da un solo privilegio (reportes.exportar)
+        const actions = () => (RX ? RX.actionsHtml({ print: canExport, pdf: canExport, whatsapp: canExport, excel: canExport }) : '');
+        let current = '';   // reporte abierto ('' = catalogo)
+        let openCat = null; // categoria desplegada: al entrar todas arrancan cerradas
+        let report = null;  // modelo del reporte en pantalla (lo usan los botones)
+        let seq = 0;        // descarta respuestas de un reporte anterior si el usuario cambio de rango o de reporte
+        let range = null;   // ultimo rango de fechas: se conserva al pasar de un reporte de garita a otro
 
         container.innerHTML = `
-            <div class="tabs rp-noprint" id="rpTabs">${sections.map((s) => `<button class="tab" data-rp="${s.id}">${esc(s.label)}</button>`).join('')}</div>
-            <div id="rpBody"></div>`;
+            <div id="rpCatalog"></div>
+            <div id="rpView" style="display:none;">
+                <div class="rp-back rp-noprint"><button type="button" class="btn btn-ghost btn-sm" id="rpBackCatalog" style="border:1px solid var(--border-strong);">${ICONS.back} Volver al catálogo</button></div>
+                <div id="rpBody"></div>
+            </div>`;
+        const catalogEl = container.querySelector('#rpCatalog');
+        const viewEl = container.querySelector('#rpView');
         const body = container.querySelector('#rpBody');
-        container.querySelectorAll('#rpTabs .tab').forEach((t) => t.addEventListener('click', () => { location.hash = `#reportes/${t.dataset.rp}`; }));
+        container.querySelector('#rpBackCatalog').addEventListener('click', () => { location.hash = '#reportes'; });
 
         const usersMap = () => new Map((opts.getUsers ? opts.getUsers() : []).map((u) => [u.id, u]));
-        const userName = (map, id) => (map.get(id) ? map.get(id).name : '');
+        const userLabel = (map, id) => (map.get(id) ? map.get(id).name : '');
+        const findReport = (id) => {
+            for (const c of catalogs) { const def = c.items.find((i) => i.id === id && !i.href); if (def) return def; }
+            return null;
+        };
 
-        // ── Garita ──
-        function garitaShell() {
+        // Cabecera del reporte con las cuatro acciones
+        function reportHead(m, extra) {
+            return `
+                <div class="rp-head">
+                    <div>
+                        <p class="rp-printonly text-sm text-muted">${esc(m.condoName)} · ${esc(m.title)}</p>
+                        <h3>${esc(m.title)}${m.subtitle ? `: ${esc(m.subtitle)}` : ''}</h3>
+                        <p class="text-xs text-muted">Generado el ${esc(dateTime(m.at.toISOString()))} por ${esc(m.userName)}</p>
+                        ${(m.notes || []).map((n) => note(n)).join('')}
+                        ${(m.warnings || []).map((w) => note(w, true)).join('')}
+                    </div>
+                    <div class="rp-actions rp-noprint">${extra || ''}${actions()}</div>
+                </div>`;
+        }
+        function paint(target, m, extra) {
+            report = m;
+            target.innerHTML = reportHead(m, extra) + modelHtml(m);
+            if (RX) RX.bind(target, () => report);
+        }
+
+        // ── Catalogo en acordeon ──
+        function renderCatalog() {
+            if (!catalogs.length) { catalogEl.innerHTML = emptyState('Su usuario no tiene reportes disponibles. Pídale al administrador que se los asigne.'); return; }
+            catalogEl.innerHTML = `
+                <p class="rp-hint">Click en una categoría para ver sus reportes.</p>
+                <div class="rp-acc">${catalogs.map((c) => {
+                    const open = openCat === c.id;
+                    return `<div class="rp-acc-group${open ? ' open' : ''}">
+                        <button type="button" class="rp-acc-header" data-rp-cat="${c.id}" aria-expanded="${open}">
+                            ${ICONS[c.icon]}<span class="rp-acc-title">${esc(c.label)}</span><span class="rp-acc-count">${c.items.length}</span>${open ? ICONS.up : ICONS.down}
+                        </button>
+                        ${open ? `<ul class="rp-acc-items">${c.items.map((r) => (r.href
+                            ? `<li><a class="rp-acc-item" href="${esc(r.href)}" title="${esc(r.text)}"><span class="rp-acc-label">${esc(r.label)}</span><span class="rp-acc-arrow">›</span></a></li>`
+                            : `<li><button type="button" class="rp-acc-item" data-rp-open="${esc(r.id)}" title="${esc(r.text)}"><span class="rp-acc-label">${esc(r.label)}</span><span class="rp-acc-arrow">›</span></button></li>`)).join('')}</ul>` : ''}
+                    </div>`;
+                }).join('')}</div>`;
+            catalogEl.querySelectorAll('[data-rp-cat]').forEach((b) => b.addEventListener('click', () => { openCat = openCat === b.dataset.rpCat ? null : b.dataset.rpCat; renderCatalog(); }));
+            catalogEl.querySelectorAll('[data-rp-open]').forEach((b) => b.addEventListener('click', () => { location.hash = `#reportes/${b.dataset.rpOpen}`; }));
+        }
+
+        // ── Garita: un rango de fechas y un reporte distinto sobre los mismos datos ──
+        function garitaShell(def) {
             body.innerHTML = `
                 <div class="rp-noprint">
                     <div class="rp-presets" id="rpPresets">
@@ -217,20 +327,23 @@ const SisdelReportes = (() => {
                 body.querySelector('#rpTo').value = ymd(to);
                 body.querySelectorAll('.rp-preset').forEach((b) => b.classList.toggle('active', b.dataset.preset === name));
             };
-            body.querySelectorAll('.rp-preset').forEach((b) => b.addEventListener('click', () => { setPreset(b.dataset.preset); buildGarita(); }));
+            body.querySelectorAll('.rp-preset').forEach((b) => b.addEventListener('click', () => { setPreset(b.dataset.preset); buildGarita(def); }));
             ['rpFrom', 'rpTo'].forEach((id) => body.querySelector(`#${id}`).addEventListener('input', () => body.querySelectorAll('.rp-preset').forEach((b) => b.classList.remove('active'))));
-            body.querySelector('#rpGenerate').addEventListener('click', buildGarita);
-            setPreset('7d');
-            buildGarita();
+            body.querySelector('#rpGenerate').addEventListener('click', () => buildGarita(def));
+            if (range) { body.querySelector('#rpFrom').value = range.from; body.querySelector('#rpTo').value = range.to; }
+            else setPreset('7d');
+            buildGarita(def);
         }
 
-        async function buildGarita() {
+        async function buildGarita(def) {
             const from = body.querySelector('#rpFrom').value;
             const to = body.querySelector('#rpTo').value;
             const out = body.querySelector('#rpOut');
             if (!from || !to || from > to) { S.showToast('Elija un rango de fechas válido.', 'warning'); return; }
             if ((parseYmd(to) - parseYmd(from)) / 86400000 + 1 > MAX_DAYS) { S.showToast(`El rango no puede pasar de ${MAX_DAYS} días.`, 'warning'); return; }
+            range = { from, to };
             const mine = ++seq;
+            report = null;
             out.innerHTML = emptyState('Generando reporte...');
 
             const fromIso = parseYmd(from).toISOString();
@@ -241,7 +354,7 @@ const SisdelReportes = (() => {
                 S.getExitsBetween(condoId, fromIso, toIso, MAX_LOGS)
             ]);
             if (mine !== seq) return;
-            if (!logs || !visits) { report = null; out.innerHTML = emptyState('No se pudo cargar la información. Revise su conexión e intente de nuevo.'); return; }
+            if (!logs || !visits) { out.innerHTML = emptyState('No se pudo cargar la información. Revise su conexión e intente de nuevo.'); return; }
             const exitsOk = exits !== null;
             const users = usersMap();
 
@@ -264,31 +377,30 @@ const SisdelReportes = (() => {
             neighborOut.forEach((x) => bump(x.createdAt, 'nOut'));
             visitsOut.forEach((v) => bump(v.exitedAt, 'vOut'));
             denied.forEach((l) => bump(l.createdAt, 'den'));
-            const dayEntries = [...days.entries()].reverse().filter(([, r]) => r.nIn + r.vIn + r.nOut + r.vOut + r.den > 0);
+            const dayRows = [...days.entries()].reverse().filter(([, r]) => r.nIn + r.vIn + r.nOut + r.vOut + r.den > 0)
+                .map(([d, r]) => [d, r.nIn, r.vIn, r.nOut, r.vOut, r.den]);
 
             // Horas con mas ingresos
             const hours = Array.from({ length: 24 }, () => ({ n: 0, v: 0 }));
             neighborIn.forEach((l) => { hours[new Date(l.createdAt).getHours()].n++; });
             visitsIn.forEach((v) => { hours[new Date(v.enteredAt).getHours()].v++; });
-            const peak = Math.max(1, ...hours.map((h) => h.n + h.v));
-            const hourRows = hours.map((h, i) => [i, h]).filter(([, h]) => h.n + h.v > 0)
-                .map(([i, h]) => [`${pad(i)}:00`, h.n, h.v, `<span class="rp-bar" style="width:${Math.round(((h.n + h.v) / peak) * 100)}px"></span> ${h.n + h.v}`]);
+            const hourRows = hours.map((h, i) => [i, h]).filter(([, h]) => h.n + h.v > 0).map(([i, h]) => [`${pad(i)}:00`, h.n, h.v, h.n + h.v]);
 
             // Placas
             const plateStats = new Map();
             logs.forEach((l) => {
                 if (!l.plate || l.plate === 'RESIDENTE') return;
-                const s = plateStats.get(l.plate) || { total: 0, denied: 0, last: '', reason: '' };
-                if (isAllowed(l)) s.total++;
-                else { s.denied++; if (!s.reason) s.reason = l.reason || ''; }
-                if (l.createdAt > s.last) s.last = l.createdAt;
-                plateStats.set(l.plate, s);
+                const st = plateStats.get(l.plate) || { total: 0, denied: 0, last: '', reason: '' };
+                if (isAllowed(l)) st.total++;
+                else { st.denied++; if (!st.reason) st.reason = l.reason || ''; }
+                if (l.createdAt > st.last) st.last = l.createdAt;
+                plateStats.set(l.plate, st);
             });
-            const topPlates = [...plateStats.entries()].filter(([, s]) => s.total > 0).sort((a, b) => b[1].total - a[1].total).slice(0, 10)
-                .map(([p, s]) => [`<span class="rp-plate">${esc(p)}</span>`, s.total, esc(dateTime(s.last))]);
-            const deniedPlates = [...plateStats.entries()].filter(([, s]) => s.denied > 0).sort((a, b) => b[1].denied - a[1].denied).slice(0, 10)
-                .map(([p, s]) => [`<span class="rp-plate">${esc(p)}</span>`, s.denied, esc(s.reason)]);
-            const byHouse = [...countBy(visits, (v) => v.casa || 'Sin casa').entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([c, n]) => [esc(c), n]);
+            const plateRows = [...plateStats.entries()].filter(([, st]) => st.total > 0).sort((a, b) => b[1].total - a[1].total).slice(0, 10)
+                .map(([p, st]) => [p, st.total, stamp(st.last)]);
+            const deniedRows = [...plateStats.entries()].filter(([, st]) => st.denied > 0).sort((a, b) => b[1].denied - a[1].denied).slice(0, 10)
+                .map(([p, st]) => [p, st.denied, st.reason]);
+            const houseRows = [...countBy(visits, (v) => v.casa || 'Sin casa').entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
 
             // Detalle de movimientos de vecinos (ingresos, salidas y denegados), del mas nuevo al mas viejo
             const movements = [
@@ -296,89 +408,45 @@ const SisdelReportes = (() => {
                     at: l.createdAt, type: isAllowed(l) ? (l.status === 'Reminder' ? 'Ingreso con aviso de mora' : 'Ingreso') : 'Denegado',
                     plate: l.plate === 'RESIDENTE' ? '' : l.plate, who: l.reason || '', casa: ''
                 })),
-                ...neighborOut.map((x) => ({
-                    at: x.createdAt, type: 'Salida', plate: x.plate || '', who: x.name || x.reason || '', casa: x.casa || ''
-                }))
+                ...neighborOut.map((x) => ({ at: x.createdAt, type: 'Salida', plate: x.plate || '', who: x.name || x.reason || '', casa: x.casa || '' }))
             ].sort((a, b) => (a.at < b.at ? 1 : -1));
-            const visitRows = [...visits].sort((a, b) => ((b.enteredAt || b.visitDate) > (a.enteredAt || a.visitDate) ? 1 : -1)).map((v) => ({
-                date: v.visitDate, name: v.visitorName, casa: v.casa || '', owner: userName(users, v.userId), plate: v.vehiclePlate || '',
-                in: v.enteredAt || '', out: v.exitedAt && v.exitedAt >= (v.enteredAt || '') ? v.exitedAt : '', stay: stay(v),
-                state: !v.enteredAt ? 'Sin ingreso' : (S.isVisitInside(v) ? 'Dentro' : 'Salió')
-            }));
+            const movementRows = movements.map((m) => [stamp(m.at), m.type, m.plate, m.who, m.casa]);
+            const visitRows = [...visits].sort((a, b) => ((b.enteredAt || b.visitDate) > (a.enteredAt || a.visitDate) ? 1 : -1)).map((v) => [
+                v.visitDate, v.visitorName, v.casa || '', userLabel(users, v.userId), v.vehiclePlate || '', hm(v.enteredAt),
+                v.exitedAt && v.exitedAt >= (v.enteredAt || '') ? hm(v.exitedAt) : '', stay(v), !v.enteredAt ? 'Sin ingreso' : (S.isVisitInside(v) ? 'Dentro' : 'Salió')
+            ]);
 
-            report = { from, to, movements, visitRows, days: dayEntries, at: new Date() };
-            const rangeText = from === to ? longDate(from) : `${longDate(from)} al ${longDate(to)}`;
-            const capped = logs.length >= MAX_LOGS || (exitsOk && exits.length >= MAX_LOGS);
-            const moreMovements = movements.length > SHOWN_ROWS;
-            const moreVisits = visitRows.length > SHOWN_ROWS;
-
-            out.innerHTML = `
-                <div class="rp-head">
-                    <div>
-                        <p class="rp-printonly text-sm text-muted">${esc(condoName)} · Reporte de garita</p>
-                        <h3>Garita: ${esc(rangeText)}</h3>
-                        <p class="text-xs text-muted">Generado el ${esc(dateTime(report.at.toISOString()))} por ${esc(opts.userName || 'Administrador')}</p>
-                        ${capped ? note(`El período tiene más de ${MAX_LOGS} registros; los totales cubren solo los más recientes. Reduzca el rango para un total exacto.`, true) : ''}
-                        ${exitsOk ? '' : note('No se pudieron leer las salidas de vecinos; el reporte las muestra en cero.', true)}
-                    </div>
-                    ${canExport ? `<div class="rp-actions rp-noprint">
-                        <button class="btn btn-ghost btn-sm" data-rp-export="days">${ICONS.download} Resumen por día (CSV)</button>
-                        <button class="btn btn-ghost btn-sm" data-rp-export="neighbors">${ICONS.download} Vecinos (CSV)</button>
-                        <button class="btn btn-ghost btn-sm" data-rp-export="visits">${ICONS.download} Visitas (CSV)</button>
-                        <button class="btn btn-primary btn-sm" data-rp-export="print">${ICONS.print} Imprimir / PDF</button>
-                    </div>` : ''}
-                </div>
-                <div class="rp-kpis">
-                    ${kpi('Ingresos de vecinos', neighborIn.length, 'var(--success)')}
-                    ${kpi('Salidas de vecinos', neighborOut.length, 'var(--primary-light)')}
-                    ${kpi('Ingresos de visitas', visitsIn.length, 'var(--success)')}
-                    ${kpi('Salidas de visitas', visitsOut.length, 'var(--primary-light)')}
-                    ${kpi('Visitas dentro', inside.length, 'var(--accent)')}
-                    ${kpi('Visitas sin ingreso', noShow, 'var(--text-muted)')}
-                    ${kpi('Con aviso de mora', reminders, 'var(--warning)')}
-                    ${kpi('Denegados', denied.length, 'var(--danger)')}
-                </div>
-                <div class="rp-grid">
-                    <div class="card rp-card"><h4>Movimiento por día</h4>
-                        ${table(['Fecha', 'Ingresos vecinos', 'Ingresos visitas', 'Salidas vecinos', 'Salidas visitas', 'Denegados'],
-                            dayEntries.map(([d, r]) => [esc(S.formatDate(d)), r.nIn, r.vIn, r.nOut, r.vOut, r.den]), [1, 2, 3, 4, 5])}</div>
-                    <div class="card rp-card"><h4>Horas con más ingresos</h4>
-                        ${table(['Hora', 'Vecinos', 'Visitas', 'Total'], hourRows, [1, 2])}</div>
-                    <div class="card rp-card"><h4>Visitas por casa</h4>${table(['Casa', 'Visitas'], byHouse, [1])}</div>
-                    <div class="card rp-card"><h4>Placas con más ingresos</h4>${table(['Placa', 'Ingresos', 'Último'], topPlates, [1])}</div>
-                    <div class="card rp-card"><h4>Placas denegadas</h4>${table(['Placa', 'Veces', 'Motivo'], deniedPlates, [1])}</div>
-                </div>
-                <div class="card rp-card" style="margin-bottom:1.25rem;"><h4>Ingresos y salidas de vecinos</h4>
-                    ${moreMovements ? note(`Se muestran los ${SHOWN_ROWS} más recientes de ${movements.length}; el CSV trae todos.`) : ''}
-                    ${table(['Fecha y hora', 'Movimiento', 'Placa', 'Vecino / detalle', 'Casa'],
-                        movements.slice(0, SHOWN_ROWS).map((m) => [esc(dateTime(m.at)), esc(m.type), `<span class="rp-plate">${esc(m.plate)}</span>`, esc(m.who), esc(m.casa)]))}</div>
-                <div class="card rp-card"><h4>Visitas del período</h4>
-                    ${moreVisits ? note(`Se muestran las ${SHOWN_ROWS} más recientes de ${visitRows.length}; el CSV trae todas.`) : ''}
-                    ${table(['Fecha', 'Visitante', 'Casa', 'Autoriza', 'Placa', 'Ingresó', 'Salió', 'Estancia', 'Estado'],
-                        visitRows.slice(0, SHOWN_ROWS).map((v) => [esc(S.formatDate(v.date)), esc(v.name), esc(v.casa), esc(v.owner), `<span class="rp-plate">${esc(v.plate)}</span>`,
-                            esc(hm(v.in)), esc(hm(v.out)), esc(v.stay), esc(v.state)]))}</div>`;
-            out.querySelectorAll('[data-rp-export]').forEach((b) => b.addEventListener('click', () => exportGarita(b.dataset.rpExport)));
-        }
-
-        function exportGarita(kind) {
-            if (!canExport) return;
-            if (kind === 'print') { window.print(); return; }
-            if (!report) return;
-            const suffix = report.from === report.to ? report.from : `${report.from}_a_${report.to}`;
-            if (kind === 'days') {
-                downloadCsv(`garita-por-dia-${slug}-${suffix}.csv`, ['Fecha', 'Ingresos de vecinos', 'Ingresos de visitas', 'Salidas de vecinos', 'Salidas de visitas', 'Denegados'],
-                    report.days.map(([d, r]) => [d, r.nIn, r.vIn, r.nOut, r.vOut, r.den]));
-            } else if (kind === 'neighbors') {
-                downloadCsv(`vecinos-ingresos-salidas-${slug}-${suffix}.csv`, ['Fecha y hora', 'Movimiento', 'Placa', 'Vecino o detalle', 'Casa'],
-                    report.movements.map((m) => [stamp(m.at), m.type, m.plate, m.who, m.casa]));
-            } else if (kind === 'visits') {
-                downloadCsv(`visitas-${slug}-${suffix}.csv`, ['Fecha', 'Visitante', 'Casa', 'Autoriza', 'Placa', 'Ingresó', 'Salió', 'Estancia', 'Estado'],
-                    report.visitRows.map((v) => [v.date, v.name, v.casa, v.owner, v.plate, stamp(v.in), stamp(v.out), v.stay, v.state]));
-            }
+            const tables = {
+                'garita-resumen': { title: 'Movimiento por día', headers: ['Fecha', 'Ingresos vecinos', 'Ingresos visitas', 'Salidas vecinos', 'Salidas visitas', 'Denegados'], rows: dayRows, numeric: [1, 2, 3, 4, 5] },
+                'garita-vecinos': { title: def.label, headers: ['Fecha y hora', 'Movimiento', 'Placa', 'Vecino / detalle', 'Casa'], rows: movementRows, plate: [2], limit: SHOWN_ROWS },
+                'garita-visitas': { title: def.label, headers: ['Fecha', 'Visitante', 'Casa', 'Autoriza', 'Placa', 'Ingresó', 'Salió', 'Estancia', 'Estado'], rows: visitRows, plate: [4], limit: SHOWN_ROWS },
+                'garita-horas': { title: def.label, headers: ['Hora', 'Vecinos', 'Visitas', 'Total'], rows: hourRows, numeric: [1, 2, 3], bar: 3 },
+                'garita-placas': { title: def.label, headers: ['Placa', 'Ingresos', 'Último ingreso'], rows: plateRows, plate: [0], numeric: [1] },
+                'garita-denegadas': { title: def.label, headers: ['Placa', 'Veces', 'Motivo'], rows: deniedRows, plate: [0], numeric: [1] },
+                'garita-casas': { title: def.label, headers: ['Casa', 'Visitas'], rows: houseRows, numeric: [1] }
+            };
+            const kpis = def.id === 'garita-resumen' ? [
+                { label: 'Ingresos de vecinos', value: neighborIn.length, color: 'var(--success)' },
+                { label: 'Salidas de vecinos', value: neighborOut.length, color: 'var(--primary-light)' },
+                { label: 'Ingresos de visitas', value: visitsIn.length, color: 'var(--success)' },
+                { label: 'Salidas de visitas', value: visitsOut.length, color: 'var(--primary-light)' },
+                { label: 'Visitas dentro', value: inside.length, color: 'var(--accent)' },
+                { label: 'Visitas sin ingreso', value: noShow, color: 'var(--text-muted)' },
+                { label: 'Con aviso de mora', value: reminders, color: 'var(--warning)' },
+                { label: 'Denegados', value: denied.length, color: 'var(--danger)' }
+            ] : [];
+            const suffix = from === to ? from : `${from}_a_${to}`;
+            const warnings = [];
+            if (logs.length >= MAX_LOGS || (exitsOk && exits.length >= MAX_LOGS)) warnings.push(`El período tiene más de ${MAX_LOGS} registros; los totales cubren solo los más recientes. Reduzca el rango para un total exacto.`);
+            if (!exitsOk) warnings.push('No se pudieron leer las salidas de vecinos; el reporte las muestra en cero.');
+            paint(out, {
+                title: def.label, subtitle: from === to ? longDate(from) : `${longDate(from)} al ${longDate(to)}`, condoName, userName, at: new Date(),
+                kpis, tables: [tables[def.id]], warnings, fileName: `${def.id}-${slug}-${suffix}`
+            });
         }
 
         // ── Morosos a la fecha ──
-        function renderMorosos() {
+        function renderMorosos(def) {
             const users = (opts.getUsers ? opts.getUsers() : []).filter((u) => u.role === S.ROLES.VECINO);
             const days = (u) => (u.morosoSince ? Math.max(0, Math.floor((Date.now() - new Date(u.morosoSince).getTime()) / 86400000)) : null);
             const morosos = users.filter((u) => u.paymentStatus === S.PAYMENT_STATUS.MOROSO).sort((a, b) => (days(b) || 0) - (days(a) || 0));
@@ -386,72 +454,51 @@ const SisdelReportes = (() => {
             const finLink = can('finanzas.usar') && can('finanzas.reportes_morosos');
             const rate = users.length ? Math.round((morosos.length / users.length) * 100) : 0;
             const at = new Date();
-            report = { morosos, withPhone, days };
-            body.innerHTML = `
-                <div class="rp-head">
-                    <div>
-                        <p class="rp-printonly text-sm text-muted">${esc(condoName)} · Listado de morosos</p>
-                        <h3>Morosos a la fecha</h3>
-                        <p class="text-xs text-muted">Al ${esc(dateTime(at.toISOString()))} · estado de pago calculado por el Sistema Financiero</p>
-                    </div>
-                    <div class="rp-actions rp-noprint">
-                        ${finLink ? `<a class="btn btn-ghost btn-sm" href="finanzas.html#reportes/morosos">${ICONS.open} Meses adeudados en Finanzas</a>` : ''}
-                        ${canExport ? `<button class="btn btn-ghost btn-sm" data-rp-export="morosos">${ICONS.download} Morosos (CSV)</button>
-                        <button class="btn btn-primary btn-sm" data-rp-export="print">${ICONS.print} Imprimir / PDF</button>` : ''}
-                    </div>
-                </div>
-                <div class="rp-kpis">
-                    ${kpi('Vecinos', users.length, 'var(--primary-light)')}
-                    ${kpi('Al día', users.length - morosos.length, 'var(--success)')}
-                    ${kpi('Morosos', morosos.length, 'var(--danger)')}
-                    ${kpi('Morosidad', `${rate} %`, 'var(--warning)')}
-                </div>
-                <div class="card rp-card">
-                    ${table(['Nombre', 'Casa', 'Desde', 'Días', ...(withPhone ? ['Teléfono'] : [])],
-                        morosos.map((u) => [esc(u.name), esc(u.casa || ''), esc(u.morosoSince ? S.formatDate(u.morosoSince) : '—'), days(u) ?? '—', ...(withPhone ? [esc(u.phone || '')] : [])]), [3])}
-                </div>`;
-            body.querySelectorAll('[data-rp-export]').forEach((b) => b.addEventListener('click', () => {
-                if (!canExport) return;
-                if (b.dataset.rpExport === 'print') { window.print(); return; }
-                downloadCsv(`morosos-${slug}-${ymd(at)}.csv`, ['Nombre', 'Casa', 'Moroso desde', 'Días', ...(withPhone ? ['Teléfono'] : [])],
-                    morosos.map((u) => [u.name, u.casa || '', u.morosoSince ? ymd(new Date(u.morosoSince)) : '', days(u) ?? '', ...(withPhone ? [u.phone || ''] : [])]));
-            }));
+            paint(body, {
+                title: def.label, subtitle: `al ${dateTime(at.toISOString())}`, condoName, userName, at,
+                notes: ['El estado de pago de cada vecino lo calcula el Sistema Financiero.'],
+                kpis: [
+                    { label: 'Vecinos', value: users.length, color: 'var(--primary-light)' },
+                    { label: 'Al día', value: users.length - morosos.length, color: 'var(--success)' },
+                    { label: 'Morosos', value: morosos.length, color: 'var(--danger)' },
+                    { label: 'Morosidad', value: `${rate} %`, color: 'var(--warning)' }
+                ],
+                tables: [{
+                    title: def.label, headers: ['Nombre', 'Casa', 'Desde', 'Días', ...(withPhone ? ['Teléfono'] : [])],
+                    rows: morosos.map((u) => [u.name, u.casa || '', u.morosoSince ? ymd(new Date(u.morosoSince)) : '—', days(u) ?? '—', ...(withPhone ? [u.phone || ''] : [])]), numeric: [3]
+                }],
+                fileName: `morosos-${slug}-${ymd(at)}`
+            }, finLink ? `<a class="btn btn-ghost btn-sm" href="finanzas.html#reportes/morosos">${ICONS.open} Meses adeudados en Finanzas</a>` : '');
         }
 
-        // ── Finanzas y Rondas: accesos directos (los reportes viven en OIKOS y en RONDIN) ──
-        function renderFinanzas() {
-            body.innerHTML = `
-                <p class="rp-note">Estos reportes los calcula el Sistema Financiero (OIKOS) con la contabilidad del condominio, así que las cifras son siempre las mismas. Se abren ahí; para volver use "Regresar al panel principal".</p>
-                <div class="rp-links">${FIN_REPORTS.filter((r) => can(r.key)).map((r) => `
-                    <div class="card rp-link"><h4>${esc(r.title)}</h4><p>${esc(r.text)}</p>
-                        <a class="btn btn-primary btn-sm" href="finanzas.html#reportes/${esc(r.id)}">${ICONS.open} Abrir reporte</a></div>`).join('')}</div>`;
-        }
-        function renderRondas() {
-            body.innerHTML = `
-                <p class="rp-note">El control de guardias vive en RONDIN: se abre en su panel principal.</p>
-                <div class="rp-links">
-                    <div class="card rp-link"><h4>Panel y reporte semanal de Rondas</h4>
-                        <p>Cumplimiento de rondas por guardia, incidentes, alertas y el reporte semanal del Director General para imprimir.</p>
-                        <a class="btn btn-primary btn-sm" href="rondin/">${ICONS.open} Abrir RONDIN</a></div>
-                </div>`;
-        }
-
-        function show(id) {
-            const section = sections.find((s) => s.id === id) || sections[0];
-            if (!section) { body.innerHTML = emptyState('Su usuario no tiene reportes disponibles. Pídale al administrador que se los asigne.'); return null; }
-            current = section.id;
+        function showCatalog(openId) {
+            current = '';
             seq++;
             report = null;
-            container.querySelectorAll('#rpTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.rp === current));
-            if (current === 'garita') garitaShell();
-            else if (current === 'morosos') renderMorosos();
-            else if (current === 'finanzas') renderFinanzas();
-            else renderRondas();
+            openCat = openId || null;
+            viewEl.style.display = 'none';
+            catalogEl.style.display = '';
+            renderCatalog();
+        }
+
+        // show('') abre el catalogo; show('garita') lo abre con esa categoria desplegada (direcciones de antes); show('garita-visitas') abre ese reporte
+        function show(id) {
+            const category = catalogs.find((c) => c.id === id);
+            if (category) { showCatalog(category.id); return ''; }
+            const def = id ? findReport(id) : null;
+            if (!def) { showCatalog(); return ''; }
+            current = def.id;
+            seq++;
+            report = null;
+            catalogEl.style.display = 'none';
+            viewEl.style.display = '';
+            if (def.id === 'morosos-fecha') renderMorosos(def);
+            else garitaShell(def);
             return current;
         }
 
-        return { show, ids: sections.map((s) => s.id), current: () => current, refresh: () => show(current) };
+        return { show, ids: SECTIONS.filter((s) => available().includes(s.id)).map((s) => s.id), current: () => current, refresh: () => show(current) };
     }
 
-    return { available, mount, logKind, FIN_REPORTS };
+    return { available, catalogFor, mount, logKind, FIN_REPORTS, GARITA_REPORTS };
 })();

@@ -311,11 +311,12 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const fin = read('finanzas.html');
     const oikos = read('finanzas/index.html');
     yes('admin.html tiene el boton Reportes junto a Configuracion, con icono SVG y sin emojis', /id="btnReports"[\s\S]*?<svg[\s\S]*?Reportes\s*<\/button>\s*<button class="btn btn-ghost btn-sm" id="btnConfig"/.test(admin));
-    yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes/seccion)', /id="viewReportes"/.test(admin) && /#reportes\(\?:\\\/\(garita\|morosos\|finanzas\|rondas\)\)\?\$/.test(admin) && /id="reportesMount"/.test(admin));
+    yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes y #reportes/reporte)', /id="viewReportes"/.test(admin) && admin.includes('/^#reportes(?:\\/([a-z-]+))?$/') && /id="reportesMount"/.test(admin));
     yes('admin.html carga reportes-ui.js antes del script de la pagina', admin.indexOf('reportes-ui.js') > 0 && admin.indexOf('reportes-ui.js') < admin.indexOf('SisdelReportes.available()'));
     yes('el panel, Configuracion y Reportes son vistas exclusivas', /function paintViews\(\)/.test(admin) && /if \(open\) repOpen = false;/.test(admin) && /if \(open\) cfgOpen = false;/.test(admin));
     yes('el boton Reportes solo aparece si hay alguna seccion disponible', /btnReports\.style\.display = canReports \? '' : 'none'/.test(admin) && /const canReports = reportIds\.length > 0/.test(admin));
-    yes('reportes-ui.js tiene un escape para cada dato escrito por usuarios (nombres, placas, motivos)', /function esc\(value\)/.test(rp) && /esc\(u\.name\)/.test(rp) && /esc\(v\.name\)/.test(rp) && /esc\(m\.who\)/.test(rp));
+    // Los datos van en bruto en el modelo (nombres, placas, motivos los escriben otros usuarios) y se escapan al dibujar la tabla
+    yes('reportes-ui.js escapa cada celda, encabezado y titulo que dibuja', /function esc\(value\)/.test(rp) && /function tableHtml\(t\)[\s\S]*?return esc\(value\);[\s\S]*?\}/.test(rp) && /\$\{esc\(h\)\}/.test(rp) && /\$\{esc\(t\.title\)\}/.test(rp) && /\$\{esc\(m\.title\)\}/.test(rp) && /\$\{esc\(r\.label\)\}/.test(rp));
     // SISDEL es una constante global de sisdel-core.js (no cuelga de window): leerlo solo de window dejaba el boton oculto
     yes('reportes-ui.js lee SISDEL como constante global y no solo de window', /typeof SISDEL !== 'undefined' \? SISDEL : window\.SISDEL/.test(rp) && (rp.match(/window\.SISDEL/g) || []).length === 1);
     // Cada clave que usa el modulo existe en el catalogo
@@ -343,6 +344,22 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar reportes.garita lo oculta aunque pueda leer los datos', sectionsFor('admin', { 'reportes.garita': false }), ['morosos', 'finanzas', 'rondas']);
     equal('sin el paraguas reportes.ver no hay ninguna seccion', sectionsFor('admin', { 'reportes.ver': false }), []);
     equal('quitar la lectura del historial de la camara oculta la seccion de garita', sectionsFor('admin', { 'garita.camara': false }), ['morosos', 'finanzas', 'rondas']);
+    // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
+    const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
+    equal('el administrador ve cuatro categorias, con 7, 1, 5 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
+    equal('la plantilla de consulta ve solo la categoria de garita, con sus 7 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:7']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:4', 'rondas:1']);
+    equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
+    equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
+    const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);
+    yes('cada reporte tiene un identificador unico y un texto', new Set(allDefs.map((r) => r.id)).size === allDefs.length && allDefs.every((r) => r.label && r.text));
+    equal('los reportes de Finanzas y Rondas se abren en OIKOS y RONDIN; los de garita y morosos se arman aqui', [allDefs.filter((r) => r.href).map((r) => r.href.split('#')[0]).filter((h, i, a) => a.indexOf(h) === i), allDefs.filter((r) => !r.href).length], [['finanzas.html', 'rondin/'], 8]);
+    yes('el catalogo es un acordeon: arranca cerrado, abre una categoria a la vez y se vuelve con "Volver al catalogo"', rp.includes('Click en una categoría para ver sus reportes.') && /aria-expanded/.test(rp) && /openCat = openCat === b\.dataset\.rpCat \? null/.test(rp) && rp.includes('Volver al catálogo') && /let openCat = null;/.test(rp));
+    yes('cada reporte propio ofrece Imprimir, PDF, WhatsApp y Excel con el privilegio reportes.exportar', /actionsHtml\(\{ print: canExport, pdf: canExport, whatsapp: canExport, excel: canExport \}\)/.test(rp) && /const canExport = can\('reportes\.exportar'\)/.test(rp));
+    yes('admin.html carga reportes-export.js antes de reportes-ui.js', admin.indexOf('src="reportes-export.js') > 0 && admin.indexOf('src="reportes-export.js') < admin.indexOf('src="reportes-ui.js'));
+    const auditorHtml = read('auditor.html');
+    yes('el panel del auditor usa los mismos botones: imprimir y PDF con auditoria.imprimir; WhatsApp y Excel con auditoria.exportar', /actionsHtml\(\{ print: can\.imprimir, pdf: can\.imprimir, whatsapp: can\.exportar, excel: can\.exportar \}\)/.test(auditorHtml) && auditorHtml.includes('reportes-export.js') && !/downloadCsv|data-export/.test(auditorHtml));
+    yes('el Excel del auditor suma los listados completos solo con el privilegio de cada uno', /can\.exportar && can\.exportarAccesos/.test(auditorHtml) && /can\.exportar && can\.exportarVisitas/.test(auditorHtml) && /can\.exportar && can\.exportarUsuarios/.test(auditorHtml));
     equal('de donde viene cada lectura (vecino, visita o placa desconocida)', ['Vecino permanente: Ana', 'Visita programada: Luis', 'Visita: Luis → Casa 4', 'Placa no registrada', 'Marbete QR: Toyota — Ana', 'Acceso QR: Ana — Casa 4', 'Ana - MOROSO'].map((reason) => reports.logKind({ reason, status: 'Authorized' })),
         ['vecino', 'visita', 'visita', 'desconocido', 'vecino', 'vecino', 'vecino']);
     // Salidas de la garita
@@ -361,7 +378,7 @@ yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.r
 // ───────── Sintaxis de las paginas y modulos ─────────
 console.log('\nSintaxis');
 const syntaxOk = (name, code) => { try { new vm.Script(code, { filename: name }); return true; } catch (e) { console.log(`    ${name}: ${e.message}`); return false; } };
-for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'reportes-ui.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
+for (const file of ['sisdel-core.js', 'privilegios.js', 'privilegios-ui.js', 'reportes-ui.js', 'reportes-export.js', 'rondin/js/sisdel-api.js', 'rondin/js/privilegios-rondin.js', 'finanzas-sync.js', 'finanzas-bloqueo.js', 'panico-alertas.js', 'rondas-core.js']) {
     yes(`${file} no tiene errores de sintaxis`, syntaxOk(file, read(file)));
 }
 for (const file of ['index.html', 'admin.html', 'garita.html', 'auditor.html', 'vecino.html', 'master.html', 'finanzas.html', 'finanzas/index.html']) {

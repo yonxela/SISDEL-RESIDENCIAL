@@ -371,6 +371,9 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('el nucleo guarda la salida de una visita en la propia visita y la de un vecino en salidas', /updateVisit\(visitId, \{ exitedAt: nowIso\(\) \}\)/.test(core) && /exits: 'salidas'/.test(core) && /createExit, getExitsBetween, getExitsToday/.test(core));
     yes('el historial de la garita muestra las salidas', /badgeText = 'SALIDA'/.test(garita) && /getExitsToday/.test(garita));
     yes('las reglas tienen el bloque de salidas y la salida de visitas', /match \/salidas\/\{exitId\}/.test(read('firestore.rules')) && /pGaritaSalida\(condoId\) && onlyChanges\(\['exitedAt'\]\)/.test(read('firestore.rules')));
+    // Boton Copiar: avisa en el propio boton (palomita verde, o cruz roja si no pudo copiar) y despues se restaura
+    yes('el boton Copiar cambia a una palomita y luego vuelve a lo de antes', /function flashCopied\(button, copied\)/.test(core) && /points="20 6 9 17 4 12"/.test(core) && /copyText\(button\.getAttribute\('data-copy'\), 'Código copiado'\)\.then\(\(copied\) => flashCopied\(button, copied\)\)/.test(core) && /button\.innerHTML = before\.html;/.test(core) && /button\.style\.color = before\.color;/.test(core));
+    yes('si no se pudo copiar el boton muestra una cruz roja y no una palomita', /const mark = copied \? COPY_CHECK : COPY_FAIL;/.test(core) && /<line x1="18" y1="6" x2="6" y2="18"\/>/.test(core));
 }
 yes('el servidor pide garita.verificar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.verificar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));

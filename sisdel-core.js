@@ -1026,13 +1026,37 @@ const SISDEL = (() => {
         return `<button type="button" class="btn btn-ghost btn-icon" data-copy="${safe}" title="${label}" aria-label="${label}" style="width:auto; height:auto; padding:0.2rem; vertical-align:middle;">`
             + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>';
     }
+    // El boton avisa que copio: el icono (o el texto) pasa a una palomita verde un momento y vuelve a lo de antes.
+    // Si no se pudo copiar, queda una cruz roja. El aviso emergente tambien sale, pero puede pasar desapercibido.
+    const COPY_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+    const COPY_FAIL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    function flashCopied(button, copied) {
+        if (button._copyTimer) clearTimeout(button._copyTimer);
+        else button._copyBefore = { html: button.innerHTML, title: button.getAttribute('title'), label: button.getAttribute('aria-label'), color: button.style.color };
+        const before = button._copyBefore;
+        const iconOnly = button.classList.contains('btn-icon');
+        const mark = copied ? COPY_CHECK : COPY_FAIL;
+        const word = copied ? 'Copiado' : 'No se pudo copiar';
+        button.innerHTML = iconOnly ? mark : `${mark} ${word}`;
+        button.style.color = copied ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)';
+        button.setAttribute('title', word);
+        button.setAttribute('aria-label', word);
+        button._copyTimer = setTimeout(() => {
+            button.innerHTML = before.html;
+            button.style.color = before.color;
+            if (before.title === null) button.removeAttribute('title'); else button.setAttribute('title', before.title);
+            if (before.label === null) button.removeAttribute('aria-label'); else button.setAttribute('aria-label', before.label);
+            button._copyTimer = null;
+            button._copyBefore = null;
+        }, 1800);
+    }
     if (typeof document !== 'undefined') {
         document.addEventListener('click', (event) => {
             const button = event.target && event.target.closest ? event.target.closest('[data-copy]') : null;
             if (!button) return;
             event.preventDefault();
             event.stopPropagation();
-            copyText(button.getAttribute('data-copy'), 'Código copiado');
+            copyText(button.getAttribute('data-copy'), 'Código copiado').then((copied) => flashCopied(button, copied));
         });
     }
 

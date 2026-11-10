@@ -9,6 +9,7 @@
 //       -> ademas guarda el respaldo en ~/Desktop/RESPALDO SISDEL <fecha> (o --carpeta=/ruta). No borra nada.
 //   ... --target=prod --eliminar --confirmo="ELIMINAR TODOS LOS CONDOMINIOS"
 //       -> guarda el respaldo y borra. Con --excepto=id1,id2 deja esos condominios; con --solo=id1,id2 borra solo esos.
+//   --preguntar: pide el numero de condominios tambien en el emulador (lo usan las pruebas).
 //   --espera=SEGUNDOS: pausa antes de la segunda pasada de limpieza de cada condominio (30 por defecto; en el emulador, 0).
 //
 // NO toca: _privado (clave master, WhatsApp, claves de camara de otros), mensajes_globales, camera_logs_huerfanos, _diag
@@ -53,11 +54,14 @@ function insideGit(folder) {
         dir = parent;
     }
 }
+// Pregunta en la terminal. Si la entrada se cierra sin respuesta (Ctrl+D o sin teclado) devuelve '' y no se borra nada.
+// OJO: rl.close() emite 'close' de inmediato; la respuesta se marca antes para que ese cierre no la pise.
 function ask(question) {
     return new Promise((resolve) => {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        rl.on('close', () => resolve(''));
-        rl.question(question, (answer) => { rl.close(); resolve(answer.trim()); });
+        let answered = false;
+        rl.on('close', () => { if (!answered) resolve(''); });
+        rl.question(question, (answer) => { answered = true; rl.close(); resolve(answer.trim()); });
     });
 }
 
@@ -137,8 +141,9 @@ if (typed !== PHRASE) {
     console.error(`\nFalta la confirmacion. Para borrar escriba exactamente --confirmo="${PHRASE}". No se borro nada.`);
     process.exit(1);
 }
-if (target === 'prod' && process.stdin.isTTY) {
-    const again = await ask(`\nVa a ELIMINAR ${chosen.length} condominio(s) de PRODUCCION. Escriba el numero ${chosen.length} para continuar: `);
+// En produccion siempre se pregunta (aunque no haya terminal: sin respuesta no se borra). --preguntar la fuerza en el emulador (pruebas)
+if (target === 'prod' || args.preguntar) {
+    const again = await ask(`\nVa a ELIMINAR ${chosen.length} condominio(s) de ${target === 'prod' ? 'PRODUCCION' : 'el emulador'}. Escriba el numero ${chosen.length} para continuar: `);
     if (again !== String(chosen.length)) { console.error('No coincide. No se borro nada.'); process.exit(1); }
 }
 console.log(`\nEliminando ${chosen.length} condominio(s)... (cada uno espera ${waitSeconds} s para la segunda pasada de limpieza)`);

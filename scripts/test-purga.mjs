@@ -107,6 +107,19 @@ ok('el respaldo solo lo puede leer su dueño (permisos 600)', fs.existsSync(back
 const excepto = run('--excepto=condo-purga-3', '--solo=condo-purga-3');
 ok('--excepto conserva ese condominio (no queda nada que eliminar)', excepto.status === 0 && /ELIMINARIAN \(0\)/.test(excepto.stdout) && /Se CONSERVAN/.test(excepto.stdout) && (await exists('condominios/condo-purga-3')), excepto.stdout + excepto.stderr);
 
+console.log('\nPregunta de confirmacion (el numero de condominios)');
+// En produccion el script siempre pregunta; --preguntar hace lo mismo en el emulador para poder probarlo
+const askRun = (input) => spawnSync('node', [script, '--solo=condo-purga-3', '--eliminar', '--preguntar', '--confirmo=ELIMINAR TODOS LOS CONDOMINIOS', `--carpeta=${path.join(tmp, `p${Math.random().toString(36).slice(2, 8)}`)}`, '--espera=0'], { encoding: 'utf8', cwd: here, input, timeout: 120000 });
+const wrongNumber = askRun('2\n');
+ok('otro numero no borra nada', wrongNumber.status === 1 && /No coincide/.test(wrongNumber.stderr) && (await exists('condominios/condo-purga-3')), wrongNumber.stdout + wrongNumber.stderr);
+const noAnswer = askRun('');
+ok('sin respuesta (entrada cerrada) no borra nada', noAnswer.status === 1 && /No coincide/.test(noAnswer.stderr) && (await exists('condominios/condo-purga-3')), noAnswer.stdout + noAnswer.stderr);
+const textAnswer = askRun('si\n');
+ok('una palabra en lugar del numero no borra nada', textAnswer.status === 1 && (await exists('condominios/condo-purga-3')));
+ok('la pregunta muestra cuantos se eliminan', /Escriba el numero 1 para continuar/.test(wrongNumber.stdout));
+const rightNumber = askRun('  1  \n');
+ok('con el numero correcto (aunque lleve espacios) si borra', rightNumber.status === 0 && /Comprobacion: condominios que siguen: 0/.test(rightNumber.stdout) && !(await exists('condominios/condo-purga-3')), rightNumber.stdout + rightNumber.stderr);
+
 // Limpieza final
 for (const id of ['condo-purga-1', 'condo-purga-2', 'condo-purga-3']) await P.purgeCondominio({ db, auth }, id);
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -1406,14 +1406,40 @@ async function run() {
 
     // ───────── Borrado de condominio ─────────
     console.log('\nBorrado de condominio');
-    await denied('admin no elimina condominios', () => httpsCallable(admin.functions, 'deleteCondominio')({ condominioId: B }));
-    await allowed('master elimina condominio', () => httpsCallable(master.functions, 'deleteCondominio')({ condominioId: C }));
+    await denied('admin no elimina condominios', () => httpsCallable(admin.functions, 'deleteCondominio')({ condominioId: B, masterCode: seed.masterCode, confirmName: 'Residencial Los Olivos' }));
+    // Eliminar un condominio vuelve a pedir la clave master y el nombre, aunque ya haya sesion master
+    const rejectedWith = async (name, fn, codePart) => {
+        try { await fn(); record(name, false, '-> se esperaba un rechazo y fue permitido'); }
+        catch (e) { record(name, String(e.code || '').includes(codePart), `-> se esperaba ${codePart}, error: ${e.code || e.message}`); }
+    };
+    const deleteCondo = (data) => httpsCallable(master.functions, 'deleteCondominio')(data);
+    await rejectedWith('el master sin clave master no elimina', () => deleteCondo({ condominioId: C, confirmName: 'Condominio Sin Servicio' }), 'permission-denied');
+    await rejectedWith('el master con una clave incorrecta no elimina', () => deleteCondo({ condominioId: C, masterCode: 'ZZZZZZ', confirmName: 'Condominio Sin Servicio' }), 'permission-denied');
+    await rejectedWith('con la clave correcta pero otro nombre no elimina', () => deleteCondo({ condominioId: C, masterCode: seed.masterCode, confirmName: 'Otro Condominio' }), 'failed-precondition');
+    await rejectedWith('sin el nombre tampoco', () => deleteCondo({ condominioId: C, masterCode: seed.masterCode }), 'failed-precondition');
+    await rejectedWith('un condominio que no existe se avisa', () => deleteCondo({ condominioId: 'no-existe', masterCode: seed.masterCode, confirmName: 'x' }), 'not-found');
+    equal('nada se borro con los intentos rechazados', (await getDocs(collection(master.db, 'condominios'))).size, 3);
+    await allowed('master elimina condominio con su clave y el nombre (sin importar acentos ni mayusculas)', async () => {
+        const result = await deleteCondo({ condominioId: C, masterCode: seed.masterCode, confirmName: ' condominio SIN servicio ' });
+        if (!result.data.success) throw new Error('sin exito');
+    });
     const left = await getDocs(collection(master.db, 'condominios'));
     equal('quedan 2 condominios', left.size, 2);
     const orphanCodes = await getDocs(query(collection(master.db, 'codigos'), where('condominioId', '==', C)));
     equal('sus codigos se eliminan', orphanCodes.size, 0);
     const orphanUsers = await getDocs(collection(master.db, `condominios/${C}/usuarios`));
     equal('sus usuarios se eliminan', orphanUsers.size, 0);
+
+    // Cinco claves master incorrectas seguidas bloquean el borrado un rato, aunque despues se escriba la correcta
+    let purgeBlocked = null;
+    for (let i = 0; i < 7; i++) {
+        try { await deleteCondo({ condominioId: B, masterCode: `MALA${i}`, confirmName: 'Residencial Los Olivos' }); } catch (e) {
+            if (String(e.code || '').includes('resource-exhausted')) { purgeBlocked = i; break; }
+        }
+    }
+    record('la clave master incorrecta repetida bloquea el borrado de condominios', purgeBlocked !== null && purgeBlocked <= 6, `-> bloqueo en el intento ${purgeBlocked}`);
+    await rejectedWith('bloqueado, ni la clave correcta elimina', () => deleteCondo({ condominioId: B, masterCode: seed.masterCode, confirmName: 'Residencial Los Olivos' }), 'resource-exhausted');
+    equal('el condominio sigue despues del bloqueo', (await getDocs(collection(master.db, 'condominios'))).size, 2);
 
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');

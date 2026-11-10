@@ -2,8 +2,9 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions/v2');
 const { db, auth } = require('./firebase');
-const { ROLES, normalizeCode, sha256, safeEqual, clientIp } = require('./util');
+const { ROLES, normalizeCode, clientIp } = require('./util');
 const rateLimit = require('./rateLimit');
+const { isMasterCode } = require('./master');
 const privilegios = require('./privilegios');
 
 // Todo un condominio suele salir por la misma IP publica: el limite es compartido, por eso es amplio
@@ -13,13 +14,6 @@ const VERIFY_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 // Roles de condominio que pueden entrar (el master tiene su propia ruta). A donde van lo decide
 // privilegios.landing: la pagina de su rol y, si el administrador se la quito, la primera que si le toca.
 const CONDO_ROLES = [ROLES.ADMIN, ROLES.VECINO, ROLES.POLICIA, ROLES.AUDITOR, ROLES.SUPERVISOR, ROLES.OPERADOR];
-
-async function isMasterCode(code) {
-    const snap = await db.doc('_privado/auth').get();
-    const hash = snap.exists ? snap.data().masterCodeHash : null;
-    if (!hash) return false;
-    return safeEqual(sha256(code), hash);
-}
 
 // Busca el usuario dueno de un codigo. Devuelve null si el codigo no existe
 async function findUserByCode(code) {

@@ -259,12 +259,18 @@ const SISDEL = (() => {
     }
 
     // El borrado en cascada (usuarios, visitas, vehiculos, etc.) lo hace el servidor
-    async function deleteCondominio(id) {
+    // Elimina un condominio completo. Aunque ya haya sesion master, el servidor vuelve a pedir la clave master y el nombre
+    // del condominio. Devuelve { ok: true, usuarios, codigos, cuentas } o { ok: false, error } con el motivo en español.
+    async function deleteCondominio(id, masterCode, confirmName) {
         try {
             await authReady();
-            await services().functions.httpsCallable('deleteCondominio', { timeout: 300000 })({ condominioId: id });
-            return true;
-        } catch (error) { reportError('deleteCondominio', error); return false; }
+            const result = await services().functions.httpsCallable('deleteCondominio', { timeout: 540000 })({ condominioId: id, masterCode, confirmName });
+            return { ok: true, ...(result.data || {}) };
+        } catch (error) {
+            console.error('deleteCondominio', error && error.code);
+            // El servidor da el motivo en español; se quita el sufijo tecnico "[403]" que a veces agrega el cliente
+            return { ok: false, error: String((error && error.message) || 'No se pudo eliminar el condominio').replace(/\s*\[\d{3}\]\s*$/, '') };
+        }
     }
 
     // ══════════════════════════════════

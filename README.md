@@ -274,15 +274,15 @@ Para agregar un privilegio: una entrada en `privilegios.js` (con `parent` si es 
 
 ## Cuota mensual desglosada
 
-En **Sistema Financiero > Configuración** la cuota mensual se escribe por conceptos: **mantenimiento, agua, recolección de basura, electricidad y otros**. La Cuota Mensual es la suma (no se escribe a mano). Al cobrar la cuota, sea automática, con «Cuota del mes» o desde un residente, queda **una sola línea** cuya descripción nombra solo los conceptos que tienen monto:
+En **Sistema Financiero > Configuración** la cuota mensual se escribe por conceptos: **mantenimiento, agua, recolección de basura, electricidad y otros**. La Cuota Mensual es la suma (no se escribe a mano). Al cobrar la cuota, sea automática, con «Cuota del mes» o desde un residente, queda **una sola línea** cuya descripción nombra solo los conceptos que tienen monto y el mes al que corresponde la cuota (por ejemplo, para octubre de 2026):
 
 | Mantenimiento | Agua | Basura | Resultado |
 | --- | --- | --- | --- |
-| 400 | 100 | | `Por aporte para mantenimiento y servicio de agua Q 500.00` |
-| 500 | | | `Por aporte para mantenimiento Q 500.00` |
-| 300 | 100 | 50 | `Por aporte para mantenimiento, servicio de agua y recolección de basura Q 450.00` |
+| 400 | 100 | | `Por aporte para mantenimiento y servicio de agua correspondiente a octubre de 2026 Q 500.00` |
+| 500 | | | `Por aporte para mantenimiento correspondiente a octubre de 2026 Q 500.00` |
+| 300 | 100 | 50 | `Por aporte para mantenimiento, servicio de agua y recolección de basura correspondiente a octubre de 2026 Q 450.00` |
 
-El detalle del movimiento muestra además cada concepto con su monto. Las cuotas ya cobradas conservan su descripción; sin desglose configurado la cuota sigue llamándose «Cuota - Mes Año». Cambiar el desglose es un privilegio de la cuota (`finanzas.config_cuota`).
+El mes es el de la cuota, no el día en que se registra: la cuota de octubre cobrada en noviembre dice octubre. El detalle del movimiento muestra además cada concepto con su monto. Las cuotas ya cobradas conservan su descripción (las cobradas con desglose antes de este cambio se corrigen con `scripts/cuotas-con-mes.mjs`, que solo cambia el texto); sin desglose configurado la cuota sigue llamándose «Cuota - Mes Año». Cambiar el desglose es un privilegio de la cuota (`finanzas.config_cuota`).
 
 ## Stack
 

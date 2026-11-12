@@ -94,11 +94,11 @@ function missingFees(residents, txs, settings, now = new Date(), nowIso = now.to
     const ids = new Set(txs.map((t) => String(t.id)));
     const all = txs.slice();
     const created = [];
-    // Con desglose configurado la cuota lleva la misma descripcion que cobra OIKOS (ver finanzas/sisdel-cuotas.js)
-    const info = cuotas.feeInfo(s, fee);
     for (let m = 0; m <= curMonth; m++) {
         if (m === curMonth && d < chargeDay) continue;
         const period = periodKey(y, m);
+        // Con desglose configurado la cuota lleva la misma descripcion que cobra OIKOS, con su mes (ver finanzas/sisdel-cuotas.js)
+        const info = cuotas.feeInfo(s, fee, period);
         residents.forEach((r) => {
             if (autoSkips(r, period) || hasFeeCharge(all, r.id, period)) return;
             let id = `fee_${r.id}_${period}`;

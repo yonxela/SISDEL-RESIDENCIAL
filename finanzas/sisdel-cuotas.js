@@ -4,11 +4,13 @@
    La cuota mensual se compone de hasta cinco conceptos: mantenimiento, agua, recoleccion de basura,
    electricidad y otros. En Configuracion se escribe cuanto corresponde a cada uno (settings.feeBreakdown)
    y la cuota (settings.fee) es la suma. Al cobrar la cuota (automatica o manual) el movimiento queda en UNA
-   sola linea cuya descripcion nombra solo los conceptos con monto, por ejemplo:
+   sola linea cuya descripcion nombra solo los conceptos con monto y el mes que se cobra, por ejemplo:
 
-       Por aporte para mantenimiento y servicio de agua Q 500.00
+       Por aporte para mantenimiento y servicio de agua correspondiente a octubre de 2026 Q 500.00
 
-   y guarda el desglose en movimiento.breakdown ({ maintenance: 400, water: 100 }).
+   y guarda el desglose en movimiento.breakdown ({ maintenance: 400, water: 100 }). El mes sale del periodo
+   de la cuota (movimiento.period, AAAA-MM), no de la fecha en que se registra: una cuota de octubre cobrada
+   en noviembre dice octubre.
 
    Lo carga OIKOS (finanzas/index.html) en el navegador y lo usa el servidor al generar las cuotas del dia
    (functions/src/finanzas/mora.js). functions/src/finanzas/cuotas.js es una COPIA IDENTICA de este archivo
@@ -30,6 +32,7 @@
         { key: 'other', label: 'Otros', phrase: 'otros conceptos' }
     ];
     const SYMBOLS = { GTQ: 'Q', USD: '$', MXN: '$', EUR: '€' };
+    const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
     const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
     // Un monto valido es un numero mayor que cero; lo demas (vacio, texto, negativo) cuenta como cero
@@ -67,20 +70,30 @@
         return `${symbolOf(currency)} ${integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
     }
 
-    // La descripcion de la cuota; null si no hay ningun monto
-    function describe(raw, currency) {
+    // "octubre de 2026" para el periodo "2026-10"; null si el periodo no es valido
+    function monthLabel(period) {
+        const mt = /^(\d{4})-(\d{2})$/.exec(String(period || ''));
+        if (!mt) return null;
+        const month = parseInt(mt[2], 10);
+        return month >= 1 && month <= 12 ? `${MONTHS[month - 1]} de ${mt[1]}` : null;
+    }
+
+    // La descripcion de la cuota; null si no hay ningun monto. Con periodo (AAAA-MM) dice a que mes corresponde.
+    function describe(raw, currency, period) {
         const sum = total(raw);
         if (sum <= 0) return null;
-        return `Por aporte para ${joinList(used(raw).map((p) => p.phrase))} ${money(sum, currency)}`;
+        const month = monthLabel(period);
+        return `Por aporte para ${joinList(used(raw).map((p) => p.phrase))}${month ? ` correspondiente a ${month}` : ''} ${money(sum, currency)}`;
     }
     // "Mantenimiento Q 400.00 · Agua Q 100.00" (para el detalle de un movimiento)
     function listParts(raw, currency) {
         return used(raw).map((p) => `${p.label} ${money(amountOf(raw[p.key]), currency)}`).join(' · ');
     }
 
-    // Concepto y desglose de una cuota de `amount` segun la configuracion; null si no hay desglose o si el monto no coincide con
-    // su suma (un cobro con un monto distinto al de la cuota conserva su concepto de siempre: "Cuota - Mes Año")
-    function feeInfo(settings, amount) {
+    // Concepto y desglose de la cuota del periodo `period` (AAAA-MM) por `amount` segun la configuracion; null si no hay desglose
+    // o si el monto no coincide con su suma (un cobro con un monto distinto al de la cuota conserva su concepto de siempre:
+    // "Cuota - Mes Año")
+    function feeInfo(settings, amount, period) {
         const s = settings || {};
         const breakdown = normalize(s.feeBreakdown);
         const sum = total(breakdown);
@@ -88,8 +101,8 @@
         if (sum <= 0 || !Number.isFinite(fee) || Math.abs(sum - fee) >= 0.005) return null;
         const parts = {};
         used(breakdown).forEach((p) => { parts[p.key] = breakdown[p.key]; });
-        return { concept: describe(breakdown, s.currency), breakdown: parts };
+        return { concept: describe(breakdown, s.currency, period), breakdown: parts };
     }
 
-    return { PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf };
+    return { PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel };
 });

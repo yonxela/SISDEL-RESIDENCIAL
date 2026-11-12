@@ -16,7 +16,7 @@
     <script src="./vendor/chart.umd.min.js"></script>
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
-    <script src="./sisdel-cuotas.js?v=20261109e"></script>
+    <script src="./sisdel-cuotas.js?v=20261112a"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1740,8 +1740,8 @@
             let id = `fee_${r.id}_${period}`;
             let n = 1;
             while (txs.some(t => t && String(t.id) === id)) { id = `fee_${r.id}_${period}_r${n++}`; }
-            // SISDEL: con desglose configurado, una sola linea nombra los conceptos con monto (sisdel-cuotas.js)
-            const feeInfo = SisdelCuotas.feeInfo(Store.get('settings'), fee);
+            // SISDEL: con desglose configurado, una sola linea nombra los conceptos con monto y el mes de la cuota (sisdel-cuotas.js)
+            const feeInfo = SisdelCuotas.feeInfo(Store.get('settings'), fee, period);
             const tx = Object.assign({
                 id,
                 date: new Date(y, m, cDay, 6, 0, 0).toISOString(),
@@ -3943,7 +3943,7 @@
             if (feeInput) feeInput.value = sum > 0 ? sum : '';
             const preview = document.getElementById('cfg-fee-preview');
             if (preview) preview.textContent = sum > 0
-                ? SisdelCuotas.describe(breakdown, (document.getElementById('cfg-curr') || {}).value)
+                ? SisdelCuotas.describe(breakdown, (document.getElementById('cfg-curr') || {}).value, currentFeePeriod())
                 : 'Escriba el monto de al menos un concepto: la cuota es la suma.';
         }
         function fillFeeBreakdown(s) {

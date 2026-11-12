@@ -33,6 +33,14 @@ equal('el simbolo sigue a la moneda', [C.describe({ water: 5 }, 'USD'), C.descri
 equal('centavos sin errores de redondeo', C.total({ maintenance: 0.1, water: 0.2 }), 0.3);
 equal('lista de listas', [C.joinList([]), C.joinList(['a']), C.joinList(['a', 'b']), C.joinList(['a', 'b', 'c'])], ['', 'a', 'a y b', 'a, b y c']);
 
+console.log('\nMes de la cuota');
+equal('el periodo se nombra en palabras', [C.monthLabel('2026-10'), C.monthLabel('2026-01'), C.monthLabel('2027-12')], ['octubre de 2026', 'enero de 2026', 'diciembre de 2027']);
+equal('un periodo invalido no se nombra', [C.monthLabel('2026-13'), C.monthLabel('2026-00'), C.monthLabel('2026-1'), C.monthLabel(''), C.monthLabel(null), C.monthLabel('octubre')], [null, null, null, null, null, null]);
+equal('con periodo, la descripcion dice a que mes corresponde', C.describe({ maintenance: 300, water: 100, garbage: 25 }, 'GTQ', '2026-10'), 'Por aporte para mantenimiento, servicio de agua y recolección de basura correspondiente a octubre de 2026 Q 425.00');
+equal('un solo concepto con su mes', C.describe({ maintenance: 500 }, 'GTQ', '2026-11'), 'Por aporte para mantenimiento correspondiente a noviembre de 2026 Q 500.00');
+equal('sin periodo valido, la descripcion queda como antes (sin mes)', [C.describe({ maintenance: 500 }, 'GTQ'), C.describe({ maintenance: 500 }, 'GTQ', 'xx')], ['Por aporte para mantenimiento Q 500.00', 'Por aporte para mantenimiento Q 500.00']);
+equal('sin montos no hay descripcion aunque haya periodo', C.describe({}, 'GTQ', '2026-10'), null);
+
 console.log('\nDesglose y total');
 equal('normalize deja siempre las cinco claves', C.normalize({ water: '100', basura: 5 }), { maintenance: 0, water: 100, garbage: 0, electricity: 0, other: 0 });
 equal('la suma es la cuota', C.total({ maintenance: 400, water: 100, garbage: 25.25 }), 525.25);
@@ -47,14 +55,18 @@ equal('si el cobro es de otro monto, conserva su concepto de siempre', C.feeInfo
 equal('sin desglose configurado no cambia nada', [C.feeInfo({ fee: 500 }, 500), C.feeInfo({ fee: 500, feeBreakdown: {} }, 500), C.feeInfo(null, 500)], [null, null, null]);
 equal('un desglose con montos en cero no cuenta', C.feeInfo({ fee: 0, feeBreakdown: { maintenance: 0 } }, 0), null);
 equal('la moneda de la configuracion decide el simbolo', C.feeInfo({ currency: 'USD', feeBreakdown: { water: 30 } }, 30).concept, 'Por aporte para servicio de agua $ 30.00');
+equal('el cobro de un periodo lleva su mes y el mismo desglose', C.feeInfo(settings, 500, '2026-10'), { concept: 'Por aporte para mantenimiento y servicio de agua correspondiente a octubre de 2026 Q 500.00', breakdown: { maintenance: 400, water: 100 } });
+equal('el mes es el del periodo, no el de hoy (una cuota atrasada o adelantada dice su mes)', [C.feeInfo(settings, 500, '2026-01').concept, C.feeInfo(settings, 500, '2026-12').concept], ['Por aporte para mantenimiento y servicio de agua correspondiente a enero de 2026 Q 500.00', 'Por aporte para mantenimiento y servicio de agua correspondiente a diciembre de 2026 Q 500.00']);
+equal('con un monto distinto a la suma, el periodo no cambia nada: "Cuota - Mes Año"', C.feeInfo(settings, 350, '2026-10'), null);
 
 console.log('\nServidor: cuotas del dia');
 const residents = [{ id: 'r1', status: 'active', createdAt: '2020-01-01T00:00:00Z' }];
 const now = M.gtDate(2026, 10, 7, 12);
 const withBreakdown = M.missingFees(residents, [], { ...settings, chargeDay: 5, feeMode: 'auto' }, now);
 const lastWith = withBreakdown[withBreakdown.length - 1];
-equal('la cuota automatica del servidor lleva la misma descripcion que cobra OIKOS', [lastWith.concept, lastWith.breakdown, lastWith.amount, lastWith.period], ['Por aporte para mantenimiento y servicio de agua Q 500.00', { maintenance: 400, water: 100 }, 500, '2026-11']);
-equal('todas las cuotas del ano del servidor la llevan', withBreakdown.every((t) => t.concept === lastWith.concept && t.amount === 500), true);
+equal('la cuota automatica del servidor lleva la misma descripcion que cobra OIKOS, con su mes', [lastWith.concept, lastWith.breakdown, lastWith.amount, lastWith.period], ['Por aporte para mantenimiento y servicio de agua correspondiente a noviembre de 2026 Q 500.00', { maintenance: 400, water: 100 }, 500, '2026-11']);
+equal('cada cuota del ano del servidor dice su propio mes', withBreakdown.every((t) => t.concept === C.feeInfo(settings, 500, t.period).concept && t.amount === 500), true);
+equal('la primera cuota del ano es la de enero', [withBreakdown[0].period, withBreakdown[0].concept], ['2026-01', 'Por aporte para mantenimiento y servicio de agua correspondiente a enero de 2026 Q 500.00']);
 const legacy = M.missingFees(residents, [], { fee: 500, chargeDay: 5, feeMode: 'auto' }, now);
 equal('sin desglose, el servidor sigue con "Cuota - Mes Año"', [legacy[legacy.length - 1].concept, 'breakdown' in legacy[legacy.length - 1]], ['Cuota - Noviembre 2026', false]);
 const mismatch = M.missingFees(residents, [], { ...settings, fee: 600, chargeDay: 5, feeMode: 'auto' }, now);
@@ -67,9 +79,9 @@ const oikos = read('finanzas/index.html');
 yes('OIKOS carga el modulo', /<script src="\.\/sisdel-cuotas\.js\?v=\w+"><\/script>/.test(oikos));
 yes('OIKOS tiene los cinco campos del desglose en Configuracion', ['maintenance', 'water', 'garbage', 'electricity', 'other'].every((k) => new RegExp(`id="cfg-fee-${k}"[^>]*oninput="updateFeeTotal\\(\\)"`).test(oikos)));
 yes('la cuota mensual es la suma y no se edita a mano', /id="cfg-fee" readonly/.test(oikos));
-yes('hay una vista previa de la descripcion del cargo', /id="cfg-fee-preview"/.test(oikos));
+yes('hay una vista previa de la descripcion del cargo, con el mes actual de ejemplo', /id="cfg-fee-preview"/.test(oikos) && /SisdelCuotas\.describe\(breakdown, \(document\.getElementById\('cfg-curr'\) \|\| \{\}\)\.value, currentFeePeriod\(\)\)/.test(oikos));
 yes('Configuracion muestra el desglose al abrir y lo guarda al guardar', /fillFeeBreakdown\(s\);/.test(oikos) && /feeBreakdown,\n/.test(oikos) && /fee: feeTotal,/.test(oikos));
-yes('toda cuota (automatica, manual o por meses) pasa por createFeeCharge con el concepto del desglose', /const feeInfo = SisdelCuotas\.feeInfo\(Store\.get\('settings'\), fee\);/.test(oikos) && /concept: feeInfo \? feeInfo\.concept : feeConceptFor\(y, m\),/.test(oikos) && /\.\.\.\(feeInfo \? \{ breakdown: feeInfo\.breakdown \} : \{\}\)/.test(oikos));
+yes('toda cuota (automatica, manual o por meses) pasa por createFeeCharge con el concepto del desglose y su mes', /const feeInfo = SisdelCuotas\.feeInfo\(Store\.get\('settings'\), fee, period\);/.test(oikos) && /concept: feeInfo \? feeInfo\.concept : feeConceptFor\(y, m\),/.test(oikos) && /\.\.\.\(feeInfo \? \{ breakdown: feeInfo\.breakdown \} : \{\}\)/.test(oikos));
 yes('las cuatro vias de cobro llaman a createFeeCharge', (oikos.match(/createFeeCharge\(txs, /g) || []).length >= 4);
 yes('el detalle de un movimiento muestra el desglose', /SisdelCuotas\.listParts\(tx\.breakdown/.test(oikos));
 yes('el desglose es un privilegio de la cuota: el bloqueo de pantalla y el filtro de subida lo tratan como tal', /'#cfg-fee-maintenance'/.test(read('finanzas-bloqueo.js')) && /'feeBreakdown'/.test(read('finanzas-sync.js')) && /hasAny\(\['fee', 'feeBreakdown'/.test(read('firestore.rules')));

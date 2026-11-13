@@ -293,8 +293,10 @@ service cloud.firestore {
         allow read: if isMaster()
           || (isMember(condoId) && request.auth.uid == userId)
           || pUsuariosVer(condoId);
+        // El id 'master' queda reservado: es el de la cuenta del master (functions/src/auth.js) y en la bitacora
+        // un usuario con ese id se confundiria con el
         allow create: if isMaster()
-          || (validUser() && canCreateRole(condoId, request.resource.data.role)
+          || (userId != 'master' && validUser() && canCreateRole(condoId, request.resource.data.role)
               && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
         allow update: if isMaster()
           || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights()
@@ -377,9 +379,11 @@ service cloud.firestore {
 
       // ── Bitacora: el rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (quien, que y cuando) ──
       // La escribe solo el servidor (functions/src/bitacora.js): desde una pantalla nadie la escribe, la cambia ni
-      // la borra. La lee quien asigna privilegios, o quien puede ver a la vez los usuarios y las finanzas (auditor).
+      // la borra. La lee quien asigna privilegios (equivale a control total del condominio) o quien puede ver a la
+      // vez todo lo que la bitacora anota: usuarios, vehiculos y finanzas (el auditor). Con uno solo no alcanza.
       match /bitacora/{entryId} {
-        allow read: if isMaster() || pUsuariosPrivilegios(condoId) || (pUsuariosVer(condoId) && pFinanzasVer(condoId));
+        allow read: if isMaster() || pUsuariosPrivilegios(condoId)
+          || (pUsuariosVer(condoId) && pVehiculosVer(condoId) && pFinanzasVer(condoId));
         allow write: if false;
       }
 
@@ -418,8 +422,10 @@ service cloud.firestore {
       function movementCreateOk() {
         // Todo movimiento nace con un monto numerico mayor que cero (un pago negativo seria un cargo escondido)
         // y sin sello del servidor (ver stampUntouched)
+        // ni marcado como generado por el servidor (esa marca evita el recalculo inmediato de la mora)
         return request.resource.data.get('amount', 0) is number && request.resource.data.amount > 0
           && !('server_at' in request.resource.data)
+          && request.resource.data.get('serverGenerated', false) != true
           && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
           || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,

@@ -44,7 +44,7 @@ const IDLE = `(() => { const s = document.getElementById('syncPill').dataset.sta
 // Lo que hay en la copia de este equipo (IndexedDB)
 const COPY = `(async () => {
     const names = (await indexedDB.databases()).map((d) => d.name).filter((n) => n.startsWith('sisdel-finanzas-'));
-    const out = { bases: names, registro: localStorage.getItem('sisdel_fin_bases'), viejas: Object.keys(localStorage).filter((k) => k.startsWith('oikos_multisys-')) };
+    const out = { bases: names, registro: localStorage.getItem('sisdel_fin_bases'), viejas: Object.keys(localStorage).filter((k) => k.startsWith('oikos_multisys-')), respaldo: Object.keys(localStorage).filter((k) => k.startsWith('sisdel_fin_sin_subir_')).flatMap((k) => Object.keys(JSON.parse(localStorage.getItem(k)))) };
     if (!names.length) return out;
     const open = await new Promise((res, rej) => { const r = indexedDB.open(names[0]); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
     const all = (store) => new Promise((res, rej) => { const r = open.transaction(store).objectStore(store).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
@@ -126,11 +126,27 @@ async function run() {
         equal('repetirla no duplica nada', await oikos(`(() => { openFeeRun(); return feeRunTargets().pending.length; })()`), 0);
         await oikos(`closeModal('modal-fee-run')`);
 
+        console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
+        const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);
+        await page.evaluate(`document.getElementById('btnReload').click()`);
+        await sleep(800);
+        await page.waitFor(OPENED, 'OIKOS montado de nuevo', 30000);
+        await page.waitFor(`(() => { try { return document.querySelector('#frameBox iframe').contentWindow.eval('typeof Store !== "undefined" && typeof currentFeePeriod === "function"'); } catch (e) { return false; } })()`, 'OIKOS listo', 30000);
+        equal('conserva las mismas listas', await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`), beforeRemount);
+        // Un registro creado por el OIKOS anterior (su iframe ya no existe) se sigue pudiendo leer, anular y subir
+        const feeId = `fee_u-maria_${period}`;
+        await oikos(`deleteTransaction(${JSON.stringify(feeId)})`);
+        await idle();
+        equal('anular una cuota creada antes de actualizar funciona y llega a la nube', await (async () => { const d = (await txRef(feeId).get()).data(); return [d.deleted, d.deleted_reason, d.amount, d.period]; })(), [true, 'prueba', 500, period]);
+        equal('y deshacer la devuelve, tambien en la nube', [await oikos(`(() => { History.undo(); return Store.get('transactions').some(x => x.id === ${JSON.stringify(feeId)}); })()`), await (async () => { await idle(); return (await txRef(feeId).get()).data().deleted; })()], [true, false]);
+
         console.log('\nVolver a abrir (usa la copia del equipo)');
         // Mismo contenido (el orden de la lista al abrir es por fecha de alta; durante la sesion, por orden de llegada)
         const SNAPSHOT = `(() => {
-            // restored_at es rastro que agrega la nube al devolver una anulacion: llega al volver a abrir, no es un cambio
-            const sorted = (o) => Object.keys(o).filter((k) => k !== 'restored_at').sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
+            // El rastro de una anulacion devuelta (restored_at y, en un registro vivo, el motivo y la fecha de la
+            // anulacion) lo conserva la nube y llega al volver a abrir: no es un cambio del movimiento
+            const trace = (o, k) => k === 'restored_at' || (o.deleted !== true && ['deleted', 'deleted_at', 'deleted_reason'].includes(k));
+            const sorted = (o) => Object.keys(o).filter((k) => !trace(o, k)).sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
             const byId = (list) => list.map(sorted).sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
             const s = Store.get('settings');
             return JSON.stringify([byId(Store.getRaw('transactions')), byId(Store.get('residents')).map(r => [r.id, r.name, r.unit, r.contact, r.dpi, r.balance]), [s.fee, s.receiptCounter, s.chargeDay]]);
@@ -138,6 +154,7 @@ async function run() {
         const listBefore = await oikos(SNAPSHOT);
         equal('abre de nuevo', await openFinance(), 'ok');
         equal('con los mismos movimientos (campo por campo), saldos y contador de recibos', await oikos(SNAPSHOT) === listBefore, true);
+        equal('la cuota que se anulo y se devolvio sigue viva y trae el rastro de su anulacion', await oikos(`(() => { const t = Store.getRaw('transactions').find(x => x.id === ${JSON.stringify(feeId)}); return [Store.get('transactions').some(x => x.id === t.id), t.deleted, t.deleted_reason, typeof t.restored_at]; })()`), [true, false, 'prueba', 'string']);
         equal('y el pago que se devolvio y se volvio a anular trae su rastro desde la nube', await oikos(`(() => { const t = Store.getRaw('transactions').find(x => x.id === ${JSON.stringify(payment.id)}); return [t.deleted, t.deleted_reason, typeof t.restored_at]; })()`), [true, 'prueba', 'string']);
         copy = await page.evaluate(COPY);
         record('la copia guarda los movimientos (en bloques y cambios sueltos)', copy.enBloques + copy.sueltos >= txBefore + active && copy.info.complete === true, JSON.stringify([copy.enBloques, copy.sueltos]));
@@ -152,12 +169,13 @@ async function run() {
         copy = await page.evaluate(COPY);
         // Tambien queda pendiente la configuracion: registrar un movimiento avanza el contador de recibos
         equal('el egreso queda anotado como pendiente en el equipo', [copy.pendientes.sort(), (await txRef(expense).get()).exists, (await page.evaluate(`localStorage.getItem('sisdel_fin_pendiente_${CONDO}')`)) === '1'], [['settings:settings', 'transactions:' + expense], false, true]);
+        equal('y tambien, al instante, en el respaldo de localStorage', copy.respaldo.sort(), ['settings:settings', 'transactions:' + expense]);
         await page.send('Network.setBlockedURLs', { urls: [] });
         equal('al volver la conexion y abrir de nuevo', await openFinance(), 'ok');
         await waitFor('el egreso se sube solo', async () => (await txRef(expense).get()).exists);
         await idle();
         copy = await page.evaluate(COPY);
-        equal('y deja de estar pendiente', [copy.pendientes, await oikos(`Store.get('transactions').some(x => x.id === ${JSON.stringify(expense)})`)], [[], true]);
+        equal('y deja de estar pendiente (en la copia y en el respaldo)', [copy.pendientes, copy.respaldo, await oikos(`Store.get('transactions').some(x => x.id === ${JSON.stringify(expense)})`)], [[], [], true]);
 
         console.log('\nCopia de la version anterior (localStorage)');
         const prefix = `oikos_multisys-${CONDO}_`;
@@ -184,7 +202,7 @@ async function run() {
         await page.evaluate(`SISDEL.logout()`);
         await page.waitFor(`location.pathname.endsWith('/index.html') && document.readyState === 'complete'`, 'el login');
         copy = await page.evaluate(COPY);
-        equal('al salir se borra la copia del equipo', [copy.bases, copy.registro, copy.viejas], [[], null, []]);
+        equal('al salir se borra la copia del equipo', [copy.bases, copy.registro, copy.viejas, copy.respaldo], [[], null, [], []]);
     } finally {
         await close();
     }

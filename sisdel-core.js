@@ -904,7 +904,7 @@ const SISDEL = (() => {
         try {
             const keys = Object.keys(localStorage);
             if (keys.some((k) => k.startsWith('sisdel_fin_pendiente_'))) return Promise.resolve();
-            keys.filter((k) => k.startsWith('oikos_')).forEach((k) => localStorage.removeItem(k));
+            keys.filter((k) => k.startsWith('oikos_') || k.startsWith('sisdel_fin_sin_subir_')).forEach((k) => localStorage.removeItem(k));
             let condos = [];
             try { condos = JSON.parse(localStorage.getItem('sisdel_fin_bases') || '[]'); } catch { condos = []; }
             localStorage.removeItem('sisdel_fin_bases');

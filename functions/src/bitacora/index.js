@@ -6,14 +6,21 @@
 // - "Quien" sale del propio evento de Firestore (la sesion con la que se hizo la escritura), no de un dato que
 //   mande el navegador. Lo que hace el servidor (cuotas del dia, mora, sellos) queda como "Servidor".
 // - Lo eliminado queda con su contenido completo, y lo anulado o devuelto queda como "anular" / "restaurar".
-// - Si el condominio se esta eliminando por completo (purga.js) ya no se anota nada: no se recrea nada suyo.
+// - Si el condominio se esta eliminando por completo (purga.js lo marca con `purging`) ya no se anota nada: no
+//   se guardan copias de lo que se elimina ni se recrea nada suyo.
+// - Una anotacion nunca se pierde por ser grande: se resume (entrada.js) y, si aun asi Firestore la rechaza, se
+//   guarda lo minimo (que documento, que accion, quien y que campos).
 //
 // Se consulta con scripts/ver-bitacora.mjs. Como se arma cada anotacion: entrada.js (se prueba en scripts/test-bitacora.mjs).
 const { onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
 const { logger } = require('firebase-functions/v2');
 const { FieldValue } = require('firebase-admin/firestore');
 const { db } = require('../firebase');
-const { COLLECTION, AUDITED, buildEntry, userIdOf, actorOf } = require('./entrada');
+const { COLLECTION, AUDITED, buildEntry, minimalEntry, userIdOf, actorOf } = require('./entrada');
+
+// Fallas pasajeras (se reintenta): tiempo agotado, sin cupo, transaccion abortada, error interno, servicio caido
+const TRANSIENT_CODES = [4, 8, 10, 13, 14];
+const isTransient = (error) => !error || error.code === undefined || TRANSIENT_CODES.includes(Number(error.code));
 
 // Anota en una transaccion: solo si el condominio todavia existe (si lo estan eliminando no se recrea nada).
 // El id es el del evento: si el evento llega dos veces, se anota una sola vez.
@@ -24,7 +31,7 @@ async function record(condoId, entryId, entry) {
         const refs = [condoRef];
         if (uid) refs.push(condoRef.collection('usuarios').doc(uid));
         const [condoSnap, actorSnap] = await tx.getAll(...refs);
-        if (!condoSnap.exists) return false;
+        if (!condoSnap.exists || condoSnap.get('purging') === true) return false;
         const actor = actorOf(entry, actorSnap && actorSnap.exists ? actorSnap.data() : null);
         tx.set(condoRef.collection(COLLECTION).doc(entryId), { ...entry, ...actor, at: FieldValue.serverTimestamp() });
         return true;
@@ -46,7 +53,20 @@ function audit(collection) {
         }
         if (!entry) return;
         const entryId = String(event.id || `${Date.now()}-${event.params.docId}`).replace(/\//g, '_');
-        await record(event.params.condoId, entryId, entry);
+        try {
+            await record(event.params.condoId, entryId, entry);
+        } catch (error) {
+            if (isTransient(error)) throw error;
+            // Firestore rechazo la anotacion (demasiado grande o con un valor que no admite): reintentar no lo arregla.
+            // Se guarda lo minimo para que el cambio no quede sin rastro.
+            logger.error('bitacora: anotacion rechazada, se guarda resumida', { collection, docId: event.params.docId, message: error.message });
+            try {
+                await record(event.params.condoId, entryId, minimalEntry(entry, error.message));
+            } catch (second) {
+                if (isTransient(second)) throw second;
+                logger.error('bitacora: no se pudo anotar', { collection, docId: event.params.docId, message: second.message });
+            }
+        }
     });
 }
 

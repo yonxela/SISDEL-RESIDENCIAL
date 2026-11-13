@@ -164,6 +164,18 @@
                 iframe.classList.add('pendiente');
                 const mounted = iframe;
                 mounted.addEventListener('load', () => {
+                    // OIKOS debe estar trabajando sobre la memoria de esta pagina (finanzas-datos.js). Si no (no cargo
+                    // esa parte), no se muestra: lo que se registrara ahi no llegaria a la nube.
+                    let usesMemory = false;
+                    try { usesMemory = mounted.contentWindow.eval('typeof sisdelMem === "function" && sisdelMem() !== null') === true; } catch { usesMemory = false; }
+                    if (!usesMemory) {
+                        mounted.remove();
+                        if (iframe === mounted) iframe = null;
+                        message.style.display = '';
+                        message.textContent = 'No se pudo abrir el Sistema Financiero. Revise su conexión y recargue la página.';
+                        setStatus('error');
+                        return;
+                    }
                     try {
                         SisdelFinanzasBloqueo.install(mounted.contentWindow, (key) => SISDEL.can(key));
                     } catch (error) {
@@ -279,7 +291,11 @@
             async function leave(action) {
                 setStatus('saving');
                 const saved = await sync.waitIdle(10000);
-                if (!saved && !confirm('Hay cambios que todavía no se guardaron en la nube. Quedan en este equipo y se subirán la próxima vez que abra el Sistema Financiero.\n\n¿Salir de todos modos?')) {
+                // Lo pendiente queda anotado en este equipo; si este navegador no deja guardar nada, se dice claro
+                const warning = sync.pendingIsSafe()
+                    ? 'Hay cambios que todavía no se guardaron en la nube. Quedan en este equipo y se subirán la próxima vez que abra el Sistema Financiero.\n\n¿Salir de todos modos?'
+                    : 'Hay cambios que todavía no se guardaron en la nube y este navegador no permite guardarlos en el equipo: si sale ahora SE PIERDEN.\n\nEspere a que vuelva la conexión y diga "Guardado en la nube".\n\n¿Salir de todos modos?';
+                if (!saved && !confirm(warning)) {
                     return;
                 }
                 action();

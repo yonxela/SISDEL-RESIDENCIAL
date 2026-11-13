@@ -423,6 +423,26 @@ async function run() {
     const neighbor = await reader('PN9011');
     await denied('un vecino no la lee', () => neighbor.db.collection(`condominios/${CONDO}/bitacora`).limit(1).get());
     await neighbor.close();
+    // Lo que solo puede hacer el servidor
+    const clientCol = (name) => a.db.collection(`condominios/${CONDO}/${name}`);
+    await denied('un cliente no puede marcar un movimiento como generado por el servidor', () => clientCol('finanzas_movimientos').doc('falso-servidor').set({ id: 'falso-servidor', type: 'charge', kind: 'fee', period: '2026-11', amount: 425, concept: 'Cuota', resiId: 'pn-1', auto: true, serverGenerated: true, created_at: later, updated_at: later }));
+    const newUser = (id) => ({ id, condominioId: CONDO, name: 'Usuario De Prueba', role: 'vecino', casa: 'Lote 9', phone: '5555-0009', email: '', paymentStatus: 'al_dia', morosoSince: null, active: true, createdAt: later });
+    await denied('ni crear un usuario con el id reservado del master', () => clientCol('usuarios').doc('master').set(newUser('master')));
+    let createdOk = true;
+    try { await clientCol('usuarios').doc('pn-9').set(newUser('pn-9')); } catch { createdOk = false; }
+    record('con cualquier otro id el alta de un vecino sigue permitida', createdOk);
+    await condoRef.collection('usuarios').doc('pn-9').delete();
+
+    // Eliminar un condominio por completo no deja copias de lo eliminado en la bitacora
+    const { purgeCondominio } = require('../functions/src/purga.js');
+    const tinyRef = adminDb.doc('condominios/condo-prueba-purga-bitacora');
+    await adminDb.recursiveDelete(tinyRef);
+    await tinyRef.set({ id: 'condo-prueba-purga-bitacora', name: 'Purga Bitacora', active: true, createdAt: later });
+    for (let i = 1; i <= 25; i++) await tinyRef.collection('usuarios').doc('pb-' + i).set({ id: 'pb-' + i, condominioId: 'condo-prueba-purga-bitacora', name: 'Vecino ' + i, role: 'vecino', casa: 'Lote ' + i, createdAt: later });
+    await waitFor('el condominio de prueba tiene su bitacora antes de eliminarlo', async () => (await tinyRef.collection('bitacora').count().get()).data().count === 25);
+    await purgeCondominio({ db: adminDb, auth: null }, 'condo-prueba-purga-bitacora');
+    await sleep(3000);
+    equal('tras eliminarlo (una sola pasada) no queda nada suyo: ni el condominio, ni usuarios, ni bitacora', [(await tinyRef.get()).exists, (await tinyRef.collection('usuarios').count().get()).data().count, (await tinyRef.collection('bitacora').count().get()).data().count], [false, 0, 0]);
 
     // Quien: en el emulador el evento no trae la sesion real, asi que se prueba la anotacion directamente
     const { record: writeEntry } = require('../functions/src/bitacora');

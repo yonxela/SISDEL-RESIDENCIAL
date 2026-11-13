@@ -27,6 +27,8 @@
     // Copia del equipo
     const DB_PREFIX = 'sisdel-finanzas-';
     const REGISTRY_KEY = 'sisdel_fin_bases';
+    // Lo pendiente de subir tambien se anota aqui (localStorage), al instante: ver pendingBackup
+    const PENDING_PREFIX = 'sisdel_fin_sin_subir_';
     const SCHEMA = 1;
     const CHUNK_SIZE = 2000;
     // Con mas cambios sueltos que estos, la copia se reescribe en bloques (abre mas rapido)
@@ -253,6 +255,66 @@
         try { return typeof globalThis !== 'undefined' && globalThis[name] ? globalThis[name] : null; } catch (e) { return null; }
     }
 
+    // Respaldo de lo pendiente de subir en localStorage. IndexedDB guarda de forma diferida y puede no existir
+    // (ventana privada, almacenamiento bloqueado) o fallar; localStorage guarda al instante, como hacia OIKOS
+    // antes. Lo pendiente es poco (lo que todavia no subio), asi que cabe; si no cabe, queda solo en IndexedDB.
+    function pendingBackup(storage, condoId) {
+        const key = PENDING_PREFIX + condoId;
+        const read = () => {
+            try { const map = JSON.parse((storage && storage.getItem(key)) || '{}'); return map && typeof map === 'object' && !Array.isArray(map) ? map : {}; } catch (e) { return {}; }
+        };
+        const write = (map) => {
+            if (!storage) return false;
+            try {
+                if (Object.keys(map).length) storage.setItem(key, JSON.stringify(map)); else storage.removeItem(key);
+                return true;
+            } catch (e) { return false; }
+        };
+        return {
+            list: () => Object.values(read()),
+            put(kind, items) {
+                const map = read();
+                items.forEach((item) => { const id = kind === 'settings' ? 'settings' : docIdOf(item); map[kind + ':' + id] = { kind, id, item }; });
+                return write(map);
+            },
+            remove(kind, ids) {
+                const map = read();
+                ids.forEach((id) => { delete map[kind + ':' + id]; });
+                return write(map);
+            }
+        };
+    }
+    const stampMs = (entry) => { const t = Date.parse((entry && entry.item && entry.item.updated_at) || ''); return Number.isFinite(t) ? t : 0; };
+
+    // Agrega el respaldo de pendientes a una copia. keepsPending(): ¿lo pendiente esta a salvo en este equipo?
+    function withPendingBackup(cache, storage, condoId) {
+        const backup = pendingBackup(storage, condoId);
+        let saved = !!storage;
+        return {
+            get persistent() { return cache.persistent === true; },
+            keepsPending: () => saved || cache.persistent === true,
+            async load() {
+                const loaded = await cache.load();
+                // Lo pendiente sale de los dos lugares; si esta en ambos, vale el cambio mas reciente
+                const byKey = new Map();
+                (loaded.pending || []).concat(backup.list()).forEach((entry) => {
+                    if (!entry || !entry.kind || entry.item === undefined || entry.item === null) return;
+                    const k = entry.kind + ':' + entry.id;
+                    if (!byKey.has(k) || stampMs(entry) > stampMs(byKey.get(k))) byKey.set(k, entry);
+                });
+                return { ...loaded, pending: [...byKey.values()] };
+            },
+            putPending(kind, items) { saved = backup.put(kind, items); return cache.putPending(kind, items); },
+            deletePending(kind, ids) { backup.remove(kind, ids); return cache.deletePending(kind, ids); },
+            resetMirror: (info) => cache.resetMirror(info),
+            appendChunk: (index, records, info) => cache.appendChunk(index, records, info),
+            applyDeltas: (records, info) => cache.applyDeltas(records, info),
+            setInfo: (info) => cache.setInfo(info),
+            compact: (records, info) => cache.compact(records, info),
+            close: () => cache.close()
+        };
+    }
+
     // Copia que no guarda nada (sin IndexedDB, o si falla): todo sigue funcionando desde la nube
     function nullCache() {
         const ok = () => Promise.resolve();
@@ -302,7 +364,7 @@
     async function openCache(condoId, env) {
         const idb = envOf(env, 'indexedDB');
         const storage = envOf(env, 'localStorage');
-        if (!idb) return nullCache();
+        if (!idb) return withPendingBackup(nullCache(), storage, condoId);
         let db;
         try {
             const open = idb.open(DB_PREFIX + condoId, 1);
@@ -313,7 +375,7 @@
             db = await request(open);
         } catch (error) {
             console.warn('Sistema Financiero: sin copia en este equipo (IndexedDB no disponible)', error);
-            return nullCache();
+            return withPendingBackup(nullCache(), storage, condoId);
         }
         if (storage) register(storage, condoId);
         let broken = false;
@@ -331,8 +393,8 @@
         }
         const keyOf = (kind, id) => kind + ':' + id;
 
-        return {
-            persistent: true,
+        return withPendingBackup({
+            get persistent() { return !broken; },
             load: () => safely('leer', async () => {
                 const tx = db.transaction(['base', 'delta', 'pending', 'meta'], 'readonly');
                 const [info, chunks, deltas, pending] = await Promise.all([
@@ -398,7 +460,7 @@
                 await finished(tx);
             }),
             close() { broken = true; try { db.close(); } catch (e) { /* ya cerrada */ } }
-        };
+        }, storage, condoId);
     }
 
     // Borra las copias de este equipo (al cerrar sesion). Resuelve cuando termina o al agotarse el tiempo.
@@ -407,7 +469,7 @@
         const storage = envOf(env, 'localStorage');
         if (!idb || !storage) return Promise.resolve();
         const ids = readRegistry(storage);
-        try { storage.removeItem(REGISTRY_KEY); } catch (e) { /* ignorar */ }
+        try { storage.removeItem(REGISTRY_KEY); ids.forEach((id) => storage.removeItem(PENDING_PREFIX + id)); } catch (e) { /* ignorar */ }
         const all = Promise.all(ids.map((id) => new Promise((resolve) => {
             try {
                 const req = idb.deleteDatabase(DB_PREFIX + id);
@@ -421,7 +483,7 @@
     function docIdOf(item) { return String(item.id).replace(/\//g, '_'); }
 
     return {
-        KINDS, DB_PREFIX, REGISTRY_KEY, SCHEMA, CHUNK_SIZE, COMPACT_AFTER,
+        KINDS, DB_PREFIX, REGISTRY_KEY, PENDING_PREFIX, SCHEMA, CHUNK_SIZE, COMPACT_AFTER, pendingBackup, withPendingBackup,
         cloneJson, cloneRecord, cloneList, sameRecord, stampList, balanceMap, byResident, canonicalOrder,
         createStore, openCache, nullCache, memoryCache, destroyCaches, docIdOf
     };

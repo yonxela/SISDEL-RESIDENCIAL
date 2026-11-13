@@ -57,6 +57,15 @@ async function purgeCondominio({ db, auth }, condominioId, { settleMs = 0, sleep
     const users = await condoRef.collection('usuarios').select().get();
     const userIds = users.docs.map((d) => d.id).filter((uid) => uid !== MASTER_UID);
 
+    // 0. Se marca el condominio: desde aqui la bitacora deja de anotar (functions/src/bitacora). Sin la marca, cada
+    //    documento eliminado dejaria una copia en la bitacora, por detras del borrado.
+    try {
+        await condoRef.update({ purging: true });
+    } catch (error) {
+        // 5 = no existe: ya se elimino antes y solo queda limpiar restos
+        if (Number(error && error.code) !== 5) throw error;
+    }
+
     // 1. Codigos de acceso y clave de la camara
     const codes = await db.collection('codigos').where('condominioId', '==', id).get();
     await deleteRefs(db, codes.docs.map((d) => d.ref));

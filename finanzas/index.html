@@ -1136,6 +1136,22 @@
     <!-- SISDEL: memoria compartida con finanzas.html y copias de registros (misma version que en finanzas.html) -->
     <script src="../finanzas-datos.js?v=20261112a"></script>
     <script>
+        // SISDEL: si finanzas.html ofrece su memoria pero finanzas-datos.js no cargo (falla de red), OIKOS no sigue en
+        // localStorage: lo que se registrara ahi no se subiria a la nube. Se detiene y pide recargar.
+        (function () {
+            var offered = false;
+            try { offered = window.parent !== window && !!window.parent.sisdelFinanzasStore; } catch (e) { offered = false; }
+            if (!offered || typeof SisdelFinanzasDatos !== 'undefined') return;
+            document.documentElement.innerHTML =
+                '<head><meta charset="utf-8"><title>Sistema Financiero</title></head>' +
+                '<body style="margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif">' +
+                '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center">' +
+                '<h1 style="margin:0 0 12px;font-size:20px">No se pudo abrir el Sistema Financiero</h1>' +
+                '<p style="margin:0;max-width:420px;line-height:1.5;color:#94A3B8">Faltó cargar una parte de la página. Revise su conexión y recargue.</p>' +
+                '</div></body>';
+            throw new Error('finanzas: no cargo finanzas-datos.js');
+        })();
+
         // ========== MASTER STORE (Companies) ==========
         const MasterStore = {
             get: () => JSON.parse(localStorage.getItem('oikos_master_companies')) || [],
@@ -1250,7 +1266,8 @@
             /** SISDEL: movimientos vivos de un residente, en el orden de la lista (copias, como Store.get). */
             txOf: (resiId) => {
                 const mem = sisdelMem();
-                if (!mem) return Store.get('transactions').filter(t => String(t.resiId) === String(resiId));
+                // (un residente sin id no existe en SISDEL; si lo hubiera, se resuelve como antes, recorriendo la lista)
+                if (!mem || resiId === null || resiId === undefined) return Store.get('transactions').filter(t => String(t.resiId) === String(resiId));
                 return SisdelFinanzasDatos.cloneList(sisdelDerived(mem, 'byResident', SisdelFinanzasDatos.byResident).get(String(resiId)) || []);
             },
             set: (k, v) => {
@@ -2181,7 +2198,7 @@
             if (currentTxFilter !== 'all') txs = txs.filter(t => t.type === currentTxFilter);
             const res = Store.get('residents');
             const totalRows = txs.length;
-            txs = txs.slice(0, accountingShown);
+            if (mem) txs = txs.slice(0, accountingShown);   // fuera de SISDEL la tabla se pinta completa, como antes
             const moreRow = totalRows > txs.length
                 ? `<tr><td colspan="3" class="py-4 px-6 text-center"><button onclick="showMoreAccounting()" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold">Mostrar más (${txs.length} de ${totalRows})</button></td></tr>`
                 : '';

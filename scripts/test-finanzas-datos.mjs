@@ -258,6 +258,35 @@ console.log('\nCopia del equipo');
     const broken = await D.openCache('c1', { indexedDB: { open() { throw new Error('bloqueado'); } }, localStorage: null });
     console.warn = warn;
     equal('si IndexedDB falla al abrir se sigue sin copia', broken.persistent, false);
+    // Lo pendiente de subir se anota ademas en localStorage, al instante (IndexedDB guarda diferido y puede faltar)
+    const fakeLocal = () => ({ data: {}, getItem(k) { return k in this.data ? this.data[k] : null; }, setItem(k, v) { this.data[k] = String(v); }, removeItem(k) { delete this.data[k]; } });
+    const local = fakeLocal();
+    const noIdb = await D.openCache('c9', { indexedDB: null, localStorage: local });
+    equal('sin IndexedDB no hay espejo, pero lo pendiente si queda a salvo', [noIdb.persistent, noIdb.keepsPending()], [false, true]);
+    await noIdb.putPending('transactions', [{ id: 'p1', amount: 5, updated_at: T1 }, { id: 'p/2', amount: 6, updated_at: T1 }]);
+    await noIdb.putPending('settings', [{ fee: 425, updated_at: T1 }]);
+    yes('queda escrito en localStorage en el mismo momento', JSON.parse(local.data[D.PENDING_PREFIX + 'c9'])['transactions:p1'].item.amount === 5);
+    const reopened = await D.openCache('c9', { indexedDB: null, localStorage: local });
+    equal('y al volver a abrir (aunque la pagina se cerro) lo pendiente sigue ahi', (await reopened.load()).pending.map((p) => [p.kind, p.id]).sort(), [['settings', 'settings'], ['transactions', 'p1'], ['transactions', 'p_2']]);
+    await reopened.deletePending('transactions', ['p1', 'p_2']);
+    await reopened.deletePending('settings', ['settings']);
+    equal('al confirmarse en la nube se quita, y la llave desaparece', [(await reopened.load()).pending.length, D.PENDING_PREFIX + 'c9' in local.data], [0, false]);
+    // Con copia (aqui la de memoria de las pruebas) lo pendiente va a los dos lugares y al leer gana lo mas nuevo
+    const inner = D.memoryCache();
+    const both = D.withPendingBackup(inner, local, 'c9');
+    await both.putPending('transactions', [{ id: 'p1', amount: 5, updated_at: T1 }]);
+    equal('con copia, lo pendiente se anota en los dos lugares', [inner.state.pending.size, Object.keys(JSON.parse(local.data[D.PENDING_PREFIX + 'c9'])).length], [1, 1]);
+    inner.state.pending.set('transactions:p1', { kind: 'transactions', id: 'p1', item: { id: 'p1', amount: 9, updated_at: T2 } });
+    equal('si difieren, vale el cambio mas reciente', (await both.load()).pending.map((p) => p.item.amount), [9]);
+    const full = { getItem: () => null, setItem() { throw new Error('QuotaExceededError'); }, removeItem() {} };
+    const overflow = D.withPendingBackup(D.memoryCache(), full, 'c9');
+    await overflow.putPending('transactions', [{ id: 'p1' }]);
+    equal('si localStorage esta lleno, lo pendiente sigue a salvo en la copia', [overflow.keepsPending(), (await overflow.load()).pending.length], [true, 1]);
+    const nowhere = D.withPendingBackup(D.nullCache(), full, 'c9');
+    await nowhere.putPending('transactions', [{ id: 'p1' }]);
+    equal('si no hay donde guardarlo, se sabe (para avisar antes de salir)', [nowhere.keepsPending(), (await D.openCache('c9', { indexedDB: null, localStorage: null })).keepsPending()], [false, false]);
+    yes('la copia envuelta sigue ofreciendo todo lo de la copia', ['load', 'resetMirror', 'appendChunk', 'applyDeltas', 'setInfo', 'compact', 'putPending', 'deletePending', 'close'].every((name) => typeof both[name] === 'function'));
+
     await D.destroyCaches({ indexedDB: null, localStorage: null });
     const calls = [];
     const fakeStorage = { data: { [D.REGISTRY_KEY]: '["c1","c2"]' }, getItem(k) { return this.data[k] || null; }, removeItem(k) { delete this.data[k]; }, setItem(k, v) { this.data[k] = v; } };
@@ -455,6 +484,11 @@ console.log('\nConexiones');
     yes('el servidor y el navegador usan el mismo nombre de sello', require('../functions/src/finanzas/sello.js').SERVER_STAMP === 'server_at' && /const SERVER_STAMP = 'server_at'/.test(sync));
     yes('las reglas no dejan que un cliente cree un movimiento con sello', /!\('server_at' in request\.resource\.data\)/.test(read('firestore.rules')));
     yes('OIKOS: deshacer usa la foto sin copiar y la contabilidad se pinta por tramos', /Store\.snapshot\('transactions'\)/.test(oikos) && /function showMoreAccounting\(\)/.test(oikos));
+    yes('OIKOS: la tabla por tramos es solo dentro de SISDEL (fuera se pinta completa, como antes)', /if \(mem\) txs = txs\.slice\(0, accountingShown\);/.test(oikos));
+    yes('OIKOS no sigue en localStorage si SISDEL ofrece su memoria y finanzas-datos.js no cargo', /typeof SisdelFinanzasDatos !== 'undefined'\) return;[\s\S]{0,900}throw new Error\('finanzas: no cargo finanzas-datos\.js'\)/.test(oikos) && oikos.indexOf("throw new Error('finanzas: no cargo finanzas-datos.js')") < oikos.indexOf('const Store = {'));
+    yes('finanzas.html no muestra OIKOS si no esta usando su memoria', /sisdelMem\(\) !== null/.test(fin) && fin.indexOf('sisdelMem() !== null') < fin.indexOf('SisdelFinanzasBloqueo.install(mounted.contentWindow'));
+    yes('al salir con cambios sin subir se avisa si este navegador no puede guardarlos', /sync\.pendingIsSafe\(\)/.test(fin) && /SE PIERDEN/.test(fin));
+    yes('al cerrar sesion tambien se borra el respaldo de pendientes (si no queda nada pendiente)', core.includes(`'${D.PENDING_PREFIX}'`));
 }
 
 // ───────── Sello del servidor (functions/src/finanzas/sello.js) ─────────

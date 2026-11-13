@@ -883,6 +883,9 @@ const SisdelFinanzas = (() => {
             const record = doc.data();
             const stamp = stampValue(record[SERVER_STAMP]);
             delete record[SERVER_STAMP];
+            // Un documento escrito por un script sin el campo id se trata con el id de su documento: sin el, la
+            // lista de OIKOS y lo sincronizado no coincidirian y el movimiento se subiria como anulado.
+            if (record.id === undefined || record.id === null) record.id = doc.id;
             return { id: doc.id, record, stamp };
         }
         function infoNow(extra) {
@@ -981,7 +984,6 @@ const SisdelFinanzas = (() => {
                 snap.docChanges().forEach((c) => {
                     if (c.doc.metadata.hasPendingWrites || c.type === 'removed') return;
                     const { id, record, stamp } = movementOf(c.doc);
-                    if (record.id === undefined) record.id = id;
                     // Si es lo mismo que ya tiene este equipo se conserva el registro que ya se comparte con OIKOS
                     const known = cloud.transactions.get(id);
                     const kept = known && canon(known) === canon(record) ? known : record;
@@ -1104,10 +1106,15 @@ const SisdelFinanzas = (() => {
             await saveExtras(newExtras);
             await Promise.all(Object.entries(toPush).map(([kind, items]) => push(kind, items || [])));
             // La copia vieja se borra cuando lo suyo ya esta a salvo (subido, o anotado en la copia nueva)
-            if (hasLegacy && (cache.persistent || !failed)) dropLegacy();
+            if (hasLegacy && (pendingIsSafe() || !failed)) dropLegacy();
             // Muchos cambios sueltos: la copia se reescribe en bloques para que la proxima apertura sea rapida
             if (loose > D.COMPACT_AFTER) cache.compact(D.canonicalOrder([...cloud.transactions.values()]), infoNow());
             updateStatus();
+        }
+
+        // ¿Lo que todavia no subio esta guardado en este equipo? (si no, cerrar la pagina lo pierde)
+        function pendingIsSafe() {
+            return typeof cache.keepsPending === 'function' ? cache.keepsPending() : cache.persistent === true;
         }
 
         // Espera a que se confirme todo lo pendiente (o se agote el tiempo)
@@ -1128,7 +1135,7 @@ const SisdelFinanzas = (() => {
         window.addEventListener('online', updateStatus);
         window.addEventListener('offline', updateStatus);
 
-        return { ready: hydrate(), hasPending, waitIdle, dispose, store };
+        return { ready: hydrate(), hasPending, waitIdle, dispose, store, pendingIsSafe };
     }
 
     return {

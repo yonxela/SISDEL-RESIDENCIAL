@@ -475,7 +475,12 @@ const SisdelFinanzas = (() => {
         let cursor = null;
         let mirrorInfo = null;
         let inFlight = 0;
-        let failed = null;
+        // Ids que se estan subiendo en este momento (todavia sin confirmar): no se olvidan como pendientes
+        const inFlightIds = { residents: new Set(), transactions: new Set(), settings: new Set() };
+        // Ultima falla por cada cosa que se sube o se escucha. Una subida que sale bien solo borra la suya: antes
+        // habia una sola bandera y guardar la configuracion "tapaba" un pago que no habia subido.
+        const failures = { transactions: null, residents: null, settings: null, extras: null, listen: null };
+        const failedState = () => failures.transactions || failures.residents || failures.settings || failures.extras || failures.listen;
         let ready = false;
         let disposed = false;
 
@@ -505,10 +510,14 @@ const SisdelFinanzas = (() => {
 
         function hasPending() { return inFlight > 0 || Object.values(timers).some(Boolean); }
         function markPending() { try { localStorage.setItem(pendingKey(condoId), '1'); } catch { /* sin espacio */ } }
+        // ¿Queda algo de este equipo que la nube no confirmo?
+        function hasUnsynced() { return KINDS.some((kind) => pendingLocal[kind].size > 0); }
         function updateStatus() {
             if (hasPending()) { onStatus('saving'); return; }
+            const failed = failedState();
             if (failed) { onStatus(failed); return; }
-            try { localStorage.removeItem(pendingKey(condoId)); } catch { /* ignorar */ }
+            // La marca de pendiente se quita solo cuando ya no queda nada por subir
+            if (!hasUnsynced()) { try { localStorage.removeItem(pendingKey(condoId)); } catch { /* ignorar */ } }
             onStatus(navigator.onLine === false ? 'offline' : 'ok');
         }
 
@@ -538,6 +547,15 @@ const SisdelFinanzas = (() => {
         function forgetPending(kind, ids) {
             const gone = ids.filter((id) => pendingLocal[kind].delete(id));
             if (gone.length) cache.deletePending(kind, gone);
+        }
+        // Deja como pendiente exactamente lo que hoy difiere de la nube (`changed`) mas lo que se esta subiendo.
+        // Lo que ya no difiere (se deshizo, o la lista volvio a ser la de la nube) deja de estar pendiente: si no,
+        // al volver a abrir se subiria un cambio que el usuario ya habia deshecho.
+        function syncPending(kind, changed) {
+            rememberPending(kind, changed);
+            const keep = new Set(changed.map((item) => (kind === 'settings' ? 'settings' : docIdOf(item))));
+            const stale = [...pendingLocal[kind].keys()].filter((id) => !keep.has(id) && !inFlightIds[kind].has(id));
+            if (stale.length) forgetPending(kind, stale);
         }
 
         async function commitInChunks(writes) {
@@ -687,6 +705,8 @@ const SisdelFinanzas = (() => {
                 if (kind === 'settings') synced.settings = item;
                 else synced[kind].set(docIdOf(item), item);
             });
+            const flying = items.map((item) => (kind === 'settings' ? 'settings' : docIdOf(item)));
+            flying.forEach((id) => inFlightIds[kind].add(id));
             markPending();
             inFlight++;
             updateStatus();
@@ -694,12 +714,12 @@ const SisdelFinanzas = (() => {
                 if (kind === 'residents') await writeResidents(items, prevById);
                 else if (kind === 'transactions') await writeTransactions(items, prevById);
                 else await writeSettings(items[0], prevSettings);
-                failed = null;
+                failures[kind] = null;
                 settlePending(kind, items);
             } catch (error) {
                 console.error('Sistema Financiero: no se pudo guardar', error);
                 const denied = String(error && error.code || '').includes('permission-denied');
-                failed = denied ? 'denied' : 'error';
+                failures[kind] = denied ? 'denied' : 'error';
                 // Se vuelve a lo que sabiamos antes de enviar: el siguiente intento lo sube de nuevo como el mismo cambio
                 // (no como un alta). Sin permisos no se reintenta (sesion vencida o usuario desactivado).
                 items.forEach((item) => {
@@ -709,6 +729,7 @@ const SisdelFinanzas = (() => {
                 });
                 if (!disposed && !denied) setTimeout(() => schedule(kind, 0), RETRY_MS);
             } finally {
+                flying.forEach((id) => inFlightIds[kind].delete(id));
                 inFlight--;
                 updateStatus();
             }
@@ -726,27 +747,27 @@ const SisdelFinanzas = (() => {
 
         function flushList(kind) {
             const items = store.read(kind);
-            if (!Array.isArray(items) || (items.length === 0 && synced[kind].size > 0)) { restoreList(kind); return; }
+            if (!Array.isArray(items) || (items.length === 0 && synced[kind].size > 0)) { restoreList(kind); return null; }
             const { items: next, changed, rewrite } = diffList(items, synced[kind], nowIso());
             if (rewrite) store.replace(kind, next, true);
-            rememberPending(kind, changed);
-            push(kind, changed);
+            syncPending(kind, changed);
+            return push(kind, changed);
         }
 
         function flushSettings() {
             const current = store.read('settings');
             if (!current || typeof current !== 'object' || Array.isArray(current)) {
                 if (cloud.settings) { store.replace('settings', cloud.settings, false); onRemoteChange('restored'); }
-                return;
+                return null;
             }
-            if (synced.settings && canon(current) === canon(synced.settings)) return;
+            if (synced.settings && canon(current) === canon(synced.settings)) { syncPending('settings', []); return null; }
             let next = current;
             if (synced.settings && stampOf(current) <= stampOf(synced.settings)) {
                 next = { ...current, updated_at: nowIso() };
                 store.replace('settings', next, true);
             }
-            rememberPending('settings', [next]);
-            push('settings', [next]);
+            syncPending('settings', [next]);
+            return push('settings', [next]);
         }
 
         function flush(kind) {
@@ -771,10 +792,10 @@ const SisdelFinanzas = (() => {
             try {
                 if (kind === 'settings') {
                     const current = store.read('settings');
-                    if (current && typeof current === 'object' && !(synced.settings && canon(current) === canon(synced.settings))) rememberPending('settings', [current]);
+                    if (current && typeof current === 'object') syncPending('settings', synced.settings && canon(current) === canon(synced.settings) ? [] : [current]);
                 } else {
                     const items = store.read(kind);
-                    if (Array.isArray(items) && items.length) rememberPending(kind, diffList(items, synced[kind], nowIso()).changed);
+                    if (Array.isArray(items) && items.length) syncPending(kind, diffList(items, synced[kind], nowIso()).changed);
                 }
             } catch (error) { console.error('Sistema Financiero: no se pudo anotar el cambio en este equipo', error); }
             schedule(kind);
@@ -800,6 +821,10 @@ const SisdelFinanzas = (() => {
                 const i = indexById.get(id);
                 const mine = i === undefined ? null : next[i];
                 if (mine && stampOf(mine) >= stampOf(item)) return;
+                // No esta en la lista de OIKOS pero la nube si lo tenia: se acaba de quitar en este equipo (se deshizo
+                // su alta) y la anulacion todavia no subio. No se vuelve a poner: llega, por ejemplo, el sello del
+                // servidor de la propia alta. Se anota lo que tiene la nube para que la anulacion parta de ahi.
+                if (!mine && synced[kind].has(id)) { synced[kind].set(id, item); return; }
                 // La lista guardada no se modifica (la comparten las fotos de deshacer de OIKOS): se copia al primer cambio
                 if (next === local) next = local.slice();
                 synced[kind].set(id, item);
@@ -832,9 +857,10 @@ const SisdelFinanzas = (() => {
             try {
                 // merge: si otro equipo acaba de guardar el residente con sus datos, no se pisan
                 await commitInChunks(extras.map((e) => (b) => b.set(ref.extras().doc(e.id), e, { merge: true })));
+                failures.extras = null;
             } catch (error) {
                 console.error('Sistema Financiero: no se pudieron preparar los vecinos', error);
-                failed = 'error';
+                failures.extras = 'error';
             } finally {
                 inFlight--;
                 updateStatus();
@@ -843,7 +869,7 @@ const SisdelFinanzas = (() => {
 
         function onListenError(error) {
             console.error('Sistema Financiero: se perdio la conexion en tiempo real', error);
-            failed = String(error && error.code || '').includes('permission-denied') ? 'denied' : 'error';
+            failures.listen = String(error && error.code || '').includes('permission-denied') ? 'denied' : 'error';
             updateStatus();
         }
 
@@ -1035,7 +1061,6 @@ const SisdelFinanzas = (() => {
             extrasSnap.docs.forEach((d) => cloud.extras.set(d.id, d.data()));
             const newExtras = missingExtras();
 
-            const toPush = {};
             // Residentes: la nube (vecinos de SISDEL) manda. Lo que solo esta en este
             // equipo se sube unicamente si quedo pendiente de una sesion anterior.
             const residents = cloudResidents();
@@ -1045,33 +1070,28 @@ const SisdelFinanzas = (() => {
             const res = overlayList(D.canonicalOrder([...residents.values()]), residents, localRes, hadPending);
             rememberKnown();
             store.replace('residents', res.merged, false);
-            toPush.residents = res.toPush;
 
             const ordered = D.canonicalOrder([...cloud.transactions.values()]);
             synced.transactions = new Map(cloud.transactions);
             const tx = overlayList(ordered, cloud.transactions, waiting.transactions.concat(legacy.transactions || []), true);
             store.replace('transactions', tx.merged, false);
-            toPush.transactions = tx.toPush;
 
             cloud.settings = setSnap.exists ? setSnap.data() : null;
             synced.settings = cloud.settings || null;
             const localSettings = waiting.settings[0] || legacy.settings;
+            let localSettingsWon = false;
             if (cloud.settings && (!localSettings || stampOf(cloud.settings) >= stampOf(localSettings))) {
                 store.replace('settings', cloud.settings, false);
             } else if (localSettings) {
                 store.replace('settings', localSettings, false);
-                toPush.settings = [localSettings];
+                localSettingsWon = true;
             } else {
                 store.replace('settings', INITIAL_SETTINGS, false);
             }
 
-            // Lo pendiente que la nube ya supero se olvida; lo que sigue pendiente queda anotado en este equipo
-            KINDS.forEach((kind) => {
-                const keep = new Set((toPush[kind] || []).map((item) => (kind === 'settings' ? 'settings' : docIdOf(item))));
-                const stale = saved.pending.filter((p) => p && p.kind === kind && !keep.has(p.id)).map((p) => p.id);
-                if (stale.length) cache.deletePending(kind, stale);
-                rememberPending(kind, toPush[kind] || []);
-            });
+            // Lo que este equipo traia anotado como pendiente. Al subir (mas abajo) queda pendiente solo lo que siga
+            // difiriendo de la nube; lo que la nube ya supero se olvida.
+            saved.pending.forEach((p) => { if (p && pendingLocal[p.kind] && p.item) pendingLocal[p.kind].set(p.id, p.item); });
 
             // Desde aqui cada snapshot es un cambio de otro equipo (o de otra pagina de SISDEL)
             remote.users = (snap) => {
@@ -1104,9 +1124,13 @@ const SisdelFinanzas = (() => {
             ready = true;
             store.setLocalListener(onLocalWrite);
             await saveExtras(newExtras);
-            await Promise.all(Object.entries(toPush).map(([kind, items]) => push(kind, items || [])));
+            // Se sube lo que este equipo tenia sin subir. Que subir se decide AHORA, comparando la lista con la nube
+            // (no antes de la espera de arriba): si mientras tanto llego una version mas nueva de un registro, ya no
+            // hay nada suyo que subir. La configuracion solo si la de este equipo era la mas nueva.
+            if (!localSettingsWon) syncPending('settings', []);
+            await Promise.all([flushList('residents'), flushList('transactions'), localSettingsWon ? flushSettings() : null]);
             // La copia vieja se borra cuando lo suyo ya esta a salvo (subido, o anotado en la copia nueva)
-            if (hasLegacy && (pendingIsSafe() || !failed)) dropLegacy();
+            if (hasLegacy && (pendingIsSafe() || !failedState())) dropLegacy();
             // Muchos cambios sueltos: la copia se reescribe en bloques para que la proxima apertura sea rapida
             if (loose > D.COMPACT_AFTER) cache.compact(D.canonicalOrder([...cloud.transactions.values()]), infoNow());
             updateStatus();
@@ -1122,7 +1146,7 @@ const SisdelFinanzas = (() => {
             Object.keys(timers).forEach((kind) => { if (timers[kind]) { clearTimeout(timers[kind]); flush(kind); } });
             const until = Date.now() + timeoutMs;
             while (hasPending() && Date.now() < until) await new Promise((r) => setTimeout(r, 150));
-            return !hasPending() && !failed;
+            return !hasPending() && !failedState() && !hasUnsynced();
         }
 
         function dispose() {

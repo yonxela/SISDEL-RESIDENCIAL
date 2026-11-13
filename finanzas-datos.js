@@ -325,29 +325,55 @@
         };
     }
 
+    // Tanda del espejo: cada carga completa empieza una nueva. Con ella una pestana sabe si el espejo sigue siendo
+    // el que ella cargo o si otra pestana lo rehizo (y entonces deja de escribirlo): asi una pestana vieja nunca
+    // marca como completo un espejo que otra dejo a medias.
+    function newGeneration() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); }
+
     // Copia en memoria con el mismo comportamiento que la de IndexedDB (lo que se guarda se copia). La usan las
     // pruebas (scripts/test-finanzas-nube.mjs) para simular que la pagina se cierra y se vuelve a abrir.
-    function memoryCache() {
-        const state = { info: null, base: new Map(), delta: new Map(), pending: new Map() };
+    function memoryCache(sharedState) {
+        // sharedState: el estado de otra copia en memoria, para simular dos pestanas sobre la misma base
+        const state = sharedState || { info: null, base: new Map(), delta: new Map(), pending: new Map() };
         const stats = { resets: 0, chunks: 0, deltas: 0, compactions: 0 };
         const done = () => Promise.resolve();
+        let generation = null;
+        let detached = false;
+        // Como en IndexedDB: si otra pestana rehizo el espejo (otra tanda), esta deja de escribirlo
+        const mine = () => {
+            if (detached) return false;
+            if (((state.info && state.info.generation) || null) !== generation) { detached = true; return false; }
+            return true;
+        };
+        const stamped = (info) => cloneJson({ ...info, generation });
         return {
             persistent: true, stats, state,
             load() {
+                generation = (state.info && state.info.generation) || null;
+                detached = false;
                 const records = new Map();
                 [...state.base.keys()].sort((a, b) => a - b).forEach((n) => state.base.get(n).forEach((r) => records.set(docIdOf(r), cloneJson(r))));
                 state.delta.forEach((r, id) => records.set(id, cloneJson(r)));
                 return Promise.resolve({ info: cloneJson(state.info), records, deltaCount: state.delta.size, pending: [...state.pending.values()].map(cloneJson) });
             },
-            resetMirror(info) { stats.resets++; state.base.clear(); state.delta.clear(); state.info = cloneJson(info || null); return done(); },
-            appendChunk(index, records, info) { stats.chunks++; state.base.set(index, cloneJson(records)); if (info) state.info = cloneJson(info); return done(); },
-            applyDeltas(records, info) { stats.deltas += records.length; records.forEach((r) => state.delta.set(docIdOf(r), cloneJson(r))); if (info) state.info = cloneJson(info); return done(); },
-            setInfo(info) { state.info = cloneJson(info); return done(); },
+            resetMirror(info) {
+                stats.resets++;
+                generation = newGeneration();
+                detached = false;
+                state.base.clear(); state.delta.clear();
+                state.info = info ? stamped(info) : null;
+                if (!info) generation = null;
+                return done();
+            },
+            appendChunk(index, records, info) { if (!mine()) return done(); stats.chunks++; state.base.set(index, cloneJson(records)); if (info) state.info = stamped(info); return done(); },
+            applyDeltas(records, info) { if (!mine()) return done(); stats.deltas += records.length; records.forEach((r) => state.delta.set(docIdOf(r), cloneJson(r))); if (info) state.info = stamped(info); return done(); },
+            setInfo(info) { if (!mine()) return done(); state.info = stamped(info); return done(); },
             compact(records, info) {
+                if (!mine()) return done();
                 stats.compactions++;
                 state.base.clear(); state.delta.clear();
                 for (let i = 0, n = 0; i < records.length; i += CHUNK_SIZE, n++) state.base.set(n, cloneJson(records.slice(i, i + CHUNK_SIZE)));
-                state.info = cloneJson(info);
+                state.info = stamped(info);
                 return done();
             },
             putPending(kind, items) { items.forEach((item) => { const id = kind === 'settings' ? 'settings' : docIdOf(item); state.pending.set(kind + ':' + id, cloneJson({ kind, id, item })); }); return done(); },
@@ -379,6 +405,9 @@
         }
         if (storage) register(storage, condoId);
         let broken = false;
+        // Tanda del espejo con la que trabaja esta pagina (ver newGeneration) y si otra pagina la reemplazo
+        let generation = null;
+        let detached = false;
         // Al cerrar sesion en otra pestana se borra la base: se suelta para no bloquear el borrado
         db.onversionchange = () => { broken = true; try { db.close(); } catch (e) { /* ya cerrada */ } };
 
@@ -392,6 +421,17 @@
             }
         }
         const keyOf = (kind, id) => kind + ':' + id;
+        // Escritura del espejo: en la misma transaccion se comprueba que siga siendo el de esta pagina. Si otra
+        // pestana lo rehizo, no se escribe nada y esta pagina deja de tocarlo (sigue trabajando desde la memoria).
+        const mirrorWrite = (label, stores, work) => safely(label, async () => {
+            if (detached) return;
+            const tx = db.transaction(stores, 'readwrite');
+            const current = await request(tx.objectStore('meta').get('info'));
+            if (((current && current.generation) || null) !== generation) { detached = true; return; }
+            work(tx);
+            await finished(tx);
+        });
+        const stamped = (info) => ({ ...info, generation });
 
         return withPendingBackup({
             get persistent() { return !broken; },
@@ -406,43 +446,39 @@
                 const records = new Map();
                 chunks.forEach((chunk) => (chunk || []).forEach((r) => { if (r && r.id !== undefined && r.id !== null) records.set(docIdOf(r), r); }));
                 deltas.forEach((r) => { if (r && r.id !== undefined && r.id !== null) records.set(docIdOf(r), r); });
+                generation = (info && info.generation) || null;
+                detached = false;
                 return { info: info || null, records, deltaCount: deltas.length, pending: pending || [] };
             }, { info: null, records: new Map(), deltaCount: 0, pending: [] }),
-            // Empieza una carga completa: se vacia el espejo (los pendientes se conservan)
+            // Empieza una carga completa: se vacia el espejo (los pendientes se conservan) y empieza una tanda nueva
             resetMirror: (info) => safely('vaciar', async () => {
+                generation = info ? newGeneration() : null;
+                detached = false;
                 const tx = db.transaction(['base', 'delta', 'meta'], 'readwrite');
                 tx.objectStore('base').clear();
                 tx.objectStore('delta').clear();
-                tx.objectStore('meta').put(info || null, 'info');
+                tx.objectStore('meta').put(info ? stamped(info) : null, 'info');
                 await finished(tx);
             }),
-            appendChunk: (index, records, info) => safely('guardar bloque', async () => {
-                const tx = db.transaction(['base', 'meta'], 'readwrite');
+            appendChunk: (index, records, info) => mirrorWrite('guardar bloque', ['base', 'meta'], (tx) => {
                 tx.objectStore('base').put(records, index);
-                if (info) tx.objectStore('meta').put(info, 'info');
-                await finished(tx);
+                if (info) tx.objectStore('meta').put(stamped(info), 'info');
             }),
-            applyDeltas: (records, info) => safely('guardar cambios', async () => {
-                const tx = db.transaction(['delta', 'meta'], 'readwrite');
+            applyDeltas: (records, info) => mirrorWrite('guardar cambios', ['delta', 'meta'], (tx) => {
                 const store = tx.objectStore('delta');
                 records.forEach((r) => store.put(r, docIdOf(r)));
-                if (info) tx.objectStore('meta').put(info, 'info');
-                await finished(tx);
+                if (info) tx.objectStore('meta').put(stamped(info), 'info');
             }),
-            setInfo: (info) => safely('guardar estado', async () => {
-                const tx = db.transaction(['meta'], 'readwrite');
-                tx.objectStore('meta').put(info, 'info');
-                await finished(tx);
+            setInfo: (info) => mirrorWrite('guardar estado', ['meta'], (tx) => {
+                tx.objectStore('meta').put(stamped(info), 'info');
             }),
             // Reescribe todo en bloques (records en el orden en que se quieren guardar)
-            compact: (records, info) => safely('compactar', async () => {
-                const tx = db.transaction(['base', 'delta', 'meta'], 'readwrite');
+            compact: (records, info) => mirrorWrite('compactar', ['base', 'delta', 'meta'], (tx) => {
                 const base = tx.objectStore('base');
                 base.clear();
                 tx.objectStore('delta').clear();
                 for (let i = 0, n = 0; i < records.length; i += CHUNK_SIZE, n++) base.put(records.slice(i, i + CHUNK_SIZE), n);
-                tx.objectStore('meta').put(info, 'info');
-                await finished(tx);
+                tx.objectStore('meta').put(stamped(info), 'info');
             }),
             putPending: (kind, items) => safely('guardar pendientes', async () => {
                 const tx = db.transaction(['pending'], 'readwrite');

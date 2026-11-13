@@ -288,7 +288,7 @@ El detalle del movimiento muestra además cada concepto con su monto. Las cuotas
 
 Principio: toda la información vive en el servidor (Firestore), nada se borra y todo cambio deja rastro.
 
-**Rastro (bitácora).** Cada alta, cambio o eliminación de `usuarios`, `vehiculos`, `finanzas_residentes`, `finanzas_movimientos` y `finanzas_config` queda anotada por el servidor en `condominios/{c}/bitacora`: quién lo hizo, cuándo (hora del servidor), qué documento y el valor de antes y de después de cada campo. Lo eliminado queda con su contenido completo; anular y devolver una anulación quedan como `anular` y `restaurar`. Nadie puede escribirla, cambiarla ni borrarla desde una pantalla. La leen el master, quien asigna privilegios y quien puede ver usuarios y finanzas (auditor). Todavía no tiene pantalla: se consulta con
+**Rastro (bitácora).** Cada alta, cambio o eliminación de `usuarios`, `vehiculos`, `finanzas_residentes`, `finanzas_movimientos` y `finanzas_config` queda anotada por el servidor en `condominios/{c}/bitacora`: quién lo hizo, cuándo (hora del servidor), qué documento y el valor de antes y de después de cada campo. Lo eliminado queda con su contenido completo; anular y devolver una anulación quedan como `anular` y `restaurar`. Nadie puede escribirla, cambiarla ni borrarla desde una pantalla. La leen el master, quien asigna privilegios y quien puede ver a la vez usuarios, vehículos y finanzas (el auditor). Todavía no tiene pantalla: se consulta con
 
 ```bash
 cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node ver-bitacora.mjs --condo=<id> --target=prod
@@ -298,12 +298,12 @@ cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node ver-bitacora.mjs
 
 **Nada se borra.** Un movimiento se anula (`deleted: true`, con motivo y fecha). Al deshacer una anulación la nube recibe `deleted: false` y `restored_at`, y conserva el motivo y la fecha de la anulación. Lo mismo al deshacer la eliminación o el finiquito de un residente.
 
-**Condominios grandes.** Los datos de OIKOS viven en la memoria de `finanzas.html`; cada equipo guarda una copia de los movimientos en IndexedDB solo para abrir rápido (se borra al cerrar sesión) y, al abrir, pide solo lo que cambió según el sello del servidor (`server_at`). Lo que no alcanzó a subir por falta de conexión queda en esa copia y se sube solo al volver. Medido en el emulador con 719 residentes (Chrome en una Mac; `scripts/seed-carga-grande.mjs` y `medir-carga-grande.mjs`):
+**Condominios grandes.** Los datos de OIKOS viven en la memoria de `finanzas.html`; cada equipo guarda una copia de los movimientos en IndexedDB solo para abrir rápido (se borra al cerrar sesión) y, al abrir, pide solo lo que cambió según el sello del servidor (`server_at`). Lo que no alcanzó a subir por falta de conexión queda anotado en el equipo al instante y se sube solo al volver; si el navegador no permite guardar nada, al salir se avisa. Medido en el emulador con 719 residentes (Chrome en una Mac; `scripts/seed-carga-grande.mjs` y `medir-carga-grande.mjs`):
 
 | | Antes, 6 meses | Después, 24 meses | Después, 60 meses |
 | --- | --- | --- | --- |
 | Movimientos | 8 146 | 34 142 | 86 059 |
-| Primera apertura (baja todo) | 3,7 s | 7,0 s | 30 s |
+| Primera apertura (baja todo) | 3,7 s | 6,6 s | 30 s |
 | Siguientes aperturas | 3,7 s | 0,5 s | 0,7 s |
 | Tablero / lista de residentes | 0,77 s / 0,76 s | 0,02 s / 0,02 s | 0,04 s / 0,02 s |
 | Cuota del mes a 719 (calcular + guardar) | 2,9 s + 2,6 s | 0,9 s + 1,6 s | 3,2 s + 2,2 s |
@@ -408,7 +408,7 @@ firebase emulators:start --only auth,firestore,functions,hosting
 cd scripts && npm run seed && npm test
 ```
 
-`npm test` corre diez archivos sin emuladores (privilegios y páginas, exportación de reportes, sincronización financiera, datos de OIKOS en memoria, bloqueo de pantalla de OIKOS, desglose de la cuota, mora, bitácora, limpieza de rondas y privilegios de RONDIN) y tres contra los emuladores (`test-purga.mjs`: borrado total; `test-finanzas-nube.mjs`: la sincronización financiera entre varios equipos, la copia del equipo, el sello del servidor y la bitácora; `test-emulator.mjs`: login, reglas por rol, privilegios por usuario y por acción, cámara, finanzas y rondas). Con los emuladores arriba: `npm run seed` antes de cada corrida (el login se bloquea tras muchos intentos fallidos). Si una prueba dice que los disparadores de functions no responden, reiniciar los emuladores.
+`npm test` corre once archivos sin emuladores (privilegios y páginas, exportación de reportes, sincronización financiera, datos de OIKOS en memoria, carreras de la sincronización, bloqueo de pantalla de OIKOS, desglose de la cuota, mora, bitácora, limpieza de rondas y privilegios de RONDIN) y tres contra los emuladores (`test-purga.mjs`: borrado total; `test-finanzas-nube.mjs`: la sincronización financiera entre varios equipos, la copia del equipo, el sello del servidor y la bitácora; `test-emulator.mjs`: login, reglas por rol, privilegios por usuario y por acción, cámara, finanzas y rondas). Con los emuladores arriba: `npm run seed` antes de cada corrida (el login se bloquea tras muchos intentos fallidos). Si una prueba dice que los disparadores de functions no responden, reiniciar los emuladores.
 
 `npm run test:navegador` (no entra en `npm test`: necesita Chrome) prueba el Sistema Financiero en un navegador de verdad: los formularios de OIKOS, deshacer, la cuota del mes, cambios sin conexión, la copia de la versión anterior y el borrado al cerrar sesión.
 

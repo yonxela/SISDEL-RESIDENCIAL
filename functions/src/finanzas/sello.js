@@ -16,10 +16,11 @@ const SLACK_MS = 2000;
 const millis = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : null);
 const sameStamp = (a, b) => !!a && !!b && typeof a.isEqual === 'function' && a.isEqual(b);
 
-// Tras una escritura: ¿hay que sellar? Si no quedo sello, o si quedo el mismo de antes.
+// Tras una escritura: ¿hay que sellar? Si no quedo sello (o quedo algo que no es una fecha del servidor), o si
+// quedo el mismo de antes.
 function needsStamp(before, after) {
     if (!after) return false;
-    if (!after[SERVER_STAMP]) return true;
+    if (millis(after[SERVER_STAMP]) === null) return true;
     return !!before && sameStamp(before[SERVER_STAMP], after[SERVER_STAMP]);
 }
 

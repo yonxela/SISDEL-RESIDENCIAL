@@ -205,6 +205,13 @@ const SisdelFinanzas = (() => {
         if (!stamp) return { s: 0, n: 0 };
         return { s: Math.max(0, stamp.s - Math.ceil(ms / 1000)), n: stamp.n };
     }
+    // El mismo registro sin el sello del servidor
+    function withoutServerStamp(item) {
+        if (!item || typeof item !== 'object' || !(SERVER_STAMP in item)) return item;
+        const copy = { ...item };
+        delete copy[SERVER_STAMP];
+        return copy;
+    }
     // Un sello imposible (muy adelantado respecto de este equipo) no mueve el punto de reanudacion
     function saneStamp(stamp, nowMs) {
         return !!stamp && stamp.s * 1000 <= nowMs + 24 * 60 * 60 * 1000;
@@ -298,8 +305,8 @@ const SisdelFinanzas = (() => {
     // basta UNA. [] = sin requisito extra; [[]] = no se permite.
     const TOUCH_KEYS = ['updated_at', 'created_at', 'createdAt', 'id'];
     const RESIDENT_STATE_KEYS = ['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom'];
-    const RESIDENT_DELETE_KEYS = ['deleted', 'deleted_at'];
-    const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'updated_at'];
+    const RESIDENT_DELETE_KEYS = ['deleted', 'deleted_at', 'restored_at'];
+    const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'restored_at', 'updated_at'];
     // "Deshacer" solo alcanza lo hecho hace poco (igual que firestore.rules): la pila de deshacer vive en la memoria de la pagina
     const UNDO_WINDOW_MS = 2 * 60 * 60 * 1000;
     const SETTINGS_FEE_KEYS = ['fee', 'feeBreakdown', 'chargeDay', 'graceDays', 'feeMode'];
@@ -331,6 +338,26 @@ const SisdelFinanzas = (() => {
     function changedFields(item, prev, always = ['id', 'updated_at']) {
         return [...new Set([...changedKeys(item, prev), ...always.filter((k) => item[k] !== undefined)])];
     }
+    // Al deshacer una anulacion (o una eliminacion, o un finiquito) el registro de este equipo ya no trae esos campos.
+    // Como solo se suben los campos presentes, la nube se quedaba con deleted:true: en pantalla el pago volvia y en
+    // el servidor seguia anulado. Aqui se arma lo que hay que decirle a la nube, SIN borrar nada alla (todo deja
+    // rastro): el interruptor se apaga de forma explicita y se anota cuando se devolvio; el motivo y la fecha de la
+    // anulacion quedan en el documento.
+    function revivedFields(item, prev) {
+        const out = {};
+        if (!item || !prev) return out;
+        if (prev.deleted === true && item.deleted !== true) {
+            if (item.deleted === undefined) out.deleted = false;
+            out.restored_at = item.updated_at || new Date().toISOString();
+        }
+        if (prev.status === 'closed' && item.status === undefined) out.status = 'active';
+        return out;
+    }
+    // Lo que se sube de un registro que ya existia: los campos que cambiaron mas lo que se devolvio al deshacer
+    function changedData(item, prev, always) {
+        return { ...pick(plain(item), changedFields(item, prev, always)), ...revivedFields(item, prev) };
+    }
+
     // Residentes que solo existen en esta copia local pero que la nube YA conocio (`known`): los elimino otro
     // equipo o el panel admin, no son nuevos; subirlos los resucitaria con un codigo de acceso nuevo.
     function dropResurrected(localItems, cloudById, known) {
@@ -565,7 +592,7 @@ const SisdelFinanzas = (() => {
                     applied.push(() => cloud.users.set(id, { ...user, ...update }));
                 }
                 const prev = prevById && prevById.get(id) ? extraOf(prevById.get(id)) : null;
-                const data = prev ? pick(plain(extra), changedFields(extra, prev)) : plain(extra);
+                const data = prev ? changedData(extra, prev) : plain(extra);
                 writes.push((b) => b.set(ref.extras().doc(id), data, { merge: true }));
                 applied.push(() => cloud.extras.set(id, { ...(cloud.extras.get(id) || {}), ...data }));
             });
@@ -578,7 +605,10 @@ const SisdelFinanzas = (() => {
             const payloads = items.map((item) => {
                 const id = docIdOf(item);
                 const prev = prevById && prevById.get(id) ? prevById.get(id) : null;
-                return { id, item, data: prev ? pick(plain(item), changedFields(item, prev)) : plain(item) };
+                const data = prev ? changedData(item, prev) : plain(item);
+                // El sello del servidor nunca sale de aqui (una copia vieja podia traerlo pegado al movimiento)
+                delete data[SERVER_STAMP];
+                return { id, item, data };
             });
             await commitInChunks(payloads.map(({ id, data }) => (b) => b.set(ref.transactions().doc(id), data, { merge: true })));
             // El espejo queda como quedo la nube. Si es igual a lo que tiene OIKOS se guarda EL MISMO registro:
@@ -965,9 +995,12 @@ const SisdelFinanzas = (() => {
         // Copia de la version anterior en localStorage: se mezcla una vez (por si quedaron cambios sin subir)
         function readLegacy() {
             try {
+                // La version anterior guardaba cada movimiento como llegaba de la nube: desde que el servidor sella,
+                // con server_at incluido. Ese campo no es de OIKOS ni se puede subir: se quita.
+                const transactions = parseArray(localStorage.getItem(storageKey(condoId, 'transactions')));
                 return {
                     residents: parseArray(localStorage.getItem(storageKey(condoId, 'residents'))),
-                    transactions: parseArray(localStorage.getItem(storageKey(condoId, 'transactions'))),
+                    transactions: transactions && transactions.map(withoutServerStamp),
                     settings: parseObject(localStorage.getItem(storageKey(condoId, 'settings')))
                 };
             } catch { return { residents: null, transactions: null, settings: null }; }
@@ -1101,7 +1134,8 @@ const SisdelFinanzas = (() => {
             oikosCompanyId, storageKey, pendingKey, docIdOf, stampOf, periodOf, canon, parseArray,
             toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS,
             changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, pick, changedFields, dropResurrected,
-            overlayList, stampValue, laterStamp, stampMinus, saneStamp, mirrorPlan, PAGE_SIZE, MIRROR_MAX_AGE_MS, RESUME_MAX_AGE_MS
+            overlayList, stampValue, laterStamp, stampMinus, saneStamp, mirrorPlan, PAGE_SIZE, MIRROR_MAX_AGE_MS, RESUME_MAX_AGE_MS,
+            revivedFields, changedData, withoutServerStamp
         }
     };
 })();

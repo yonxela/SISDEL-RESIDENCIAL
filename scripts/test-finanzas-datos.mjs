@@ -314,6 +314,22 @@ console.log('\nSincronizacion: mezcla al abrir y cambios');
     yes('sin modificar la lista recibida ni el registro sincronizado', input.length === 1 && a.deleted === undefined);
     equal('texto u objeto: lo sincronizado se entiende igual', F.diffList([edited, b], new Map([['1', F.canon(a)], ['2', F.canon(b)]]), NOW).changed.length, 1);
 
+    // Deshacer: lo que se le dice a la nube cuando un registro deja de estar anulado, eliminado o finiquitado
+    const annulled = { id: 'p1', amount: 5, deleted: true, deleted_at: T1, deleted_reason: 'error', updated_at: T1 };
+    const undone = { id: 'p1', amount: 5, updated_at: T2 };
+    equal('deshacer una anulacion: la nube recibe deleted:false y cuando se devolvio', F.revivedFields(undone, annulled), { deleted: false, restored_at: T2 });
+    const sortedKeys = (o) => Object.keys(o).sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
+    equal('y no se le pide borrar el motivo ni la fecha de la anulacion (quedan como rastro)', sortedKeys(F.changedData(undone, annulled)), { deleted: false, id: 'p1', restored_at: T2, updated_at: T2 });
+    equal('si el registro ya trae deleted:false solo se anota cuando se devolvio', sortedKeys(F.changedData({ ...undone, deleted: false, deleted_at: T1, deleted_reason: 'error' }, annulled)), { deleted: false, id: 'p1', restored_at: T2, updated_at: T2 });
+    equal('anular no es devolver', F.revivedFields(annulled, { id: 'p1', amount: 5, updated_at: T1 }), {});
+    equal('un cambio cualquiera no toca esos campos', sortedKeys(F.changedData({ id: 'p1', amount: 5, notes: 'x', updated_at: T2 }, { id: 'p1', amount: 5, updated_at: T1 })), { id: 'p1', notes: 'x', updated_at: T2 });
+    equal('deshacer un finiquito: el residente vuelve a estar activo en la nube', F.revivedFields({ id: 'r1', updated_at: T2 }, { id: 'r1', status: 'closed', closedAt: T1, closeReason: 'vendio', updated_at: T1 }), { status: 'active' });
+    equal('un residente reactivado desde OIKOS ya trae su estado', F.revivedFields({ id: 'r1', status: 'active', updated_at: T2 }, { id: 'r1', status: 'closed', updated_at: T1 }), {});
+    equal('registro nuevo: nada que devolver', [F.revivedFields(undone, null), F.revivedFields(null, annulled)], [{}, {}]);
+    equal('devolver una anulacion sigue pidiendo "deshacer" (reciente) y nada mas', F.movementNeeds({ ...undone, type: 'income' }, { ...annulled, type: 'income', updated_at: new Date().toISOString() }), [['finanzas.deshacer']]);
+    equal('aunque el registro local ya traiga el rastro de una devolucion anterior', F.movementNeeds({ ...undone, type: 'income' }, { ...annulled, type: 'income', restored_at: T1, updated_at: new Date().toISOString() }), [['finanzas.deshacer']]);
+    equal('la copia vieja no arrastra el sello del servidor', [F.withoutServerStamp({ id: 1, server_at: { seconds: 5, nanoseconds: 0 }, amount: 2 }), F.withoutServerStamp({ id: 2 }), F.withoutServerStamp(null)], [{ id: 1, amount: 2 }, { id: 2 }, null]);
+
     equal('sello del servidor desde un Timestamp', F.stampValue({ seconds: 100, nanoseconds: 7 }), { s: 100, n: 7 });
     equal('sello guardado en la copia', F.stampValue({ s: 100, n: 7 }), { s: 100, n: 7 });
     equal('sin sello', [F.stampValue(null), F.stampValue('x'), F.stampValue({})], [null, null, null]);
@@ -447,6 +463,7 @@ console.log('\nSello del servidor');
     const S = require('../functions/src/finanzas/sello.js');
     const ts = (ms) => ({ ms, toMillis() { return this.ms; }, isEqual(other) { return !!other && other.ms === this.ms; } });
     yes('un movimiento nuevo sin sello se sella', S.needsStamp(null, { id: 1 }));
+    yes('un sello que no es una fecha del servidor cuenta como si no hubiera', S.needsStamp(null, { id: 1, server_at: { seconds: 5, nanoseconds: 0 } }) && S.needsStamp({ id: 1, server_at: ts(5) }, { id: 1, server_at: 'ayer' }));
     yes('uno nuevo que ya trae sello (lo creo el servidor) no', !S.needsStamp(null, { id: 1, server_at: ts(5) }));
     yes('un cambio que deja el sello de antes se sella', S.needsStamp({ id: 1, server_at: ts(5) }, { id: 1, deleted: true, server_at: ts(5) }));
     yes('el sellado mismo no se vuelve a sellar', !S.needsStamp({ id: 1 }, { id: 1, server_at: ts(5) }) && !S.needsStamp({ id: 1, server_at: ts(5) }, { id: 1, server_at: ts(9) }));

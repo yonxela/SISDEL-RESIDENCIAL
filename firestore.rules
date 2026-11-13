@@ -390,8 +390,8 @@ service cloud.firestore {
       // Datos financieros del residente (el nombre, la casa y el telefono viven en usuarios)
       function residentRights() {
         return (!finChanged().hasAny(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom']) || pFinanzasResidentesFiniquitar(condoId))
-          && (!finChanged().hasAny(['deleted', 'deleted_at']) || pFinanzasResidentesEliminar(condoId))
-          && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'updated_at', 'created_at', 'createdAt'])
+          && (!finChanged().hasAny(['deleted', 'deleted_at', 'restored_at']) || pFinanzasResidentesEliminar(condoId))
+          && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'restored_at', 'updated_at', 'created_at', 'createdAt'])
               || pFinanzasResidentesEditar(condoId));
       }
       match /finanzas_residentes/{docId} {
@@ -448,8 +448,9 @@ service cloud.firestore {
                   || (resource.data.get('type', '') == 'charge'
                       && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId))))))
           // Devolver una anulacion es "deshacer"
+          // (el motivo y la fecha de la anulacion quedan en el documento; restored_at anota cuando se devolvio)
           || (resource.data.get('deleted', false) == true && request.resource.data.get('deleted', false) != true
-              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at', 'server_at'])
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'restored_at', 'updated_at', 'server_at'])
               && pFinanzasDeshacer(condoId) && undoWindow('updated_at'));
       }
       match /finanzas_movimientos/{docId} {

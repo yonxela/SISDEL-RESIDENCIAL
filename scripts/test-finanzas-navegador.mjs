@@ -108,9 +108,7 @@ async function run() {
         equal('anulado en la nube, con su motivo', await (async () => { const d = (await txRef(payment.id).get()).data(); return [d.deleted, d.deleted_reason, d.amount]; })(), [true, 'prueba', 500]);
         equal('deshacer lo devuelve', await oikos(`(() => { History.undo(); return Store.get('transactions').some(x => x.id === ${JSON.stringify(payment.id)}); })()`), true);
         await idle();
-        // Pendiente conocido (ya pasaba antes de este cambio, ver README "Limites conocidos"): al deshacer una anulacion
-        // la nube conserva deleted:true, porque finanzas-sync.js sube solo los campos presentes y "deleted" ya no esta.
-        // Por eso aqui no se comprueba la nube.
+        equal('y en la nube deja de estar anulado, con el rastro de la anulacion', await (async () => { const d = (await txRef(payment.id).get()).data(); return [d.deleted, d.deleted_reason, typeof d.restored_at]; })(), [false, 'prueba', 'string']);
         equal('rehacer lo anula otra vez', await oikos(`(() => { History.redo(); return Store.get('transactions').some(x => x.id === ${JSON.stringify(payment.id)}); })()`), false);
         await idle();
         equal('y la nube lo refleja, con el motivo original', await (async () => { const d = (await txRef(payment.id).get()).data(); return [d.deleted, d.deleted_reason]; })(), [true, 'prueba']);

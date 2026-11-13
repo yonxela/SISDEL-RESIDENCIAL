@@ -205,6 +205,34 @@ async function run() {
     equal('en la nube el pago sigue existiendo, anulado, con todos sus datos', [annulled.deleted, annulled.amount, annulled.receiptNum], [true, 425, 'AU0001']);
     await waitFor('la anulacion recibe un sello mas nuevo', async () => { const d = await cloudTx('pago-a-1'); return isTimestamp(d.server_at) && d.server_at.toMillis() > stamped.server_at.toMillis(); });
 
+    // Deshacer la anulacion (la foto de antes no trae los campos de la anulacion): la nube debe decir lo mismo que la pantalla
+    oikosSet(b, 'transactions', (txs) => { const t = txs.find((x) => x.id === 'pago-a-1'); delete t.deleted; delete t.deleted_at; delete t.deleted_reason; });
+    record('deshacer la anulacion se guarda', await b.sync.waitIdle(15000));
+    const restored = await cloudTx('pago-a-1');
+    equal('en la nube el pago deja de estar anulado', restored.deleted, false);
+    equal('y queda el rastro: motivo y fecha de la anulacion, y cuando se devolvio', [restored.deleted_reason, typeof restored.deleted_at, restored.restored_at === txOf(b, 'pago-a-1').updated_at], ['prueba', 'string', true]);
+    await waitFor('el otro equipo lo vuelve a ver vivo', () => { const t = txOf(a, 'pago-a-1'); return t && t.deleted === false; });
+    // Y se vuelve a anular (rehacer), para seguir con el pago anulado
+    oikosSet(b, 'transactions', (txs) => { const t = txs.find((x) => x.id === 'pago-a-1'); t.deleted = true; t.deleted_at = new Date().toISOString(); t.deleted_reason = 'prueba'; });
+    await b.sync.waitIdle(15000);
+    equal('volver a anular funciona igual', (await cloudTx('pago-a-1')).deleted, true);
+    await waitFor('y llega al otro equipo', () => txOf(a, 'pago-a-1').deleted === true);
+
+    // Lo mismo con un residente: eliminar y deshacer, finiquitar y deshacer
+    const extraOf = async (id) => (await condoRef.collection('finanzas_residentes').doc(id).get()).data();
+    oikosSet(b, 'residents', (res) => { const r = res.find((x) => x.id === 'pn-2'); r.deleted = true; r.deleted_at = new Date().toISOString(); });
+    await b.sync.waitIdle(15000);
+    equal('residente eliminado en OIKOS: marcado en la nube (no borrado)', (await extraOf('pn-2')).deleted, true);
+    oikosSet(b, 'residents', (res) => { const r = res.find((x) => x.id === 'pn-2'); delete r.deleted; delete r.deleted_at; });
+    await b.sync.waitIdle(15000);
+    equal('deshacer la eliminacion llega a la nube, con rastro', await (async () => { const e = await extraOf('pn-2'); return [e.deleted, typeof e.deleted_at, typeof e.restored_at]; })(), [false, 'string', 'string']);
+    oikosSet(b, 'residents', (res) => { const r = res.find((x) => x.id === 'pn-2'); r.status = 'closed'; r.closedAt = new Date().toISOString(); r.closeReason = 'Vendió'; });
+    await b.sync.waitIdle(15000);
+    equal('finiquito guardado', (await extraOf('pn-2')).status, 'closed');
+    oikosSet(b, 'residents', (res) => { const r = res.find((x) => x.id === 'pn-2'); delete r.status; delete r.closedAt; delete r.closeReason; });
+    await b.sync.waitIdle(15000);
+    equal('deshacer el finiquito: activo en la nube, con el motivo del finiquito como rastro', await (async () => { const e = await extraOf('pn-2'); return [e.status, e.closeReason]; })(), ['active', 'Vendió']);
+
     // B edita un residente y cambia la configuracion: A lo recibe
     oikosSet(b, 'residents', (res) => { res.find((r) => r.id === 'pn-2').notes = 'Paga por transferencia'; });
     oikosSet(b, 'settings', (s) => { s.graceDays = 7; });
@@ -290,7 +318,11 @@ async function run() {
     console.log('\nCopia de la version anterior');
     const old = idsOf(a).slice(0, 3).map((id) => D.cloneJson(txOf(a, id)));
     const legacyStorage = memoryStorage({
-        [F.storageKey(CONDO, 'transactions')]: JSON.stringify([...old, { id: 'pago-viejo', date: later, type: 'income', amount: 300, concept: 'Abono', receiptNum: 'AU0003', resiId: 'pn-3', created_at: later, updated_at: later }]),
+        // La version anterior guardaba el sello del servidor pegado a cada movimiento (como objeto): no debe subirse
+        [F.storageKey(CONDO, 'transactions')]: JSON.stringify([
+            ...old.map((t, i) => (i === 0 ? { ...t, deleted: true, deleted_at: later, deleted_reason: 'anulado sin subir', updated_at: new Date().toISOString(), server_at: { seconds: 1, nanoseconds: 0 } } : { ...t, server_at: { seconds: 1, nanoseconds: 0 } })),
+            { id: 'pago-viejo', date: later, type: 'income', amount: 300, concept: 'Abono', receiptNum: 'AU0003', resiId: 'pn-3', created_at: later, updated_at: later, server_at: { seconds: 1, nanoseconds: 0 } }
+        ]),
         [F.storageKey(CONDO, 'residents')]: JSON.stringify(D.cloneJson(a.store.read('residents'))),
         [F.storageKey(CONDO, 'settings')]: JSON.stringify({ currency: 'GTQ', fee: 1, updated_at: iso(-10) }),
         [F.pendingKey(CONDO)]: '1'
@@ -298,6 +330,10 @@ async function run() {
     const c = await open(ADMIN_CODE, { storage: legacyStorage });
     await c.sync.waitIdle(15000);
     equal('lo que habia quedado sin subir en la copia vieja se sube', (await cloudTx('pago-viejo') || {}).amount, 300);
+    equal('sin quedar rechazado por el sello que la copia vieja traia pegado', c.events.status[c.events.status.length - 1], 'ok');
+    equal('la anulacion que estaba sin subir tambien llega', await (async () => { const d = await cloudTx(old[0].id); return [d.deleted, d.deleted_reason]; })(), [true, 'anulado sin subir']);
+    await waitFor('y el sello de esos movimientos sigue siendo el del servidor', async () => isTimestamp((await cloudTx('pago-viejo')).server_at) && isTimestamp((await cloudTx(old[0].id)).server_at));
+    record('en OIKOS ningun movimiento trae el sello', c.store.read('transactions').every((t) => !('server_at' in t)));
     equal('la configuracion vieja no pisa la de la nube', [c.store.read('settings').fee, (await condoRef.collection('finanzas_config').doc('oikos_settings').get()).data().fee], [425, 425]);
     equal('y la copia vieja se borra del equipo', ['transactions', 'residents', 'settings'].map((k) => legacyStorage.getItem(F.storageKey(CONDO, k))), [null, null, null]);
     equal('la lista del equipo queda completa', c.store.read('transactions').length, a.store.read('transactions').length + (txOf(a, 'pago-viejo') ? 0 : 1));

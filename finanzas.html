@@ -247,6 +247,8 @@
 
             try {
                 await sync.ready;
+                // La copia ya se rehizo: se quita ?recargar=1 para que recargar la pagina no vuelva a bajar todo
+                if (reload) { try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch { /* sin historial */ } }
                 mountOikos();
             } catch (error) {
                 console.error('Sistema Financiero: no se pudo cargar', error);

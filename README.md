@@ -284,6 +284,51 @@ En **Sistema Financiero > Configuración** la cuota mensual se escribe por conce
 
 El detalle del movimiento muestra además cada concepto con su monto. Las cuotas ya cobradas conservan su descripción; sin desglose configurado la cuota sigue llamándose «Cuota - Mes Año». Cambiar el desglose es un privilegio de la cuota (`finanzas.config_cuota`).
 
+## Datos: respaldo, rastro y condominios grandes
+
+Principio: toda la información vive en el servidor (Firestore), nada se borra y todo cambio deja rastro.
+
+**Rastro (bitácora).** Cada alta, cambio o eliminación de `usuarios`, `vehiculos`, `finanzas_residentes`, `finanzas_movimientos` y `finanzas_config` queda anotada por el servidor en `condominios/{c}/bitacora`: quién lo hizo, cuándo (hora del servidor), qué documento y el valor de antes y de después de cada campo. Lo eliminado queda con su contenido completo; anular y devolver una anulación quedan como `anular` y `restaurar`. Nadie puede escribirla, cambiarla ni borrarla desde una pantalla. La leen el master, quien asigna privilegios y quien puede ver usuarios y finanzas (auditor). Todavía no tiene pantalla: se consulta con
+
+```bash
+cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node ver-bitacora.mjs --condo=<id> --target=prod
+```
+
+(`--doc=<id>` muestra todo lo que le pasó a un documento; sin `--target=prod` lee el emulador.)
+
+**Nada se borra.** Un movimiento se anula (`deleted: true`, con motivo y fecha). Al deshacer una anulación la nube recibe `deleted: false` y `restored_at`, y conserva el motivo y la fecha de la anulación. Lo mismo al deshacer la eliminación o el finiquito de un residente.
+
+**Condominios grandes.** Los datos de OIKOS viven en la memoria de `finanzas.html`; cada equipo guarda una copia de los movimientos en IndexedDB solo para abrir rápido (se borra al cerrar sesión) y, al abrir, pide solo lo que cambió según el sello del servidor (`server_at`). Lo que no alcanzó a subir por falta de conexión queda en esa copia y se sube solo al volver. Medido en el emulador con 719 residentes (Chrome en una Mac; `scripts/seed-carga-grande.mjs` y `medir-carga-grande.mjs`):
+
+| | Antes, 6 meses | Después, 24 meses | Después, 60 meses |
+| --- | --- | --- | --- |
+| Movimientos | 8 146 | 34 142 | 86 059 |
+| Primera apertura (baja todo) | 3,7 s | 7,0 s | 30 s |
+| Siguientes aperturas | 3,7 s | 0,5 s | 0,7 s |
+| Tablero / lista de residentes | 0,77 s / 0,76 s | 0,02 s / 0,02 s | 0,04 s / 0,02 s |
+| Cuota del mes a 719 (calcular + guardar) | 2,9 s + 2,6 s | 0,9 s + 1,6 s | 3,2 s + 2,2 s |
+| Memoria en uso | 114 MB | 33 MB | 54 MB |
+
+Antes, con 24 meses no abría (y con el almacenamiento lleno, registrar un pago fallaba sin avisar). Con los mismos datos, la versión anterior y la nueva dan exactamente las mismas cifras (`scripts/cifras-oikos.mjs`). No se probó en Safari de iPhone.
+
+**Protección de la base (pendiente de activar).** Consultado el 2026-11-12: producción no tiene respaldos programados, guarda solo una hora de historial y no tiene protección contra borrado. Son tres ajustes que no tocan los datos; los corre una persona con permiso sobre el proyecto, con el visto bueno del dueño:
+
+```bash
+gcloud firestore databases update --database='(default)' --project=sisdel-datacenter --enable-pitr --delete-protection
+```
+
+```bash
+gcloud firestore backups schedules create --database='(default)' --project=sisdel-datacenter --recurrence=daily --retention=14d
+```
+
+```bash
+gcloud firestore backups schedules create --database='(default)' --project=sisdel-datacenter --recurrence=weekly --day-of-week=SUN --retention=14w
+```
+
+El primero deja recuperar la base a cualquier momento de los últimos 7 días e impide borrarla por accidente; los otros dos guardan un respaldo diario (14 días) y uno semanal (14 semanas). Comprobar después con `gcloud firestore databases describe --database='(default)' --project=sisdel-datacenter` y `gcloud firestore backups schedules list --database='(default)' --project=sisdel-datacenter`.
+
+**Al publicar este cambio.** Primero reglas y functions, después el front. Luego, con un cambio de prueba (por ejemplo editar el teléfono de un vecino), comprobar con `ver-bitacora.mjs` que la anotación trae el nombre de quien lo hizo: en el emulador el evento no trae la sesión real, así que ese dato solo se puede comprobar en producción.
+
 ## Stack
 
 - **Frontend:** HTML + Vanilla JS, sin build. SDK de Firebase por CDN.
@@ -303,8 +348,9 @@ condominios/{condoId}
     camera_logs/{logId}
     salidas/{id}                    salidas de vecinos (vehículo o residente) que registra la garita; las de las visitas van en `visitas.exitedAt`
     finanzas_residentes/{userId}    datos financieros del vecino (DPI, lote, notas, finiquito)
-    finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero
+    finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero (`server_at`: sello que pone el servidor en cada cambio)
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
+    bitacora/{id}                   rastro de cada cambio a usuarios, vehiculos y Sistema Financiero: quien, cuando y el valor de antes y de despues (solo la escribe el servidor)
     rondas_config/general           configuracion de RONDIN (boton de panico de vecinos)
     rondas_personal/{userId}        expediente del guardia (DPI, sangre, supervisor)
     rondas_rutas/{id}               rutas con sus puntos de control
@@ -344,7 +390,10 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |
 | `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
 | `finanzas/` | Sistema Financiero (OIKOS), que se mantiene aquí. `finanzas/sisdel-cuotas.js` arma el desglose de la cuota (`functions/src/finanzas/cuotas.js` es su copia idéntica). |
-| `finanzas.html`, `finanzas-sync.js` | Abren OIKOS dentro de SISDEL y sincronizan sus datos con Firestore (con el filtro de subida por privilegios). |
+| `finanzas.html`, `finanzas-sync.js` | Abren OIKOS dentro de SISDEL y sincronizan sus datos con Firestore (con el filtro de subida por privilegios). Los movimientos se bajan por páginas la primera vez y después solo los que cambiaron. |
+| `finanzas-datos.js` | Dónde viven los datos de OIKOS en el navegador: la memoria que comparte con `finanzas.html` y la copia del equipo en IndexedDB (ya no localStorage). |
+| `functions/src/finanzas/sello.js` | Sello del servidor (`server_at`) de cada movimiento: con él cada equipo pide solo lo que cambió. |
+| `functions/src/bitacora/` | Bitácora: el rastro, en el servidor, de cada cambio a usuarios, vehículos y Sistema Financiero. Se consulta con `scripts/ver-bitacora.mjs`. |
 | `finanzas-bloqueo.js` | Privilegios dentro de OIKOS: oculta y bloquea en pantalla lo que el usuario no puede usar. |
 | `rondin/js/privilegios-rondin.js` | Qué privilegio exige cada ruta, pantalla y botón de RONDIN. |
 | `scripts/` | Pruebas, datos de prueba, generadores (`npm run reglas`, `generar-tabla-privilegios.mjs`) y migración. No se publican. |
@@ -359,7 +408,9 @@ firebase emulators:start --only auth,firestore,functions,hosting
 cd scripts && npm run seed && npm test
 ```
 
-`npm test` corre seis archivos sin emuladores (privilegios y páginas, sincronización financiera, bloqueo de pantalla de OIKOS, mora, limpieza de rondas y privilegios de RONDIN) y uno contra los emuladores (`test-emulator.mjs`: login, reglas por rol, privilegios por usuario y por acción, cámara, finanzas y rondas). Con los emuladores arriba: `npm run seed` antes de cada corrida (el login se bloquea tras muchos intentos fallidos).
+`npm test` corre diez archivos sin emuladores (privilegios y páginas, exportación de reportes, sincronización financiera, datos de OIKOS en memoria, bloqueo de pantalla de OIKOS, desglose de la cuota, mora, bitácora, limpieza de rondas y privilegios de RONDIN) y tres contra los emuladores (`test-purga.mjs`: borrado total; `test-finanzas-nube.mjs`: la sincronización financiera entre varios equipos, la copia del equipo, el sello del servidor y la bitácora; `test-emulator.mjs`: login, reglas por rol, privilegios por usuario y por acción, cámara, finanzas y rondas). Con los emuladores arriba: `npm run seed` antes de cada corrida (el login se bloquea tras muchos intentos fallidos). Si una prueba dice que los disparadores de functions no responden, reiniciar los emuladores.
+
+`npm run test:navegador` (no entra en `npm test`: necesita Chrome) prueba el Sistema Financiero en un navegador de verdad: los formularios de OIKOS, deshacer, la cuota del mes, cambios sin conexión, la copia de la versión anterior y el borrado al cerrar sesión.
 
 Luego abrir http://127.0.0.1:5050. Los códigos de prueba están en `scripts/dev-seed.json`.
 
@@ -370,6 +421,8 @@ Siempre desde `main`, uno a la vez.
 ```bash
 firebase deploy --only firestore,functions,hosting
 ```
+
+Cuando cambian a la vez reglas, functions y front (como el sello del servidor y la bitácora): primero `firebase deploy --only firestore:rules,functions`, después el push a `main` (Vercel publica el front). Las reglas y functions nuevas son compatibles con el front anterior; al revés no.
 
 ## Cámara LPR
 

@@ -129,7 +129,8 @@ async function run() {
         console.log('\nVolver a abrir (usa la copia del equipo)');
         // Mismo contenido (el orden de la lista al abrir es por fecha de alta; durante la sesion, por orden de llegada)
         const SNAPSHOT = `(() => {
-            const sorted = (o) => Object.keys(o).sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
+            // restored_at es rastro que agrega la nube al devolver una anulacion: llega al volver a abrir, no es un cambio
+            const sorted = (o) => Object.keys(o).filter((k) => k !== 'restored_at').sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
             const byId = (list) => list.map(sorted).sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
             const s = Store.get('settings');
             return JSON.stringify([byId(Store.getRaw('transactions')), byId(Store.get('residents')).map(r => [r.id, r.name, r.unit, r.contact, r.dpi, r.balance]), [s.fee, s.receiptCounter, s.chargeDay]]);
@@ -137,6 +138,7 @@ async function run() {
         const listBefore = await oikos(SNAPSHOT);
         equal('abre de nuevo', await openFinance(), 'ok');
         equal('con los mismos movimientos (campo por campo), saldos y contador de recibos', await oikos(SNAPSHOT) === listBefore, true);
+        equal('y el pago que se devolvio y se volvio a anular trae su rastro desde la nube', await oikos(`(() => { const t = Store.getRaw('transactions').find(x => x.id === ${JSON.stringify(payment.id)}); return [t.deleted, t.deleted_reason, typeof t.restored_at]; })()`), [true, 'prueba', 'string']);
         copy = await page.evaluate(COPY);
         record('la copia guarda los movimientos (en bloques y cambios sueltos)', copy.enBloques + copy.sueltos >= txBefore + active && copy.info.complete === true, JSON.stringify([copy.enBloques, copy.sueltos]));
 

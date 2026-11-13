@@ -55,6 +55,9 @@ const SisdelFinanzas = (() => {
     const CODE_ATTEMPTS = 12;
     // Movimientos por pagina al bajar de la nube (el emulador de Firestore no entrega mas de 10 000 seguidos)
     const PAGE_SIZE = 3000;
+    // Espera maxima por cada pagina: mas larga que la de la primera respuesta, porque una pagina pesa y en una
+    // conexion lenta tarda. Si se agota, lo ya bajado queda guardado y "Reintentar" sigue desde ahi.
+    const PAGE_TIMEOUT_MS = 60000;
     // El espejo de este equipo se rehace completo pasado este tiempo
     const MIRROR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     // Una carga completa interrumpida se retoma si empezo hace menos de esto
@@ -488,7 +491,7 @@ const SisdelFinanzas = (() => {
         const hasId = (x) => !!x && x.id !== undefined && x.id !== null;
         const toTimestamp = (stamp) => new fs.Timestamp(stamp ? stamp.s : 0, stamp ? stamp.n : 0);
         const withTimeout = (promise) => new Promise((resolve, reject) => {
-            const timer = setTimeout(() => reject(new Error('timeout')), FIRST_LOAD_TIMEOUT_MS);
+            const timer = setTimeout(() => reject(new Error('timeout')), PAGE_TIMEOUT_MS);
             promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
         });
 

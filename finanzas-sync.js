@@ -1,10 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════
    SISDEL - Sincronizacion del Sistema Financiero (OIKOS) con Firestore
    ───────────────────────────────────────────────────────────────
-   OIKOS (finanzas/index.html) se usa tal cual, sin modificar: guarda todo
-   en localStorage con las claves oikos_multisys-{condoId}_residents,
-   _transactions y _settings. Este archivo corre en la pagina contenedora
-   (finanzas.html) y conecta esos datos con Firestore.
+   Este archivo corre en la pagina contenedora (finanzas.html) y conecta los datos de OIKOS
+   (finanzas/index.html) con Firestore. Los datos viven en la memoria de esta pagina
+   (window.sisdelFinanzasStore, ver finanzas-datos.js): OIKOS lee y escribe ahi con su objeto Store.
 
    Una sola base de vecinos: los residentes de OIKOS SON los vecinos de SISDEL.
      - Nombre, casa y telefono viven en condominios/{c}/usuarios/{id} (rol vecino).
@@ -15,6 +14,14 @@
    Movimientos: condominios/{c}/finanzas_movimientos/{id} (resiId = id del vecino).
    Configuracion: condominios/{c}/finanzas_config/oikos_settings.
 
+   Como se cargan los movimientos (un condominio grande junta decenas de miles):
+   - El equipo guarda un espejo de los movimientos de la nube en IndexedDB (finanzas-datos.js). La primera
+     vez se bajan todos por paginas; despues solo se piden los que cambiaron desde la ultima vez.
+   - "Que cambio" lo dice el sello del servidor (server_at) que pone la funcion stampFinanceMovement a cada
+     movimiento que se crea o modifica: no depende del reloj de ningun equipo. Ese campo nunca llega a OIKOS
+     ni se sube desde aqui (las reglas no dejan).
+   - El espejo se rehace completo cada 30 dias, al cerrar sesion (se borra) o con finanzas.html?recargar=1.
+
    Reglas de la mezcla:
    - Antes de abrir OIKOS se bajan los datos de la nube; gana la version con
      updated_at mas reciente (OIKOS sella updated_at en cada cambio).
@@ -24,8 +31,9 @@
    - Una lista local vacia o borrada no se sube: se restaura desde la nube.
    - Un vecino que entra al sistema financiero se cobra desde ese mes (feeFrom):
      OIKOS en modo automatico cobraria desde enero a todos los vecinos existentes.
-   - Mientras haya cambios sin confirmar queda la marca sisdel_fin_pendiente_*;
-     sin esa marca, SISDEL.logout() borra la copia local de OIKOS.
+   - Lo que cambia en este equipo y todavia no subio queda guardado en IndexedDB y se sube la proxima vez.
+     Mientras lo haya queda la marca sisdel_fin_pendiente_*; sin esa marca, SISDEL.logout() borra la copia.
+   - La copia en localStorage de la version anterior (oikos_multisys-{condoId}_*) se mezcla una vez y se borra.
    ═══════════════════════════════════════════════════════════════ */
 
 const SisdelFinanzas = (() => {
@@ -45,6 +53,16 @@ const SisdelFinanzas = (() => {
     const FIRST_LOAD_TIMEOUT_MS = 20000;
     const BATCH_SIZE = 400;
     const CODE_ATTEMPTS = 12;
+    // Movimientos por pagina al bajar de la nube (el emulador de Firestore no entrega mas de 10 000 seguidos)
+    const PAGE_SIZE = 3000;
+    // El espejo de este equipo se rehace completo pasado este tiempo
+    const MIRROR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+    // Una carga completa interrumpida se retoma si empezo hace menos de esto
+    const RESUME_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+    // Al pedir "lo que cambio" se retrocede un poco: releer unos movimientos no cuesta y no deja huecos
+    const CURSOR_OVERLAP_MS = 5 * 60 * 1000;
+    // Sello del servidor en cada movimiento (lo pone functions/src/finanzas/index.js)
+    const SERVER_STAMP = 'server_at';
 
     // ── Funciones puras (se prueban en scripts/test-finanzas-sync.mjs) ──
 
@@ -170,9 +188,70 @@ const SisdelFinanzas = (() => {
         return { merged, toPush };
     }
 
-    // Compara la lista local actual con lo ultimo sincronizado (Map docId -> canon).
+    // Sello del servidor: { s: segundos, n: nanosegundos } a partir de un Timestamp de Firestore
+    function stampValue(ts) {
+        if (!ts || typeof ts !== 'object') return null;
+        const s = Number(ts.seconds !== undefined ? ts.seconds : ts.s);
+        const n = Number(ts.nanoseconds !== undefined ? ts.nanoseconds : ts.n);
+        return Number.isFinite(s) ? { s, n: Number.isFinite(n) ? n : 0 } : null;
+    }
+    function laterStamp(a, b) {
+        if (!a) return b || null;
+        if (!b) return a;
+        return (b.s > a.s || (b.s === a.s && b.n > a.n)) ? b : a;
+    }
+    // El mismo sello, `ms` milisegundos antes (nunca antes del inicio de los tiempos)
+    function stampMinus(stamp, ms) {
+        if (!stamp) return { s: 0, n: 0 };
+        return { s: Math.max(0, stamp.s - Math.ceil(ms / 1000)), n: stamp.n };
+    }
+    // Un sello imposible (muy adelantado respecto de este equipo) no mueve el punto de reanudacion
+    function saneStamp(stamp, nowMs) {
+        return !!stamp && stamp.s * 1000 <= nowMs + 24 * 60 * 60 * 1000;
+    }
+
+    // ¿Sirve el espejo guardado en este equipo? 'usar' (solo pedir cambios), 'retomar' (seguir una carga
+    // completa que se interrumpio) o 'cargar' (bajar todo de nuevo).
+    function mirrorPlan(info, schema, nowMs, force) {
+        if (force || !info || info.schema !== schema) return 'cargar';
+        const age = nowMs - Date.parse(info.loadedAt || '');
+        if (!Number.isFinite(age)) return 'cargar';
+        if (info.complete) return age > MIRROR_MAX_AGE_MS ? 'cargar' : 'usar';
+        return info.lastId && info.chunks > 0 && age <= RESUME_MAX_AGE_MS ? 'retomar' : 'cargar';
+    }
+
+    // Lista con la que abre OIKOS: la nube en su orden (orderedCloud), con las versiones de este equipo que
+    // son mas nuevas en su lugar y, al final, lo que solo existe aqui. Mismas reglas que mergeList.
+    function overlayList(orderedCloud, cloudById, localItems, keepLocalOnly = true) {
+        const winners = new Map();
+        const localOnly = [];
+        const toPush = [];
+        const seen = new Set();
+        (localItems || []).forEach((item) => {
+            if (!item || item.id === null || item.id === undefined) return;
+            const id = docIdOf(item);
+            if (seen.has(id)) return;
+            seen.add(id);
+            const cloud = cloudById.get(id);
+            if (!cloud && !keepLocalOnly) return;
+            if (cloud && stampOf(cloud) >= stampOf(item)) return;
+            toPush.push(item);
+            if (cloud) winners.set(id, item); else localOnly.push(item);
+        });
+        const merged = winners.size
+            ? orderedCloud.map((c) => (c && c.id !== undefined && c.id !== null && winners.get(docIdOf(c))) || c)
+            : orderedCloud.slice();
+        localOnly.forEach((item) => merged.push(item));
+        return { merged, toPush };
+    }
+
+    // Lo sincronizado se guarda como objeto (o como texto canon, en las pruebas)
+    const canonOf = (value) => (typeof value === 'string' ? value : canon(value));
+    const objectOf = (value) => (typeof value === 'string' ? JSON.parse(value) : value);
+
+    // Compara la lista local actual con lo ultimo sincronizado (Map docId -> registro).
     // Devuelve los cambios a subir y si hubo que re-sellar o anular algo
-    // (en ese caso la lista local debe reescribirse con `items`).
+    // (en ese caso la lista local debe reemplazarse por `items`). No modifica lo que recibe.
     function diffList(items, syncedById, nowIso) {
         const out = items.slice();
         const changed = [];
@@ -182,11 +261,13 @@ const SisdelFinanzas = (() => {
             if (!item || item.id === null || item.id === undefined) return;
             const id = docIdOf(item);
             present.add(id);
-            const prevCanon = syncedById.get(id);
-            if (prevCanon === canon(item)) return;
+            const prevRaw = syncedById.get(id);
+            // El mismo objeto: no cambio (los registros guardados nunca se modifican, ver finanzas-datos.js)
+            if (prevRaw === item) return;
+            if (prevRaw && canonOf(prevRaw) === canon(item)) return;
             let next = item;
-            if (prevCanon) {
-                const prev = JSON.parse(prevCanon);
+            if (prevRaw) {
+                const prev = objectOf(prevRaw);
                 // Cambio sin sello nuevo (p. ej. "rehacer" con un registro viejo): se sella ahora
                 if (stampOf(item) <= stampOf(prev)) {
                     next = { ...item, updated_at: nowIso };
@@ -197,9 +278,9 @@ const SisdelFinanzas = (() => {
             changed.push(next);
         });
         // Lo que desaparecio sin anularse ("deshacer" un alta): se anula
-        syncedById.forEach((prevCanon, id) => {
+        syncedById.forEach((prevRaw, id) => {
             if (present.has(id)) return;
-            const prev = JSON.parse(prevCanon);
+            const prev = objectOf(prevRaw);
             if (prev.deleted) return;
             const tombstone = { ...prev, deleted: true, updated_at: nowIso };
             out.push(tombstone);
@@ -326,25 +407,43 @@ const SisdelFinanzas = (() => {
 
     function start(condoId, handlers = {}) {
         const db = window.sisdelFirebase.db;
+        const D = window.SisdelFinanzasDatos;
+        const fs = window.firebase.firestore;
         const condoRef = db.collection('condominios').doc(condoId);
         const onStatus = handlers.onStatus || (() => {});
         const onRemoteChange = handlers.onRemoteChange || (() => {});
         const onResidentCreated = handlers.onResidentCreated || (() => {});
+        // onProgress(movimientos leidos): avance de la carga de movimientos
+        const onProgress = handlers.onProgress || (() => {});
         const newAccessCode = handlers.newAccessCode;
         // can(clave) -> bool. Sin ella no se filtra nada (las reglas igual rechazan lo que no corresponde).
         const can = typeof handlers.can === 'function' ? handlers.can : null;
         // onBlocked({ kind, count, silent }): se descartaron cambios que el usuario no puede hacer
         const onBlocked = handlers.onBlocked || (() => {});
+        // Marcas pequenas de este equipo (pendiente, vecinos conocidos); las pruebas pasan una propia por equipo
+        const localStorage = (() => { try { return handlers.storage || window.localStorage; } catch { return null; } })();
+        // Movimientos por pagina (las pruebas usan paginas chicas para probar la paginacion con pocos datos)
+        const pageSize = handlers.pageSize > 0 ? handlers.pageSize : PAGE_SIZE;
 
-        // Ultima version conocida de la nube
+        // Los datos de OIKOS viven aqui (ver finanzas-datos.js); OIKOS los encuentra en window.sisdelFinanzasStore
+        const store = D.createStore('oikos_' + oikosCompanyId(condoId) + '_');
+        window.sisdelFinanzasStore = store;
+
+        // Ultima version conocida de la nube. transactions es el espejo que tambien se guarda en este equipo.
         const cloud = { users: new Map(), extras: new Map(), transactions: new Map(), settings: null };
-        // Lo que creemos que tiene la nube, en forma comparable (canon)
+        // Lo que creemos que tiene la nube (se adelanta al enviar): registros, nunca se modifican
         const synced = { residents: new Map(), transactions: new Map(), settings: null };
+        // Cambios de este equipo que la nube todavia no confirmo (tambien en IndexedDB, para no perderlos)
+        const pendingLocal = { residents: new Map(), transactions: new Map(), settings: new Map() };
         const timers = {};
         const unsubscribers = [];
         // Snapshots que llegan durante la primera carga; se aplican al terminarla
         const remote = {};
         const queued = { users: [], extras: [], transactions: [], settings: [] };
+        let cache = D.nullCache();
+        // Sello del servidor del ultimo movimiento visto: desde ahi se piden los cambios
+        let cursor = null;
+        let mirrorInfo = null;
         let inFlight = 0;
         let failed = null;
         let ready = false;
@@ -356,11 +455,15 @@ const SisdelFinanzas = (() => {
             transactions: () => condoRef.collection(COL.transactions),
             settings: () => condoRef.collection(COL.settings).doc(SETTINGS_DOC)
         };
-        const readRaw = (name) => localStorage.getItem(storageKey(condoId, name));
         const readKnown = () => { try { return new Set(JSON.parse(localStorage.getItem(knownKey(condoId)) || '[]')); } catch { return new Set(); } };
         const rememberKnown = () => { try { const seen = readKnown(); cloud.users.forEach((u, id) => seen.add(id)); localStorage.setItem(knownKey(condoId), JSON.stringify([...seen])); } catch { /* sin espacio */ } };
-        const writeRaw = (name, value) => localStorage.setItem(storageKey(condoId, name), JSON.stringify(value));
         const nowIso = () => new Date().toISOString();
+        const hasId = (x) => !!x && x.id !== undefined && x.id !== null;
+        const toTimestamp = (stamp) => new fs.Timestamp(stamp ? stamp.s : 0, stamp ? stamp.n : 0);
+        const withTimeout = (promise) => new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('timeout')), FIRST_LOAD_TIMEOUT_MS);
+            promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+        });
 
         function cloudResident(id) {
             const user = cloud.users.get(id);
@@ -377,6 +480,34 @@ const SisdelFinanzas = (() => {
             if (failed) { onStatus(failed); return; }
             try { localStorage.removeItem(pendingKey(condoId)); } catch { /* ignorar */ }
             onStatus(navigator.onLine === false ? 'offline' : 'ok');
+        }
+
+        // ── Cambios de este equipo sin confirmar ──
+        function rememberPending(kind, items) {
+            const fresh = items.filter((item) => {
+                const id = kind === 'settings' ? 'settings' : docIdOf(item);
+                if (pendingLocal[kind].get(id) === item) return false;
+                pendingLocal[kind].set(id, item);
+                return true;
+            });
+            if (!fresh.length) return;
+            markPending();
+            cache.putPending(kind, fresh);
+        }
+        // La nube confirmo estos cambios (si mientras tanto no cambiaron otra vez)
+        function settlePending(kind, items) {
+            const ids = [];
+            items.forEach((item) => {
+                const id = kind === 'settings' ? 'settings' : docIdOf(item);
+                if (pendingLocal[kind].get(id) !== item) return;
+                pendingLocal[kind].delete(id);
+                ids.push(id);
+            });
+            if (ids.length) cache.deletePending(kind, ids);
+        }
+        function forgetPending(kind, ids) {
+            const gone = ids.filter((id) => pendingLocal[kind].delete(id));
+            if (gone.length) cache.deletePending(kind, gone);
         }
 
         async function commitInChunks(writes) {
@@ -418,7 +549,7 @@ const SisdelFinanzas = (() => {
             throw lastError;
         }
 
-        // prevById: lo ultimo que sabiamos de la nube de cada documento (canon), para subir solo lo que cambio
+        // prevById: lo ultimo que sabiamos de la nube de cada documento, para subir solo lo que cambio
         async function writeResidents(items, prevById) {
             const writes = [];
             const creations = [];
@@ -433,7 +564,7 @@ const SisdelFinanzas = (() => {
                     writes.push((b) => b.update(ref.users().doc(id), update));
                     applied.push(() => cloud.users.set(id, { ...user, ...update }));
                 }
-                const prev = prevById && prevById.get(id) ? extraOf(JSON.parse(prevById.get(id))) : null;
+                const prev = prevById && prevById.get(id) ? extraOf(prevById.get(id)) : null;
                 const data = prev ? pick(plain(extra), changedFields(extra, prev)) : plain(extra);
                 writes.push((b) => b.set(ref.extras().doc(id), data, { merge: true }));
                 applied.push(() => cloud.extras.set(id, { ...(cloud.extras.get(id) || {}), ...data }));
@@ -446,15 +577,22 @@ const SisdelFinanzas = (() => {
         async function writeTransactions(items, prevById) {
             const payloads = items.map((item) => {
                 const id = docIdOf(item);
-                const prev = prevById && prevById.get(id) ? JSON.parse(prevById.get(id)) : null;
-                return { id, data: prev ? pick(plain(item), changedFields(item, prev)) : plain(item) };
+                const prev = prevById && prevById.get(id) ? prevById.get(id) : null;
+                return { id, item, data: prev ? pick(plain(item), changedFields(item, prev)) : plain(item) };
             });
             await commitInChunks(payloads.map(({ id, data }) => (b) => b.set(ref.transactions().doc(id), data, { merge: true })));
-            payloads.forEach(({ id, data }) => cloud.transactions.set(id, { ...(cloud.transactions.get(id) || {}), ...data }));
+            // El espejo queda como quedo la nube. Si es igual a lo que tiene OIKOS se guarda EL MISMO registro:
+            // asi la comparacion siguiente lo reconoce sin recorrerlo.
+            const mirrored = payloads.map(({ id, item, data }) => {
+                const merged = { ...(cloud.transactions.get(id) || {}), ...data };
+                const record = canon(merged) === canon(item) ? item : merged;
+                cloud.transactions.set(id, record);
+                return record;
+            });
+            cache.applyDeltas(mirrored, null);
         }
 
-        async function writeSettings(item, prevCanon) {
-            const prev = prevCanon ? JSON.parse(prevCanon) : null;
+        async function writeSettings(item, prev) {
             const data = prev ? pick(plain(item), changedFields(item, prev, ['updated_at'])) : plain(item);
             await ref.settings().set(data, { merge: true });
             cloud.settings = { ...(cloud.settings || {}), ...data };
@@ -463,33 +601,31 @@ const SisdelFinanzas = (() => {
         // ¿Puede este usuario escribir este cambio? Se compara con lo ultimo que sabemos de la nube.
         function allowedItem(kind, item) {
             if (!can) return true;
+            if (kind === 'settings') return satisfied(settingsNeeds(item, synced.settings), can);
             const id = docIdOf(item);
-            if (kind === 'settings') {
-                const prev = synced.settings ? JSON.parse(synced.settings) : null;
-                return satisfied(settingsNeeds(item, prev), can);
-            }
-            const prevCanon = synced[kind].get(id);
-            const prev = prevCanon ? JSON.parse(prevCanon) : null;
+            const prev = synced[kind].get(id) || null;
             if (kind === 'transactions') return satisfied(movementNeeds(item, prev), can);
             return satisfied(residentNeeds(item, prev, cloud.users.has(id)), can);
         }
 
-        // Lo que el usuario no puede hacer se descarta y la copia local vuelve a ser la de la nube:
+        // Lo que el usuario no puede hacer se descarta y la lista de OIKOS vuelve a ser la de la nube:
         // sin datos fantasma que alteren saldos, morosos o reportes en este equipo.
         function revertRejected(kind, rejected) {
             if (kind === 'settings') {
-                writeRaw('settings', cloud.settings || INITIAL_SETTINGS);
-                synced.settings = cloud.settings ? canon(cloud.settings) : null;
+                store.replace('settings', cloud.settings || INITIAL_SETTINGS, true);
+                synced.settings = cloud.settings || null;
+                forgetPending('settings', ['settings']);
                 return;
             }
             const byId = kind === 'residents' ? cloudResidents() : cloud.transactions;
             const gone = new Set(rejected.map(docIdOf));
-            const next = (parseArray(readRaw(kind)) || []).filter((x) => !(x && x.id !== undefined && x.id !== null && gone.has(docIdOf(x))));
+            const next = (store.read(kind) || []).filter((x) => !(hasId(x) && gone.has(docIdOf(x))));
             gone.forEach((id) => {
                 const mine = byId.get(id);
-                if (mine) { next.push(mine); synced[kind].set(id, canon(mine)); } else synced[kind].delete(id);
+                if (mine) { next.push(mine); synced[kind].set(id, mine); } else synced[kind].delete(id);
             });
-            writeRaw(kind, next);
+            forgetPending(kind, [...gone]);
+            store.replace(kind, next, true);
         }
 
         function gate(kind, items) {
@@ -513,10 +649,10 @@ const SisdelFinanzas = (() => {
             if (!items.length) return;
             // Lo ultimo que sabiamos de la nube: para subir solo los campos que cambiaron y para volver atras si falla
             const prevSettings = synced.settings;
-            const prevById = new Map(items.map((item) => [docIdOf(item), synced[kind] instanceof Map ? synced[kind].get(docIdOf(item)) : null]));
+            const prevById = new Map(items.map((item) => [docIdOf(item), kind === 'settings' ? null : (synced[kind].get(docIdOf(item)) || null)]));
             items.forEach((item) => {
-                if (kind === 'settings') synced.settings = canon(item);
-                else synced[kind].set(docIdOf(item), canon(item));
+                if (kind === 'settings') synced.settings = item;
+                else synced[kind].set(docIdOf(item), item);
             });
             markPending();
             inFlight++;
@@ -526,6 +662,7 @@ const SisdelFinanzas = (() => {
                 else if (kind === 'transactions') await writeTransactions(items, prevById);
                 else await writeSettings(items[0], prevSettings);
                 failed = null;
+                settlePending(kind, items);
             } catch (error) {
                 console.error('Sistema Financiero: no se pudo guardar', error);
                 const denied = String(error && error.code || '').includes('permission-denied');
@@ -547,34 +684,35 @@ const SisdelFinanzas = (() => {
         // Restaura una lista que OIKOS dejo vacia o borro (p. ej. "Borrar todo")
         function restoreList(kind) {
             const byId = kind === 'residents' ? cloudResidents() : cloud.transactions;
-            const items = [...byId.values()];
+            const items = D.canonicalOrder([...byId.values()]);
             if (!items.length) return;
-            writeRaw(kind, items);
-            synced[kind] = new Map(items.map((item) => [docIdOf(item), canon(item)]));
+            store.replace(kind, items, false);
+            synced[kind] = new Map(items.filter(hasId).map((item) => [docIdOf(item), item]));
             onRemoteChange('restored');
         }
 
         function flushList(kind) {
-            const items = parseArray(readRaw(kind));
-            if (!items || (items.length === 0 && synced[kind].size > 0)) { restoreList(kind); return; }
+            const items = store.read(kind);
+            if (!Array.isArray(items) || (items.length === 0 && synced[kind].size > 0)) { restoreList(kind); return; }
             const { items: next, changed, rewrite } = diffList(items, synced[kind], nowIso());
-            if (rewrite) writeRaw(kind, next);
+            if (rewrite) store.replace(kind, next, true);
+            rememberPending(kind, changed);
             push(kind, changed);
         }
 
         function flushSettings() {
-            const current = parseObject(readRaw('settings'));
-            if (!current) {
-                if (cloud.settings) { writeRaw('settings', cloud.settings); onRemoteChange('restored'); }
+            const current = store.read('settings');
+            if (!current || typeof current !== 'object' || Array.isArray(current)) {
+                if (cloud.settings) { store.replace('settings', cloud.settings, false); onRemoteChange('restored'); }
                 return;
             }
-            if (canon(current) === synced.settings) return;
+            if (synced.settings && canon(current) === canon(synced.settings)) return;
             let next = current;
-            const prev = synced.settings ? JSON.parse(synced.settings) : null;
-            if (prev && stampOf(current) <= stampOf(prev)) {
+            if (synced.settings && stampOf(current) <= stampOf(synced.settings)) {
                 next = { ...current, updated_at: nowIso() };
-                writeRaw('settings', next);
+                store.replace('settings', next, true);
             }
+            rememberPending('settings', [next]);
             push('settings', [next]);
         }
 
@@ -593,37 +731,51 @@ const SisdelFinanzas = (() => {
             updateStatus();
         }
 
-        // OIKOS escribe en localStorage dentro del iframe: esta pagina recibe el evento 'storage'
-        function onStorage(event) {
-            if (event.storageArea !== localStorage) return;
-            if (event.key === null) { KINDS.forEach((k) => schedule(k)); return; }
-            KINDS.forEach((kind) => { if (event.key === storageKey(condoId, kind)) schedule(kind); });
+        // OIKOS guardo algo (Store.set). El cambio se anota enseguida en este equipo (por si la pagina se
+        // cierra antes de subirlo) y se sube poco despues, junto con lo demas de la misma accion.
+        function onLocalWrite(kind) {
+            if (disposed || !ready) return;
+            try {
+                if (kind === 'settings') {
+                    const current = store.read('settings');
+                    if (current && typeof current === 'object' && !(synced.settings && canon(current) === canon(synced.settings))) rememberPending('settings', [current]);
+                } else {
+                    const items = store.read(kind);
+                    if (Array.isArray(items) && items.length) rememberPending(kind, diffList(items, synced[kind], nowIso()).changed);
+                }
+            } catch (error) { console.error('Sistema Financiero: no se pudo anotar el cambio en este equipo', error); }
+            schedule(kind);
         }
 
-        // Aplica a la copia local los registros de la nube mas nuevos que los locales
+        // Aplica a la lista de OIKOS los registros de la nube mas nuevos que los de este equipo
         function applyRemote(kind, incoming, removedIds = []) {
-            const local = parseArray(readRaw(kind)) || [];
-            let applied = false;
+            const local = store.read(kind) || [];
             let next = local;
+            let applied = false;
             if (removedIds.length) {
                 const gone = new Set(removedIds);
-                next = local.filter((x) => !(x && x.id !== undefined && gone.has(docIdOf(x))));
+                next = local.filter((x) => !(hasId(x) && gone.has(docIdOf(x))));
                 removedIds.forEach((id) => synced[kind].delete(id));
+                forgetPending(kind, removedIds);
                 applied = next.length !== local.length;
             }
             const indexById = new Map();
-            next.forEach((x, i) => { if (x && x.id !== undefined && x.id !== null) indexById.set(docIdOf(x), i); });
+            next.forEach((x, i) => { if (hasId(x)) indexById.set(docIdOf(x), i); });
+            const replaced = [];
             incoming.forEach((item) => {
                 const id = docIdOf(item);
                 const i = indexById.get(id);
                 const mine = i === undefined ? null : next[i];
                 if (mine && stampOf(mine) >= stampOf(item)) return;
-                synced[kind].set(id, canon(item));
-                if (mine) next[i] = item;
+                // La lista guardada no se modifica (la comparten las fotos de deshacer de OIKOS): se copia al primer cambio
+                if (next === local) next = local.slice();
+                synced[kind].set(id, item);
+                if (mine) { next[i] = item; replaced.push(id); }
                 else { indexById.set(id, next.length); next.push(item); }
                 applied = true;
             });
-            if (applied) { writeRaw(kind, next); onRemoteChange('remote'); }
+            if (replaced.length) forgetPending(kind, replaced);
+            if (applied) { store.replace(kind, next, true); onRemoteChange('remote'); }
         }
 
         // Vecino que todavia no tiene datos financieros: se cobra desde este mes
@@ -656,6 +808,12 @@ const SisdelFinanzas = (() => {
             }
         }
 
+        function onListenError(error) {
+            console.error('Sistema Financiero: se perdio la conexion en tiempo real', error);
+            failed = String(error && error.code || '').includes('permission-denied') ? 'denied' : 'error';
+            updateStatus();
+        }
+
         // Escucha una consulta o documento. Resuelve con la primera respuesta del
         // servidor; las siguientes son cambios de otros equipos.
         function listen(name, target) {
@@ -668,9 +826,7 @@ const SisdelFinanzas = (() => {
                 }, (error) => {
                     clearTimeout(timer);
                     if (first) { reject(error); return; }
-                    console.error('Sistema Financiero: se perdio la conexion en tiempo real', error);
-                    failed = String(error && error.code || '').includes('permission-denied') ? 'denied' : 'error';
-                    updateStatus();
+                    onListenError(error);
                 });
                 unsubscribers.push(unsubscribe);
             });
@@ -687,49 +843,197 @@ const SisdelFinanzas = (() => {
             return { docs, removed };
         }
 
+        // ── Movimientos: espejo de la nube en este equipo ──
+
+        // Movimiento como lo ve OIKOS (sin el sello del servidor) y su sello
+        function movementOf(doc) {
+            const record = doc.data();
+            const stamp = stampValue(record[SERVER_STAMP]);
+            delete record[SERVER_STAMP];
+            return { id: doc.id, record, stamp };
+        }
+        function infoNow(extra) {
+            mirrorInfo = { schema: D.SCHEMA, complete: true, cursor, loadedAt: (mirrorInfo && mirrorInfo.loadedAt) || nowIso(), ...(extra || {}) };
+            return mirrorInfo;
+        }
+        function advanceCursor(stamp) {
+            if (saneStamp(stamp, Date.now())) cursor = laterStamp(cursor, stamp);
+        }
+
+        // Baja todos los movimientos por paginas (la primera vez, o cuando el espejo vencio). `resume`: carga interrumpida.
+        async function loadAllMovements(resume) {
+            let lastId = null;
+            let chunk = 0;
+            let startedAt = nowIso();
+            if (resume) {
+                cursor = resume.info.cursor || null;
+                lastId = resume.info.lastId;
+                chunk = resume.info.chunks;
+                startedAt = resume.info.loadedAt;
+                cloud.transactions = resume.records;
+            } else {
+                // El sello mas reciente ANTES de empezar: lo que cambie mientras se baja se pide despues desde ahi
+                const latest = await withTimeout(ref.transactions().orderBy(SERVER_STAMP, 'desc').limit(1).get({ source: 'server' }));
+                cursor = null;
+                if (!latest.empty) advanceCursor(movementOf(latest.docs[0]).stamp);
+                cloud.transactions = new Map();
+                await cache.resetMirror({ schema: D.SCHEMA, complete: false, cursor, loadedAt: startedAt, lastId: null, chunks: 0 });
+            }
+            onProgress(cloud.transactions.size);
+            for (;;) {
+                let query = ref.transactions().orderBy(fs.FieldPath.documentId()).limit(pageSize);
+                if (lastId) query = query.startAfter(lastId);
+                const snap = await withTimeout(query.get({ source: 'server' }));
+                const records = snap.docs.map((doc) => {
+                    const { id, record } = movementOf(doc);
+                    cloud.transactions.set(id, record);
+                    return record;
+                });
+                if (snap.size) {
+                    lastId = snap.docs[snap.size - 1].id;
+                    await cache.appendChunk(chunk++, records, { schema: D.SCHEMA, complete: false, cursor, loadedAt: startedAt, lastId, chunks: chunk });
+                }
+                onProgress(cloud.transactions.size);
+                if (snap.size < pageSize) break;
+            }
+            mirrorInfo = { schema: D.SCHEMA, complete: true, cursor, loadedAt: startedAt };
+            await cache.setInfo(mirrorInfo);
+        }
+
+        // Pide lo que cambio desde el ultimo sello visto (con un margen hacia atras), por paginas
+        async function loadChangedMovements() {
+            const base = ref.transactions().where(SERVER_STAMP, '>', toTimestamp(stampMinus(cursor, CURSOR_OVERLAP_MS))).orderBy(SERVER_STAMP);
+            let last = null;
+            let count = 0;
+            for (;;) {
+                const query = last ? base.startAfter(last).limit(pageSize) : base.limit(pageSize);
+                const snap = await withTimeout(query.get({ source: 'server' }));
+                const records = snap.docs.map((doc) => {
+                    const { id, record, stamp } = movementOf(doc);
+                    cloud.transactions.set(id, record);
+                    advanceCursor(stamp);
+                    return record;
+                });
+                count += records.length;
+                if (records.length) await cache.applyDeltas(records, infoNow());
+                if (snap.size < pageSize) break;
+                last = snap.docs[snap.size - 1];
+            }
+            return count;
+        }
+
+        // Deja cloud.transactions al dia. Devuelve cuantos cambios sueltos acumula la copia de este equipo.
+        async function loadMovements(saved) {
+            const plan = mirrorPlan(saved.info, D.SCHEMA, Date.now(), handlers.reload === true);
+            let loose = 0;
+            if (plan === 'usar') {
+                cloud.transactions = saved.records;
+                cursor = saved.info.cursor || null;
+                mirrorInfo = saved.info;
+                loose = saved.deltaCount;
+                onProgress(cloud.transactions.size);
+            } else {
+                await loadAllMovements(plan === 'retomar' ? saved : null);
+            }
+            loose += await loadChangedMovements();
+            onProgress(cloud.transactions.size);
+            return loose;
+        }
+
+        // Cambios de otros equipos (y el sello de los propios) mientras la pagina esta abierta
+        function listenMovements() {
+            const query = ref.transactions().where(SERVER_STAMP, '>', toTimestamp(cursor)).orderBy(SERVER_STAMP);
+            unsubscribers.push(query.onSnapshot((snap) => {
+                const records = [];
+                snap.docChanges().forEach((c) => {
+                    if (c.doc.metadata.hasPendingWrites || c.type === 'removed') return;
+                    const { id, record, stamp } = movementOf(c.doc);
+                    if (record.id === undefined) record.id = id;
+                    // Si es lo mismo que ya tiene este equipo se conserva el registro que ya se comparte con OIKOS
+                    const known = cloud.transactions.get(id);
+                    const kept = known && canon(known) === canon(record) ? known : record;
+                    cloud.transactions.set(id, kept);
+                    advanceCursor(stamp);
+                    records.push(kept);
+                });
+                if (!records.length) return;
+                cache.applyDeltas(records, infoNow());
+                applyRemote('transactions', records);
+            }, onListenError));
+        }
+
+        // Copia de la version anterior en localStorage: se mezcla una vez (por si quedaron cambios sin subir)
+        function readLegacy() {
+            try {
+                return {
+                    residents: parseArray(localStorage.getItem(storageKey(condoId, 'residents'))),
+                    transactions: parseArray(localStorage.getItem(storageKey(condoId, 'transactions'))),
+                    settings: parseObject(localStorage.getItem(storageKey(condoId, 'settings')))
+                };
+            } catch { return { residents: null, transactions: null, settings: null }; }
+        }
+        function dropLegacy() {
+            try { KINDS.forEach((kind) => localStorage.removeItem(storageKey(condoId, kind))); } catch { /* ignorar */ }
+        }
+
         async function hydrate() {
             onStatus('loading');
             const hadPending = (() => { try { return localStorage.getItem(pendingKey(condoId)) === '1'; } catch { return false; } })();
-            const [usersSnap, extrasSnap, txSnap, setSnap] = await Promise.all([
+            cache = handlers.cache || await D.openCache(condoId);
+            const saved = await cache.load();
+            const legacy = readLegacy();
+            const hasLegacy = !!(legacy.residents || legacy.transactions || legacy.settings);
+            const waiting = { residents: [], transactions: [], settings: [] };
+            saved.pending.forEach((p) => { if (p && waiting[p.kind] && p.item) waiting[p.kind].push(p.item); });
+
+            const [usersSnap, extrasSnap, setSnap, loose] = await Promise.all([
                 listen('users', ref.users().where('role', '==', 'vecino')),
                 listen('extras', ref.extras()),
-                listen('transactions', ref.transactions()),
-                listen('settings', ref.settings())
+                listen('settings', ref.settings()),
+                loadMovements(saved)
             ]);
 
             usersSnap.docs.forEach((d) => cloud.users.set(d.id, { ...d.data(), id: d.id }));
             extrasSnap.docs.forEach((d) => cloud.extras.set(d.id, d.data()));
-            txSnap.docs.forEach((d) => cloud.transactions.set(d.id, d.data()));
             const newExtras = missingExtras();
 
             const toPush = {};
             // Residentes: la nube (vecinos de SISDEL) manda. Lo que solo esta en este
             // equipo se sube unicamente si quedo pendiente de una sesion anterior.
             const residents = cloudResidents();
-            synced.residents = new Map([...residents.entries()].map(([id, r]) => [id, canon(r)]));
+            synced.residents = new Map(residents);
             // Lo local-solo se sube unicamente si quedo pendiente; nunca un vecino que la nube ya conocio (lo eliminaron)
-            const localRes = dropResurrected(parseArray(readRaw('residents')) || [], residents, readKnown());
-            const res = mergeList(localRes, residents, hadPending);
+            const localRes = dropResurrected(waiting.residents.concat(legacy.residents || []), residents, readKnown());
+            const res = overlayList(D.canonicalOrder([...residents.values()]), residents, localRes, hadPending);
             rememberKnown();
-            writeRaw('residents', res.merged);
+            store.replace('residents', res.merged, false);
             toPush.residents = res.toPush;
 
-            synced.transactions = new Map([...cloud.transactions.entries()].map(([id, t]) => [id, canon(t)]));
-            const localTx = parseArray(readRaw('transactions'));
-            const tx = mergeList(localTx || [], cloud.transactions, true);
-            if (tx.merged.length || localTx) writeRaw('transactions', tx.merged);
+            const ordered = D.canonicalOrder([...cloud.transactions.values()]);
+            synced.transactions = new Map(cloud.transactions);
+            const tx = overlayList(ordered, cloud.transactions, waiting.transactions.concat(legacy.transactions || []), true);
+            store.replace('transactions', tx.merged, false);
             toPush.transactions = tx.toPush;
 
             cloud.settings = setSnap.exists ? setSnap.data() : null;
-            synced.settings = cloud.settings ? canon(cloud.settings) : null;
-            const localSettings = parseObject(readRaw('settings'));
+            synced.settings = cloud.settings || null;
+            const localSettings = waiting.settings[0] || legacy.settings;
             if (cloud.settings && (!localSettings || stampOf(cloud.settings) >= stampOf(localSettings))) {
-                writeRaw('settings', cloud.settings);
+                store.replace('settings', cloud.settings, false);
             } else if (localSettings) {
+                store.replace('settings', localSettings, false);
                 toPush.settings = [localSettings];
             } else {
-                writeRaw('settings', INITIAL_SETTINGS);
+                store.replace('settings', INITIAL_SETTINGS, false);
             }
+
+            // Lo pendiente que la nube ya supero se olvida; lo que sigue pendiente queda anotado en este equipo
+            KINDS.forEach((kind) => {
+                const keep = new Set((toPush[kind] || []).map((item) => (kind === 'settings' ? 'settings' : docIdOf(item))));
+                const stale = saved.pending.filter((p) => p && p.kind === kind && !keep.has(p.id)).map((p) => p.id);
+                if (stale.length) cache.deletePending(kind, stale);
+                rememberPending(kind, toPush[kind] || []);
+            });
 
             // Desde aqui cada snapshot es un cambio de otro equipo (o de otra pagina de SISDEL)
             remote.users = (snap) => {
@@ -745,27 +1049,28 @@ const SisdelFinanzas = (() => {
                 docs.forEach((e) => { const { _docId, ...extra } = e; cloud.extras.set(_docId, extra); });
                 applyRemote('residents', docs.map((e) => cloudResident(e._docId)).filter(Boolean));
             };
-            remote.transactions = (snap) => {
-                const { docs } = changesOf(snap);
-                const items = docs.map(({ _docId, ...t }) => { cloud.transactions.set(_docId, t); return t; });
-                applyRemote('transactions', items);
-            };
             remote.settings = (snap) => {
                 if (!snap.exists || snap.metadata.hasPendingWrites) return;
                 const item = snap.data();
                 cloud.settings = item;
-                const mine = parseObject(readRaw('settings'));
+                const mine = store.read('settings');
                 if (mine && stampOf(mine) >= stampOf(item)) return;
-                synced.settings = canon(item);
-                writeRaw('settings', item);
+                synced.settings = item;
+                forgetPending('settings', ['settings']);
+                store.replace('settings', item, true);
                 onRemoteChange('remote');
             };
-            Object.keys(queued).forEach((name) => queued[name].splice(0).forEach((snap) => remote[name](snap)));
+            Object.keys(queued).forEach((name) => { if (remote[name]) queued[name].splice(0).forEach((snap) => remote[name](snap)); });
+            listenMovements();
 
             ready = true;
-            window.addEventListener('storage', onStorage);
+            store.setLocalListener(onLocalWrite);
             await saveExtras(newExtras);
             await Promise.all(Object.entries(toPush).map(([kind, items]) => push(kind, items || [])));
+            // La copia vieja se borra cuando lo suyo ya esta a salvo (subido, o anotado en la copia nueva)
+            if (hasLegacy && (cache.persistent || !failed)) dropLegacy();
+            // Muchos cambios sueltos: la copia se reescribe en bloques para que la proxima apertura sea rapida
+            if (loose > D.COMPACT_AFTER) cache.compact(D.canonicalOrder([...cloud.transactions.values()]), infoNow());
             updateStatus();
         }
 
@@ -779,14 +1084,15 @@ const SisdelFinanzas = (() => {
 
         function dispose() {
             disposed = true;
-            window.removeEventListener('storage', onStorage);
+            store.setLocalListener(null);
             unsubscribers.forEach((u) => { try { u(); } catch { /* ignorar */ } });
+            cache.close();
         }
 
         window.addEventListener('online', updateStatus);
         window.addEventListener('offline', updateStatus);
 
-        return { ready: hydrate(), hasPending, waitIdle, dispose };
+        return { ready: hydrate(), hasPending, waitIdle, dispose, store };
     }
 
     return {
@@ -794,7 +1100,8 @@ const SisdelFinanzas = (() => {
         internals: {
             oikosCompanyId, storageKey, pendingKey, docIdOf, stampOf, periodOf, canon, parseArray,
             toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS,
-            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, pick, changedFields, dropResurrected
+            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, pick, changedFields, dropResurrected,
+            overlayList, stampValue, laterStamp, stampMinus, saneStamp, mirrorPlan, PAGE_SIZE, MIRROR_MAX_AGE_MS, RESUME_MAX_AGE_MS
         }
     };
 })();

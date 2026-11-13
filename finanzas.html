@@ -98,10 +98,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110f"></script>
-    <script src="sisdel-core.js?v=20261110f"></script>
-    <script src="finanzas-sync.js?v=20261109f"></script>
-    <script src="finanzas-bloqueo.js?v=20261109f"></script>
+    <script src="privilegios.js?v=20261112a"></script>
+    <script src="sisdel-core.js?v=20261112a"></script>
+    <script src="finanzas-datos.js?v=20261112a"></script>
+    <script src="finanzas-sync.js?v=20261112a"></script>
+    <script src="finanzas-bloqueo.js?v=20261112a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
@@ -210,8 +211,16 @@
             const banner = document.getElementById('remoteBanner');
             // Aviso de lo que se descarto por falta de privilegio (como maximo uno cada 8 s)
             let lastBlockedToast = 0;
+            // finanzas.html?recargar=1 rehace la copia de este equipo desde la nube (soporte)
+            const reload = new URLSearchParams(window.location.search).get('recargar') === '1';
             const sync = SisdelFinanzas.start(condoId, {
                 onStatus: setStatus,
+                reload,
+                // La primera vez (o al rehacer la copia) los movimientos se bajan por paginas: se muestra el avance
+                onProgress: (count) => {
+                    if (iframe || !count) return;
+                    message.textContent = `Cargando datos financieros... ${count.toLocaleString('es-GT')} movimientos`;
+                },
                 // Un cambio que el usuario no puede hacer no se sube: la copia local vuelve a ser la de la nube
                 can: (key) => SISDEL.can(key),
                 onBlocked: ({ count, silent }) => {

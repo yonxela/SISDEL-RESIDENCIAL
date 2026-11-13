@@ -18,9 +18,12 @@ const { deleteCondominio } = require('./src/condominios');
 const { anprWebhook } = require('./src/anpr/webhook');
 const { onFinanceMovement, onFinanceSettings, dailyFinance } = require('./src/finanzas');
 const { onPanicCreated, dailyRondas } = require('./src/rondas');
+// Bitacora: rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (ver src/bitacora.js)
+const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings } = require('./src/bitacora');
 
 module.exports = {
     login, verifyAccessCode, deleteCondominio, anprWebhook,
     onFinanceMovement, onFinanceSettings, dailyFinance,
-    onPanicCreated, dailyRondas
+    onPanicCreated, dailyRondas,
+    auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings
 };

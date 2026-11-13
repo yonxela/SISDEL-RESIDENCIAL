@@ -148,6 +148,9 @@ function oikosSet(device, kind, change) {
     const next = change(working) || working;
     device.store.write(kind, D.stampList(device.store.read(kind), next, now));
 }
+async function denied(name, fn) {
+    try { await fn(); record(name, false, '-> se esperaba denegado'); } catch (e) { record(name, String(e.code).includes('permission-denied'), `-> ${e.code || e.message}`); }
+}
 const txOf = (device, id) => (device.store.read('transactions') || []).find((t) => t && t.id === id);
 const idsOf = (device) => (device.store.read('transactions') || []).map((t) => t.id);
 const cloudTx = async (id) => { const snap = await txRef(id).get(); return snap.exists ? snap.data() : null; };
@@ -302,7 +305,6 @@ async function run() {
     await auditor.close();
     const Timestamp = firebase.firestore.Timestamp;
     const clientTx = (id) => a.db.collection(`condominios/${CONDO}/finanzas_movimientos`).doc(id);
-    const denied = async (name, fn) => { try { await fn(); record(name, false, '-> se esperaba denegado'); } catch (e) { record(name, String(e.code).includes('permission-denied'), `-> ${e.code || e.message}`); } };
     await denied('un cliente no puede crear un movimiento con sello del servidor', () => clientTx('con-sello').set({ id: 'con-sello', type: 'income', amount: 5, concept: 'x', resiId: 'pn-1', server_at: Timestamp.now() }));
     await denied('ni adelantar el sello de uno existente', () => clientTx('pago-a-1').set({ server_at: new Timestamp(4102444800, 0), updated_at: new Date().toISOString() }, { merge: true }));
     await denied('ni cambiarlo por otro valor', () => clientTx('pago-a-1').set({ server_at: { seconds: 1, nanoseconds: 0 }, updated_at: new Date().toISOString() }, { merge: true }));
@@ -370,6 +372,70 @@ async function run() {
     await waitFor('con muchos cambios sueltos la copia se compacta', () => a.cache.stats.compactions === 1 && a.cache.state.delta.size === 0);
     equal('sin perder ningun movimiento, y en orden de alta', [[...a.cache.state.base.values()].flat().length, JSON.stringify([...a.cache.state.base.values()].flat().map((r) => r.id)) === JSON.stringify(idsOf(a))], [total, true]);
 
+    // ───────── Bitacora: el rastro de cada cambio, en el servidor ─────────
+    console.log('\nBitacora');
+    const logOf = async (collection, docId) => (await condoRef.collection('bitacora').where('docId', '==', docId).get()).docs.map((d) => d.data()).filter((e) => e.collection === collection);
+    const actions = (entries) => entries.map((e) => e.action).sort();
+    const paymentLog = await waitFor('el pago tiene anotado todo lo que le paso: alta, anulacion, devolucion y nueva anulacion', async () => { const e = await logOf('finanzas_movimientos', 'pago-a-1'); return JSON.stringify(actions(e)) === JSON.stringify(['anular', 'anular', 'crear', 'restaurar']) ? e : null; });
+    if (paymentLog) {
+        const created = paymentLog.find((e) => e.action === 'crear');
+        // La primera anulacion trae el motivo; la segunda no lo cambia (ya estaba en el documento, como rastro)
+        const annulledEntry = paymentLog.find((e) => e.action === 'anular' && e.changes.deleted_reason);
+        const restoredEntry = paymentLog.find((e) => e.action === 'restaurar');
+        equal('el alta guarda lo que se registro', [created.subject.amount, created.subject.resiId, created.changes.receiptNum.to, created.changes.amount], [425, 'pn-1', 'AU0001', { from: null, to: 425 }]);
+        equal('la anulacion guarda el motivo y el valor de antes y de despues', [annulledEntry.changes.deleted.to, annulledEntry.changes.deleted_reason.to], [true, 'prueba']);
+        equal('la devolucion guarda que dejo de estar anulado y cuando', [restoredEntry.changes.deleted, typeof restoredEntry.changes.restored_at.to], [{ from: true, to: false }, 'string']);
+        record('cada anotacion lleva la hora del servidor y de quien vino el cambio', paymentLog.every((e) => isTimestamp(e.at) && typeof e.actorType === 'string' && 'actorId' in e && 'actorName' in e));
+        record('el sello del servidor no genera anotaciones ni aparece en ellas', paymentLog.length === 4 && paymentLog.every((e) => !('server_at' in e.changes)));
+    }
+    const residentLog = await logOf('finanzas_residentes', 'pn-2');
+    record('el residente: eliminado, devuelto, finiquitado y reactivado quedan anotados', actions(residentLog).filter((x) => x === 'anular').length >= 1 && actions(residentLog).includes('restaurar') && residentLog.some((e) => e.changes.status && e.changes.status.to === 'closed') && residentLog.some((e) => e.changes.status && e.changes.status.from === 'closed' && e.changes.status.to === 'active'), JSON.stringify(actions(residentLog)));
+    const settingsLog = await logOf('finanzas_config', 'oikos_settings');
+    record('el cambio de configuracion queda con el valor de antes y el de despues', settingsLog.some((e) => e.changes.graceDays && e.changes.graceDays.from === 5 && e.changes.graceDays.to === 7));
+    const userLog = await waitFor('el estado de pago que cambia el servidor tambien queda anotado', async () => { const e = await logOf('usuarios', 'pn-3'); return e.some((x) => x.changes.paymentStatus && x.changes.paymentStatus.to === 'al_dia' && x.changes.paymentStatus.from === 'moroso') ? e : null; });
+    record('y el alta de cada usuario', !!userLog && userLog.some((e) => e.action === 'crear' && e.subject.name === 'Rosa Tres'));
+    // Un movimiento eliminado por un script deja su contenido completo
+    await txRef('m-00010').delete();
+    const deletedLog = await waitFor('lo eliminado queda anotado', async () => { const e = await logOf('finanzas_movimientos', 'm-00010'); return e.find((x) => x.action === 'eliminar') || null; });
+    record('con su contenido completo', !!deletedLog && deletedLog.changes.amount.from === 100 && deletedLog.changes.amount.to === null && deletedLog.subject.concept === 'Cargo de prueba', JSON.stringify(deletedLog && deletedLog.subject));
+    await txRef('m-00010').set({ id: 'm-00010', date: iso(10), type: 'charge', kind: 'extra', amount: 100, concept: 'Cargo de prueba', resiId: 'pn-2', created_at: iso(10), updated_at: iso(10) });
+
+    // Nadie la escribe, la cambia ni la borra desde una pantalla; la leen el administrador y el auditor
+    const anEntry = (await condoRef.collection('bitacora').limit(1).get()).docs[0];
+    const clientLog = a.db.collection(`condominios/${CONDO}/bitacora`);
+    await denied('el administrador no puede escribir en la bitacora', () => clientLog.doc('falsa').set({ action: 'crear', collection: 'usuarios', docId: 'x' }));
+    await denied('ni cambiar una anotacion', () => clientLog.doc(anEntry.id).update({ actorName: 'Otro' }));
+    await denied('ni borrarla', () => clientLog.doc(anEntry.id).delete());
+    record('el administrador la puede leer', (await clientLog.where('docId', '==', 'pago-a-1').get()).size === 4);
+    const reader = async (code) => {
+        const app = firebase.initializeApp({ projectId: PROJECT_ID, apiKey: 'fake-api-key' }, 'lector-' + code);
+        app.auth().useEmulator(`http://${EMULATOR.auth}`, { disableWarnings: true });
+        const db = app.firestore();
+        db.useEmulator(EMULATOR.firestore.split(':')[0], Number(EMULATOR.firestore.split(':')[1]));
+        const functions = app.functions('us-central1');
+        functions.useEmulator(...EMULATOR.functions);
+        await app.auth().signInWithCustomToken((await functions.httpsCallable('login')({ code })).data.token);
+        return { db, close: () => app.delete() };
+    };
+    const auditorReader = await reader(AUDITOR_CODE);
+    record('el auditor tambien', (await auditorReader.db.collection(`condominios/${CONDO}/bitacora`).where('docId', '==', 'pago-a-1').get()).size === 4);
+    await auditorReader.close();
+    const neighbor = await reader('PN9011');
+    await denied('un vecino no la lee', () => neighbor.db.collection(`condominios/${CONDO}/bitacora`).limit(1).get());
+    await neighbor.close();
+
+    // Quien: en el emulador el evento no trae la sesion real, asi que se prueba la anotacion directamente
+    const { record: writeEntry } = require('../functions/src/bitacora');
+    const sample = (actorType, actorId) => ({ collection: 'usuarios', docId: 'prueba-quien', action: 'cambiar', actorType, actorId, subject: {}, changes: { phone: { from: '1', to: '2' } }, eventTime: null });
+    const entryOf = async (id) => (await condoRef.collection('bitacora').doc(id).get()).data();
+    equal('un usuario del condominio queda con su nombre y su rol', [await writeEntry(CONDO, 'quien-1', sample('unknown', 'u-pn-admin')), (await entryOf('quien-1')).actorName, (await entryOf('quien-1')).actorRole, (await entryOf('quien-1')).actorId], [true, 'Admin Prueba Nube', 'admin', 'u-pn-admin']);
+    equal('el master queda como Master', [await writeEntry(CONDO, 'quien-2', sample('unknown', 'master')), (await entryOf('quien-2')).actorName], [true, 'Master']);
+    equal('lo que hace el servidor queda como Servidor', [await writeEntry(CONDO, 'quien-3', sample('service_account', 'firebase-adminsdk@x.iam.gserviceaccount.com')), (await entryOf('quien-3')).actorName], [true, 'Servidor']);
+    equal('un identificador desconocido queda tal como llego', [await writeEntry(CONDO, 'quien-4', sample('unknown', 'no-existe')), (await entryOf('quien-4')).actorId, (await entryOf('quien-4')).actorName], [true, 'no-existe', '']);
+    await writeEntry(CONDO, 'quien-1', sample('unknown', 'u-pn-admin'));
+    equal('el mismo evento dos veces se anota una sola vez', (await condoRef.collection('bitacora').where('docId', '==', 'prueba-quien').get()).size, 4);
+    equal('de un condominio que no existe (o se esta eliminando) no se anota nada', [await writeEntry('condo-que-no-existe', 'quien-5', sample('unknown', 'x')), (await adminDb.collection('condominios/condo-que-no-existe/bitacora').get()).size], [false, 0]);
+
     // ───────── Restaurar una lista vaciada ─────────
     console.log('\nRestaurar');
     a.store.write('transactions', []);
@@ -382,6 +448,8 @@ run().catch((error) => { console.error(error); failures.push('error inesperado: 
     await Promise.all(devices.map((d) => d.close().catch(() => {})));
     // El condominio de prueba no queda en el emulador
     try {
+        await adminDb.recursiveDelete(condoRef);
+        await sleep(1500);
         await adminDb.recursiveDelete(condoRef);
         const codes = await adminDb.collection('codigos').where('condominioId', '==', CONDO).get();
         const batch = adminDb.batch();

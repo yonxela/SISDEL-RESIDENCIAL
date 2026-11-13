@@ -375,6 +375,14 @@ service cloud.firestore {
         allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
       }
 
+      // ── Bitacora: el rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (quien, que y cuando) ──
+      // La escribe solo el servidor (functions/src/bitacora.js): desde una pantalla nadie la escribe, la cambia ni
+      // la borra. La lee quien asigna privilegios, o quien puede ver a la vez los usuarios y las finanzas (auditor).
+      match /bitacora/{entryId} {
+        allow read: if isMaster() || pUsuariosPrivilegios(condoId) || (pUsuariosVer(condoId) && pFinanzasVer(condoId));
+        allow write: if false;
+      }
+
       // ── Sistema Financiero (OIKOS, ver finanzas-sync.js) ──
       // Lo edita quien tiene finanzas.usar; el master y quien solo tiene finanzas.ver leen. Nunca se borra:
       // OIKOS anula con deleted:true para que la anulacion llegue a todos los equipos.

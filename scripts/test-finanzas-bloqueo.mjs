@@ -21,8 +21,8 @@ const none = () => false;
 const blocked = (attr, can) => B.checkAttribute(attr, can) !== null;
 
 console.log('\nPrivilegio que exige cada accion de OIKOS');
-equal('el administrador (todo) puede cualquier accion', ['openFeeRun()', "deleteTransaction('x')", 'clearDB()', 'History.undo()', "navigate('reports')"].map((a) => blocked(a, all)), [false, false, false, false, false]);
-equal('sin privilegios se bloquea todo lo que escribe o exporta', ['openFeeRun()', "deleteTransaction('x')", 'clearDB()', 'History.undo()', 'printReport()', 'saveSettings()', "openModal('modal-income')"].map((a) => blocked(a, none)), [true, true, true, true, true, true, true]);
+equal('el administrador (todo) puede cualquier accion', ['openFeeRun()', "deleteTransaction('x')", 'History.undo()', "navigate('reports')"].map((a) => blocked(a, all)), [false, false, false, false]);
+equal('sin privilegios se bloquea todo lo que escribe o exporta', ['openFeeRun()', "deleteTransaction('x')", 'History.undo()', 'printReport()', 'saveSettings()', "openModal('modal-income')"].map((a) => blocked(a, none)), [true, true, true, true, true, true]);
 equal('cada boton exige su privilegio', [
     blocked("openModal('modal-income')", only('pagos_registrar')),
     blocked("openModal('modal-expense')", only('pagos_registrar')),
@@ -36,10 +36,8 @@ equal('cada boton exige su privilegio', [
     blocked("editResident('u1')", only('residentes_editar')),
     blocked("editResident('u1')", only('residentes_crear')),
     blocked("openEstadoCuenta('u1')", only('residentes_estado')),
-    blocked('openReminders()', only('residentes_contactar')),
-    blocked('clearDB()', only('limpiar')),
-    blocked('clearDB()', only('config_cuota'))
-], [false, true, false, false, true, false, false, false, false, false, true, false, false, false, true]);
+    blocked('openReminders()', only('residentes_contactar'))
+], [false, true, false, false, true, false, false, false, false, false, true, false, false]);
 equal('anular cualquier movimiento exige alguna de las tres', [
     blocked("deleteTransaction('x')", only('pagos_anular')), blocked("deleteTransaction('x')", only('egresos_anular')),
     blocked("deleteTransaction('x')", only('cargos_anular')), blocked("deleteTransaction('x')", only('pagos_registrar', 'deshacer'))
@@ -90,7 +88,7 @@ const cssAll = B.cssFor(all);
 equal('con todos los privilegios no se oculta nada', cssAll, '');
 const cssNone = B.cssFor(none);
 equal('sin privilegios se ocultan las cinco pantallas', ['#nav-dashboard', '#nav-residents', '#nav-accounting', '#nav-reports', '#nav-settings'].every((s) => cssNone.includes(s)), true);
-equal('sin privilegios se ocultan deshacer y limpiar', ['#btn-undo-header', '#btn-redo-header', '#btn-clear'].every((s) => cssNone.includes(s)), true);
+equal('sin privilegios se ocultan deshacer y rehacer', ['#btn-undo-header', '#btn-redo-header'].every((s) => cssNone.includes(s)), true);
 const cashier = only('tablero_ver', 'residentes_ver', 'residentes_estado', 'contabilidad_ver', 'comprobantes', 'pagos_registrar', 'reportes_morosos');
 const cssCashier = B.cssFor(cashier);
 equal('un cajero ve el boton de pagos y no el de egresos ni el de cargos', [cssCashier.includes("modal-income"), cssCashier.includes("openModal('modal-expense')"), cssCashier.includes("openModal('modal-bulk-charge')")], [false, true, true]);
@@ -129,7 +127,7 @@ collect(B.HIDE.map(([n]) => n));
 collect(B.LOCK.map(([n]) => n));
 collect(Object.values(B.VIEWS));
 Object.keys(B.DISABLE).forEach((n) => referenced.add(n));
-// finanzas.ver y finanzas.usar son el acceso (reglas y pagina); deshacer/limpiar/etc. salen de las listas anteriores
+// finanzas.ver y finanzas.usar son el acceso (reglas y pagina); deshacer/etc. salen de las listas anteriores
 const unreferenced = names.filter((n) => !['ver', 'usar'].includes(n) && !referenced.has(n));
 equal('toda clave finanzas.* (salvo el acceso) se usa en el bloqueo de pantalla', unreferenced, []);
 const unknown = [...referenced].filter((n) => !names.includes(n));
@@ -140,10 +138,10 @@ equal('el bloqueo no menciona claves que no existen en el catalogo', unknown, []
     const fiscal = (key) => PRIV.has('vecino', fiscalOv, key);
     const css = B.cssFor(fiscal);
     equal('fiscalizador: abre el tablero y ve todas las pantallas de lectura', [B.firstView(fiscal), ['dashboard', 'residents', 'accounting', 'reports', 'settings'].every((v) => B.viewAllowed(v, fiscal))], ['dashboard', true]);
-    equal('fiscalizador: no ve botones de escribir ni guardar la configuracion', ["openModal('modal-income')", "openModal('modal-expense')", "openModal('modal-bulk-charge')", "openModal('modal-resident')", 'openFeeRun()', '#btn-save-cfg', '#btn-undo-header', '#btn-clear'].every((s) => css.includes(s)), true);
+    equal('fiscalizador: no ve botones de escribir ni guardar la configuracion', ["openModal('modal-income')", "openModal('modal-expense')", "openModal('modal-bulk-charge')", "openModal('modal-resident')", 'openFeeRun()', '#btn-save-cfg', '#btn-undo-header'].every((s) => css.includes(s)), true);
     equal('fiscalizador: no ve el DPI ni los recordatorios por WhatsApp', ['#res-dpi', 'openReminders()'].every((s) => css.includes(s)), true);
     equal('fiscalizador: puede ver estado de cuenta, comprobantes y exportar reportes', ['modal-estado-cuenta', 'modal-voucher-options', 'printReport()'].some((s) => css.includes(s)), false);
-    equal('fiscalizador: ninguna accion de escribir pasa el bloqueo de clic', ["openModal('modal-income')", "deleteTransaction('x')", 'applyFeeRun()', 'saveSettings()', 'clearDB()', 'History.undo()'].every((a) => B.checkAttribute(a, fiscal) !== null), true);
+    equal('fiscalizador: ninguna accion de escribir pasa el bloqueo de clic', ["openModal('modal-income')", "deleteTransaction('x')", 'applyFeeRun()', 'saveSettings()', 'History.undo()'].every((a) => B.checkAttribute(a, fiscal) !== null), true);
 }
 equal('un administrador (acceso de siempre) no pierde nada en pantalla', B.cssFor((key) => PRIV.has('admin', {}, key)), '');
 equal('un auditor ve las pantallas pero no puede usar el sistema financiero', B.firstView((key) => PRIV.has('auditor', {}, key)), null);

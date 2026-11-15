@@ -166,7 +166,6 @@
                 { key: 'finanzas.config_conceptos', sub: 'Configuración', parent: 'finanzas.usar', label: 'Editar los conceptos frecuentes', description: 'Los conceptos de ingresos y egresos que se repiten.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
 
                 { key: 'finanzas.deshacer', sub: 'Datos', parent: 'finanzas.usar', label: 'Deshacer y rehacer', description: 'Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas.', requires: ['finanzas.ver'], sensitive: true, enforce: 'reglas' },
-                { key: 'finanzas.limpiar', sub: 'Datos', parent: 'finanzas.usar', label: 'Limpiar la base de datos de este equipo', description: 'Borra la copia local (los datos se restauran desde la nube, pero se pierden cambios pendientes). Pide una contraseña propia de OIKOS.', requires: ['finanzas.config_ver'], sensitive: true, enforce: 'pantalla' }
             ]
         },
         {

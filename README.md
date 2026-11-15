@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-147 privilegios: 31 paraguas y 116 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+146 privilegios: 31 paraguas y 115 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Usuarios y vecinos
 
@@ -166,7 +166,6 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.config_cuota` | Cambiar la cuota y el cobro **(sensible)**. Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora. | los de su paraguas | Reglas |
 | `finanzas.config_conceptos` | Editar los conceptos frecuentes. Los conceptos de ingresos y egresos que se repiten. | los de su paraguas | Reglas |
 | `finanzas.deshacer` | Deshacer y rehacer **(sensible)**. Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas. | los de su paraguas | Reglas |
-| `finanzas.limpiar` | Limpiar la base de datos de este equipo **(sensible)**. Borra la copia local (los datos se restauran desde la nube, pero se pierden cambios pendientes). Pide una contraseña propia de OIKOS. | los de su paraguas | Pantalla |
 
 ### Rondas de vigilancia (RONDIN)
 

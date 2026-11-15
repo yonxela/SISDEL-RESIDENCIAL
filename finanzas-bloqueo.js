@@ -84,7 +84,6 @@
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
-        [/^clearDB\(/, ['limpiar']]
     ];
 
     // Privilegios (basta uno) que dejan ver un bloque; sin ninguno se oculta con estos selectores.
@@ -137,7 +136,6 @@
             '#btn-export', 'button[onclick="exportCSV()"]', '#view-accounting button[onclick="exportToPDF()"]'
         ]],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
-        [['limpiar'], ['#btn-clear']],
         [CONFIG_WRITE_KEYS, ['#btn-save-cfg']]
     ];
 

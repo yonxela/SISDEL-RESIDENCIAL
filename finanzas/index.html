@@ -627,7 +627,7 @@
                                 <div class="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl border border-slate-200 dark:border-slate-600"><label class="block text-sm font-semibold text-rose-700 dark:text-rose-400 mb-2"><i class="fas fa-arrow-up mr-1"></i> Egresos Frecuentes</label><div class="flex space-x-2 mb-3"><input type="text" id="new-exp-concept" class="flex-1 px-3 py-1.5 text-sm bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Ej. Agua, Luz..."><button onclick="addCustomConcept('expense')" class="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-900/60 dark:text-rose-400 rounded-lg text-sm font-bold transition">+</button></div><div id="exp-concepts-list" class="flex flex-wrap gap-2 min-h-[40px] items-start"></div></div>
                             </div>
                         </div>
-                        <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700"><h4 class="font-semibold text-rose-600 mb-4" id="lbl-set-data">Gestión de Datos</h4><div class="flex space-x-4"><button onclick="exportCSV()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-medium transition" id="btn-export">Exportar CSV</button><button onclick="clearDB()" class="px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg font-medium transition" id="btn-clear">Limpiar Base de Datos</button></div></div>
+                        <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700"><h4 class="font-semibold text-rose-600 mb-4" id="lbl-set-data">Gestión de Datos</h4><div class="flex space-x-4"><button onclick="exportCSV()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-medium transition" id="btn-export">Exportar CSV</button></div></div>
                         <div class="mt-8 flex justify-end"><button onclick="saveSettings()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow-md" id="btn-save-cfg">Guardar Cambios</button></div>
                     </div>
                 </div>
@@ -5120,19 +5120,6 @@
             txs.forEach(t => str += `${new Date(t.date).toLocaleDateString()};${t.type === 'income' ? 'Ingreso' : 'Egreso'};${t.amount.toFixed(2)};${t.concept}\n`);
             const blob = new Blob([str], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = 'oikos_report.csv'; a.click();
-        }
-
-        function clearDB() {
-            const pass = prompt('Ingresa la contraseña admin para borrar todo:');
-            if (pass === '1122') {
-                const prefix = Store.prefix();
-                // SISDEL: en memoria se vacian las listas; finanzas-sync.js las restaura desde la nube (nunca se borra nada alla)
-                const mem = sisdelMem();
-                if (mem) { mem.write('residents', []); mem.write('transactions', []); alert('Datos eliminados'); return; }
-                localStorage.removeItem(prefix + 'residents');
-                localStorage.removeItem(prefix + 'transactions');
-                alert('Datos eliminados'); location.reload();
-            } else alert('Clave incorrecta');
         }
 
         // ========== INCOME CONCEPT HELPERS ==========

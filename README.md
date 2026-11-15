@@ -311,21 +311,23 @@ cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node ver-bitacora.mjs
 
 Antes, con 24 meses no abría (y con el almacenamiento lleno, registrar un pago fallaba sin avisar). Con los mismos datos, la versión anterior y la nueva dan exactamente las mismas cifras (`scripts/cifras-oikos.mjs`). No se probó en Safari de iPhone.
 
-**Protección de la base (pendiente de activar).** Consultado el 2026-11-12: producción no tiene respaldos programados, guarda solo una hora de historial y no tiene protección contra borrado. Son tres ajustes que no tocan los datos; los corre una persona con permiso sobre el proyecto, con el visto bueno del dueño:
+**Protección de la base (activada el 2026-11-15).** Producción tiene:
+
+- Recuperación a cualquier momento de los últimos 7 días (antes solo 1 hora).
+- Protección contra el borrado de la base completa.
+- Respaldo diario (se guarda 14 días) y respaldo semanal, los domingos (se guarda 14 semanas).
+
+La protección contra borrado cuida la base entera, no cada documento: un documento borrado o cambiado por error se recupera con la recuperación de 7 días o con un respaldo. Para recuperar, se restaura en una base **nueva** (nunca encima de la actual) y desde ahí se copia lo necesario; lo hace una persona con permiso sobre el proyecto. Comprobar el estado:
 
 ```bash
-gcloud firestore databases update --database='(default)' --project=sisdel-datacenter --enable-pitr --delete-protection
+gcloud firestore databases describe --database='(default)' --project=sisdel-datacenter --format="yaml(pointInTimeRecoveryEnablement,deleteProtectionState,versionRetentionPeriod)"
 ```
 
 ```bash
-gcloud firestore backups schedules create --database='(default)' --project=sisdel-datacenter --recurrence=daily --retention=14d
+gcloud firestore backups list --project=sisdel-datacenter
 ```
 
-```bash
-gcloud firestore backups schedules create --database='(default)' --project=sisdel-datacenter --recurrence=weekly --day-of-week=SUN --retention=14w
-```
-
-El primero deja recuperar la base a cualquier momento de los últimos 7 días e impide borrarla por accidente; los otros dos guardan un respaldo diario (14 días) y uno semanal (14 semanas). Comprobar después con `gcloud firestore databases describe --database='(default)' --project=sisdel-datacenter` y `gcloud firestore backups schedules list --database='(default)' --project=sisdel-datacenter`.
+Los respaldos y el historial de 7 días se cobran por espacio guardado; con el tamaño actual de la base es poco, pero conviene mirar la alerta de 5 USD al mes después de la primera semana.
 
 **Al publicar este cambio.** Primero reglas y functions, después el front. Luego, con un cambio de prueba (por ejemplo editar el teléfono de un vecino), comprobar con `ver-bitacora.mjs` que la anotación trae el nombre de quien lo hizo: en el emulador el evento no trae la sesión real, así que ese dato solo se puede comprobar en producción.
 

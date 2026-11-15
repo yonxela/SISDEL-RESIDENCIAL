@@ -9,44 +9,18 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
     <style>
-        /* Pestanas dentro de las ventanas de usuario (Datos, Propietario, Cuota y agua) */
-        .modal-tabs { margin-bottom: 1.25rem; padding: 0.25rem; overflow: visible; }
-        /* Las tres caben siempre, tambien en el telefono (ahi las pestanas normales se desplazan de lado) */
-        .modal-tabs .tab { flex: 1 1 0; min-width: 0; padding: 0.55rem 0.3rem; font-size: 0.85rem; white-space: normal; line-height: 1.2; }
-        @media (max-width: 480px) { .modal-tabs .tab { font-size: 0.74rem; padding: 0.5rem 0.15rem; } }
         /* Fase y Casa o Lote lado a lado; en pantallas angostas, uno debajo del otro */
         .fase-grid { display: grid; grid-template-columns: 2fr 3fr; gap: 1rem; }
         @media (max-width: 420px) { .fase-grid { grid-template-columns: 1fr; gap: 0; } }
         .fin-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4; }
-        .fin-fee { background: var(--bg-item); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.85rem; line-height: 1.5; }
-        .fin-fee strong { font-size: 1.05rem; }
-        /* Cargar cuotas de meses: conceptos, año, atajos y los 12 meses */
-        .fin-months { border-top: 1px solid var(--border-subtle); margin-top: 1.25rem; padding-top: 1rem; }
-        .fin-months > label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-        .fin-concepts { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
-        .fin-concept { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0.4rem 0.3rem 0.6rem; background: var(--bg-item); border-radius: 8px; }
-        .fin-concept label { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; cursor: pointer; font-weight: 500; }
-        .fin-concept .fin-amount { display: flex; align-items: center; gap: 0.3rem; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-        .fin-concept.is-empty { opacity: 0.6; }
-        .fin-concept.is-empty label { cursor: default; }
-        .fin-year { display: flex; align-items: center; justify-content: space-between; background: var(--bg-item); border-radius: 8px; padding: 0.15rem 0.35rem; }
-        .fin-year .btn { font-size: 1.2rem; line-height: 1; padding: 0.2rem 0.75rem; }
-        .fin-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0; font-size: 0.78rem; }
-        .fin-quick .btn { font-size: 0.75rem; padding: 0.3rem 0.55rem; border: 1px solid var(--border-subtle); }
-        .fin-quick span { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-        .fin-month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
-        .fin-month { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.45rem; border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 0.8rem; cursor: pointer; background: var(--bg-item); min-width: 0; }
-        .fin-month { flex-wrap: wrap; row-gap: 0.1rem; }
-        .fin-month small { flex-basis: 100%; font-size: 0.58rem; text-transform: uppercase; color: var(--text-muted); line-height: 1.1; }
-        .fin-month.is-now { border-color: var(--primary); }
-        .fin-month.is-on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
-        .fin-month.is-done { cursor: default; color: var(--success); opacity: 0.85; }
-        .fin-month.is-done small { color: var(--success); }
-        @media (max-width: 420px) { .fin-month-grid { grid-template-columns: repeat(3, 1fr); } }
         /* Ventana del usuario en solo lectura (antes de pulsar Editar): sin acciones de escritura */
         #editUserForm.is-locked .edit-only { display: none !important; }
         #editUserForm.is-locked #editPlatesList button { display: none; }
         #editUserForm.is-locked .form-input:disabled { opacity: 0.85; cursor: default; }
+        /* Aviso: los vecinos se registran en Finanzas (OIKOS) */
+        .vecinos-note { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.85rem; line-height: 1.45; background: var(--bg-item); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 1.25rem; color: var(--text-secondary); }
+        .vecinos-note span { flex: 1 1 14rem; }
+        .vecinos-note .btn { border: 1px solid var(--border-strong); }
     </style>
 </head>
 
@@ -250,12 +224,13 @@
                 <button class="btn btn-ghost btn-icon modal-close" id="btnCloseNewUser">&times;</button>
             </div>
             <form id="newUserForm" style="padding:1.5rem;">
-                <div class="tabs modal-tabs" data-fin-tabs style="display:none;">
-                    <button type="button" class="tab active" data-pane="datos">Datos</button>
-                    <button type="button" class="tab" data-pane="propietario">Propietario</button>
-                    <button type="button" class="tab" data-pane="cuota">Cuota y agua</button>
+                <!-- Los vecinos se registran en el Sistema Financiero (OIKOS > Residentes > Nuevo Residente), con sus
+                     datos, los del propietario, el agua y las cuotas. Aqui se crea el personal (guardias, administradores...) -->
+                <div class="vecinos-note" id="newUserVecinosNote">
+                    <span>Los vecinos se registran en <b>Finanzas</b> (Residentes &gt; Nuevo Residente), con sus datos, los del propietario y sus cuotas.</span>
+                    <a class="btn btn-ghost btn-sm" id="newUserVecinosLink" href="finanzas.html" style="display:none;">Ir a Finanzas</a>
                 </div>
-                <div data-pane-body="datos">
+                <div id="newUserStaffFields">
                 <div class="form-group">
                     <label>Nombre Completo</label>
                     <input type="text" class="form-input" id="newUserName" placeholder="Ej. Juan Pérez" required>
@@ -277,37 +252,19 @@
                         <input type="checkbox" id="newUserReview"> Revisar y ajustar los privilegios al crear
                     </label>
                 </div>
-                <div id="groupCasa" class="fase-grid">
-                    <div class="form-group">
-                        <label>Fase</label>
-                        <input type="text" class="form-input" id="newUserFase" maxlength="40" placeholder="Ej. Fase 1" list="faseOptions" autocomplete="off">
-                    </div>
-                    <div class="form-group">
-                        <label>Casa o Lote <span style="color:var(--danger);">*</span></label>
-                        <input type="text" class="form-input" id="newUserCasa" placeholder="Ej. Casa 12" required>
-                    </div>
-                </div>
-                <datalist id="faseOptions"></datalist>
-                <div class="form-group" id="groupPlates">
-                    <label>🚗 Placas de Vehículos</label>
-                    <input type="text" class="form-input" id="newUserPlates" placeholder="Ej. P123ABC, M456DEF" style="text-transform:uppercase;">
-                    <p class="text-xs text-muted" style="margin-top:0.25rem;">Separe múltiples placas con coma (,). Se registrarán automáticamente.</p>
-                </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                     <div class="form-group">
-                        <label>Teléfono <span style="color:var(--danger);">*</span></label>
-                        <input type="tel" class="form-input" id="newUserPhone" required>
+                        <label>Teléfono (opcional)</label>
+                        <input type="tel" class="form-input" id="newUserPhone">
                     </div>
                     <div class="form-group">
                         <label>Email (Opcional)</label>
                         <input type="email" class="form-input" id="newUserEmail">
                     </div>
                 </div>
-                </div>
-                <div data-pane-body="propietario" style="display:none;"></div>
-                <div data-pane-body="cuota" style="display:none;"></div>
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Crear Usuario y
                     Generar Código</button>
+                </div>
             </form>
         </div>
     </div>
@@ -321,12 +278,7 @@
             </div>
             <form id="editUserForm" style="padding:1.5rem;">
                 <input type="hidden" id="editUserId">
-                <div class="tabs modal-tabs" data-fin-tabs style="display:none;">
-                    <button type="button" class="tab active" data-pane="datos">Datos</button>
-                    <button type="button" class="tab" data-pane="propietario">Propietario</button>
-                    <button type="button" class="tab" data-pane="cuota">Cuota y agua</button>
-                </div>
-                <div data-pane-body="datos">
+                <datalist id="faseOptions"></datalist>
                 <div class="form-group">
                     <label>Nombre Completo</label>
                     <input type="text" class="form-input" id="editUserName" required>
@@ -376,9 +328,7 @@
                         <button type="button" class="btn btn-primary btn-sm" id="btnAddPlate" style="white-space:nowrap;">+ Agregar</button>
                     </div>
                 </div>
-                </div>
-                <div data-pane-body="propietario" style="display:none;"></div>
-                <div data-pane-body="cuota" style="display:none;"></div>
+                <p class="fin-note" id="editFinanceHint" style="display:none;">Los datos del propietario (NIT, dirección, DPI), el agua del lote y las cuotas se ven y se editan en <b>Finanzas</b> &gt; Residentes.</p>
 
                 <!-- La ventana se abre en solo lectura: Editar la desbloquea (para vecinos pide usuarios.ficha) -->
                 <button type="button" class="btn btn-primary" id="btnUnlockEdit" style="width:100%; margin-top:1rem; display:none; align-items:center; justify-content:center; gap:0.5rem;">
@@ -403,9 +353,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115e"></script>
-    <script src="sisdel-core.js?v=20261115e"></script>
-    <script src="finanzas/sisdel-cuotas.js?v=20261115b"></script>
+    <script src="privilegios.js?v=20261115f"></script>
+    <script src="sisdel-core.js?v=20261115f"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
     <script src="reportes-ui.js?v=20261110c"></script>
@@ -476,7 +425,8 @@
             // tambien los crea quien tiene guardias.crear, y los demas roles exigen ademas asignar privilegios
             function creatableRoles() {
                 return ROLE_OPTIONS.filter(([role]) => {
-                    if (role === 'vecino') return caps.crear;
+                    // Los vecinos se registran en el Sistema Financiero (OIKOS > Residentes > Nuevo Residente)
+                    if (role === 'vecino') return false;
                     if (role === 'policia') return caps.guardias || (caps.crear && caps.privilegios);
                     return caps.crear && caps.privilegios; // auditor, supervisor, admin y operador
                 });
@@ -669,9 +619,11 @@
 
             async function openNewUser() {
                 newUserForm.reset();
-                paintFaseOptions();
                 const roles = creatableRoles();
                 document.getElementById('newUserRole').innerHTML = roles.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+                // Sin personal que crear, la ventana solo dice donde se registran los vecinos
+                document.getElementById('newUserStaffFields').style.display = roles.length ? '' : 'none';
+                document.getElementById('newUserVecinosLink').style.display = SISDEL.can('finanzas.residentes_crear') ? '' : 'none';
                 if (caps.privilegios) customTemplates = await SISDEL.getPrivilegeTemplates(condoId);
                 syncNewUserFields(); // Ensure fields match default role
                 modalNewUser.style.display = 'flex';
@@ -690,64 +642,20 @@
                 try {
                     const name = document.getElementById('newUserName').value;
                     const role = document.getElementById('newUserRole').value;
-                    const casa = document.getElementById('newUserCasa').value;
-                    const fase = role === 'vecino' ? document.getElementById('newUserFase').value.trim() : '';
                     const phone = document.getElementById('newUserPhone').value;
                     const email = document.getElementById('newUserEmail').value;
-                    const platesRaw = document.getElementById('newUserPlates').value;
                     const cargo = document.getElementById('newUserCargo').value;
                     const templateId = caps.privilegios ? document.getElementById('newUserTemplate').value : '';
                     const template = templateId ? SisdelPrivilegiosUI.templateChoices(customTemplates).find((t) => t.id === templateId) : null;
                     const review = caps.privilegios && document.getElementById('newUserReview').checked;
-
-                    // Validate required fields for vecino
-                    if (role === 'vecino' && !casa.trim()) {
-                        SISDEL.showToast('Casa o Lote es obligatorio para vecinos', 'warning');
-                        btnSubmit.disabled = false;
-                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
-                        return;
-                    }
-                    if (role === 'vecino' && !phone.trim()) {
-                        SISDEL.showToast('Teléfono es obligatorio para vecinos', 'warning');
-                        btnSubmit.disabled = false;
-                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
-                        return;
-                    }
-                    if (role === 'vecino' && !monthsReady('new', newUserForm)) {
-                        btnSubmit.disabled = false;
-                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
-                        return;
-                    }
+                    // Los vecinos se registran en el Sistema Financiero (OIKOS > Residentes): aqui solo el personal
+                    if (role === SISDEL.ROLES.VECINO) return;
 
                     // Solo se guardan las diferencias con los privilegios del rol
-                    const extra = { cargo, fase, privilegios: template ? PRIV.toOverrides(role, PRIV.templateKeys(template)) : {} };
-                    const user = await SISDEL.createUser(condoId, name, role, casa, phone, email, '', extra);
+                    const extra = { cargo, privilegios: template ? PRIV.toOverrides(role, PRIV.templateKeys(template)) : {} };
+                    const user = await SISDEL.createUser(condoId, name, role, '', phone, email, '', extra);
                     if (user) {
-                        // Auto-register vehicle plates if provided
-                        let plateCount = 0;
-                        if (platesRaw && role === 'vecino' && caps.placasCrear) {
-                            const plates = platesRaw.split(',').map(p => p.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(p => p.length > 0);
-                            for (const plate of plates) {
-                                const vehicle = await SISDEL.createVehicle(user.id, condoId, plate, '', '', '');
-                                if (vehicle) plateCount++;
-                            }
-                        }
-
-                        // Ficha del Sistema Financiero (pestañas Propietario y Cuota y agua); lo vacio no se guarda
-                        let financeOk = true;
-                        if (role === 'vecino' && (newPanes.owner || newPanes.fee)) {
-                            const data = readFinance('new', newPanes);
-                            Object.keys(data).forEach((key) => { if (data[key] === '') delete data[key]; });
-                            financeOk = await SISDEL.saveFinanceResident(condoId, user.id, data, null);
-                        }
-                        // Cuotas de los meses marcados en Cuota y agua
-                        const monthsNote = role === 'vecino' && newPanes.fee ? await saveMonthCharges('new', user.id) : '';
-
-                        let msg = `✅ ${name} creado. Código: ${user.accessCode}`;
-                        if (plateCount > 0) msg += ` | ${plateCount} vehículo(s) registrado(s)`;
-                        if (monthsNote) msg += ` | ${monthsNote}`;
-                        SISDEL.showToast(msg, 'success');
-                        if (!financeOk) SISDEL.showToast('No se pudieron guardar sus datos del Sistema Financiero (NIT, agua...). Revíselos al editar el vecino.', 'warning');
+                        SISDEL.showToast(`✅ ${name} creado. Código: ${user.accessCode}`, 'success');
                         modalNewUser.style.display = 'none';
                         newUserForm.reset();
                         await renderStats();
@@ -771,13 +679,7 @@
             });
 
             function syncNewUserFields(keepTemplate) {
-                prepareNewFinance(keepTemplate === true);
                 const role = document.getElementById('newUserRole').value;
-                const isVecino = role === 'vecino';
-                document.getElementById('groupCasa').style.display = isVecino ? 'grid' : 'none';
-                document.getElementById('groupPlates').style.display = isVecino && caps.placasCrear ? 'block' : 'none';
-                document.getElementById('newUserCasa').required = isVecino;
-                document.getElementById('newUserPhone').required = isVecino;
 
                 // Privilegios: solo quien puede asignarlos. Por defecto, los del rol; una plantilla los reemplaza
                 const group = document.getElementById('groupTemplate');
@@ -830,408 +732,9 @@
             const modalEditUser = document.getElementById('modalEditUser');
             const btnCloseEditUser = document.getElementById('btnCloseEditUser');
             const editUserForm = document.getElementById('editUserForm');
-
-            // --- Ficha del vecino en el Sistema Financiero: pestañas Propietario y Cuota y agua ---
-            // Se guarda en finanzas_residentes (SISDEL.saveFinanceResident), no en el usuario. Cada pestaña aparece solo con
-            // su privilegio: Propietario con "Ver DPI, lote y observaciones"; Cuota y agua con "Ver residentes". Para escribir
-            // hace falta registrar (vecino nuevo) o editar residentes; cambiar "Cobrar desde" es de finiquitar (como en OIKOS).
-            const finCaps = {
-                crear: SISDEL.can('finanzas.residentes_crear'),
-                ver: SISDEL.can('finanzas.residentes_ver'),
-                datos: SISDEL.can('finanzas.residentes_datos'),
-                editar: SISDEL.can('finanzas.residentes_editar'),
-                cobro: SISDEL.can('finanzas.residentes_finiquitar'),
-                meses: SISDEL.can('finanzas.cuotas_meses'), // "Cargar cuotas por mes a un residente", como en OIKOS
-                // "Boton Editar de la ficha del vecino": desbloquea la ventana del vecino y abre los datos del propietario
-                ficha: SISDEL.can('usuarios.ficha')
-            };
-            let financeSettings = null; // cuota y precio de la paja (se leen al abrir la ventana)
-            let editingFicha = null;    // ficha guardada del vecino que se edita (null si todavia no tiene)
-            let editingPanes = { owner: false, fee: false, write: false };
-            let newPanes = { owner: false, fee: false };
-            const ownerMirror = { new: true, edit: true }; // el propietario sigue al nombre del vecino hasta que se cambie
-            // Selector de meses de cada ventana: año visible, meses marcados (AAAA-MM), conceptos marcados y las cuotas
-            // que ya tiene el vecino (charged: periodo -> 'live' | 'deleted'; ids: para no reusar el de una anulada)
-            // amounts: monto de cada concepto para los meses marcados (de OIKOS > Configuracion y del agua del lote)
-            const newMonthState = () => ({ on: false, year: new Date().getFullYear(), selected: new Set(), keys: null, amounts: {}, charged: new Map(), ids: new Set() });
-            const monthState = { new: newMonthState(), edit: newMonthState() };
-            const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-            const periodKey = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`;
-            const moneyOf = (n) => SisdelCuotas.money(n, (financeSettings && financeSettings.currency) || 'GTQ');
-            const lotOf = (prefix) => ({ waterUnits: validWater(finInput(prefix, 'Water').value) });
-
-            // Arma el selector de meses de la ventana (sin el privilegio, o sin poder leer sus cuotas, queda oculto).
-            // Aparece aunque el condominio no tenga cuota configurada: los montos se escriben en cada concepto
-            function setupMonths(prefix, charges) {
-                const st = monthState[prefix] = newMonthState();
-                st.on = finCaps.meses && charges !== null;
-                document.getElementById(`${prefix}FinMonthsBox`).style.display = st.on ? '' : 'none';
-                if (!st.on) return;
-                (charges || []).forEach((t) => {
-                    st.ids.add(String(t.id));
-                    const period = t.period || null;
-                    if (!period || (t.kind && t.kind !== 'fee')) return;
-                    if (!t.deleted) st.charged.set(period, 'live');
-                    else if (!st.charged.has(period)) st.charged.set(period, 'deleted');
-                });
-                paintConcepts(prefix);
-                paintMonths(prefix);
-            }
-
-            // Los cinco conceptos siempre a la vista (mantenimiento, agua, basura, electricidad y otros) con el monto de
-            // OIKOS > Configuracion (desglose de la cuota mensual; el agua, ademas, segun la paja del lote). Los montos se
-            // cambian solo alla, para no tenerlos en dos lugares. Un concepto sin monto no se puede marcar.
-            // Al principio van marcados los que tienen monto
-            function paintConcepts(prefix) {
-                const st = monthState[prefix];
-                if (!st.on) return;
-                const configured = {};
-                SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix)).forEach((p) => { configured[p.key] = p.amount; });
-                SisdelCuotas.PARTS.forEach((p) => { st.amounts[p.key] = configured[p.key] || 0; });
-                if (!st.keys) st.keys = new Set(SisdelCuotas.PARTS.filter((p) => st.amounts[p.key] > 0).map((p) => p.key));
-                // El agua aparece al elegir media paja o una paja: se marca sola la primera vez
-                if (st.amounts.water > 0 && !st.waterSeen) st.keys.add('water');
-                st.waterSeen = st.waterSeen || st.amounts.water > 0;
-                const any = SisdelCuotas.PARTS.some((p) => st.amounts[p.key] > 0);
-                document.getElementById(`${prefix}FinConcepts`).innerHTML = SisdelCuotas.PARTS.map((p) => {
-                    const amount = st.amounts[p.key];
-                    return `
-                    <div class="fin-concept${amount > 0 ? '' : ' is-empty'}">
-                        <label><input type="checkbox" data-concept="${p.key}" ${amount > 0 && st.keys.has(p.key) ? 'checked' : ''} ${amount > 0 ? '' : 'disabled'}> <span>${esc(p.label)}</span></label>
-                        <span class="fin-amount">${amount > 0 ? moneyOf(amount) : 'sin monto'}</span>
-                    </div>`;
-                }).join('') + `<p class="fin-note">${any
-                    ? 'Los montos salen de OIKOS &gt; Configuración (desglose de la cuota mensual) y se cambian allá.'
-                    : 'Todavía no hay montos: escríbalos en OIKOS &gt; Configuración (desglose de la cuota mensual) para poder cargar meses.'}</p>`;
-                paintMonthCount(prefix);
-            }
-
-            // Monto de un mes con los conceptos marcados: { amount, concept, breakdown } (descripcion con el mes, como OIKOS)
-            function chosenFee(prefix, period) {
-                const st = monthState[prefix];
-                const breakdown = {};
-                [...(st.keys || [])].forEach((key) => { if (st.amounts[key] > 0) breakdown[key] = st.amounts[key]; });
-                const currency = (financeSettings && financeSettings.currency) || 'GTQ';
-                return SisdelCuotas.monthFee({ currency, feeBreakdown: breakdown }, {}, Object.keys(breakdown), period);
-            }
-
-            function paintMonths(prefix) {
-                const st = monthState[prefix];
-                const current = SISDEL.localToday().slice(0, 7);
-                document.getElementById(`${prefix}FinYear`).textContent = st.year;
-                document.getElementById(`${prefix}FinMonths`).innerHTML = MONTHS_SHORT.map((label, m) => {
-                    const key = periodKey(st.year, m);
-                    const state = st.charged.get(key);
-                    if (state === 'live') return `<div class="fin-month is-done" title="Este mes ya tiene su cuota">${label}<small>cargado</small></div>`;
-                    const on = st.selected.has(key);
-                    // El mes actual va con borde; "anulado" = tuvo una cuota anulada y se puede volver a cargar
-                    const tag = key === current ? 'este mes' : state === 'deleted' ? 'anulado' : '';
-                    return `<label class="fin-month${on ? ' is-on' : ''}${key === current ? ' is-now' : ''}"><input type="checkbox" data-period="${key}" ${on ? 'checked' : ''}>${label}${tag ? `<small>${tag}</small>` : ''}</label>`;
-                }).join('');
-                paintMonthCount(prefix);
-            }
-
-            // "3 meses · Q 1,140.00" y la lista de meses que se cargaran
-            function paintMonthCount(prefix) {
-                const st = monthState[prefix];
-                if (!st.on) return;
-                const keys = [...st.selected].filter((k) => st.charged.get(k) !== 'live').sort();
-                const fee = chosenFee(prefix, keys[0] || null);
-                const perMonth = fee ? fee.amount : 0;
-                document.getElementById(`${prefix}FinCount`).textContent = `${keys.length} mes${keys.length === 1 ? '' : 'es'} · ${moneyOf(perMonth * keys.length)}`;
-                document.getElementById(`${prefix}FinSummary`).textContent = !keys.length ? ''
-                    : perMonth > 0 ? `Se cargarán: ${keys.map((k) => SisdelCuotas.monthLabel(k)).join(', ')}.`
-                        : 'Marque al menos un concepto con monto para cargar los meses elegidos.';
-            }
-
-            // Atajos: hasta el mes actual del año visible, el año completo o limpiar todo
-            function fillMonths(prefix, mode) {
-                const st = monthState[prefix];
-                if (mode === 'clear') st.selected.clear();
-                else {
-                    const current = SISDEL.localToday().slice(0, 7);
-                    for (let m = 0; m < 12; m++) {
-                        const key = periodKey(st.year, m);
-                        if (st.charged.get(key) === 'live' || (mode === 'untilNow' && key > current)) continue;
-                        st.selected.add(key);
-                    }
-                }
-                paintMonths(prefix);
-            }
-
-            // Las cuotas a crear, igual que las de los meses de un residente en OIKOS (id fee_<vecino>_<AAAA-MM>,
-            // manual, sin repetir un mes con cuota viva; con una anulada se usa el sufijo _rN)
-            function buildMonthCharges(prefix, residentId) {
-                const st = monthState[prefix];
-                if (!st.on || !st.keys || !st.keys.size) return [];
-                const s = financeSettings || {};
-                const chargeDay = Math.min(28, Math.max(1, parseInt(s.chargeDay, 10) || 1));
-                const current = SISDEL.localToday().slice(0, 7);
-                const now = new Date().toISOString();
-                const out = [];
-                [...st.selected].sort().forEach((period) => {
-                    if (st.charged.get(period) === 'live') return;
-                    const fee = chosenFee(prefix, period);
-                    if (!fee) return;
-                    const [y, m] = period.split('-').map((n) => parseInt(n, 10));
-                    let id = `fee_${residentId}_${period}`;
-                    let n = 1;
-                    while (st.ids.has(id)) id = `fee_${residentId}_${period}_r${n++}`;
-                    st.ids.add(id);
-                    out.push({
-                        id, date: new Date(y, m - 1, chargeDay, 6, 0, 0).toISOString(), type: 'charge', kind: 'fee', period,
-                        amount: fee.amount, concept: fee.concept, resiId: residentId, auto: false, manual: true, retro: period < current,
-                        ...(fee.breakdown ? { breakdown: fee.breakdown } : {}), created_at: now, updated_at: now
-                    });
-                });
-                return out;
-            }
-
-            // Meses marcados sin ningun concepto: se avisa y se abre la pestaña antes de guardar nada
-            function monthsReady(prefix, form) {
-                const st = monthState[prefix];
-                const pending = st.on && [...st.selected].some((k) => st.charged.get(k) !== 'live');
-                if (!pending || chosenFee(prefix, null)) return true;
-                showPane(form, 'cuota');
-                SISDEL.showToast('Marque al menos un concepto (mantenimiento, agua...) para los meses elegidos, o limpie los meses.', 'warning');
-                return false;
-            }
-
-            // Crea las cuotas de los meses marcados; devuelve un aviso para el mensaje final ('' si no habia meses)
-            async function saveMonthCharges(prefix, residentId) {
-                const charges = buildMonthCharges(prefix, residentId);
-                if (!charges.length) return '';
-                const saved = await SISDEL.createFinanceMovements(condoId, charges);
-                return saved === charges.length ? `${saved} cuota(s) cargada(s)` : `solo se cargaron ${saved} de ${charges.length} cuotas`;
-            }
-
-            function mountFinancePanes(form, prefix) {
-                form.querySelector('[data-pane-body="propietario"]').innerHTML = `
-                    <div class="form-group">
-                        <label>Nombre del propietario</label>
-                        <input type="text" class="form-input" id="${prefix}FinPropietario" maxlength="160" placeholder="Igual al nombre del vecino">
-                        <p class="fin-note">Es el nombre de la pestaña Datos. Cámbielo solo si el dueño es otra persona (por ejemplo, si el lote está alquilado).</p>
-                    </div>
-                    <div class="form-group">
-                        <label>NIT</label>
-                        <input type="text" class="form-input" id="${prefix}FinNit" maxlength="20" placeholder="Ej. 1234567-8 o C/F" style="text-transform:uppercase;">
-                        <p class="fin-note" id="${prefix}FinOwner">Los lotes con el mismo NIT quedan como del mismo dueño.</p>
-                    </div>
-                    <div class="form-group">
-                        <label>Dirección</label>
-                        <input type="text" class="form-input" id="${prefix}FinDireccion" maxlength="160" placeholder="Dirección del dueño para recibos y avisos">
-                    </div>
-                    <div class="form-group">
-                        <label>DPI</label>
-                        <input type="text" class="form-input" id="${prefix}FinDpi" maxlength="20" inputmode="numeric" placeholder="13 dígitos">
-                    </div>
-                    <div class="form-group">
-                        <label>Observaciones</label>
-                        <textarea class="form-input" id="${prefix}FinNotes" rows="2" maxlength="500" style="resize:vertical;"></textarea>
-                        <p class="fin-note">Viajan con la ficha del vecino: no escriba aquí nada que él no deba saber.</p>
-                    </div>`;
-                form.querySelector('[data-pane-body="cuota"]').innerHTML = `
-                    <div class="form-group">
-                        <label>Agua del lote</label>
-                        <select class="form-input" id="${prefix}FinWater">
-                            <option value="0">Sin agua</option>
-                            <option value="0.5">Media paja</option>
-                            <option value="1">Una paja</option>
-                        </select>
-                        <p class="fin-note">El agua se cobra solo a los lotes con casa.</p>
-                    </div>
-                    <div class="fin-fee" id="${prefix}FinFee"></div>
-                    <div class="fin-months edit-only" id="${prefix}FinMonthsBox" style="display:none;">
-                        <label>Cargar cuotas de meses anteriores o posteriores</label>
-                        <p class="fin-note" style="margin-bottom:0.6rem;">Marque qué conceptos lleva la cuota y los meses que se le cobran. Se crea una cuota por mes; los meses que ya tienen su cuota no se repiten.</p>
-                        <div class="fin-concepts" id="${prefix}FinConcepts"></div>
-                        <div class="fin-year">
-                            <button type="button" class="btn btn-ghost btn-sm" data-year="-1" aria-label="Año anterior">&lsaquo;</button>
-                            <strong id="${prefix}FinYear"></strong>
-                            <button type="button" class="btn btn-ghost btn-sm" data-year="1" aria-label="Año siguiente">&rsaquo;</button>
-                        </div>
-                        <div class="fin-quick">
-                            <button type="button" class="btn btn-ghost btn-sm" data-fill="untilNow">Hasta hoy</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-fill="year">Todo el año</button>
-                            <button type="button" class="btn btn-ghost btn-sm" data-fill="clear">Limpiar</button>
-                            <span id="${prefix}FinCount"></span>
-                        </div>
-                        <div class="fin-month-grid" id="${prefix}FinMonths"></div>
-                        <p class="fin-note" id="${prefix}FinSummary"></p>
-                    </div>`;
-                form.querySelector('[data-fin-tabs]').addEventListener('click', (event) => {
-                    const tab = event.target.closest('[data-pane]');
-                    if (tab) showPane(form, tab.dataset.pane);
-                });
-                // Selector de meses: año, atajos, meses y conceptos
-                const box = document.getElementById(`${prefix}FinMonthsBox`);
-                box.addEventListener('click', (event) => {
-                    const yearBtn = event.target.closest('[data-year]');
-                    const fillBtn = event.target.closest('[data-fill]');
-                    if (yearBtn) { monthState[prefix].year += parseInt(yearBtn.dataset.year, 10); paintMonths(prefix); }
-                    if (fillBtn) fillMonths(prefix, fillBtn.dataset.fill);
-                });
-                box.addEventListener('change', (event) => {
-                    const st = monthState[prefix];
-                    const period = event.target.getAttribute('data-period');
-                    const concept = event.target.getAttribute('data-concept');
-                    if (period) { if (event.target.checked) st.selected.add(period); else st.selected.delete(period); paintMonths(prefix); }
-                    if (concept) { if (event.target.checked) st.keys.add(concept); else st.keys.delete(concept); paintMonthCount(prefix); }
-                });
-                // El nombre del propietario sigue al de la pestaña Datos hasta que se escriba otro
-                const nameInput = document.getElementById(prefix === 'new' ? 'newUserName' : 'editUserName');
-                nameInput.addEventListener('input', () => { if (ownerMirror[prefix]) finInput(prefix, 'Propietario').value = nameInput.value; });
-                finInput(prefix, 'Propietario').addEventListener('input', () => { ownerMirror[prefix] = false; });
-                // Un campo obligatorio vacio en otra pestaña: se abre esa pestaña para que el navegador lo señale
-                form.addEventListener('invalid', (event) => {
-                    const pane = event.target.closest('[data-pane-body]');
-                    if (pane && pane.style.display === 'none') showPane(form, pane.dataset.paneBody);
-                }, true);
-                document.getElementById(`${prefix}FinWater`).addEventListener('change', () => { paintFee(prefix); paintConcepts(prefix); });
-                document.getElementById(`${prefix}FinNit`).addEventListener('change', () => paintOwner(prefix));
-            }
-
-            function showPane(form, name) {
-                form.querySelectorAll('[data-fin-tabs] .tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.pane === name));
-                form.querySelectorAll('[data-pane-body]').forEach((pane) => { pane.style.display = pane.dataset.paneBody === name ? '' : 'none'; });
-            }
-
-            function setFinanceTabs(form, panes) {
-                const bar = form.querySelector('[data-fin-tabs]');
-                bar.querySelector('[data-pane="propietario"]').style.display = panes.owner ? '' : 'none';
-                bar.querySelector('[data-pane="cuota"]').style.display = panes.fee ? '' : 'none';
-                bar.style.display = panes.owner || panes.fee ? 'flex' : 'none';
-                showPane(form, 'datos');
-            }
-
-            const finInput = (prefix, name) => document.getElementById(`${prefix}Fin${name}`);
-            const validWater = (value) => { const n = parseFloat(value); return [0, 0.5, 1].includes(n) ? n : 0; };
-
-            function fillFinance(prefix, ficha, userName) {
-                const f = ficha || {};
-                ownerMirror[prefix] = !f.propietario;
-                finInput(prefix, 'Propietario').value = f.propietario || userName || '';
-                finInput(prefix, 'Nit').value = f.nit || '';
-                finInput(prefix, 'Direccion').value = f.direccion || '';
-                finInput(prefix, 'Dpi').value = f.dpi || '';
-                finInput(prefix, 'Notes').value = f.notes || '';
-                finInput(prefix, 'Water').value = String(validWater(f.waterUnits));
-                finInput(prefix, 'Owner').textContent = 'Los lotes con el mismo NIT quedan como del mismo dueño.';
-            }
-
-            function readFinance(prefix, panes) {
-                const out = {};
-                if (panes.owner) {
-                    // Igual al vecino (sin contar mayusculas ni espacios de mas) no se guarda: si cambia el nombre, sigue igual
-                    const plain = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
-                    const owner = finInput(prefix, 'Propietario').value.trim().replace(/\s+/g, ' ');
-                    const userName = document.getElementById(prefix === 'new' ? 'newUserName' : 'editUserName').value;
-                    out.propietario = plain(owner) === plain(userName) ? '' : owner;
-                    out.nit = finInput(prefix, 'Nit').value.trim().toUpperCase();
-                    out.direccion = finInput(prefix, 'Direccion').value.trim();
-                    out.dpi = finInput(prefix, 'Dpi').value.trim();
-                    out.notes = finInput(prefix, 'Notes').value.trim();
-                }
-                if (panes.fee) {
-                    out.waterUnits = validWater(finInput(prefix, 'Water').value);
-                }
-                return out;
-            }
-
-            // Solo lo que cambio respecto de la ficha guardada: las reglas piden un privilegio segun el campo
-            function changedFinance(next, ficha) {
-                const prev = ficha || {};
-                const out = {};
-                Object.keys(next).forEach((key) => {
-                    const before = key === 'waterUnits' ? validWater(prev[key]) : String(prev[key] == null ? '' : prev[key]);
-                    if (before !== next[key]) out[key] = next[key];
-                });
-                return out;
-            }
-
-            function paintFee(prefix) {
-                const box = finInput(prefix, 'Fee');
-                const s = financeSettings || {};
-                const money = (n) => SisdelCuotas.money(n, s.currency || 'GTQ');
-                const base = parseFloat(s.fee) || 0;
-                const units = validWater(finInput(prefix, 'Water').value);
-                if (!base) {
-                    box.textContent = monthState[prefix].on
-                        ? 'El Sistema Financiero todavía no tiene cuota mensual configurada. Escriba los montos en OIKOS > Configuración (desglose de la cuota mensual).'
-                        : 'El Sistema Financiero todavía no tiene cuota mensual configurada.';
-                    return;
-                }
-                const water = SisdelCuotas.waterOf(s, { waterUnits: units });
-                let html = `Cuota del lote: <strong>${money(SisdelCuotas.residentFee(s, { waterUnits: units }))}</strong> al mes`;
-                if (water > 0) html += `<br><span class="text-muted">Cuota ${money(base)} + agua ${money(water)}</span>`;
-                else if (units > 0) html += '<br><span class="text-muted">El precio de la paja de agua todavía no está configurado en el Sistema Financiero: por ahora no se suma el agua.</span>';
-                box.innerHTML = html;
-            }
-
-            // Otros lotes con el mismo NIT (mismo dueño)
-            async function paintOwner(prefix) {
-                const note = finInput(prefix, 'Owner');
-                const nit = finInput(prefix, 'Nit').value;
-                const group = SISDEL.ownerGroupOf(nit);
-                if (!group) {
-                    note.textContent = nit.trim() ? 'Con C/F o sin NIT no se agrupa con otros lotes.' : 'Los lotes con el mismo NIT quedan como del mismo dueño.';
-                    return;
-                }
-                const selfId = prefix === 'edit' ? document.getElementById('editUserId').value : '';
-                const others = (await SISDEL.getFinanceResidentsByOwner(condoId, group)).filter((r) => r.id !== selfId);
-                if (finInput(prefix, 'Nit').value !== nit) return; // cambio mientras se consultaba
-                if (!others.length) { note.textContent = 'Ningún otro lote tiene este NIT.'; return; }
-                const byId = new Map(allUsersCache.map((u) => [u.id, u]));
-                const lots = others.map((r) => (byId.get(r.id) || {}).casa || 'un lote sin casa registrada');
-                note.textContent = `Mismo dueño que: ${lots.join(', ')}.`;
-            }
-
-            mountFinancePanes(newUserForm, 'new');
-            mountFinancePanes(editUserForm, 'edit');
-
-            // Ventana de usuario nuevo: las pestañas solo para vecinos y con "Registrar residentes nuevos".
-            // keep: no borrar lo ya escrito (al elegir una plantilla que no cambia el rol)
-            async function prepareNewFinance(keep) {
-                const isVecino = document.getElementById('newUserRole').value === 'vecino';
-                newPanes = { owner: isVecino && ((finCaps.crear && finCaps.datos) || finCaps.ficha), fee: isVecino && finCaps.crear };
-                setFinanceTabs(newUserForm, newPanes);
-                if (!newPanes.owner && !newPanes.fee) return;
-                if (!keep) fillFinance('new', null, document.getElementById('newUserName').value);
-                if (newPanes.fee) {
-                    financeSettings = await SISDEL.getFinanceSettings(condoId);
-                    // Un vecino nuevo no tiene cuotas todavia
-                    if (!keep || !monthState.new.on) setupMonths('new', []);
-                    paintFee('new');
-                } else {
-                    setupMonths('new', null);
-                }
-            }
-
-            // Ventana de edición: lee la ficha guardada y deja escribir solo con el privilegio de cada cosa
-            async function prepareEditFinance(user, editable) {
-                const isVecino = user.role === SISDEL.ROLES.VECINO;
-                const panes = { owner: isVecino && (finCaps.datos || finCaps.ficha), fee: isVecino && finCaps.ver };
-                editingFicha = panes.owner || panes.fee ? await SISDEL.getFinanceResident(condoId, user.id) : null;
-                // Los datos del propietario los cambia tambien quien tiene el boton Editar de la ficha; el agua, solo el
-                // Sistema Financiero (editar residentes, o registrarlos si todavia no tiene ficha)
-                const ownerWrite = editable && (editingFicha ? (finCaps.editar || finCaps.ficha) : (finCaps.crear || finCaps.ficha));
-                const waterWrite = editable && (editingFicha ? finCaps.editar : finCaps.crear);
-                editingPanes = { ...panes, write: ownerWrite || waterWrite };
-                setFinanceTabs(editUserForm, panes);
-                if (!panes.owner && !panes.fee) return;
-                fillFinance('edit', editingFicha, user.name);
-                ['Propietario', 'Nit', 'Direccion', 'Dpi', 'Notes'].forEach((name) => { finInput('edit', name).disabled = !ownerWrite; });
-                finInput('edit', 'Water').disabled = !waterWrite;
-                if (panes.fee) {
-                    financeSettings = await SISDEL.getFinanceSettings(condoId);
-                    // Las cuotas que ya tiene, para marcarlas como cargadas y no repetirlas
-                    setupMonths('edit', editable && finCaps.meses ? await SISDEL.getFinanceCharges(condoId, user.id) : null);
-                    paintFee('edit');
-                } else {
-                    setupMonths('edit', null);
-                }
-                if (panes.owner && editingFicha && editingFicha.nit) paintOwner('edit');
-            }
+            // Boton Editar de la ficha del vecino (usuarios.ficha). Los datos del propietario, el agua del lote y las cuotas
+            // por meses del vecino se registran y se editan en el Sistema Financiero (OIKOS > Residentes), no aqui.
+            const canEditFicha = SISDEL.can('usuarios.ficha');
 
             window.openEditUser = async function (id) {
                 const user = await SISDEL.getUserById(id);
@@ -1286,10 +789,11 @@
                 if (user.role === 'vecino' && caps.placasVer) {
                     await renderEditPlates(user.id);
                 }
-                await prepareEditFinance(user, editable);
+                // Propietario, agua y cuotas del vecino viven en el Sistema Financiero: aqui solo se avisa donde
+                document.getElementById('editFinanceHint').style.display = user.role === SISDEL.ROLES.VECINO && SISDEL.can('finanzas.ver') ? '' : 'none';
 
                 // Se abre en solo lectura; Editar desbloquea lo que este usuario puede cambiar
-                const canUnlock = editable && (user.role !== SISDEL.ROLES.VECINO || finCaps.ficha);
+                const canUnlock = editable && (user.role !== SISDEL.ROLES.VECINO || canEditFicha);
                 lockEditForm(canUnlock);
                 document.getElementById('editLockedHelp').style.display = editable && !canUnlock ? '' : 'none';
                 modalEditUser.style.display = 'flex';
@@ -1376,7 +880,6 @@
 
             editUserForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                if (editingPanes.fee && !monthsReady('edit', editUserForm)) return;
                 const id = document.getElementById('editUserId').value;
                 const updates = {
                     name: document.getElementById('editUserName').value,
@@ -1392,20 +895,7 @@
                 const payment = document.getElementById('editUserPayment').value;
                 if (caps.pago && !moraAutomatica && editing && editing.role === SISDEL.ROLES.VECINO && payment !== (editing.paymentStatus || 'al_dia')) updates.paymentStatus = payment;
                 if (await SISDEL.updateUser(id, updates)) {
-                    // Ficha del Sistema Financiero: solo los campos habilitados que cambiaron
-                    let financeOk = true;
-                    if (editingPanes.owner || editingPanes.fee) {
-                        const inputOf = { propietario: 'Propietario', nit: 'Nit', direccion: 'Direccion', dpi: 'Dpi', notes: 'Notes', waterUnits: 'Water' };
-                        const changes = changedFinance(readFinance('edit', editingPanes), editingFicha);
-                        Object.keys(changes).forEach((key) => { if (finInput('edit', inputOf[key]).disabled) delete changes[key]; });
-                        // Sin ficha y sin datos nuevos no se crea nada. "Cobrar desde" ya no se toca aqui: es de OIKOS
-                        // (una ficha nueva se cobra desde el mes actual, como las que crea OIKOS)
-                        if (Object.keys(changes).length) financeOk = await SISDEL.saveFinanceResident(condoId, id, changes, editingFicha);
-                    }
-                    // Cuotas de los meses marcados en Cuota y agua
-                    const monthsNote = editingPanes.fee ? await saveMonthCharges('edit', id) : '';
-                    const done = `Usuario actualizado${monthsNote ? ` | ${monthsNote}` : ''}`;
-                    SISDEL.showToast(financeOk ? done : `${done}, pero no se pudieron guardar sus datos del Sistema Financiero`, financeOk ? 'success' : 'warning');
+                    SISDEL.showToast('Usuario actualizado', 'success');
                     modalEditUser.style.display = 'none';
                     await renderStats();
                     await renderUsers();

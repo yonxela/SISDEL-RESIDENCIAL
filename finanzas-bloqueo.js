@@ -94,7 +94,9 @@
         [['residentes_datos'], [
             '#view-residents thead th:nth-child(3)', '#residents-table-body td:nth-child(3)',
             '#view-residents thead th:nth-child(5)', '#residents-table-body td:nth-child(5)',
-            'div:has(> #res-dpi)', 'div:has(> #res-lot)', 'div:has(> #res-notes)'
+            'div:has(> #res-dpi)', 'div:has(> #res-lot)', 'div:has(> #res-notes)',
+            // Pestana Propietario del formulario de residente (nombre del dueno, NIT, direccion, DPI, observaciones)
+            '#res-tab-owner', '#form-resident [data-res-pane="owner"]'
         ]],
         [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta']],
         [['residentes_crear'], ['#view-residents button[onclick="openModal(\'modal-resident\')"]']],

@@ -562,51 +562,6 @@ const SISDEL = (() => {
         } catch (error) { console.warn('getFinanceResident', error); return null; }
     }
 
-    // Otras fichas del mismo dueno (por ownerGroup), sin las eliminadas
-    async function getFinanceResidentsByOwner(condominioId, ownerGroup) {
-        if (!ownerGroup) return [];
-        try {
-            await authReady();
-            const snap = await sub(condominioId, 'finanzas_residentes').where('ownerGroup', '==', ownerGroup).get(SERVER);
-            return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((r) => !r.deleted);
-        } catch (error) { console.warn('getFinanceResidentsByOwner', error); return []; }
-    }
-
-    // Cargos del vecino (vivos y anulados): para no repetir la cuota de un mes ni reusar el id de una anulada.
-    // null si no se pudieron leer (sin finanzas.ver o sin red)
-    async function getFinanceCharges(condominioId, residentId) {
-        try {
-            await authReady();
-            const snap = await sub(condominioId, 'finanzas_movimientos').where('resiId', '==', residentId).get(SERVER);
-            return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => t.type === 'charge');
-        } catch (error) { console.warn('getFinanceCharges', error); return null; }
-    }
-
-    // Crea movimientos NUEVOS del Sistema Financiero (cada uno con su id, que es el id del documento), de a 400 por
-    // escritura. Las reglas exigen el privilegio de cada tipo. Devuelve cuantos se guardaron.
-    async function createFinanceMovements(condominioId, movements) {
-        let saved = 0;
-        try {
-            await authReady();
-            for (let i = 0; i < movements.length; i += 400) {
-                const chunk = movements.slice(i, i + 400);
-                const batch = db().batch();
-                chunk.forEach((tx) => batch.set(sub(condominioId, 'finanzas_movimientos').doc(String(tx.id)), tx));
-                await batch.commit();
-                saved += chunk.length;
-            }
-        } catch (error) { reportError('createFinanceMovements', error); }
-        return saved;
-    }
-
-    async function getFinanceSettings(condominioId) {
-        try {
-            await authReady();
-            const snap = await sub(condominioId, 'finanzas_config').doc('oikos_settings').get(SERVER);
-            return snap.exists ? snap.data() : null;
-        } catch (error) { console.warn('getFinanceSettings', error); return null; }
-    }
-
     // Guarda solo los campos de la ficha que se pasan (merge). Si la ficha no existe se crea con su id, la fecha de alta
     // y desde que mes se cobra (el mes actual, salvo que se indique otro). Devuelve true si se guardo.
     async function saveFinanceResident(condominioId, userId, changes, existing) {
@@ -1252,8 +1207,7 @@ const SISDEL = (() => {
         PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
-        getFinanceResident, getFinanceResidentsByOwner, getFinanceSettings, saveFinanceResident, ownerGroupOf,
-        getFinanceCharges, createFinanceMovements,
+        getFinanceResident, saveFinanceResident, ownerGroupOf,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered, markVisitAsExited, isVisitInside,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,

@@ -45,7 +45,11 @@ const SisdelFinanzas = (() => {
     const PENDING_PREFIX = 'sisdel_fin_pendiente_';
     const KINDS = ['residents', 'transactions', 'settings'];
     // Campos del residente de OIKOS que viven en el vecino de SISDEL
-    const CORE_FIELDS = ['name', 'unit', 'contact'];
+    // Campos del residente que viven en el vecino de SISDEL (usuarios): nombre, casa, telefono y, desde 2026-11-15
+    // (formulario con pestanas de OIKOS), fase y correo. Lo demas va a finanzas_residentes.
+    const CORE_FIELDS = ['name', 'unit', 'contact', 'fase', 'email'];
+    // Solo de paso: las placas de un residente nuevo se registran como vehiculos del vecino (no se guardan en OIKOS)
+    const TRANSIENT_FIELDS = ['plates'];
     // Configuracion inicial de un condominio: quetzales y cobro manual hasta que el admin fije la cuota
     const INITIAL_SETTINGS = { currency: 'GTQ', lang: 'es', feeMode: 'manual' };
     const PUSH_DELAY_MS = 300;
@@ -137,6 +141,9 @@ const SisdelFinanzas = (() => {
         r.name = user.name || '';
         r.unit = user.casa || '';
         r.contact = toContact(user.phone);
+        // Solo si tienen valor: un vecino sin fase ni correo queda igual que siempre (no cambia su copia en cada equipo)
+        if (user.fase) r.fase = user.fase; else delete r.fase;
+        if (user.email) r.email = user.email; else delete r.email;
         if (!r.createdAt) r.createdAt = user.createdAt || null;
         const stamp = Math.max(stampOf({ updated_at: user.updatedAt || user.createdAt }), stampOf(extra));
         if (stamp) r.updated_at = new Date(stamp).toISOString();
@@ -146,18 +153,22 @@ const SisdelFinanzas = (() => {
     // Residente de OIKOS -> cambios para el vecino de SISDEL + datos financieros
     function splitResident(resident, user) {
         const extra = { ...resident };
-        CORE_FIELDS.concat('balance').forEach((k) => delete extra[k]);
+        CORE_FIELDS.concat('balance', TRANSIENT_FIELDS).forEach((k) => delete extra[k]);
         extra.id = String(resident.id);
         const core = {
             name: String(resident.name || '').trim(),
             casa: String(resident.unit || '').trim(),
-            phone: String(resident.contact || '').trim()
+            phone: String(resident.contact || '').trim(),
+            fase: String(resident.fase || '').trim().slice(0, 40),
+            email: String(resident.email || '').trim().slice(0, 120)
         };
         if (!user) return { core, changes: null, extra };
         const changes = {};
         if (core.name && core.name !== user.name) changes.name = core.name;
         if (core.casa !== String(user.casa || '')) changes.casa = core.casa;
         if (core.phone !== toContact(user.phone)) changes.phone = core.phone;
+        if (core.fase !== String(user.fase || '')) changes.fase = core.fase;
+        if (core.email !== String(user.email || '')) changes.email = core.email;
         return { core, changes, extra };
     }
 
@@ -327,7 +338,7 @@ const SisdelFinanzas = (() => {
     // Datos financieros de un residente de OIKOS (todo menos nombre, casa, telefono y saldo)
     function extraOf(resident) {
         const extra = { ...(resident || {}) };
-        CORE_FIELDS.concat('balance').forEach((k) => delete extra[k]);
+        CORE_FIELDS.concat('balance', TRANSIENT_FIELDS).forEach((k) => delete extra[k]);
         return extra;
     }
 
@@ -446,6 +457,10 @@ const SisdelFinanzas = (() => {
         // onProgress(movimientos leidos): avance de la carga de movimientos
         const onProgress = handlers.onProgress || (() => {});
         const newAccessCode = handlers.newAccessCode;
+        // createVehicle(userId, placa): registra una placa del vecino nuevo (OIKOS la deja en window.sisdelPendingPlates)
+        const createVehicle = typeof handlers.createVehicle === 'function' ? handlers.createVehicle : null;
+        const pendingPlates = new Map();
+        window.sisdelPendingPlates = pendingPlates;
         // can(clave) -> bool. Sin ella no se filtra nada (las reglas igual rechazan lo que no corresponde).
         const can = typeof handlers.can === 'function' ? handlers.can : null;
         // onBlocked({ kind, count, silent }): se descartaron cambios que el usuario no puede hacer
@@ -572,10 +587,11 @@ const SisdelFinanzas = (() => {
             const id = docIdOf(resident);
             const user = {
                 id, condominioId: condoId, name: core.name || 'Vecino', role: 'vecino',
-                casa: core.casa, phone: core.phone, email: '',
+                casa: core.casa, phone: core.phone, email: core.email || '',
                 paymentStatus: 'al_dia', morosoSince: null, active: true,
                 createdAt: resident.createdAt || nowIso(), updatedAt: resident.updated_at || nowIso()
             };
+            if (core.fase) user.fase = core.fase;
             let lastError = null;
             for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
                 const code = newAccessCode(user.name);
@@ -588,6 +604,14 @@ const SisdelFinanzas = (() => {
                     cloud.users.set(id, user);
                     cloud.extras.set(id, extra);
                     onResidentCreated(user.name, code);
+                    // Placas escritas al crear el residente en OIKOS: vehiculos del vecino (las reglas piden vehiculos.crear)
+                    const plates = pendingPlates.get(id) || [];
+                    pendingPlates.delete(id);
+                    if (plates.length && createVehicle) {
+                        for (const plate of plates) {
+                            try { await createVehicle(id, plate); } catch (error) { console.warn('Sistema Financiero: no se registro la placa', plate, error); }
+                        }
+                    }
                     return;
                 } catch (error) {
                     if (!String(error && error.code || '').includes('permission-denied')) throw error;

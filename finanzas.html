@@ -98,11 +98,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115e"></script>
-    <script src="sisdel-core.js?v=20261115e"></script>
+    <script src="privilegios.js?v=20261115f"></script>
+    <script src="sisdel-core.js?v=20261115f"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261112a"></script>
-    <script src="finanzas-bloqueo.js?v=20261112a"></script>
+    <script src="finanzas-sync.js?v=20261115f"></script>
+    <script src="finanzas-bloqueo.js?v=20261115f"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
@@ -245,6 +245,8 @@
                 onResidentCreated: (name, code) => {
                     SISDEL.showToast(`${name} quedó registrado como vecino en SISDEL. Código de acceso: ${code}`, 'success');
                 },
+                // Las placas que se escriben al crear un residente en OIKOS quedan como vehiculos del vecino
+                createVehicle: (userId, plate) => SISDEL.createVehicle(userId, condoId, plate, '', '', ''),
                 onRemoteChange: (kind) => {
                     if (!iframe) return;
                     // OIKOS vacio una lista (p. ej. "Borrar todo"): se restauro desde la nube y se recarga

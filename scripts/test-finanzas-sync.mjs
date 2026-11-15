@@ -49,7 +49,17 @@ equal('el DPI va a los datos financieros, sin nombre ni saldo', [split.extra.dpi
 split = F.splitResident({ id: 'u-ana', name: 'Ana G. López', unit: 'Casa 14', contact: '+50299990000' }, vecino);
 equal('cambios en OIKOS actualizan el vecino', split.changes, { name: 'Ana G. López', casa: 'Casa 14', phone: '+50299990000' });
 split = F.splitResident({ id: '1731', name: ' Nuevo ', unit: '013', contact: '' }, null);
-equal('residente nuevo trae los datos para crear el vecino', [split.changes, split.core], [null, { name: 'Nuevo', casa: '013', phone: '' }]);
+equal('residente nuevo trae los datos para crear el vecino', [split.changes, split.core], [null, { name: 'Nuevo', casa: '013', phone: '', fase: '', email: '' }]);
+// Formulario con pestanas de OIKOS: fase y correo viven en el vecino; propietario, NIT, direccion y agua, en la ficha
+equal('un vecino sin fase ni correo no los agrega al residente', ['fase' in F.toResident(vecino, {}), 'email' in F.toResident(vecino, {})], [false, false]);
+equal('fase y correo del vecino llegan al residente', [F.toResident({ ...vecino, fase: 'Fase 2', email: 'ana@ejemplo.test' }, {}).fase, F.toResident({ ...vecino, fase: 'Fase 2', email: 'ana@ejemplo.test' }, {}).email], ['Fase 2', 'ana@ejemplo.test']);
+split = F.splitResident({ id: 'u-ana', name: 'Ana García', unit: 'Casa 12', contact: '+50255555678', fase: 'Fase 3', email: 'ana@ejemplo.test', nit: 'C/F', waterUnits: 0.5, propietario: 'Otra Duena' }, vecino);
+equal('cambiar fase y correo en OIKOS actualiza el vecino', split.changes, { fase: 'Fase 3', email: 'ana@ejemplo.test' });
+equal('propietario, NIT y agua van a la ficha; fase y correo no', [split.extra.propietario, split.extra.nit, split.extra.waterUnits, 'fase' in split.extra, 'email' in split.extra], ['Otra Duena', 'C/F', 0.5, false, false]);
+split = F.splitResident({ id: '1732', name: 'Con placas', unit: 'A-1', contact: '', fase: 'Fase 1', email: 'x@ejemplo.test', plates: ['P123ABC'] }, null);
+equal('vecino nuevo con fase y correo', [split.core.fase, split.core.email], ['Fase 1', 'x@ejemplo.test']);
+equal('las placas no se guardan en la ficha financiera', ['plates' in split.extra, 'plates' in F.extraOf({ id: '1', plates: ['X'] })], [false, false]);
+equal('sin cambios de fase ni correo (vacios en los dos lados) no se toca el vecino', F.splitResident({ id: 'u-ana', name: 'Ana García', unit: 'Casa 12', contact: '+50255555678' }, vecino).changes, {});
 equal('condominio nuevo arranca en quetzales y cobro manual', [F.INITIAL_SETTINGS.currency, F.INITIAL_SETTINGS.feeMode], ['GTQ', 'manual']);
 
 console.log('\nMezcla al abrir');

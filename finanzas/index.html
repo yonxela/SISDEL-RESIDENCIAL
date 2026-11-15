@@ -770,35 +770,93 @@
             <h3 class="text-xl font-bold mb-4 dark:text-white" id="title-modal-res">Residente</h3>
             <form id="form-resident" onsubmit="handleResidentSubmit(event)">
                 <input type="hidden" id="res-id">
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Referencia (auto)</label>
-                        <input type="text" id="res-unit" class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-900 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-mono font-bold text-center cursor-not-allowed" readonly placeholder="Se asigna automáticamente" autocomplete="off">
-                    </div>
-                    <input type="text" id="res-name" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" required placeholder="Nombre completo" autocomplete="off">
-                    <input type="text" id="res-dpi" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-mono tracking-wider" required placeholder="No. Documento de Identificación (DPI)" autocomplete="off">
-                    <div class="flex space-x-2"><select id="res-country-code" class="w-[35%] px-2 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-medium"><option value="+502">🇬🇹 +502</option><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option><option value="+34">🇪🇸 +34</option><option value="+503">🇸🇻 +503</option><option value="+504">🇭🇳 +504</option><option value="+505">🇳🇮 +505</option><option value="+506">🇨🇷 +506</option><option value="+507">🇵🇦 +507</option><option value="+57">🇨🇴 +57</option></select><input type="text" id="res-contact" class="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Teléfono" autocomplete="off"></div>
-                    <input type="text" id="res-lot" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Número de lote (opcional)" autocomplete="off">
-                    <textarea id="res-notes" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none resize-none" rows="2" placeholder="Observaciones (opcional)" autocomplete="off"></textarea>
+                <!-- SISDEL: el formulario del vecino con tres pestanas (Datos, Propietario, Cuota y agua). Antes vivia en el
+                     panel admin (admin.html); desde 2026-11-15 los vecinos se registran solo aqui. Ver resTab, renderResConcepts
+                     y handleResidentSubmit. Un residente nuevo es un vecino de SISDEL con su codigo (finanzas-sync.js). -->
+                <div id="res-tabs" class="flex gap-1 p-1 mb-4 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-sm font-semibold">
+                    <button type="button" class="res-tab flex-1 py-2 rounded-lg transition" data-res-tab="datos" onclick="resTab('datos')">Datos</button>
+                    <button type="button" class="res-tab flex-1 py-2 rounded-lg transition" data-res-tab="owner" id="res-tab-owner" onclick="resTab('owner')">Propietario</button>
+                    <button type="button" class="res-tab flex-1 py-2 rounded-lg transition" data-res-tab="fee" id="res-tab-fee" onclick="resTab('fee')">Cuota y agua</button>
                 </div>
-                <!-- Selector de meses a cargar (cuotas). Colapsado por defecto.
-                     Aplica al CREAR y al EDITAR. Grid de 12 meses del año
-                     visible con flechas para ir a años anteriores/posteriores;
-                     la selección se conserva entre años. Los meses que ya
-                     tienen cuota viva aparecen bloqueados ("cargado"). -->
-                <p id="res-closed-note" class="hidden mt-3 text-[11px] px-3 py-2 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"></p>
-                <div id="res-retro-wrap" class="mt-3">
-                    <button type="button" onclick="toggleResRetro()" id="res-retro-toggle"
-                        class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition px-2 py-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20">
-                        <i class="fas fa-calendar-check text-[10px]"></i>
-                        <span>Seleccionar meses a cargar (cuotas de este año, anteriores o posteriores)</span>
-                        <i class="fas fa-chevron-down text-[9px] opacity-60" id="res-retro-chev"></i>
-                    </button>
-                    <div id="res-retro-panel" class="hidden mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
+                <p id="res-closed-note" class="hidden mb-3 text-[11px] px-3 py-2 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"></p>
+                <div class="space-y-4" data-res-pane="datos">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Nombre completo *</label>
+                        <input type="text" id="res-name" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" required placeholder="Ej. Juan Pérez" autocomplete="off" oninput="resMirrorOwner()">
+                    </div>
+                    <div class="grid grid-cols-5 gap-3">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Fase</label>
+                            <input type="text" id="res-fase" list="res-fase-options" maxlength="40" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Ej. Fase 1" autocomplete="off">
+                            <datalist id="res-fase-options"></datalist>
+                        </div>
+                        <div class="col-span-3">
+                            <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Casa o lote *</label>
+                            <input type="text" id="res-unit" required maxlength="40" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-semibold" placeholder="Ej. Casa 12" autocomplete="off">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Teléfono</label>
+                        <div class="flex space-x-2"><select id="res-country-code" class="w-[35%] px-2 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-medium"><option value="+502">🇬🇹 +502</option><option value="+52">🇲🇽 +52</option><option value="+1">🇺🇸 +1</option><option value="+34">🇪🇸 +34</option><option value="+503">🇸🇻 +503</option><option value="+504">🇭🇳 +504</option><option value="+505">🇳🇮 +505</option><option value="+506">🇨🇷 +506</option><option value="+507">🇵🇦 +507</option><option value="+57">🇨🇴 +57</option></select><input type="text" id="res-contact" class="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Teléfono" autocomplete="off"></div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Correo (opcional)</label>
+                        <input type="email" id="res-email" maxlength="120" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="correo@ejemplo.com" autocomplete="off">
+                    </div>
+                    <div id="res-plates-wrap">
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Placas de vehículos (opcional)</label>
+                        <input type="text" id="res-plates" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none uppercase" placeholder="Ej. P123ABC, M456DEF" autocomplete="off">
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Separe varias placas con coma. Después se agregan o quitan en el panel de administración.</p>
+                    </div>
+                </div>
+                <div class="space-y-4 hidden" data-res-pane="owner">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Nombre del propietario</label>
+                        <input type="text" id="res-owner" maxlength="160" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Igual al nombre del residente" autocomplete="off" oninput="resOwnerMirror = false">
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Es el nombre de la pestaña Datos. Cámbielo solo si el dueño es otra persona (por ejemplo, si el lote está alquilado).</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">NIT</label>
+                        <input type="text" id="res-nit" maxlength="20" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none uppercase" placeholder="Ej. 1234567-8 o C/F" autocomplete="off" oninput="resOwnerNote()">
+                        <p id="res-owner-note" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Los lotes con el mismo NIT quedan como del mismo dueño.</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Dirección</label>
+                        <input type="text" id="res-direccion" maxlength="160" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Dirección del dueño para recibos y avisos" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">DPI</label>
+                        <input type="text" id="res-dpi" maxlength="20" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-mono tracking-wider" placeholder="13 dígitos (opcional)" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Observaciones</label>
+                        <textarea id="res-notes" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none resize-none" rows="2" placeholder="Observaciones (opcional)" autocomplete="off"></textarea>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Viajan con la ficha del vecino: no escriba aquí nada que él no deba saber.</p>
+                    </div>
+                </div>
+                <div class="space-y-4 hidden" data-res-pane="fee">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Agua del lote</label>
+                        <select id="res-water" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" onchange="renderResConcepts()">
+                            <option value="0">Sin agua</option>
+                            <option value="0.5">Media paja</option>
+                            <option value="1">Una paja</option>
+                        </select>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">El agua se cobra solo a los lotes con casa.</p>
+                    </div>
+                    <div id="res-fee-info" class="text-sm px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"></div>
+                <!-- Selector de meses a cargar (cuotas). Aplica al CREAR y al EDITAR. Grid de 12 meses del año visible con
+                     flechas para ir a años anteriores/posteriores; la selección se conserva entre años. Los meses que ya
+                     tienen cuota viva aparecen bloqueados ("cargado"). SISDEL: arriba van los conceptos de la cuota con su
+                     monto de Configuración (desglose); cada mes se carga solo con los conceptos marcados. -->
+                <div id="res-retro-wrap">
+                    <div id="res-retro-panel" class="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
+                        <p class="text-xs font-semibold text-blue-900 dark:text-blue-200">Cargar cuotas de meses anteriores o posteriores</p>
                         <p class="text-xs text-blue-900 dark:text-blue-200 leading-snug">
-                            Marque los meses que quiere cargar. Se genera un cargo por la cuota mensual configurada por cada mes marcado; los meses que ya tienen cuota no se duplican.
+                            Marque qué conceptos lleva la cuota y los meses que se le cobran. Se crea una cuota por mes; los meses que ya tienen cuota no se duplican.
                             <span class="block mt-1 text-[11px] text-blue-700 dark:text-blue-400">Si no marca ninguno, el residente solo recibe la cuota a partir del mes actual (automático al llegar el día de cobro, si el modo es automático).</span>
                         </p>
+                        <div id="res-concepts" class="space-y-1.5"></div>
                         <!-- Navegación por año -->
                         <div class="flex items-center justify-between bg-white dark:bg-slate-800 rounded-md border border-blue-200 dark:border-blue-700/50 px-1 py-1">
                             <button type="button" onclick="shiftResRetroYear(-1)" class="px-3 py-1 rounded text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition" title="Año anterior"><i class="fas fa-chevron-left text-xs"></i></button>
@@ -816,6 +874,7 @@
                         <div id="res-retro-months" class="grid grid-cols-2 sm:grid-cols-3 gap-1.5"></div>
                         <p id="res-retro-summary" class="text-[11px] text-blue-800 dark:text-blue-300 leading-snug"></p>
                     </div>
+                </div>
                 </div>
                 <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeModal('modal-resident')" class="px-4 py-2 text-slate-600 dark:text-slate-300" id="btn-res-cancel">Cancelar</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium" id="btn-res-save">Guardar</button></div>
             </form>
@@ -2261,22 +2320,40 @@
         }
 
         function handleResidentSubmit(e) {
-            e.preventDefault(); History.push();
+            e.preventDefault();
             const res = Store.get('residents');
             const id = residentBeingEditedId;
-            const phoneInput = document.getElementById('res-contact').value.trim();
-            const ccInput = document.getElementById('res-country-code').value;
-            const contactStr = phoneInput ? `${ccInput}${phoneInput}` : '';
-            const dpi = document.getElementById('res-dpi').value.trim();
-            if (!dpi) { alert('El número de documento de identificación es obligatorio.'); return; }
-            // Check DPI uniqueness
-            const duplicate = res.find(r => r.dpi === dpi && String(r.id) !== String(id));
-            if (duplicate) { alert(`Ya existe un residente con este DPI: ${duplicate.name} (${duplicate.unit})`); return; }
-            let unit = (document.getElementById('res-unit').value || '').trim();
-            if (!unit) unit = nextResidentRef();
-            const lot = (document.getElementById('res-lot')?.value || '').trim();
-            const notes = (document.getElementById('res-notes')?.value || '').trim();
-            const data = { unit, name: document.getElementById('res-name').value, contact: contactStr, dpi, lot, notes };
+            const prev = id ? res.find(r => String(r.id) === String(id)) : null;
+            const val = (elId) => ((document.getElementById(elId) || {}).value || '').trim();
+            const phoneInput = val('res-contact');
+            const contactStr = phoneInput ? `${document.getElementById('res-country-code').value}${phoneInput}` : '';
+            // SISDEL: el DPI ya no es obligatorio (muchos propietarios no lo dieron); si se escribe, no se repite
+            const dpi = val('res-dpi');
+            const duplicate = dpi ? res.find(r => r.dpi === dpi && String(r.id) !== String(id)) : null;
+            if (duplicate) { alert(`Ya existe un residente con este DPI: ${duplicate.name} (${duplicate.unit})`); resTab('owner'); return; }
+            // Meses marcados sin ningun concepto con monto: se avisa antes de guardar nada
+            if (getSelectedResRetroMonths().length && !resChosenFee(null)) {
+                resTab('fee'); alert('Marque al menos un concepto con monto para los meses elegidos, o limpie los meses.'); return;
+            }
+            History.push();
+            const unit = val('res-unit') || nextResidentRef();
+            const name = val('res-name');
+            const plain = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
+            const owner = val('res-owner').replace(/\s+/g, ' ');
+            const nit = val('res-nit').toUpperCase();
+            const data = { unit, name, contact: contactStr };
+            // Los campos nuevos (fase, correo, propietario, NIT, direccion, agua) solo se agregan si tienen valor o si el
+            // residente ya los tenia: asi no se reescriben los 700 residentes de siempre con campos vacios
+            const opt = (key, value) => { if (value !== '' && value !== 0) data[key] = value; else if (prev && prev[key] !== undefined) data[key] = value; };
+            opt('dpi', dpi);
+            opt('notes', val('res-notes'));
+            opt('fase', val('res-fase'));
+            opt('email', val('res-email'));
+            opt('propietario', plain(owner) === plain(name) ? '' : owner);
+            opt('nit', nit);
+            opt('ownerGroup', resOwnerGroupOf(nit));
+            opt('direccion', val('res-direccion'));
+            opt('waterUnits', SisdelCuotas.waterUnits({ waterUnits: val('res-water') }));
             let newResidentId = null;
             if (id) {
                 const idx = res.findIndex(r => String(r.id) === String(id));
@@ -2287,6 +2364,10 @@
                 // a residentes que se acaban de agregar.
                 newResidentId = Date.now().toString();
                 res.push({ id: newResidentId, balance: 0, createdAt: new Date().toISOString(), ...data });
+                // SISDEL: las placas no son del Sistema Financiero: se registran como vehiculos del vecino en cuanto
+                // finanzas-sync.js lo crea en SISDEL (window.sisdelPendingPlates, de finanzas.html)
+                const plates = val('res-plates').split(',').map(p => p.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean);
+                try { if (plates.length && window.parent && window.parent.sisdelPendingPlates) window.parent.sisdelPendingPlates.set(newResidentId, plates); } catch (err) { console.warn('placas', err); }
             }
             Store.set('residents', res);
 
@@ -2306,28 +2387,122 @@
         // Genera cuotas para un residente en los períodos indicados ('YYYY-MM').
         // Usa createFeeCharge: ID determinista, concepto canónico y chequeo
         // por período (si ya existe una cuota viva del mes, la salta).
+        // SISDEL: cada mes lleva solo los conceptos marcados (mantenimiento, agua, basura...) con su monto de Configuracion
+        // y el agua del lote (SisdelCuotas.monthFee); la descripcion nombra esos conceptos y el mes.
         function applyRetroactiveChargesToResident(residentId, periods) {
             const s = Store.get('settings');
-            const fee = parseFloat(s.fee || 0);
-            if (!Number.isFinite(fee) || fee <= 0) {
-                showToast('Configura la Cuota Mensual antes de cargar cuotas.');
-                return;
-            }
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
             if (!r) return;
+            const keys = [...resConceptKeys];
+            if (!SisdelCuotas.monthFee(s, r, keys, null)) {
+                showToast('Configura los montos de la cuota (desglose) y marca al menos un concepto antes de cargar cuotas.');
+                return;
+            }
             const txs = Store.getRaw('transactions');
             const curKey = currentFeePeriod();
             let count = 0;
+            let amount = 0;
             (periods || []).forEach(p => {
                 if (!/^\d{4}-\d{2}$/.test(String(p))) return;
-                if (createFeeCharge(txs, r, p, fee, s.chargeDay, { auto: false, manual: true, retro: p < curKey })) count++;
+                const fee = SisdelCuotas.monthFee(s, r, keys, p);
+                if (!fee) return;
+                const extra = { auto: false, manual: true, retro: p < curKey, concept: fee.concept };
+                if (fee.breakdown) extra.breakdown = fee.breakdown;
+                if (createFeeCharge(txs, r, p, fee.amount, s.chargeDay, extra)) { count++; amount = fee.amount; }
             });
             if (count > 0) {
                 Store.set('transactions', txs);
                 scanDuplicateFees();
-                setTimeout(() => showToast(`${count} cuota(s) cargada(s) a ${r.name} por ${formatMoney(fee)} c/u.`), 600);
+                setTimeout(() => showToast(`${count} cuota(s) cargada(s) a ${r.name} por ${formatMoney(amount)} c/u.`), 600);
             }
         }
+
+        // ── SISDEL: pestanas y conceptos del formulario de residente ──
+        let resConceptKeys = new Set();   // conceptos marcados para los meses
+        let resConceptsSeeded = false;     // al abrir se marcan los que tienen monto
+        let resOwnerMirror = true;         // el propietario sigue al nombre hasta que se escriba otro
+        const resEsc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        function resTab(name) {
+            document.querySelectorAll('#res-tabs [data-res-tab]').forEach(b => {
+                const on = b.getAttribute('data-res-tab') === name;
+                b.classList.toggle('bg-blue-600', on); b.classList.toggle('text-white', on); b.classList.toggle('shadow', on);
+                b.classList.toggle('text-slate-600', !on); b.classList.toggle('dark:text-slate-300', !on);
+            });
+            document.querySelectorAll('#form-resident [data-res-pane]').forEach(p => p.classList.toggle('hidden', p.getAttribute('data-res-pane') !== name));
+            if (name === 'fee') renderResConcepts();
+        }
+        function resMirrorOwner() {
+            const owner = document.getElementById('res-owner');
+            if (owner && resOwnerMirror) owner.value = document.getElementById('res-name').value;
+        }
+        // Lotes del mismo dueno: la misma clave por NIT (igual que SISDEL.ownerGroupOf); C/F o vacio no agrupa
+        function resOwnerGroupOf(nit) {
+            const text = String(nit || '').toUpperCase().trim();
+            const clean = text.replace(/[^0-9K]/g, '');
+            if (!clean || !/\d/.test(clean) || /^C\.?\s*\/?\s*F\.?$/.test(text)) return '';
+            return 'nit:' + clean;
+        }
+        function resOwnerNote() {
+            const note = document.getElementById('res-owner-note');
+            if (!note) return;
+            const nit = document.getElementById('res-nit').value;
+            const group = resOwnerGroupOf(nit);
+            if (!group) { note.textContent = nit.trim() ? 'Con C/F o sin NIT no se agrupa con otros lotes.' : 'Los lotes con el mismo NIT quedan como del mismo dueño.'; return; }
+            const others = Store.get('residents').filter(r => r.ownerGroup === group && String(r.id) !== String(residentBeingEditedId));
+            note.textContent = others.length ? `Mismo dueño que: ${others.map(r => r.unit || r.name).join(', ')}.` : 'Ningún otro lote tiene este NIT.';
+        }
+        // El residente tal como esta en el formulario (para el agua del lote)
+        function resFormLot() { return { waterUnits: SisdelCuotas.waterUnits({ waterUnits: (document.getElementById('res-water') || {}).value }) }; }
+        function resChosenFee(period) { return SisdelCuotas.monthFee(Store.get('settings'), resFormLot(), [...resConceptKeys], period); }
+        // Los cinco conceptos con su monto de Configuracion (desglose) y el agua del lote. Los montos se cambian solo en
+        // Configuracion; un concepto sin monto no se marca
+        function renderResConcepts() {
+            const s = Store.get('settings') || {};
+            const lot = resFormLot();
+            const amounts = {};
+            SisdelCuotas.lotParts(s, lot).forEach(p => { amounts[p.key] = p.amount; });
+            if (!resConceptsSeeded) { resConceptKeys = new Set(Object.keys(amounts)); resConceptsSeeded = true; }
+            if (amounts.water > 0 && !resConceptKeys.has('water') && !resConceptKeys.waterSeen) resConceptKeys.add('water');
+            resConceptKeys.waterSeen = resConceptKeys.waterSeen || amounts.water > 0;
+            const box = document.getElementById('res-concepts');
+            if (box) {
+                const any = SisdelCuotas.PARTS.some(p => amounts[p.key] > 0);
+                box.innerHTML = SisdelCuotas.PARTS.map(p => {
+                    const amount = amounts[p.key] || 0;
+                    return `<label class="flex items-center gap-2 px-2 py-1.5 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700/50 rounded-md text-xs ${amount > 0 ? 'cursor-pointer' : 'opacity-60'}">
+                        <input type="checkbox" class="w-3.5 h-3.5 accent-blue-600" data-res-concept="${p.key}" ${amount > 0 && resConceptKeys.has(p.key) ? 'checked' : ''} ${amount > 0 ? '' : 'disabled'} onchange="onResConceptToggle(this)">
+                        <span class="flex-1 font-medium text-slate-700 dark:text-slate-200">${resEsc(p.label)}</span>
+                        <span class="font-mono text-slate-500 dark:text-slate-400">${amount > 0 ? formatMoney(amount) : 'sin monto'}</span></label>`;
+                }).join('') + `<p class="text-[11px] text-blue-700 dark:text-blue-400">${any ? 'Los montos salen de Configuración (desglose de la cuota mensual) y se cambian allá.' : 'Todavía no hay montos: escríbalos en Configuración (desglose de la cuota mensual) para poder cargar meses.'}</p>`;
+            }
+            const info = document.getElementById('res-fee-info');
+            if (info) {
+                const base = parseFloat(s.fee) || 0;
+                const water = SisdelCuotas.waterOf(s, lot);
+                info.innerHTML = base > 0
+                    ? `Cuota del lote: <b>${formatMoney(SisdelCuotas.residentFee(s, lot))}</b> al mes${water > 0 ? ` <span class="text-slate-500">(cuota ${formatMoney(base)} + agua ${formatMoney(water)})</span>` : ''}`
+                    : 'Todavía no hay cuota mensual configurada (Configuración).';
+            }
+            updateResRetroCounter();
+        }
+        function onResConceptToggle(cb) {
+            const key = cb.getAttribute('data-res-concept');
+            if (cb.checked) resConceptKeys.add(key); else resConceptKeys.delete(key);
+            updateResRetroCounter();
+        }
+        // Al abrir el formulario: pestana Datos, conceptos de nuevo marcados y fases que ya usa el condominio
+        function resetResForm() {
+            resConceptsSeeded = false; resConceptKeys = new Set(); resOwnerMirror = true;
+            const fases = [...new Set(Store.get('residents').map(r => String(r.fase || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+            const list = document.getElementById('res-fase-options');
+            if (list) list.innerHTML = fases.map(f => `<option value="${resEsc(f)}"></option>`).join('');
+            resTab('datos');
+        }
+        // Un campo obligatorio vacio en otra pestana: se abre esa pestana para que el navegador lo senale
+        document.addEventListener('invalid', (event) => {
+            const pane = event.target && event.target.closest && event.target.closest('#form-resident [data-res-pane]');
+            if (pane && pane.classList.contains('hidden')) resTab(pane.getAttribute('data-res-pane'));
+        }, true);
 
         // ════════════════════════════════════════════════════════════════════
         // SELECTOR DE MESES A CARGAR — navegable por año
@@ -2421,29 +2596,27 @@
             const counter = document.getElementById('res-retro-counter');
             const summary = document.getElementById('res-retro-summary');
             const n = resRetroSelected.size;
-            const fee = parseFloat((Store.get('settings') || {}).fee || 0);
-            const total = (Number.isFinite(fee) ? fee : 0) * n;
-            if (counter) counter.textContent = `${n} mes${n === 1 ? '' : 'es'} · ${formatMoney(total)}`;
+            // SISDEL: el monto de cada mes es el de los conceptos marcados (y el agua del lote)
+            const fee = resChosenFee(null);
+            const perMonth = fee ? fee.amount : 0;
+            if (counter) counter.textContent = `${n} mes${n === 1 ? '' : 'es'} · ${formatMoney(perMonth * n)}`;
             if (summary) {
                 const keys = Array.from(resRetroSelected).sort();
-                summary.textContent = keys.length ? 'Se cargarán: ' + keys.map(feePeriodLabel).join(', ') : '';
+                summary.textContent = !keys.length ? '' : perMonth > 0 ? 'Se cargarán: ' + keys.map(feePeriodLabel).join(', ')
+                    : 'Marque al menos un concepto con monto para cargar los meses elegidos.';
             }
         }
 
         /** Períodos 'YYYY-MM' seleccionados, ordenados. */
         function getSelectedResRetroMonths() { return Array.from(resRetroSelected).sort(); }
 
-        function toggleResRetro(forceOpen) {
-            const panel = document.getElementById('res-retro-panel');
-            const chev = document.getElementById('res-retro-chev');
-            if (!panel) return;
-            const willOpen = forceOpen === true ? true : panel.classList.contains('hidden');
-            if (willOpen) renderResRetroMonths();
-            panel.classList.toggle('hidden', !willOpen);
-            if (chev) chev.style.transform = willOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+        // SISDEL: el selector ya no se despliega aparte: vive en la pestana "Cuota y agua"
+        function toggleResRetro() {
+            resTab('fee');
+            renderResRetroMonths();
         }
 
-        /** Atajo del menú del residente: abre edición con el selector de meses desplegado. */
+        /** Atajo del menú del residente: abre edición en la pestaña "Cuota y agua" con el selector de meses. */
         function openResidentFeeMonths(id) {
             editResident(id);
             toggleResRetro(true);
@@ -2600,8 +2773,15 @@
             document.getElementById('res-unit').value = r.unit;
             document.getElementById('res-name').value = r.name;
             document.getElementById('res-dpi').value = r.dpi || '';
-            const lotEl = document.getElementById('res-lot'); if (lotEl) lotEl.value = r.lot || '';
             const notesEl = document.getElementById('res-notes'); if (notesEl) notesEl.value = r.notes || '';
+            // SISDEL: campos del formulario con pestanas. Las placas se cambian en el panel de administracion
+            const setVal = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v; };
+            setVal('res-fase', r.fase || ''); setVal('res-email', r.email || '');
+            setVal('res-nit', r.nit || ''); setVal('res-direccion', r.direccion || '');
+            resOwnerMirror = !r.propietario; setVal('res-owner', r.propietario || r.name || '');
+            setVal('res-water', String(SisdelCuotas.waterUnits(r)));
+            const platesWrap = document.getElementById('res-plates-wrap'); if (platesWrap) platesWrap.classList.add('hidden');
+            resOwnerNote();
             const titleEl = document.getElementById('title-modal-res'); if (titleEl) titleEl.textContent = 'Editar Residente';
             let ct = (r.contact || '').trim();
             if (ct.startsWith('+')) {
@@ -4224,11 +4404,13 @@
                 const dpiEl = document.getElementById('res-dpi'); if (dpiEl) dpiEl.value = '';
                 const ccEl = document.getElementById('res-country-code'); if (ccEl) ccEl.value = '+502';
                 const phEl = document.getElementById('res-contact'); if (phEl) phEl.value = '';
-                const lotEl = document.getElementById('res-lot'); if (lotEl) lotEl.value = '';
                 const notesEl = document.getElementById('res-notes'); if (notesEl) notesEl.value = '';
-                // Reset del selector de meses: colapsado, sin selección y en el año actual.
-                const retroPanel = document.getElementById('res-retro-panel'); if (retroPanel) retroPanel.classList.add('hidden');
-                const retroChev = document.getElementById('res-retro-chev'); if (retroChev) retroChev.style.transform = 'rotate(0deg)';
+                // SISDEL: campos del formulario con pestanas (vacios para un residente nuevo; las placas solo al crear)
+                ['res-fase', 'res-email', 'res-plates', 'res-owner', 'res-nit', 'res-direccion'].forEach(fid => { const el = document.getElementById(fid); if (el) el.value = ''; });
+                const waterEl = document.getElementById('res-water'); if (waterEl) waterEl.value = '0';
+                const platesWrap = document.getElementById('res-plates-wrap'); if (platesWrap) platesWrap.classList.remove('hidden');
+                resetResForm(); resOwnerNote();
+                // Reset del selector de meses: sin selección y en el año actual.
                 resetResRetro(); renderResRetroMonths();
                 const retroWrap = document.getElementById('res-retro-wrap'); if (retroWrap) retroWrap.classList.remove('hidden');
                 const closedNote = document.getElementById('res-closed-note'); if (closedNote) closedNote.classList.add('hidden');

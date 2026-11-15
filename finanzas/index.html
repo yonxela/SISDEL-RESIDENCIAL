@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" class="light">
+<html lang="es" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -222,6 +222,18 @@
         /* SISDEL: la X de cerrar de las ventanas, 30 % mas grande (antes 1.125 rem y 1 rem) */
         .sisdel-x-lg { font-size: 1.46rem; }
         .sisdel-x-md { font-size: 1.3rem; }
+        /* SISDEL: OIKOS sigue el tema de SISDEL (oscuro, salvo que el usuario elija el claro en su panel; ver applySettings)
+           con los mismos colores del resto del sistema: fondo #0f172a, tarjetas y ventanas #1e293b, campos oscuros con
+           borde tenue y azul #2563eb al enfocarlos */
+        .dark body { background-color: #0f172a; }
+        .dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+        .dark select, .dark textarea { background-color: rgba(15, 23, 42, 0.6) !important; border-color: rgba(255, 255, 255, 0.1) !important; color: #f8fafc; }
+        .dark input:not([type="checkbox"]):not([type="radio"]):focus, .dark select:focus, .dark textarea:focus { border-color: #2563eb !important; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); outline: none; }
+        .dark input[readonly], .dark input:disabled, .dark select:disabled, .dark textarea:disabled { opacity: 0.85; }
+        .dark select option { background-color: #1e293b; color: #f8fafc; }
+        .dark ::placeholder { color: #64748b; }
+        .dark ::-webkit-scrollbar-thumb { background: #334155; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 </head>
 <body class="text-slate-800 dark:text-slate-200 h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
@@ -582,7 +594,7 @@
                                     </ul>
                                 </div>
                             </details>
-                            <div class="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-700 mt-4"><span class="font-medium dark:text-slate-200" id="lbl-set-theme">Modo Oscuro</span><label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" id="cfg-theme" class="sr-only peer"><div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div></label></div>
+                            <!-- SISDEL: el modo oscuro sigue el tema de SISDEL (applySettings); este interruptor ya no se usa --><div class="flex items-center justify-between py-2 border-t border-slate-100 dark:border-slate-700 mt-4" style="display:none;"><span class="font-medium dark:text-slate-200" id="lbl-set-theme">Modo Oscuro</span><label class="relative inline-flex items-center cursor-pointer"><input type="checkbox" id="cfg-theme" class="sr-only peer"><div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div></label></div>
                         </div>
                         <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700">
                             <h4 class="font-semibold text-indigo-600 dark:text-indigo-400 mb-4" id="lbl-set-concepts">Conceptos Recurrentes</h4>
@@ -4325,7 +4337,10 @@
 
         function applySettings() {
             const s = Store.get('settings');
-            s.theme === 'dark' ? document.documentElement.classList.add('dark') : document.documentElement.classList.remove('dark');
+            // SISDEL: el tema no es de la configuracion del condominio sino el de SISDEL (sisdel_theme, el mismo navegador):
+            // oscuro salvo que el usuario haya elegido el claro en su panel
+            const sisdelTheme = (() => { try { return localStorage.getItem('sisdel_theme'); } catch (e) { return null; } })();
+            document.documentElement.classList.toggle('dark', sisdelTheme !== 'light');
             document.getElementById('app-condo-name').textContent = s.name || 'Residencial';
         }
 

@@ -589,7 +589,10 @@ body {
     backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
+    align-items: safe center;
     justify-content: center;
+    padding: 1rem;
+    overflow-y: auto;
     z-index: 1000;
     animation: fadeIn 0.3s ease-out;
 }
@@ -603,6 +606,25 @@ body {
     position: relative;
     border: 1px solid var(--border-strong);
     box-shadow: var(--shadow-xl);
+}
+
+/* Cabecera de las ventanas y formularios: el titulo a la izquierda y la X de cerrar arriba a la derecha */
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+/* La X de cerrar: en negrita y 30 % mas grande que un boton de icono (52 px y 1.3 rem, antes 40 px y 1 rem), siempre pegada a la derecha */
+.btn-icon.modal-close {
+    width: 52px;
+    height: 52px;
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 1.3rem;
+    font-weight: 800;
+    line-height: 1;
 }
 
 /* Scrollbar */

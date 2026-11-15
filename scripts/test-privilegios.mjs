@@ -375,6 +375,24 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('el boton Copiar cambia a una palomita y luego vuelve a lo de antes', /function flashCopied\(button, copied\)/.test(core) && /points="20 6 9 17 4 12"/.test(core) && /copyText\(button\.getAttribute\('data-copy'\), 'Código copiado'\)\.then\(\(copied\) => flashCopied\(button, copied\)\)/.test(core) && /button\.innerHTML = before\.html;/.test(core) && /button\.style\.color = before\.color;/.test(core));
     yes('si no se pudo copiar el boton muestra una cruz roja y no una palomita', /const mark = copied \? COPY_CHECK : COPY_FAIL;/.test(core) && /<line x1="18" y1="6" x2="6" y2="18"\/>/.test(core));
 }
+{
+    // La X de cerrar de los formularios: arriba a la derecha, en negrita y un 30 % mas grande
+    const css = read('styles.css');
+    yes('la cabecera de las ventanas va en fila: el titulo a la izquierda y la X a la derecha', /\.modal-header \{[^}]*display: flex;[^}]*justify-content: space-between;/.test(css));
+    yes('la X de cerrar mide 52 px (un 30 % mas que los 40 px del boton de icono), va en negrita y pegada a la derecha',
+        /\.btn-icon\.modal-close \{[^}]*width: 52px;[^}]*height: 52px;[^}]*margin-left: auto;[^}]*font-size: 1\.3rem;[^}]*font-weight: 800;/.test(css) && /\.btn-icon \{[^}]*width: 40px;[^}]*height: 40px;/.test(css));
+    yes('una ventana alta se desplaza en vez de cortarse por arriba (donde esta la X)', /\.modal-overlay \{[^}]*align-items: safe center;[^}]*overflow-y: auto;/.test(css));
+    for (const file of ['admin.html', 'master.html', 'vecino.html', 'privilegios-ui.js']) {
+        const closers = [...read(file).matchAll(/<button[^>]*(?:id="btnClose[A-Za-z]+"|data-act="close")[^>]*>&times;<\/button>/g)].map((m) => m[0]);
+        yes(`${file}: las ${closers.length} X de cerrar usan la clase modal-close`, closers.length > 0 && closers.every((tag) => /class="[^"]*\bmodal-close\b/.test(tag)));
+    }
+    const oikosX = [...read('finanzas/index.html').matchAll(/onclick="closeModal\('[a-z-]+'\)"[^>]*>\s*<i class="fas fa-times[^"]*"><\/i>/g)].map((m) => m[0]);
+    yes('las X de las ventanas de OIKOS (ya estaban arriba a la derecha) tambien son un 30 % mas grandes', oikosX.length === 6 && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
+    yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
+        const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
+        return a && m && a[1] === m[1];
+    })());
+}
 yes('el servidor pide garita.verificar para verificar codigos', /has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, 'garita\.verificar'\)/.test(read('functions/src/auth.js')));
 yes('el login decide el destino con el catalogo', /privilegios\.landing\(user\.role, user\.privilegios\)/.test(read('functions/src/auth.js')));
 

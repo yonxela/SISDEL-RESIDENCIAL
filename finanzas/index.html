@@ -767,7 +767,10 @@
     </div>
     <div id="modal-resident" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[92vh] overflow-y-auto">
-            <h3 class="text-xl font-bold mb-4 dark:text-white" id="title-modal-res">Residente</h3>
+            <div class="flex items-center justify-between mb-4 -mt-2 -mr-2">
+                <h3 class="text-xl font-bold dark:text-white" id="title-modal-res">Residente</h3>
+                <button type="button" onclick="closeModal('modal-resident')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
+            </div>
             <form id="form-resident" onsubmit="handleResidentSubmit(event)">
                 <input type="hidden" id="res-id">
                 <!-- SISDEL: el formulario del vecino con tres pestanas (Datos, Propietario, Cuota y agua). Antes vivia en el

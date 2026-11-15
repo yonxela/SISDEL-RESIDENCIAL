@@ -387,7 +387,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         yes(`${file}: las ${closers.length} X de cerrar usan la clase modal-close`, closers.length > 0 && closers.every((tag) => /class="[^"]*\bmodal-close\b/.test(tag)));
     }
     const oikosX = [...read('finanzas/index.html').matchAll(/onclick="closeModal\('[a-z-]+'\)"[^>]*>\s*<i class="fas fa-times[^"]*"><\/i>/g)].map((m) => m[0]);
-    yes('las X de las ventanas de OIKOS (ya estaban arriba a la derecha) tambien son un 30 % mas grandes', oikosX.length === 6 && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
+    yes('las X de las ventanas de OIKOS (ya estaban arriba a la derecha) tambien son un 30 % mas grandes', oikosX.length === 7 && oikosX.some((tag) => tag.includes("closeModal('modal-resident')")) && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

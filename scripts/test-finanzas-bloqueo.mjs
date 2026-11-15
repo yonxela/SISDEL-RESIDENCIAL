@@ -114,6 +114,7 @@ equal('con config_cuota el desglose no se bloquea', (() => {
     const css = B.cssFor(only('config_ver', 'config_cuota'));
     return ['maintenance', 'water', 'garbage', 'electricity', 'other'].some((k) => css.includes(`#cfg-fee-${k}`));
 })(), false);
+equal('la navegacion y el buscador del formulario del residente solo los ve quien puede editar residentes', [B.cssFor(only('residentes_crear')).includes('#res-nav'), B.cssFor(only('residentes_crear')).includes('#res-jump-wrap'), B.cssFor(only('residentes_editar')).includes('#res-nav'), B.cssFor(only('residentes_editar')).includes('#res-jump-wrap')], [true, true, false, false]);
 equal('el precio del agua (paja completa y media paja) tambien queda bloqueado sin config_cuota y libre con ella', [B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-half'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-half')], [true, true, false, false]);
 equal('los campos del precio del agua se deshabilitan igual que el desglose', B.DISABLE.config_cuota.includes('#cfg-water-full') && B.DISABLE.config_cuota.includes('#cfg-water-half'), true);
 equal('los campos del desglose se deshabilitan (no se pueden quitar del DOM: saveSettings los lee)', B.DISABLE.config_cuota.includes('#cfg-fee-maintenance') && B.DISABLE.config_cuota.includes('#cfg-fee-other'), true);

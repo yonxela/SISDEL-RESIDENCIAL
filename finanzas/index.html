@@ -228,6 +228,10 @@
         /* SISDEL: la X de cerrar de las ventanas, 30 % mas grande (antes 1.125 rem y 1 rem) */
         .sisdel-x-lg { font-size: 1.46rem; }
         .sisdel-x-md { font-size: 1.3rem; }
+        /* SISDEL: el formulario del residente un 30 % mas grande (ancho, letra y campos); en pantallas angostas queda como antes */
+        @media (min-width: 640px) { #modal-resident > div { zoom: 1.3; max-height: calc(92vh / 1.3); } }
+        /* SISDEL: lo que coincide con lo escrito en una busqueda (sisdel-busqueda.js) */
+        mark.sisdel-mark, .sisdel-results mark { background: rgba(59, 130, 246, 0.28); color: inherit; border-radius: 2px; padding: 0 1px; }
         /* SISDEL: OIKOS sigue el tema de SISDEL (oscuro, salvo que el usuario elija el claro en su panel; ver applySettings)
            con los mismos colores del resto del sistema: fondo #0f172a, tarjetas y ventanas #1e293b, campos oscuros con
            borde tenue y azul #2563eb al enfocarlos */
@@ -832,6 +836,18 @@
                 <h3 class="text-xl font-bold dark:text-white" id="title-modal-res">Residente</h3>
                 <button type="button" onclick="closeModal('modal-resident')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
+            <!-- SISDEL: pasar de un vecino a otro sin cerrar la ventana y buscar a cualquiera por nombre, lote o telefono
+                 (ver resNavigate y resJumpSearch). Va fuera del formulario: no se guarda ni cuenta como cambio -->
+            <div id="res-nav" class="flex items-center gap-2 mb-3">
+                <button type="button" id="res-prev" onclick="resNavigate(-1)" class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition" title="Residente anterior"><i class="fas fa-chevron-left mr-1"></i>Anterior</button>
+                <span id="res-nav-count" class="flex-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400"></span>
+                <button type="button" id="res-next" onclick="resNavigate(1)" class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition" title="Residente siguiente">Siguiente<i class="fas fa-chevron-right ml-1"></i></button>
+            </div>
+            <div id="res-jump-wrap" class="relative mb-4">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="text" id="res-jump" autocomplete="off" placeholder="Buscar vecino por nombre, lote o teléfono..." oninput="resJumpSearch()" onkeydown="resJumpKey(event)" class="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                <div id="res-jump-results" class="sisdel-results hidden absolute left-0 right-0 top-full mt-1 z-20 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl"></div>
+            </div>
             <form id="form-resident" onsubmit="handleResidentSubmit(event)">
                 <input type="hidden" id="res-id">
                 <!-- SISDEL: el formulario del vecino con tres pestanas (Datos, Propietario, Cuota y agua). Antes vivia en el
@@ -940,7 +956,7 @@
                     </div>
                 </div>
                 </div>
-                <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeModal('modal-resident')" class="px-4 py-2 text-slate-600 dark:text-slate-300" id="btn-res-cancel">Cancelar</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium" id="btn-res-save">Guardar</button></div>
+                <div class="mt-6 flex flex-wrap justify-end gap-3"><button type="button" onclick="closeModal('modal-resident')" class="px-4 py-2 text-slate-600 dark:text-slate-300" id="btn-res-cancel">Cancelar</button><button type="submit" onclick="resAfterSave = null" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium" id="btn-res-save">Guardar</button><button type="submit" onclick="resAfterSave = residentBeingEditedId ? 'next' : 'new'" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition" id="btn-res-save-next">Guardar y siguiente</button></div>
             </form>
         </div>
     </div>
@@ -1269,6 +1285,7 @@
 
     <!-- SISDEL: memoria compartida con finanzas.html y copias de registros (misma version que en finanzas.html) -->
     <script src="../finanzas-datos.js?v=20261112a"></script>
+    <script src="../sisdel-busqueda.js?v=20261115a"></script>
     <script>
         // SISDEL: si finanzas.html ofrece su memoria pero finanzas-datos.js no cargo (falla de red), OIKOS no sigue en
         // localStorage: lo que se registrara ahi no se subiria a la nube. Se detiene y pide recargar.
@@ -1691,9 +1708,9 @@
         }
 
         function renderCompanies() {
-            const search = (document.getElementById('pg-search').value || '').toLowerCase();
+            const search = document.getElementById('pg-search').value || '';
             let companies = MasterStore.get();
-            if (search) companies = companies.filter(c => c.name.toLowerCase().includes(search) || c.nit.toLowerCase().includes(search) || c.director.toLowerCase().includes(search));
+            if (search.trim()) companies = SisdelBusqueda.filter(companies, search, (c) => [c.name, c.nit, c.director]);
             const tbody = document.getElementById('pg-companies-tbody');
             if (companies.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center py-10 text-slate-400"><i class="fas fa-inbox text-3xl block mb-2"></i>No hay empresas.</td></tr>';
@@ -2280,17 +2297,20 @@
 
         let showClosedResidents = false;
         function toggleShowClosed() { showClosedResidents = !showClosedResidents; renderResidents(); }
+        // SISDEL: busqueda inteligente de residentes (sisdel-busqueda.js): por el principio de cada palabra, sin importar
+        // acentos ni mayusculas, en cualquier orden y con los mejores resultados primero. El primer campo es el nombre.
+        function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi]; }
+        // Los residentes que muestra la lista ahora (finiquitados ocultos o no, y lo escrito en la busqueda)
+        function visibleResidents() {
+            const search = document.getElementById('res-search')?.value || '';
+            const all = Store.get('residents');
+            const res = showClosedResidents ? all : all.filter(isResidentActive);
+            return search.trim() ? SisdelBusqueda.filter(res, search, residentSearchFields) : res;
+        }
         function renderResidents() {
-            const search = (document.getElementById('res-search')?.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             const all = Store.get('residents');
             const closedCount = all.filter(r => !isResidentActive(r)).length;
-            let res = showClosedResidents ? all : all.filter(isResidentActive);
-            if (search) res = res.filter(r => {
-                const n = (r.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                const u = (r.unit || '').toLowerCase();
-                const c = (r.contact || '').toLowerCase();
-                return n.includes(search) || u.includes(search) || c.includes(search);
-            });
+            const res = visibleResidents();
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
                 tog.classList.toggle('hidden', closedCount === 0 && !showClosedResidents);
@@ -2433,6 +2453,7 @@
 
         function handleResidentSubmit(e) {
             e.preventDefault();
+            const after = resAfterSave; resAfterSave = null;   // SISDEL: 'next' (guardar y pasar al siguiente) o 'new' (guardar y agregar otro)
             const res = Store.get('residents');
             const id = residentBeingEditedId;
             const prev = id ? res.find(r => String(r.id) === String(id)) : null;
@@ -2492,8 +2513,171 @@
             if (targetId && selectedPeriods.length > 0) applyRetroactiveChargesToResident(targetId, selectedPeriods);
             resetResRetro();
 
-            closeModal('modal-resident'); renderResidents(); renderDashboard();
-            showToast('Guardado con éxito'); residentBeingEditedId = null;
+            renderResidents(); renderDashboard();
+            showToast('Guardado con éxito');
+            if (after === 'new') { openModal('modal-resident'); return; }
+            if (after === 'next' && id) {
+                const nx = resNeighbors(id).next;
+                if (nx) { editResident(nx.id); return; }
+                showToast('Guardado. Era el último residente de la lista');
+            }
+            closeModal('modal-resident'); residentBeingEditedId = null;
+        }
+
+        // ─── SISDEL: navegacion y busqueda dentro del formulario del residente ─────────────────
+        // Anterior / Siguiente recorren la lista tal como se ve (con su busqueda y sus finiquitados); el buscador de la
+        // ventana encuentra a cualquier vecino mientras se escribe. Si el formulario tiene cambios sin guardar se pregunta
+        // antes de pasar a otro (Guardar y siguiente los guarda).
+        let resAfterSave = null, resCleanSnapshot = '';
+        function resFormSnapshot() {
+            const form = document.getElementById('form-resident');
+            if (!form) return '';
+            const fields = [...form.elements].filter(el => el.id).map(el => [el.id, el.type === 'checkbox' ? el.checked : el.value]);
+            return JSON.stringify(fields) + '|' + [...resRetroSelected].sort().join(',');
+        }
+        function resMarkClean() { resCleanSnapshot = resFormSnapshot(); }
+        function resIsDirty() { return resFormSnapshot() !== resCleanSnapshot; }
+        // La lista por la que se pasa: la que muestra OIKOS; si el residente no esta en ella (se abrio desde la busqueda), todos
+        function resNeighbors(id) {
+            let list = visibleResidents();
+            let index = list.findIndex(r => String(r.id) === String(id));
+            if (index < 0) { list = Store.get('residents'); index = list.findIndex(r => String(r.id) === String(id)); }
+            return { index, total: list.length, prev: index > 0 ? list[index - 1] : null, next: index >= 0 && index < list.length - 1 ? list[index + 1] : null };
+        }
+        function resNavRefresh() {
+            const editing = !!residentBeingEditedId;
+            const nav = resNeighbors(residentBeingEditedId);
+            const count = document.getElementById('res-nav-count');
+            if (count) count.textContent = editing && nav.index >= 0 ? `Residente ${nav.index + 1} de ${nav.total}` : 'Residente nuevo';
+            const prev = document.getElementById('res-prev'), next = document.getElementById('res-next');
+            if (prev) { prev.disabled = !editing || !nav.prev; prev.classList.toggle('invisible', !editing); }
+            if (next) { next.disabled = !editing || !nav.next; next.classList.toggle('invisible', !editing); }
+            const saveNext = document.getElementById('btn-res-save-next');
+            if (saveNext) saveNext.textContent = editing ? 'Guardar y siguiente' : 'Guardar y agregar otro';
+            const jump = document.getElementById('res-jump'); if (jump) jump.value = '';
+            resJumpClose();
+        }
+        function resGoTo(id) {
+            if (resIsDirty() && !confirm('Hay cambios sin guardar en este residente.\n\n¿Descartarlos y abrir el otro?')) return false;
+            editResident(id);
+            const card = document.querySelector('#modal-resident > div'); if (card) card.scrollTop = 0;
+            return true;
+        }
+        function resNavigate(step) {
+            const nav = resNeighbors(residentBeingEditedId);
+            const target = step < 0 ? nav.prev : nav.next;
+            if (target) resGoTo(target.id);
+        }
+        // Buscador de la ventana: resultados mientras se escribe (hasta 8), con lo escrito resaltado
+        let resJumpItems = [], resJumpActive = 0;
+        function resJumpClose() {
+            const box = document.getElementById('res-jump-results');
+            if (box) { box.classList.add('hidden'); box.innerHTML = ''; }
+            resJumpItems = []; resJumpActive = 0;
+        }
+        function resJumpPaint(text) {
+            const box = document.getElementById('res-jump-results');
+            if (!box) return;
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            if (!resJumpItems.length) {
+                box.innerHTML = `<div class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">Nadie coincide con «${esc(text)}». Si es un vecino nuevo, siga con el formulario.</div>`;
+                return;
+            }
+            const more = resJumpTotal > resJumpItems.length ? `<div class="px-4 py-2 text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700">Hay ${resJumpTotal - resJumpItems.length} coincidencias más: siga escribiendo para afinar.</div>` : '';
+            box.innerHTML = resJumpItems.map((r, i) => {
+                const closed = !isResidentActive(r);
+                const detail = [r.fase, r.contact].filter(Boolean).map(v => SisdelBusqueda.highlight(v, text)).join(' · ');
+                return `<button type="button" data-res-pick="${esc(r.id)}" class="w-full text-left px-4 py-2.5 flex items-center gap-3 transition ${i === resJumpActive ? 'bg-blue-50 dark:bg-slate-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/60'}">
+                    <span class="font-mono font-bold text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-900/60 text-slate-700 dark:text-slate-200 shrink-0">${SisdelBusqueda.highlight(r.unit || '—', text)}</span>
+                    <span class="flex-1 min-w-0"><span class="block text-sm font-medium text-slate-800 dark:text-white truncate">${SisdelBusqueda.highlight(r.name || '', text)}${closed ? ' <span class="text-[10px] font-bold uppercase text-slate-500">finiquitado</span>' : ''}</span>${detail ? `<span class="block text-xs text-slate-500 dark:text-slate-400 truncate">${detail}</span>` : ''}</span>
+                </button>`;
+            }).join('') + more;
+        }
+        let resJumpTotal = 0;
+        function resJumpSearch() {
+            const input = document.getElementById('res-jump'), box = document.getElementById('res-jump-results');
+            if (!input || !box) return;
+            const text = input.value;
+            if (!text.trim()) { resJumpClose(); return; }
+            const found = SisdelBusqueda.filter(Store.get('residents'), text, residentSearchFields);
+            resJumpTotal = found.length; resJumpItems = found.slice(0, 8); resJumpActive = 0;
+            box.classList.remove('hidden');
+            resJumpPaint(text);
+        }
+        function resJumpKey(e) {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); resJumpClose(); e.target.value = ''; return; }
+            if (!resJumpItems.length) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                resJumpActive = (resJumpActive + (e.key === 'ArrowDown' ? 1 : -1) + resJumpItems.length) % resJumpItems.length;
+                resJumpPaint(e.target.value);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const r = resJumpItems[resJumpActive];
+                if (r) { const input = e.target; if (resGoTo(r.id)) input.value = ''; }
+            }
+        }
+        document.addEventListener('click', (e) => {
+            const pick = e.target.closest && e.target.closest('[data-res-pick]');
+            if (pick) { const input = document.getElementById('res-jump'); if (resGoTo(pick.getAttribute('data-res-pick')) && input) input.value = ''; return; }
+            if (!e.target.closest || !e.target.closest('#res-jump-wrap')) resJumpClose();
+        });
+
+        // ─── SISDEL: selectores de residente con busqueda (registrar un ingreso, cargo a un residente) ───────────
+        // El <select> sigue guardando la eleccion (el resto de OIKOS lo lee igual); arriba se le pone un campo de busqueda
+        // que reduce la lista mientras se escribe (sisdel-busqueda.js). Mientras se busca la lista se ve abierta y sin
+        // nada elegido: nunca queda un vecino elegido por accidente.
+        function initResidentPicker(selectId) {
+            const sel = document.getElementById(selectId);
+            if (!sel) return;
+            let box = document.getElementById(selectId + '-search');
+            if (!box) {
+                box = document.createElement('input');
+                box.type = 'text'; box.id = selectId + '-search'; box.autocomplete = 'off';
+                box.placeholder = 'Buscar por nombre, lote o teléfono...';
+                box.className = 'w-full mb-2 px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500';
+                sel.parentNode.insertBefore(box, sel);
+                box.addEventListener('input', () => filterResidentPicker(selectId));
+                box.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); box.value = ''; filterResidentPicker(selectId); }
+                    else if (e.key === 'ArrowDown' && sel.size > 1) { e.preventDefault(); sel.focus(); sel.selectedIndex = Math.max(0, sel.selectedIndex); }
+                    else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const first = [...sel.options].find(o => o.value && !o.disabled);
+                        if (first && box.value.trim()) { sel.value = first.value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+                    }
+                });
+                // Al elegir uno de la lista filtrada se vuelve a la lista completa con ese vecino elegido
+                sel.addEventListener('change', () => {
+                    sel._pickerChosen = sel.value;
+                    if (sel._pickerAll && box.value) { box.value = ''; filterResidentPicker(selectId); }
+                });
+            }
+            box.value = '';
+            sel._pickerChosen = '';
+            sel._pickerAll = [...sel.options].map(o => ({ value: o.value, label: o.textContent, disabled: o.disabled }));
+            sel.size = 1;
+        }
+        function filterResidentPicker(selectId) {
+            const sel = document.getElementById(selectId), box = document.getElementById(selectId + '-search');
+            if (!sel || !box || !sel._pickerAll) return;
+            const all = sel._pickerAll;
+            const option = (o, selected) => `<option value="${SisdelBusqueda.escapeHtml(o.value)}"${o.disabled ? ' disabled' : ''}${selected ? ' selected' : ''}>${SisdelBusqueda.escapeHtml(o.label)}</option>`;
+            const text = box.value;
+            if (!text.trim()) {
+                const chosen = sel._pickerChosen;
+                const hasChosen = chosen && all.some(o => o.value === chosen);
+                sel.innerHTML = all.map(o => option(o, hasChosen ? o.value === chosen : (!o.value && o.disabled))).join('');
+                sel.size = 1;
+                if (hasChosen) sel.value = chosen;
+                return;
+            }
+            const byId = new Map(Store.get('residents').map(r => [String(r.id), r]));
+            const items = all.filter(o => o.value);
+            const found = SisdelBusqueda.filter(items, text, (o) => byId.has(o.value) ? residentSearchFields(byId.get(o.value)).concat(o.label) : [o.label]);
+            sel.innerHTML = found.length ? found.map(o => option(o, false)).join('') : '<option value="" disabled>Nadie coincide con lo escrito</option>';
+            sel.size = Math.min(6, Math.max(2, found.length));
+            sel.selectedIndex = -1;
         }
 
         // Genera cuotas para un residente en los períodos indicados ('YYYY-MM').
@@ -2927,6 +3111,7 @@
                 if (match) { document.getElementById('res-country-code').value = match; document.getElementById('res-contact').value = ct.substring(match.length).trim(); }
                 else { document.getElementById('res-country-code').value = '+502'; document.getElementById('res-contact').value = ct; }
             } else { document.getElementById('res-country-code').value = '+502'; document.getElementById('res-contact').value = ct; }
+            resMarkClean(); resNavRefresh();   // SISDEL: estado limpio y contador de la navegacion
         }
 
         function contactWhatsApp(contact, balance) {
@@ -4847,6 +5032,7 @@
                 // Los finiquitados sí pueden PAGAR (saldar deudas) — se listan marcados.
                 const rs = Store.get('residents');
                 document.getElementById('inc-resident').innerHTML = rs.length > 0 ? '<option value="" disabled selected>Seleccione...</option>' + rs.map(r => `<option value="${r.id}">${r.unit} - ${r.name}${isResidentActive(r) ? '' : ' (finiquitado)'}</option>`).join('') : '<option value="" disabled selected>No hay residentes</option>';
+                initResidentPicker('inc-resident');   // SISDEL: busqueda dentro de la lista
                 const ds = feeConceptFor(new Date().getFullYear(), new Date().getMonth());
                 const cus = s.customIncomeConcepts || [];
                 document.getElementById('inc-concept-type').innerHTML = `<option value="" disabled selected>Seleccione...</option><option value="fee" id="inc-opt-fee">${ds}</option>${cus.map(c => `<option value="${c}">${c}</option>`).join('')}<option value="custom">Personalizar...</option>`;
@@ -4883,6 +5069,7 @@
                 resetResRetro(); renderResRetroMonths();
                 const retroWrap = document.getElementById('res-retro-wrap'); if (retroWrap) retroWrap.classList.remove('hidden');
                 const closedNote = document.getElementById('res-closed-note'); if (closedNote) closedNote.classList.add('hidden');
+                resMarkClean(); resNavRefresh();
             }
             if (id === 'modal-bulk-charge') {
                 const rs = Store.get('residents').filter(isResidentActive);
@@ -4891,6 +5078,7 @@
                 document.getElementById('bulk-concept-type').innerHTML = '<option value="" disabled selected>Seleccione...</option><option value="fee">' + ds + '</option>' + cus.map(c => '<option value="' + c + '">' + c + '</option>').join('') + '<option value="custom">Personalizar...</option>';
                 document.getElementById('bulk-concept-type').value = ''; document.getElementById('bulk-concept-custom').classList.add('hidden'); document.getElementById('bulk-concept-custom').value = ''; document.getElementById('bulk-amount').value = '';
                 document.getElementById('bulk-resident').innerHTML = rs.length > 0 ? rs.map(r => '<option value="' + r.id + '">' + r.unit + ' - ' + r.name + '</option>').join('') : '<option value="" disabled>No hay residentes activos</option>';
+                initResidentPicker('bulk-resident');   // SISDEL: busqueda dentro de la lista
                 setBulkTarget('all');
             }
         }

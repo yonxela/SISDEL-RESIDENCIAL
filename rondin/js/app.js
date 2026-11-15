@@ -1543,11 +1543,12 @@ const App = {
   },
 
   filterMonitorRoutes(showAll = false) {
-    const q = showAll ? '' : (document.getElementById('route-search')?.value || '').toLowerCase().trim();
+    const q = showAll ? '' : (document.getElementById('route-search')?.value || '').trim();
     const dropdown = document.getElementById('route-search-dropdown');
     if (!dropdown || !this._allMonitorRoutes) return;
     const matches = q
-      ? this._allMonitorRoutes.filter(r => r.name.toLowerCase().includes(q) || (r.route_code||'').toLowerCase().includes(q))
+      // SISDEL: busqueda inteligente (../sisdel-busqueda.js): por el principio de cada palabra, sin acentos ni mayusculas
+      ? SisdelBusqueda.filter(this._allMonitorRoutes, q, r => [r.name, r.route_code])
       : this._allMonitorRoutes;
     if (!matches.length) {
       dropdown.innerHTML = '<div style="padding:12px 16px;color:#64748b;font-size:13px"><i class="fas fa-search-minus"></i> Sin resultados</div>';

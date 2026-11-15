@@ -287,6 +287,7 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261115f"></script>
     <script src="sisdel-core.js?v=20261115f"></script>
+    <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -382,9 +383,11 @@
             }
             function emptyState(text) { return `<p class="text-center text-muted card" style="padding:2rem;">${esc(text)}</p>`; }
             function errorState() { return emptyState('No se pudo cargar la información. Revise su conexión e intente de nuevo.'); }
+            // Busqueda inteligente (sisdel-busqueda.js): sin importar acentos ni mayusculas, por el principio de cada
+            // palabra y en cualquier orden; cada palabra escrita debe coincidir en alguno de los campos
             function matches(query, ...fields) {
                 if (!query) return true;
-                return fields.some((f) => String(f || '').toLowerCase().includes(query));
+                return SisdelBusqueda.score(query, fields) > 0;
             }
 
             const LOG_STATUS = {
@@ -443,7 +446,7 @@
 
             // --- Vista: Usuarios ---
             function renderUsers() {
-                const q = document.getElementById('userSearch').value.trim().toLowerCase();
+                const q = document.getElementById('userSearch').value.trim();
                 const role = document.getElementById('userRole').value;
                 const payment = document.getElementById('userPayment').value;
                 const list = users.filter((u) =>
@@ -495,7 +498,7 @@
                     </div>`;
             }
             function renderVisitsList() {
-                const q = document.getElementById('visitSearch').value.trim().toLowerCase();
+                const q = document.getElementById('visitSearch').value.trim();
                 const list = visits.filter((v) => matches(q, v.visitorName, v.visitorInfo, v.casa, v.vehiclePlate, userLabel(v.userId)));
                 document.getElementById('visitsNote').textContent = `${list.length} visita(s)`;
                 document.getElementById('visitsList').innerHTML = list.length ? list.map(visitRow).join('') : emptyState('No hay visitas en ese rango.');
@@ -521,7 +524,7 @@
             let vehicles = null;
             function renderVehicles() {
                 if (!vehicles) return;
-                const q = document.getElementById('vehicleSearch').value.trim().toLowerCase();
+                const q = document.getElementById('vehicleSearch').value.trim();
                 const list = vehicles.filter((v) => {
                     const owner = usersById.get(v.userId);
                     return matches(q, v.plate, v.plateNorm, v.brand, v.model, owner && owner.name, owner && owner.casa);
@@ -570,7 +573,7 @@
                     </div>`;
             }
             function renderLogsList() {
-                const q = document.getElementById('logSearch').value.trim().toLowerCase();
+                const q = document.getElementById('logSearch').value.trim();
                 const status = document.getElementById('logStatus').value;
                 const list = logs.filter((l) => (!status || l.status === status) && matches(q, l.plate, l.reason));
                 const note = document.getElementById('logsNote');

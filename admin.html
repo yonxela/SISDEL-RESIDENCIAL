@@ -355,6 +355,7 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261115f"></script>
     <script src="sisdel-core.js?v=20261115f"></script>
+    <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
     <script src="reportes-ui.js?v=20261115a"></script>
@@ -507,7 +508,7 @@
             });
 
             document.getElementById('searchInput').addEventListener('input', (e) => {
-                searchQuery = e.target.value.toLowerCase();
+                searchQuery = e.target.value;
                 renderUsers();
             });
 
@@ -548,7 +549,9 @@
             }
 
             const roleMap = { vecinos: SISDEL.ROLES.VECINO, policias: SISDEL.ROLES.POLICIA, admins: SISDEL.ROLES.ADMIN, auditores: SISDEL.ROLES.AUDITOR, supervisores: SISDEL.ROLES.SUPERVISOR, operadores: SISDEL.ROLES.OPERADOR, todos: null };
-            const matchesText = (u, q) => !q || u.name.toLowerCase().includes(q) || (u.casa || '').toLowerCase().includes(q) || (u.fase || '').toLowerCase().includes(q) || (u.cargo || '').toLowerCase().includes(q);
+            // Busqueda inteligente (sisdel-busqueda.js): sin importar acentos ni mayusculas, por el principio de cada palabra,
+            // en cualquier orden y con los mejores resultados primero
+            const userSearchFields = (u) => [u.name, u.casa, u.fase, u.cargo];
 
             // Una fila de usuario: la usan el panel de siempre y la pestaña Usuarios de Configuración
             const userRow = (u) => `
@@ -590,7 +593,8 @@
             let cfgRole = '';
             let cfgQuery = '';
             function renderConfigUsers() {
-                paintUsers(document.getElementById('cfgUsersList'), allUsersCache.filter((u) => (!cfgRole || u.role === cfgRole) && matchesText(u, cfgQuery)));
+                const byRole = allUsersCache.filter((u) => !cfgRole || u.role === cfgRole);
+                paintUsers(document.getElementById('cfgUsersList'), cfgQuery ? SisdelBusqueda.filter(byRole, cfgQuery, userSearchFields) : byRole);
             }
 
             async function renderUsers() {
@@ -598,7 +602,7 @@
                 allUsersCache = allUsers;
                 const targetRole = roleMap[currentTab];
                 let filtered = targetRole ? allUsers.filter(u => u.role === targetRole) : allUsers;
-                if (searchQuery) filtered = filtered.filter(u => matchesText(u, searchQuery));
+                if (searchQuery) filtered = SisdelBusqueda.filter(filtered, searchQuery, userSearchFields);
                 paintUsers(document.getElementById('usersList'), filtered);
                 renderConfigUsers();
                 if (privTab) privTab.setUsers(allUsers);
@@ -992,7 +996,7 @@
                 t.style.display = cfgAllowed[t.dataset.cfg] ? '' : 'none';
                 t.addEventListener('click', () => { location.hash = `#configuracion/${t.dataset.cfg}`; });
             });
-            document.getElementById('cfgSearch').addEventListener('input', (e) => { cfgQuery = e.target.value.toLowerCase(); renderConfigUsers(); });
+            document.getElementById('cfgSearch').addEventListener('input', (e) => { cfgQuery = e.target.value; renderConfigUsers(); });
             document.getElementById('cfgRole').addEventListener('change', (e) => { cfgRole = e.target.value; renderConfigUsers(); });
 
             const unsaved = () => (privTab && privTab.isDirty()) || (tplTab && tplTab.isDirty());

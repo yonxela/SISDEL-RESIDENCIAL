@@ -349,7 +349,7 @@ condominios/{condoId}
     mensajes/{msgId}
     camera_logs/{logId}
     salidas/{id}                    salidas de vecinos (vehículo o residente) que registra la garita; las de las visitas van en `visitas.exitedAt`
-    finanzas_residentes/{userId}    datos financieros del vecino (DPI, lote, notas, finiquito)
+    finanzas_residentes/{userId}    datos financieros del vecino (DPI, NIT, direccion, agua del lote, mismo dueno, lote, notas, finiquito)
     finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero (`server_at`: sello que pone el servidor en cada cambio)
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
     bitacora/{id}                   rastro de cada cambio a usuarios, vehiculos y Sistema Financiero: quien, cuando y el valor de antes y de despues (solo la escribe el servidor)

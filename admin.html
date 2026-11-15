@@ -8,6 +8,16 @@
     <meta name="description" content="Panel de administración de condominio SISDEL.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Pestanas dentro de las ventanas de usuario (Datos, Propietario, Cuota y agua) */
+        .modal-tabs { margin-bottom: 1.25rem; padding: 0.25rem; overflow: visible; }
+        /* Las tres caben siempre, tambien en el telefono (ahi las pestanas normales se desplazan de lado) */
+        .modal-tabs .tab { flex: 1 1 0; min-width: 0; padding: 0.55rem 0.3rem; font-size: 0.85rem; white-space: normal; line-height: 1.2; }
+        @media (max-width: 480px) { .modal-tabs .tab { font-size: 0.74rem; padding: 0.5rem 0.15rem; } }
+        .fin-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4; }
+        .fin-fee { background: var(--bg-item); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.85rem; line-height: 1.5; }
+        .fin-fee strong { font-size: 1.05rem; }
+    </style>
 </head>
 
 <body>
@@ -210,6 +220,12 @@
                 <button class="btn btn-ghost btn-icon modal-close" id="btnCloseNewUser">&times;</button>
             </div>
             <form id="newUserForm" style="padding:1.5rem;">
+                <div class="tabs modal-tabs" data-fin-tabs style="display:none;">
+                    <button type="button" class="tab active" data-pane="datos">Datos</button>
+                    <button type="button" class="tab" data-pane="propietario">Propietario</button>
+                    <button type="button" class="tab" data-pane="cuota">Cuota y agua</button>
+                </div>
+                <div data-pane-body="datos">
                 <div class="form-group">
                     <label>Nombre Completo</label>
                     <input type="text" class="form-input" id="newUserName" placeholder="Ej. Juan Pérez" required>
@@ -250,6 +266,9 @@
                         <input type="email" class="form-input" id="newUserEmail">
                     </div>
                 </div>
+                </div>
+                <div data-pane-body="propietario" style="display:none;"></div>
+                <div data-pane-body="cuota" style="display:none;"></div>
                 <button type="submit" class="btn btn-primary" style="width:100%; margin-top:1rem;">Crear Usuario y
                     Generar Código</button>
             </form>
@@ -265,6 +284,12 @@
             </div>
             <form id="editUserForm" style="padding:1.5rem;">
                 <input type="hidden" id="editUserId">
+                <div class="tabs modal-tabs" data-fin-tabs style="display:none;">
+                    <button type="button" class="tab active" data-pane="datos">Datos</button>
+                    <button type="button" class="tab" data-pane="propietario">Propietario</button>
+                    <button type="button" class="tab" data-pane="cuota">Cuota y agua</button>
+                </div>
+                <div data-pane-body="datos">
                 <div class="form-group">
                     <label>Nombre Completo</label>
                     <input type="text" class="form-input" id="editUserName" required>
@@ -308,6 +333,9 @@
                         <button type="button" class="btn btn-primary btn-sm" id="btnAddPlate" style="white-space:nowrap;">+ Agregar</button>
                     </div>
                 </div>
+                </div>
+                <div data-pane-body="propietario" style="display:none;"></div>
+                <div data-pane-body="cuota" style="display:none;"></div>
 
                 <button type="submit" class="btn btn-primary" id="btnSaveEdit" style="width:100%; margin-top:1rem;">Guardar
                     Cambios</button>
@@ -326,8 +354,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261112a"></script>
-    <script src="sisdel-core.js?v=20261112a"></script>
+    <script src="privilegios.js?v=20261115b"></script>
+    <script src="sisdel-core.js?v=20261115b"></script>
+    <script src="finanzas/sisdel-cuotas.js?v=20261115a"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
     <script src="reportes-ui.js?v=20261110c"></script>
@@ -641,9 +670,18 @@
                             }
                         }
 
+                        // Ficha del Sistema Financiero (pestañas Propietario y Cuota y agua); lo vacio no se guarda
+                        let financeOk = true;
+                        if (role === 'vecino' && (newPanes.owner || newPanes.fee)) {
+                            const data = readFinance('new', newPanes);
+                            Object.keys(data).forEach((key) => { if (data[key] === '') delete data[key]; });
+                            financeOk = await SISDEL.saveFinanceResident(condoId, user.id, data, null);
+                        }
+
                         let msg = `✅ ${name} creado. Código: ${user.accessCode}`;
                         if (plateCount > 0) msg += ` | ${plateCount} vehículo(s) registrado(s)`;
                         SISDEL.showToast(msg, 'success');
+                        if (!financeOk) SISDEL.showToast('No se pudieron guardar sus datos del Sistema Financiero (NIT, agua...). Revíselos al editar el vecino.', 'warning');
                         modalNewUser.style.display = 'none';
                         newUserForm.reset();
                         await renderStats();
@@ -667,6 +705,7 @@
             });
 
             function syncNewUserFields(keepTemplate) {
+                prepareNewFinance(keepTemplate === true);
                 const role = document.getElementById('newUserRole').value;
                 const isVecino = role === 'vecino';
                 document.getElementById('groupCasa').style.display = isVecino ? 'block' : 'none';
@@ -726,6 +765,196 @@
             const btnCloseEditUser = document.getElementById('btnCloseEditUser');
             const editUserForm = document.getElementById('editUserForm');
 
+            // --- Ficha del vecino en el Sistema Financiero: pestañas Propietario y Cuota y agua ---
+            // Se guarda en finanzas_residentes (SISDEL.saveFinanceResident), no en el usuario. Cada pestaña aparece solo con
+            // su privilegio: Propietario con "Ver DPI, lote y observaciones"; Cuota y agua con "Ver residentes". Para escribir
+            // hace falta registrar (vecino nuevo) o editar residentes; cambiar "Cobrar desde" es de finiquitar (como en OIKOS).
+            const finCaps = {
+                crear: SISDEL.can('finanzas.residentes_crear'),
+                ver: SISDEL.can('finanzas.residentes_ver'),
+                datos: SISDEL.can('finanzas.residentes_datos'),
+                editar: SISDEL.can('finanzas.residentes_editar'),
+                cobro: SISDEL.can('finanzas.residentes_finiquitar')
+            };
+            let financeSettings = null; // cuota y precio de la paja (se leen al abrir la ventana)
+            let editingFicha = null;    // ficha guardada del vecino que se edita (null si todavia no tiene)
+            let editingPanes = { owner: false, fee: false, write: false };
+            let newPanes = { owner: false, fee: false };
+
+            function mountFinancePanes(form, prefix) {
+                form.querySelector('[data-pane-body="propietario"]').innerHTML = `
+                    <div class="form-group">
+                        <label>NIT</label>
+                        <input type="text" class="form-input" id="${prefix}FinNit" maxlength="20" placeholder="Ej. 1234567-8 o C/F" style="text-transform:uppercase;">
+                        <p class="fin-note" id="${prefix}FinOwner">Los lotes con el mismo NIT quedan como del mismo dueño.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Dirección</label>
+                        <input type="text" class="form-input" id="${prefix}FinDireccion" maxlength="160" placeholder="Dirección del dueño para recibos y avisos">
+                    </div>
+                    <div class="form-group">
+                        <label>DPI</label>
+                        <input type="text" class="form-input" id="${prefix}FinDpi" maxlength="20" inputmode="numeric" placeholder="13 dígitos">
+                    </div>
+                    <div class="form-group">
+                        <label>Observaciones</label>
+                        <textarea class="form-input" id="${prefix}FinNotes" rows="2" maxlength="500" style="resize:vertical;"></textarea>
+                    </div>`;
+                form.querySelector('[data-pane-body="cuota"]').innerHTML = `
+                    <div class="form-group">
+                        <label>Agua del lote</label>
+                        <select class="form-input" id="${prefix}FinWater">
+                            <option value="0">Sin agua</option>
+                            <option value="0.5">Media paja</option>
+                            <option value="1">Una paja</option>
+                        </select>
+                        <p class="fin-note">El agua se cobra solo a los lotes con casa.</p>
+                    </div>
+                    <div class="form-group">
+                        <label>Cobrar desde</label>
+                        <input type="month" class="form-input" id="${prefix}FinFeeFrom">
+                        <p class="fin-note" id="${prefix}FinFeeFromHelp">Mes de la primera cuota que se le cobra.</p>
+                    </div>
+                    <div class="fin-fee" id="${prefix}FinFee"></div>`;
+                form.querySelector('[data-fin-tabs]').addEventListener('click', (event) => {
+                    const tab = event.target.closest('[data-pane]');
+                    if (tab) showPane(form, tab.dataset.pane);
+                });
+                // Un campo obligatorio vacio en otra pestaña: se abre esa pestaña para que el navegador lo señale
+                form.addEventListener('invalid', (event) => {
+                    const pane = event.target.closest('[data-pane-body]');
+                    if (pane && pane.style.display === 'none') showPane(form, pane.dataset.paneBody);
+                }, true);
+                document.getElementById(`${prefix}FinWater`).addEventListener('change', () => paintFee(prefix));
+                document.getElementById(`${prefix}FinNit`).addEventListener('change', () => paintOwner(prefix));
+            }
+
+            function showPane(form, name) {
+                form.querySelectorAll('[data-fin-tabs] .tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.pane === name));
+                form.querySelectorAll('[data-pane-body]').forEach((pane) => { pane.style.display = pane.dataset.paneBody === name ? '' : 'none'; });
+            }
+
+            function setFinanceTabs(form, panes) {
+                const bar = form.querySelector('[data-fin-tabs]');
+                bar.querySelector('[data-pane="propietario"]').style.display = panes.owner ? '' : 'none';
+                bar.querySelector('[data-pane="cuota"]').style.display = panes.fee ? '' : 'none';
+                bar.style.display = panes.owner || panes.fee ? 'flex' : 'none';
+                showPane(form, 'datos');
+            }
+
+            const finInput = (prefix, name) => document.getElementById(`${prefix}Fin${name}`);
+            const validWater = (value) => { const n = parseFloat(value); return [0, 0.5, 1].includes(n) ? n : 0; };
+
+            function fillFinance(prefix, ficha) {
+                const f = ficha || {};
+                finInput(prefix, 'Nit').value = f.nit || '';
+                finInput(prefix, 'Direccion').value = f.direccion || '';
+                finInput(prefix, 'Dpi').value = f.dpi || '';
+                finInput(prefix, 'Notes').value = f.notes || '';
+                finInput(prefix, 'Water').value = String(validWater(f.waterUnits));
+                finInput(prefix, 'FeeFrom').value = f.feeFrom || SISDEL.localToday().slice(0, 7);
+                finInput(prefix, 'Owner').textContent = 'Los lotes con el mismo NIT quedan como del mismo dueño.';
+            }
+
+            function readFinance(prefix, panes) {
+                const out = {};
+                if (panes.owner) {
+                    out.nit = finInput(prefix, 'Nit').value.trim().toUpperCase();
+                    out.direccion = finInput(prefix, 'Direccion').value.trim();
+                    out.dpi = finInput(prefix, 'Dpi').value.trim();
+                    out.notes = finInput(prefix, 'Notes').value.trim();
+                }
+                if (panes.fee) {
+                    out.waterUnits = validWater(finInput(prefix, 'Water').value);
+                    out.feeFrom = finInput(prefix, 'FeeFrom').value;
+                }
+                return out;
+            }
+
+            // Solo lo que cambio respecto de la ficha guardada: las reglas piden un privilegio segun el campo
+            function changedFinance(next, ficha) {
+                const prev = ficha || {};
+                const out = {};
+                Object.keys(next).forEach((key) => {
+                    const before = key === 'waterUnits' ? validWater(prev[key]) : String(prev[key] == null ? '' : prev[key]);
+                    if (before !== next[key]) out[key] = next[key];
+                });
+                return out;
+            }
+
+            function paintFee(prefix) {
+                const box = finInput(prefix, 'Fee');
+                const s = financeSettings || {};
+                const money = (n) => SisdelCuotas.money(n, s.currency || 'GTQ');
+                const base = parseFloat(s.fee) || 0;
+                const units = validWater(finInput(prefix, 'Water').value);
+                if (!base) { box.textContent = 'El Sistema Financiero todavía no tiene cuota mensual configurada.'; return; }
+                const water = SisdelCuotas.waterOf(s, { waterUnits: units });
+                let html = `Cuota del lote: <strong>${money(SisdelCuotas.residentFee(s, { waterUnits: units }))}</strong> al mes`;
+                if (water > 0) html += `<br><span class="text-muted">Cuota ${money(base)} + agua ${money(water)}</span>`;
+                else if (units > 0) html += '<br><span class="text-muted">El precio de la paja de agua todavía no está configurado en el Sistema Financiero: por ahora no se suma el agua.</span>';
+                box.innerHTML = html;
+            }
+
+            // Otros lotes con el mismo NIT (mismo dueño)
+            async function paintOwner(prefix) {
+                const note = finInput(prefix, 'Owner');
+                const nit = finInput(prefix, 'Nit').value;
+                const group = SISDEL.ownerGroupOf(nit);
+                if (!group) {
+                    note.textContent = nit.trim() ? 'Con C/F o sin NIT no se agrupa con otros lotes.' : 'Los lotes con el mismo NIT quedan como del mismo dueño.';
+                    return;
+                }
+                const selfId = prefix === 'edit' ? document.getElementById('editUserId').value : '';
+                const others = (await SISDEL.getFinanceResidentsByOwner(condoId, group)).filter((r) => r.id !== selfId);
+                if (finInput(prefix, 'Nit').value !== nit) return; // cambio mientras se consultaba
+                if (!others.length) { note.textContent = 'Ningún otro lote tiene este NIT.'; return; }
+                const byId = new Map(allUsersCache.map((u) => [u.id, u]));
+                const lots = others.map((r) => (byId.get(r.id) || {}).casa || 'un lote sin casa registrada');
+                note.textContent = `Mismo dueño que: ${lots.join(', ')}.`;
+            }
+
+            mountFinancePanes(newUserForm, 'new');
+            mountFinancePanes(editUserForm, 'edit');
+
+            // Ventana de usuario nuevo: las pestañas solo para vecinos y con "Registrar residentes nuevos".
+            // keep: no borrar lo ya escrito (al elegir una plantilla que no cambia el rol)
+            async function prepareNewFinance(keep) {
+                const isVecino = document.getElementById('newUserRole').value === 'vecino';
+                newPanes = { owner: isVecino && finCaps.crear && finCaps.datos, fee: isVecino && finCaps.crear };
+                setFinanceTabs(newUserForm, newPanes);
+                if (!newPanes.owner && !newPanes.fee) return;
+                if (!keep || !finInput('new', 'FeeFrom').value) fillFinance('new', null);
+                if (newPanes.fee) {
+                    financeSettings = await SISDEL.getFinanceSettings(condoId);
+                    paintFee('new');
+                }
+            }
+
+            // Ventana de edición: lee la ficha guardada y deja escribir solo con el privilegio de cada cosa
+            async function prepareEditFinance(user, editable) {
+                const isVecino = user.role === SISDEL.ROLES.VECINO;
+                const panes = { owner: isVecino && finCaps.datos, fee: isVecino && finCaps.ver };
+                editingFicha = panes.owner || panes.fee ? await SISDEL.getFinanceResident(condoId, user.id) : null;
+                const write = editable && (editingFicha ? finCaps.editar : finCaps.crear);
+                editingPanes = { ...panes, write };
+                setFinanceTabs(editUserForm, panes);
+                if (!panes.owner && !panes.fee) return;
+                fillFinance('edit', editingFicha);
+                ['Nit', 'Direccion', 'Dpi', 'Notes', 'Water'].forEach((name) => { finInput('edit', name).disabled = !write; });
+                // "Cobrar desde" de una ficha que ya existe es de finiquitar; al crearla, de registrar residentes
+                const feeFromOk = editable && (editingFicha ? finCaps.cobro : finCaps.crear);
+                finInput('edit', 'FeeFrom').disabled = !feeFromOk;
+                finInput('edit', 'FeeFromHelp').textContent = feeFromOk
+                    ? 'Mes de la primera cuota que se le cobra.'
+                    : 'Mes de la primera cuota que se le cobra. Cambiarlo es del privilegio de finiquitar residentes.';
+                if (panes.fee) {
+                    financeSettings = await SISDEL.getFinanceSettings(condoId);
+                    paintFee('edit');
+                }
+                if (panes.owner && editingFicha && editingFicha.nit) paintOwner('edit');
+            }
+
             window.openEditUser = async function (id) {
                 const user = await SISDEL.getUserById(id);
                 if (!user) return;
@@ -777,7 +1006,8 @@
                 if (user.role === 'vecino' && caps.placasVer) {
                     await renderEditPlates(user.id);
                 }
-                
+                await prepareEditFinance(user, editable);
+
                 modalEditUser.style.display = 'flex';
             };
 
@@ -852,7 +1082,17 @@
                 const payment = document.getElementById('editUserPayment').value;
                 if (caps.pago && !moraAutomatica && editing && editing.role === SISDEL.ROLES.VECINO && payment !== (editing.paymentStatus || 'al_dia')) updates.paymentStatus = payment;
                 if (await SISDEL.updateUser(id, updates)) {
-                    SISDEL.showToast('Usuario actualizado', 'success');
+                    // Ficha del Sistema Financiero: solo los campos habilitados que cambiaron
+                    let financeOk = true;
+                    if (editingPanes.owner || editingPanes.fee) {
+                        const inputOf = { nit: 'Nit', direccion: 'Direccion', dpi: 'Dpi', notes: 'Notes', waterUnits: 'Water', feeFrom: 'FeeFrom' };
+                        const changes = changedFinance(readFinance('edit', editingPanes), editingFicha);
+                        Object.keys(changes).forEach((key) => { if (finInput('edit', inputOf[key]).disabled) delete changes[key]; });
+                        // Sin ficha y sin datos nuevos no se crea nada (solo seria el mes actual por defecto)
+                        const onlyDefault = !editingFicha && Object.keys(changes).every((key) => key === 'feeFrom' && changes.feeFrom === SISDEL.localToday().slice(0, 7));
+                        if (Object.keys(changes).length && !onlyDefault) financeOk = await SISDEL.saveFinanceResident(condoId, id, changes, editingFicha);
+                    }
+                    SISDEL.showToast(financeOk ? 'Usuario actualizado' : 'Usuario actualizado, pero no se pudieron guardar sus datos del Sistema Financiero', financeOk ? 'success' : 'warning');
                     modalEditUser.style.display = 'none';
                     await renderStats();
                     await renderUsers();

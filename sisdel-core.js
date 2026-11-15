@@ -537,6 +537,77 @@ const SISDEL = (() => {
         } catch (error) { console.warn('hasFinanceMovements', error); return false; }
     }
 
+    // ── Ficha financiera del vecino: finanzas_residentes/{mismo id que el usuario} ──
+    // Datos del dueno (DPI, NIT, direccion, observaciones) y del lote (agua: 0, 0.5 o 1 paja; desde que mes se cobra).
+    // La leen quienes tienen finanzas.ver; la crea quien registra residentes y la cambia quien los edita (cambiar
+    // "cobrar desde" es de finiquitar): las reglas son la barrera. OIKOS la recibe sola por la sincronizacion.
+    const FINANCE_RESIDENT_FIELDS = ['dpi', 'nit', 'direccion', 'notes', 'waterUnits', 'ownerGroup', 'feeFrom'];
+    const WATER_UNITS = [0, 0.5, 1];
+
+    // Lotes del mismo dueno: la misma clave por NIT. Un C/F o un NIT vacio no agrupa ('').
+    function ownerGroupOf(nit) {
+        const clean = String(nit || '').toUpperCase().replace(/[^0-9K]/g, '');
+        if (!clean || /^C\.?\s*\/?\s*F\.?$/.test(String(nit || '').toUpperCase().trim()) || !/\d/.test(clean)) return '';
+        return `nit:${clean}`;
+    }
+
+    async function getFinanceResident(condominioId, userId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_residentes').doc(userId).get(SERVER);
+            return snap.exists ? { id: snap.id, ...snap.data() } : null;
+        } catch (error) { console.warn('getFinanceResident', error); return null; }
+    }
+
+    // Otras fichas del mismo dueno (por ownerGroup), sin las eliminadas
+    async function getFinanceResidentsByOwner(condominioId, ownerGroup) {
+        if (!ownerGroup) return [];
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_residentes').where('ownerGroup', '==', ownerGroup).get(SERVER);
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((r) => !r.deleted);
+        } catch (error) { console.warn('getFinanceResidentsByOwner', error); return []; }
+    }
+
+    async function getFinanceSettings(condominioId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_config').doc('oikos_settings').get(SERVER);
+            return snap.exists ? snap.data() : null;
+        } catch (error) { console.warn('getFinanceSettings', error); return null; }
+    }
+
+    // Guarda solo los campos de la ficha que se pasan (merge). Si la ficha no existe se crea con su id, la fecha de alta
+    // y desde que mes se cobra (el mes actual, salvo que se indique otro). Devuelve true si se guardo.
+    async function saveFinanceResident(condominioId, userId, changes, existing) {
+        try {
+            await authReady();
+            const data = {};
+            FINANCE_RESIDENT_FIELDS.forEach((key) => {
+                if (!changes || changes[key] === undefined) return;
+                if (key === 'waterUnits') {
+                    const units = parseFloat(changes.waterUnits);
+                    data.waterUnits = WATER_UNITS.includes(units) ? units : 0;
+                } else if (key === 'feeFrom') {
+                    if (/^\d{4}-\d{2}$/.test(String(changes.feeFrom))) data.feeFrom = changes.feeFrom;
+                } else {
+                    data[key] = String(changes[key] || '').trim().slice(0, key === 'notes' ? 500 : 160);
+                }
+            });
+            if (data.nit !== undefined) data.ownerGroup = ownerGroupOf(data.nit);
+            const now = nowIso();
+            if (!existing) {
+                data.id = userId;
+                data.createdAt = now;
+                if (!data.feeFrom) data.feeFrom = localToday().slice(0, 7);
+            }
+            if (!Object.keys(data).length) return true;
+            data.updated_at = now;
+            await sub(condominioId, 'finanzas_residentes').doc(userId).set(data, { merge: true });
+            return true;
+        } catch (error) { reportError('saveFinanceResident', error); return false; }
+    }
+
     async function getUsersByPaymentStatus(condominioId, status) {
         try {
             await authReady();
@@ -1151,6 +1222,7 @@ const SISDEL = (() => {
         PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
+        getFinanceResident, getFinanceResidentsByOwner, getFinanceSettings, saveFinanceResident, ownerGroupOf,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered, markVisitAsExited, isVisitInside,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,

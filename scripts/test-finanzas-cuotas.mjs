@@ -108,6 +108,27 @@ equal('la garita compara con la cuota del lote: una cuota de Q460 vencida no blo
     M.moraOf('c1', [{ id: 'x', type: 'charge', kind: 'fee', period: '2026-10', amount: 460, resiId: 'c1', date: '2026-10-05T18:00:00.000Z' }], { ...perLot, chargeDay: 5 }, now).moroso
 ], [false, true]);
 
+console.log('\nCuotas de meses elegidos con algunos conceptos (ventana del vecino)');
+const full = { fee: 355, currency: 'GTQ', feeBreakdown: { maintenance: 300, garbage: 25, electricity: 30 }, waterUnitPrice: 160 };
+equal('conceptos de un lote con media paja', C.lotParts(full, { waterUnits: 0.5 }), [
+    { key: 'maintenance', label: 'Mantenimiento', amount: 300 }, { key: 'water', label: 'Agua', amount: 80 },
+    { key: 'garbage', label: 'Recolección de basura', amount: 25 }, { key: 'electricity', label: 'Electricidad', amount: 30 }
+]);
+equal('un lote sin casa no tiene agua', C.lotParts(full, {}).map((p) => p.key), ['maintenance', 'garbage', 'electricity']);
+equal('el agua fija del desglose se suma a la de la paja', C.lotParts({ fee: 350, feeBreakdown: { maintenance: 300, water: 50 }, waterUnitPrice: 160 }, { waterUnits: 1 }).find((p) => p.key === 'water').amount, 210);
+equal('sin desglose la cuota entera es mantenimiento', C.lotParts({ fee: 300 }, {}), [{ key: 'maintenance', label: 'Mantenimiento', amount: 300 }]);
+equal('sin cuota no hay conceptos', C.lotParts({}, { waterUnits: 1 }), []);
+equal('todos los conceptos', C.monthFee(full, { waterUnits: 0.5 }, ['maintenance', 'water', 'garbage', 'electricity'], '2026-10'), {
+    amount: 435,
+    concept: 'Por aporte para mantenimiento, servicio de agua, recolección de basura y servicio de electricidad correspondiente a octubre de 2026 Q 435.00',
+    breakdown: { maintenance: 300, water: 80, garbage: 25, electricity: 30 }
+});
+equal('solo agua', C.monthFee(full, { waterUnits: 1 }, ['water'], '2025-03'), { amount: 160, concept: 'Por aporte para servicio de agua correspondiente a marzo de 2025 Q 160.00', breakdown: { water: 160 } });
+equal('un concepto que el lote no tiene no cuenta', C.monthFee(full, {}, ['water'], '2026-10'), null);
+equal('sin conceptos no hay cuota', C.monthFee(full, { waterUnits: 1 }, [], '2026-10'), null);
+equal('sin desglose y la cuota entera: el concepto de siempre', C.monthFee({ fee: 300 }, {}, ['maintenance'], '2026-11'), { amount: 300, concept: 'Cuota - Noviembre 2026', breakdown: null });
+equal('sin desglose con agua por paja: describe los dos', C.monthFee({ fee: 300, waterUnitPrice: 160 }, { waterUnits: 0.5 }, ['maintenance', 'water'], '2026-01').concept, 'Por aporte para mantenimiento y servicio de agua correspondiente a enero de 2026 Q 380.00');
+
 console.log('\nIntegracion en OIKOS y copia del servidor');
 yes('el servidor usa una copia IDENTICA del modulo', read('finanzas/sisdel-cuotas.js') === read('functions/src/finanzas/cuotas.js'));
 const oikos = read('finanzas/index.html');

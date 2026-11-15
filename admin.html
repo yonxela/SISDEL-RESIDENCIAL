@@ -20,6 +20,26 @@
         .fin-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4; }
         .fin-fee { background: var(--bg-item); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.85rem; line-height: 1.5; }
         .fin-fee strong { font-size: 1.05rem; }
+        /* Cargar cuotas de meses: conceptos, año, atajos y los 12 meses */
+        .fin-months { border-top: 1px solid var(--border-subtle); margin-top: 1.25rem; padding-top: 1rem; }
+        .fin-months > label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+        .fin-concepts { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
+        .fin-concept { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.4rem 0.6rem; background: var(--bg-item); border-radius: 8px; cursor: pointer; }
+        .fin-concept .fin-amount { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+        .fin-year { display: flex; align-items: center; justify-content: space-between; background: var(--bg-item); border-radius: 8px; padding: 0.15rem 0.35rem; }
+        .fin-year .btn { font-size: 1.2rem; line-height: 1; padding: 0.2rem 0.75rem; }
+        .fin-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0; font-size: 0.78rem; }
+        .fin-quick .btn { font-size: 0.75rem; padding: 0.3rem 0.55rem; border: 1px solid var(--border-subtle); }
+        .fin-quick span { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+        .fin-month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
+        .fin-month { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.45rem; border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 0.8rem; cursor: pointer; background: var(--bg-item); min-width: 0; }
+        .fin-month { flex-wrap: wrap; row-gap: 0.1rem; }
+        .fin-month small { flex-basis: 100%; font-size: 0.58rem; text-transform: uppercase; color: var(--text-muted); line-height: 1.1; }
+        .fin-month.is-now { border-color: var(--primary); }
+        .fin-month.is-on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+        .fin-month.is-done { cursor: default; color: var(--success); opacity: 0.85; }
+        .fin-month.is-done small { color: var(--success); }
+        @media (max-width: 420px) { .fin-month-grid { grid-template-columns: repeat(3, 1fr); } }
     </style>
 </head>
 
@@ -370,9 +390,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115c"></script>
-    <script src="sisdel-core.js?v=20261115c"></script>
-    <script src="finanzas/sisdel-cuotas.js?v=20261115a"></script>
+    <script src="privilegios.js?v=20261115d"></script>
+    <script src="sisdel-core.js?v=20261115d"></script>
+    <script src="finanzas/sisdel-cuotas.js?v=20261115b"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
     <script src="reportes-ui.js?v=20261110c"></script>
@@ -680,6 +700,11 @@
                         btnSubmit.textContent = 'Crear Usuario y Generar Código';
                         return;
                     }
+                    if (role === 'vecino' && !monthsReady('new', newUserForm)) {
+                        btnSubmit.disabled = false;
+                        btnSubmit.textContent = 'Crear Usuario y Generar Código';
+                        return;
+                    }
 
                     // Solo se guardan las diferencias con los privilegios del rol
                     const extra = { cargo, fase, privilegios: template ? PRIV.toOverrides(role, PRIV.templateKeys(template)) : {} };
@@ -702,9 +727,12 @@
                             Object.keys(data).forEach((key) => { if (data[key] === '') delete data[key]; });
                             financeOk = await SISDEL.saveFinanceResident(condoId, user.id, data, null);
                         }
+                        // Cuotas de los meses marcados en Cuota y agua
+                        const monthsNote = role === 'vecino' && newPanes.fee ? await saveMonthCharges('new', user.id) : '';
 
                         let msg = `✅ ${name} creado. Código: ${user.accessCode}`;
                         if (plateCount > 0) msg += ` | ${plateCount} vehículo(s) registrado(s)`;
+                        if (monthsNote) msg += ` | ${monthsNote}`;
                         SISDEL.showToast(msg, 'success');
                         if (!financeOk) SISDEL.showToast('No se pudieron guardar sus datos del Sistema Financiero (NIT, agua...). Revíselos al editar el vecino.', 'warning');
                         modalNewUser.style.display = 'none';
@@ -799,15 +827,152 @@
                 ver: SISDEL.can('finanzas.residentes_ver'),
                 datos: SISDEL.can('finanzas.residentes_datos'),
                 editar: SISDEL.can('finanzas.residentes_editar'),
-                cobro: SISDEL.can('finanzas.residentes_finiquitar')
+                cobro: SISDEL.can('finanzas.residentes_finiquitar'),
+                meses: SISDEL.can('finanzas.cuotas_meses') // "Cargar cuotas por mes a un residente", como en OIKOS
             };
             let financeSettings = null; // cuota y precio de la paja (se leen al abrir la ventana)
             let editingFicha = null;    // ficha guardada del vecino que se edita (null si todavia no tiene)
             let editingPanes = { owner: false, fee: false, write: false };
             let newPanes = { owner: false, fee: false };
+            const ownerMirror = { new: true, edit: true }; // el propietario sigue al nombre del vecino hasta que se cambie
+            // Selector de meses de cada ventana: año visible, meses marcados (AAAA-MM), conceptos marcados y las cuotas
+            // que ya tiene el vecino (charged: periodo -> 'live' | 'deleted'; ids: para no reusar el de una anulada)
+            const newMonthState = () => ({ on: false, year: new Date().getFullYear(), selected: new Set(), keys: null, charged: new Map(), ids: new Set() });
+            const monthState = { new: newMonthState(), edit: newMonthState() };
+            const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const periodKey = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`;
+            const moneyOf = (n) => SisdelCuotas.money(n, (financeSettings && financeSettings.currency) || 'GTQ');
+            const lotOf = (prefix) => ({ waterUnits: validWater(finInput(prefix, 'Water').value) });
+
+            // Arma el selector de meses de la ventana (sin privilegio o sin cuota configurada queda oculto)
+            function setupMonths(prefix, charges) {
+                const st = monthState[prefix] = newMonthState();
+                const parts = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix));
+                st.on = finCaps.meses && charges !== null && parts.length > 0;
+                document.getElementById(`${prefix}FinMonthsBox`).style.display = st.on ? '' : 'none';
+                if (!st.on) return;
+                (charges || []).forEach((t) => {
+                    st.ids.add(String(t.id));
+                    const period = t.period || null;
+                    if (!period || (t.kind && t.kind !== 'fee')) return;
+                    if (!t.deleted) st.charged.set(period, 'live');
+                    else if (!st.charged.has(period)) st.charged.set(period, 'deleted');
+                });
+                paintConcepts(prefix);
+                paintMonths(prefix);
+            }
+
+            // Conceptos del lote (con el agua que tiene marcada); al principio van todos marcados
+            function paintConcepts(prefix) {
+                const st = monthState[prefix];
+                if (!st.on) return;
+                const parts = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix));
+                if (!st.keys) st.keys = new Set(parts.map((p) => p.key));
+                else parts.forEach((p) => { if (p.key === 'water' && !st.keys.has('water') && !st.waterSeen) st.keys.add('water'); });
+                st.waterSeen = st.waterSeen || parts.some((p) => p.key === 'water');
+                document.getElementById(`${prefix}FinConcepts`).innerHTML = parts.map((p) => `
+                    <label class="fin-concept"><input type="checkbox" data-concept="${p.key}" ${st.keys.has(p.key) ? 'checked' : ''}>
+                        <span>${esc(p.label)}</span><span class="fin-amount">${moneyOf(p.amount)}</span></label>`).join('');
+                paintMonthCount(prefix);
+            }
+
+            function paintMonths(prefix) {
+                const st = monthState[prefix];
+                const current = SISDEL.localToday().slice(0, 7);
+                document.getElementById(`${prefix}FinYear`).textContent = st.year;
+                document.getElementById(`${prefix}FinMonths`).innerHTML = MONTHS_SHORT.map((label, m) => {
+                    const key = periodKey(st.year, m);
+                    const state = st.charged.get(key);
+                    if (state === 'live') return `<div class="fin-month is-done" title="Este mes ya tiene su cuota">${label}<small>cargado</small></div>`;
+                    const on = st.selected.has(key);
+                    // El mes actual va con borde; "anulado" = tuvo una cuota anulada y se puede volver a cargar
+                    const tag = key === current ? 'este mes' : state === 'deleted' ? 'anulado' : '';
+                    return `<label class="fin-month${on ? ' is-on' : ''}${key === current ? ' is-now' : ''}"><input type="checkbox" data-period="${key}" ${on ? 'checked' : ''}>${label}${tag ? `<small>${tag}</small>` : ''}</label>`;
+                }).join('');
+                paintMonthCount(prefix);
+            }
+
+            // "3 meses · Q 1,140.00" y la lista de meses que se cargaran
+            function paintMonthCount(prefix) {
+                const st = monthState[prefix];
+                if (!st.on) return;
+                const keys = [...st.selected].filter((k) => st.charged.get(k) !== 'live').sort();
+                const perMonth = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix))
+                    .filter((p) => st.keys && st.keys.has(p.key)).reduce((sum, p) => sum + p.amount, 0);
+                document.getElementById(`${prefix}FinCount`).textContent = `${keys.length} mes${keys.length === 1 ? '' : 'es'} · ${moneyOf(perMonth * keys.length)}`;
+                document.getElementById(`${prefix}FinSummary`).textContent = !keys.length ? ''
+                    : perMonth > 0 ? `Se cargarán: ${keys.map((k) => SisdelCuotas.monthLabel(k)).join(', ')}.`
+                        : 'Marque al menos un concepto para cargar los meses elegidos.';
+            }
+
+            // Atajos: hasta el mes actual del año visible, el año completo o limpiar todo
+            function fillMonths(prefix, mode) {
+                const st = monthState[prefix];
+                if (mode === 'clear') st.selected.clear();
+                else {
+                    const current = SISDEL.localToday().slice(0, 7);
+                    for (let m = 0; m < 12; m++) {
+                        const key = periodKey(st.year, m);
+                        if (st.charged.get(key) === 'live' || (mode === 'untilNow' && key > current)) continue;
+                        st.selected.add(key);
+                    }
+                }
+                paintMonths(prefix);
+            }
+
+            // Las cuotas a crear, igual que las de los meses de un residente en OIKOS (id fee_<vecino>_<AAAA-MM>,
+            // manual, sin repetir un mes con cuota viva; con una anulada se usa el sufijo _rN)
+            function buildMonthCharges(prefix, residentId) {
+                const st = monthState[prefix];
+                if (!st.on || !st.keys || !st.keys.size) return [];
+                const s = financeSettings || {};
+                const chargeDay = Math.min(28, Math.max(1, parseInt(s.chargeDay, 10) || 1));
+                const current = SISDEL.localToday().slice(0, 7);
+                const now = new Date().toISOString();
+                const out = [];
+                [...st.selected].sort().forEach((period) => {
+                    if (st.charged.get(period) === 'live') return;
+                    const fee = SisdelCuotas.monthFee(s, lotOf(prefix), [...st.keys], period);
+                    if (!fee) return;
+                    const [y, m] = period.split('-').map((n) => parseInt(n, 10));
+                    let id = `fee_${residentId}_${period}`;
+                    let n = 1;
+                    while (st.ids.has(id)) id = `fee_${residentId}_${period}_r${n++}`;
+                    st.ids.add(id);
+                    out.push({
+                        id, date: new Date(y, m - 1, chargeDay, 6, 0, 0).toISOString(), type: 'charge', kind: 'fee', period,
+                        amount: fee.amount, concept: fee.concept, resiId: residentId, auto: false, manual: true, retro: period < current,
+                        ...(fee.breakdown ? { breakdown: fee.breakdown } : {}), created_at: now, updated_at: now
+                    });
+                });
+                return out;
+            }
+
+            // Meses marcados sin ningun concepto: se avisa y se abre la pestaña antes de guardar nada
+            function monthsReady(prefix, form) {
+                const st = monthState[prefix];
+                const pending = st.on && [...st.selected].some((k) => st.charged.get(k) !== 'live');
+                if (!pending || (st.keys && st.keys.size)) return true;
+                showPane(form, 'cuota');
+                SISDEL.showToast('Marque al menos un concepto (mantenimiento, agua...) para los meses elegidos, o limpie los meses.', 'warning');
+                return false;
+            }
+
+            // Crea las cuotas de los meses marcados; devuelve un aviso para el mensaje final ('' si no habia meses)
+            async function saveMonthCharges(prefix, residentId) {
+                const charges = buildMonthCharges(prefix, residentId);
+                if (!charges.length) return '';
+                const saved = await SISDEL.createFinanceMovements(condoId, charges);
+                return saved === charges.length ? `${saved} cuota(s) cargada(s)` : `solo se cargaron ${saved} de ${charges.length} cuotas`;
+            }
 
             function mountFinancePanes(form, prefix) {
                 form.querySelector('[data-pane-body="propietario"]').innerHTML = `
+                    <div class="form-group">
+                        <label>Nombre del propietario</label>
+                        <input type="text" class="form-input" id="${prefix}FinPropietario" maxlength="160" placeholder="Igual al nombre del vecino">
+                        <p class="fin-note">Es el nombre de la pestaña Datos. Cámbielo solo si el dueño es otra persona (por ejemplo, si el lote está alquilado).</p>
+                    </div>
                     <div class="form-group">
                         <label>NIT</label>
                         <input type="text" class="form-input" id="${prefix}FinNit" maxlength="20" placeholder="Ej. 1234567-8 o C/F" style="text-transform:uppercase;">
@@ -840,17 +1005,54 @@
                         <input type="month" class="form-input" id="${prefix}FinFeeFrom">
                         <p class="fin-note" id="${prefix}FinFeeFromHelp">Mes de la primera cuota que se le cobra.</p>
                     </div>
-                    <div class="fin-fee" id="${prefix}FinFee"></div>`;
+                    <div class="fin-fee" id="${prefix}FinFee"></div>
+                    <div class="fin-months" id="${prefix}FinMonthsBox" style="display:none;">
+                        <label>Cargar cuotas de meses anteriores o posteriores</label>
+                        <p class="fin-note" style="margin-bottom:0.6rem;">Marque qué conceptos lleva la cuota y los meses que se le cobran. Se crea una cuota por mes; los meses que ya tienen su cuota no se repiten.</p>
+                        <div class="fin-concepts" id="${prefix}FinConcepts"></div>
+                        <div class="fin-year">
+                            <button type="button" class="btn btn-ghost btn-sm" data-year="-1" aria-label="Año anterior">&lsaquo;</button>
+                            <strong id="${prefix}FinYear"></strong>
+                            <button type="button" class="btn btn-ghost btn-sm" data-year="1" aria-label="Año siguiente">&rsaquo;</button>
+                        </div>
+                        <div class="fin-quick">
+                            <button type="button" class="btn btn-ghost btn-sm" data-fill="untilNow">Hasta hoy</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-fill="year">Todo el año</button>
+                            <button type="button" class="btn btn-ghost btn-sm" data-fill="clear">Limpiar</button>
+                            <span id="${prefix}FinCount"></span>
+                        </div>
+                        <div class="fin-month-grid" id="${prefix}FinMonths"></div>
+                        <p class="fin-note" id="${prefix}FinSummary"></p>
+                    </div>`;
                 form.querySelector('[data-fin-tabs]').addEventListener('click', (event) => {
                     const tab = event.target.closest('[data-pane]');
                     if (tab) showPane(form, tab.dataset.pane);
                 });
+                // Selector de meses: año, atajos, meses y conceptos
+                const box = document.getElementById(`${prefix}FinMonthsBox`);
+                box.addEventListener('click', (event) => {
+                    const yearBtn = event.target.closest('[data-year]');
+                    const fillBtn = event.target.closest('[data-fill]');
+                    if (yearBtn) { monthState[prefix].year += parseInt(yearBtn.dataset.year, 10); paintMonths(prefix); }
+                    if (fillBtn) fillMonths(prefix, fillBtn.dataset.fill);
+                });
+                box.addEventListener('change', (event) => {
+                    const st = monthState[prefix];
+                    const period = event.target.getAttribute('data-period');
+                    const concept = event.target.getAttribute('data-concept');
+                    if (period) { if (event.target.checked) st.selected.add(period); else st.selected.delete(period); paintMonths(prefix); }
+                    if (concept) { if (event.target.checked) st.keys.add(concept); else st.keys.delete(concept); paintMonthCount(prefix); }
+                });
+                // El nombre del propietario sigue al de la pestaña Datos hasta que se escriba otro
+                const nameInput = document.getElementById(prefix === 'new' ? 'newUserName' : 'editUserName');
+                nameInput.addEventListener('input', () => { if (ownerMirror[prefix]) finInput(prefix, 'Propietario').value = nameInput.value; });
+                finInput(prefix, 'Propietario').addEventListener('input', () => { ownerMirror[prefix] = false; });
                 // Un campo obligatorio vacio en otra pestaña: se abre esa pestaña para que el navegador lo señale
                 form.addEventListener('invalid', (event) => {
                     const pane = event.target.closest('[data-pane-body]');
                     if (pane && pane.style.display === 'none') showPane(form, pane.dataset.paneBody);
                 }, true);
-                document.getElementById(`${prefix}FinWater`).addEventListener('change', () => paintFee(prefix));
+                document.getElementById(`${prefix}FinWater`).addEventListener('change', () => { paintFee(prefix); paintConcepts(prefix); });
                 document.getElementById(`${prefix}FinNit`).addEventListener('change', () => paintOwner(prefix));
             }
 
@@ -870,8 +1072,10 @@
             const finInput = (prefix, name) => document.getElementById(`${prefix}Fin${name}`);
             const validWater = (value) => { const n = parseFloat(value); return [0, 0.5, 1].includes(n) ? n : 0; };
 
-            function fillFinance(prefix, ficha) {
+            function fillFinance(prefix, ficha, userName) {
                 const f = ficha || {};
+                ownerMirror[prefix] = !f.propietario;
+                finInput(prefix, 'Propietario').value = f.propietario || userName || '';
                 finInput(prefix, 'Nit').value = f.nit || '';
                 finInput(prefix, 'Direccion').value = f.direccion || '';
                 finInput(prefix, 'Dpi').value = f.dpi || '';
@@ -884,6 +1088,11 @@
             function readFinance(prefix, panes) {
                 const out = {};
                 if (panes.owner) {
+                    // Igual al vecino (sin contar mayusculas ni espacios de mas) no se guarda: si cambia el nombre, sigue igual
+                    const plain = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
+                    const owner = finInput(prefix, 'Propietario').value.trim().replace(/\s+/g, ' ');
+                    const userName = document.getElementById(prefix === 'new' ? 'newUserName' : 'editUserName').value;
+                    out.propietario = plain(owner) === plain(userName) ? '' : owner;
                     out.nit = finInput(prefix, 'Nit').value.trim().toUpperCase();
                     out.direccion = finInput(prefix, 'Direccion').value.trim();
                     out.dpi = finInput(prefix, 'Dpi').value.trim();
@@ -949,10 +1158,14 @@
                 newPanes = { owner: isVecino && finCaps.crear && finCaps.datos, fee: isVecino && finCaps.crear };
                 setFinanceTabs(newUserForm, newPanes);
                 if (!newPanes.owner && !newPanes.fee) return;
-                if (!keep || !finInput('new', 'FeeFrom').value) fillFinance('new', null);
+                if (!keep || !finInput('new', 'FeeFrom').value) fillFinance('new', null, document.getElementById('newUserName').value);
                 if (newPanes.fee) {
                     financeSettings = await SISDEL.getFinanceSettings(condoId);
                     paintFee('new');
+                    // Un vecino nuevo no tiene cuotas todavia
+                    if (!keep || !monthState.new.on) setupMonths('new', []);
+                } else {
+                    setupMonths('new', null);
                 }
             }
 
@@ -965,8 +1178,8 @@
                 editingPanes = { ...panes, write };
                 setFinanceTabs(editUserForm, panes);
                 if (!panes.owner && !panes.fee) return;
-                fillFinance('edit', editingFicha);
-                ['Nit', 'Direccion', 'Dpi', 'Notes', 'Water'].forEach((name) => { finInput('edit', name).disabled = !write; });
+                fillFinance('edit', editingFicha, user.name);
+                ['Propietario', 'Nit', 'Direccion', 'Dpi', 'Notes', 'Water'].forEach((name) => { finInput('edit', name).disabled = !write; });
                 // "Cobrar desde" de una ficha que ya existe es de finiquitar; al crearla, de registrar residentes
                 const feeFromOk = editable && (editingFicha ? finCaps.cobro : finCaps.crear);
                 finInput('edit', 'FeeFrom').disabled = !feeFromOk;
@@ -976,6 +1189,10 @@
                 if (panes.fee) {
                     financeSettings = await SISDEL.getFinanceSettings(condoId);
                     paintFee('edit');
+                    // Las cuotas que ya tiene, para marcarlas como cargadas y no repetirlas
+                    setupMonths('edit', editable && finCaps.meses ? await SISDEL.getFinanceCharges(condoId, user.id) : null);
+                } else {
+                    setupMonths('edit', null);
                 }
                 if (panes.owner && editingFicha && editingFicha.nit) paintOwner('edit');
             }
@@ -1097,6 +1314,7 @@
 
             editUserForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
+                if (editingPanes.fee && !monthsReady('edit', editUserForm)) return;
                 const id = document.getElementById('editUserId').value;
                 const updates = {
                     name: document.getElementById('editUserName').value,
@@ -1115,14 +1333,17 @@
                     // Ficha del Sistema Financiero: solo los campos habilitados que cambiaron
                     let financeOk = true;
                     if (editingPanes.owner || editingPanes.fee) {
-                        const inputOf = { nit: 'Nit', direccion: 'Direccion', dpi: 'Dpi', notes: 'Notes', waterUnits: 'Water', feeFrom: 'FeeFrom' };
+                        const inputOf = { propietario: 'Propietario', nit: 'Nit', direccion: 'Direccion', dpi: 'Dpi', notes: 'Notes', waterUnits: 'Water', feeFrom: 'FeeFrom' };
                         const changes = changedFinance(readFinance('edit', editingPanes), editingFicha);
                         Object.keys(changes).forEach((key) => { if (finInput('edit', inputOf[key]).disabled) delete changes[key]; });
                         // Sin ficha y sin datos nuevos no se crea nada (solo seria el mes actual por defecto)
                         const onlyDefault = !editingFicha && Object.keys(changes).every((key) => key === 'feeFrom' && changes.feeFrom === SISDEL.localToday().slice(0, 7));
                         if (Object.keys(changes).length && !onlyDefault) financeOk = await SISDEL.saveFinanceResident(condoId, id, changes, editingFicha);
                     }
-                    SISDEL.showToast(financeOk ? 'Usuario actualizado' : 'Usuario actualizado, pero no se pudieron guardar sus datos del Sistema Financiero', financeOk ? 'success' : 'warning');
+                    // Cuotas de los meses marcados en Cuota y agua
+                    const monthsNote = editingPanes.fee ? await saveMonthCharges('edit', id) : '';
+                    const done = `Usuario actualizado${monthsNote ? ` | ${monthsNote}` : ''}`;
+                    SISDEL.showToast(financeOk ? done : `${done}, pero no se pudieron guardar sus datos del Sistema Financiero`, financeOk ? 'success' : 'warning');
                     modalEditUser.style.display = 'none';
                     await renderStats();
                     await renderUsers();

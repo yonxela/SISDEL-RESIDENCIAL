@@ -137,8 +137,36 @@
         return feeInfo({ ...s, feeBreakdown: breakdown }, amount, period);
     }
 
+    // ── Cuotas de meses elegidos con solo algunos conceptos (ventana del vecino en admin.html) ──
+    // Conceptos que se le pueden cobrar a un lote: los del desglose (sin desglose, la cuota entera cuenta como
+    // mantenimiento) mas su agua por paja. [{ key, label, amount }]
+    function lotParts(settings, resident) {
+        const s = settings || {};
+        const base = total(s.feeBreakdown) > 0 ? normalize(s.feeBreakdown) : normalize({ maintenance: s.fee });
+        base.water = round2(base.water + waterOf(s, resident));
+        return PARTS.filter((p) => base[p.key] > 0).map((p) => ({ key: p.key, label: p.label, amount: base[p.key] }));
+    }
+    // Cuota del mes `period` con los conceptos `keys`: { amount, concept, breakdown } o null si no suma nada.
+    // Sin desglose configurado y con la cuota entera, el concepto es el de siempre ("Cuota - Noviembre 2026") y no
+    // lleva breakdown; en otro caso la descripcion nombra solo los conceptos elegidos y el mes.
+    function monthFee(settings, resident, keys, period) {
+        const s = settings || {};
+        const chosen = lotParts(s, resident).filter((p) => (keys || []).includes(p.key));
+        const amount = round2(chosen.reduce((sum, p) => sum + p.amount, 0));
+        if (amount <= 0) return null;
+        if (total(s.feeBreakdown) <= 0 && chosen.length === 1 && chosen[0].key === 'maintenance') {
+            const mt = /^(\d{4})-(\d{2})$/.exec(String(period || ''));
+            const month = mt ? MONTHS[parseInt(mt[2], 10) - 1] : '';
+            const concept = month ? `Cuota - ${month.charAt(0).toUpperCase()}${month.slice(1)} ${mt[1]}` : 'Cuota';
+            return { amount, concept, breakdown: null };
+        }
+        const breakdown = {};
+        chosen.forEach((p) => { breakdown[p.key] = p.amount; });
+        return { amount, concept: describe(breakdown, s.currency, period), breakdown };
+    }
+
     return {
         PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel,
-        WATER_UNITS, waterUnits, waterOf, residentFee, residentFeeInfo
+        WATER_UNITS, waterUnits, waterOf, residentFee, residentFeeInfo, lotParts, monthFee
     };
 });

@@ -543,7 +543,8 @@ const SISDEL = (() => {
     // Datos del dueno (DPI, NIT, direccion, observaciones) y del lote (agua: 0, 0.5 o 1 paja; desde que mes se cobra).
     // La leen quienes tienen finanzas.ver; la crea quien registra residentes y la cambia quien los edita (cambiar
     // "cobrar desde" es de finiquitar): las reglas son la barrera. OIKOS la recibe sola por la sincronizacion.
-    const FINANCE_RESIDENT_FIELDS = ['dpi', 'nit', 'direccion', 'notes', 'waterUnits', 'ownerGroup', 'feeFrom'];
+    // propietario: nombre del dueno cuando no es el mismo vecino (por ejemplo, si alquila); vacio = el vecino
+    const FINANCE_RESIDENT_FIELDS = ['propietario', 'dpi', 'nit', 'direccion', 'notes', 'waterUnits', 'ownerGroup', 'feeFrom'];
     const WATER_UNITS = [0, 0.5, 1];
 
     // Lotes del mismo dueno: la misma clave por NIT. Un C/F o un NIT vacio no agrupa ('').
@@ -569,6 +570,33 @@ const SISDEL = (() => {
             const snap = await sub(condominioId, 'finanzas_residentes').where('ownerGroup', '==', ownerGroup).get(SERVER);
             return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((r) => !r.deleted);
         } catch (error) { console.warn('getFinanceResidentsByOwner', error); return []; }
+    }
+
+    // Cargos del vecino (vivos y anulados): para no repetir la cuota de un mes ni reusar el id de una anulada.
+    // null si no se pudieron leer (sin finanzas.ver o sin red)
+    async function getFinanceCharges(condominioId, residentId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_movimientos').where('resiId', '==', residentId).get(SERVER);
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => t.type === 'charge');
+        } catch (error) { console.warn('getFinanceCharges', error); return null; }
+    }
+
+    // Crea movimientos NUEVOS del Sistema Financiero (cada uno con su id, que es el id del documento), de a 400 por
+    // escritura. Las reglas exigen el privilegio de cada tipo. Devuelve cuantos se guardaron.
+    async function createFinanceMovements(condominioId, movements) {
+        let saved = 0;
+        try {
+            await authReady();
+            for (let i = 0; i < movements.length; i += 400) {
+                const chunk = movements.slice(i, i + 400);
+                const batch = db().batch();
+                chunk.forEach((tx) => batch.set(sub(condominioId, 'finanzas_movimientos').doc(String(tx.id)), tx));
+                await batch.commit();
+                saved += chunk.length;
+            }
+        } catch (error) { reportError('createFinanceMovements', error); }
+        return saved;
     }
 
     async function getFinanceSettings(condominioId) {
@@ -1225,6 +1253,7 @@ const SISDEL = (() => {
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
         getFinanceResident, getFinanceResidentsByOwner, getFinanceSettings, saveFinanceResident, ownerGroupOf,
+        getFinanceCharges, createFinanceMovements,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered, markVisitAsExited, isVisitInside,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,

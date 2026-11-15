@@ -509,9 +509,11 @@
                         <div class="relative flex-1 max-w-sm"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="res-search" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar residente..." oninput="renderResidents()"></div>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
+                    <!-- SISDEL: con muchos residentes la lista muestra los 50 que mas deben; los demas se buscan (ver renderResidents) -->
+                    <p id="res-list-note" class="hidden text-xs text-slate-500 dark:text-slate-400 -mt-2"></p>
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-visible">
                         <table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50/50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-600 text-xs text-slate-500 dark:text-slate-300 uppercase"><th class="py-4 px-6" id="th-res-unit">Referencia</th><th class="py-4 px-6" id="th-res-name">Nombre</th><th class="py-4 px-6">DPI</th><th class="py-4 px-6" id="th-res-phone">Teléfono</th><th class="py-4 px-6" id="th-res-lot">Lote</th><th class="py-4 px-6 text-right" id="th-res-bal">Saldo</th><th class="py-4 px-6 text-center" id="th-res-ac">Acciones</th></tr></thead>
-                        <tbody id="residents-table-body" class="text-sm text-slate-700 dark:text-slate-200 divide-y divide-slate-50 dark:divide-slate-700"></tbody></table>
+                        <tbody id="residents-table-body" class="text-sm text-slate-700 dark:text-slate-200 divide-y divide-slate-200 dark:divide-slate-600"></tbody></table>
                     </div>
                 </div>
                 <!-- VIEW 3: ACCOUNTING -->
@@ -2296,21 +2298,40 @@
         window.onclick = function (e) { if (!e.target.matches('.drop-btn') && !e.target.closest('.drop-btn')) document.querySelectorAll('.dropdown').forEach(el => el.classList.remove('active')); }
 
         let showClosedResidents = false;
+        // SISDEL: cuantos residentes muestra la lista sin busqueda (los que mas deben); los demas, con el buscador
+        const RES_LIST_LIMIT = 50;
         function toggleShowClosed() { showClosedResidents = !showClosedResidents; renderResidents(); }
         // SISDEL: busqueda inteligente de residentes (sisdel-busqueda.js): por el principio de cada palabra, sin importar
         // acentos ni mayusculas, en cualquier orden y con los mejores resultados primero. El primer campo es el nombre.
         function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi]; }
         // Los residentes que muestra la lista ahora (finiquitados ocultos o no, y lo escrito en la busqueda)
-        function visibleResidents() {
+        // SISDEL: saldo que se muestra de un residente: con regla de mora incluye la mora a hoy (ms dice cuanto es)
+        function residentShownBalance(r) {
+            const ms = sisdelMoraOf(r.id, r.balance);
+            return { ms, shown: ms ? ms.total : r.balance };
+        }
+        // SISDEL: la lista que muestra OIKOS. Sin busqueda y con mas de RES_LIST_LIMIT residentes son los que mas deben
+        // (saldo con mora, de mayor a menor deuda; si deben menos de RES_LIST_LIMIT se completa con los demas en su orden):
+        // los demas se encuentran con el buscador. Asi un condominio grande (La Perla, 719 lotes) abre rapido y empieza
+        // por lo importante. Con busqueda, todas las coincidencias. La usan la tabla y el anterior/siguiente del formulario.
+        function residentsView() {
             const search = document.getElementById('res-search')?.value || '';
             const all = Store.get('residents');
             const res = showClosedResidents ? all : all.filter(isResidentActive);
-            return search.trim() ? SisdelBusqueda.filter(res, search, residentSearchFields) : res;
+            if (search.trim()) return { list: SisdelBusqueda.filter(res, search, residentSearchFields), total: res.length, search: true, limited: false };
+            if (res.length <= RES_LIST_LIMIT) return { list: res, total: res.length, search: false, limited: false };
+            const list = res.map((r, i) => ({ r, i, owed: Math.max(0, -residentShownBalance(r).shown) }))
+                .sort((a, b) => (b.owed - a.owed) || (a.i - b.i))
+                .slice(0, RES_LIST_LIMIT)
+                .map(x => x.r);
+            return { list, total: res.length, search: false, limited: true };
         }
+        function visibleResidents() { return residentsView().list; }
         function renderResidents() {
             const all = Store.get('residents');
             const closedCount = all.filter(r => !isResidentActive(r)).length;
-            const res = visibleResidents();
+            const view = residentsView();
+            const res = view.list;
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
                 tog.classList.toggle('hidden', closedCount === 0 && !showClosedResidents);
@@ -2319,15 +2340,23 @@
             renderDupFeeBanner();
             const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const tbody = document.getElementById('residents-table-body');
+            const balanceOf = new Map(res.map(r => [r.id, residentShownBalance(r)]));
+            // SISDEL: la nota dice que la lista es de los que mas deben (y que los demas se buscan) o cuantos encontro la busqueda
+            const note = document.getElementById('res-list-note');
+            if (note) {
+                note.textContent = view.limited
+                    ? `Se muestran los ${RES_LIST_LIMIT} residentes con más deuda, de mayor a menor (de ${view.total}). Para ver a los demás, búsquelos por nombre, casa o teléfono.`
+                    : (view.search ? `${res.length} residente(s) encontrado(s).` : '');
+                note.classList.toggle('hidden', !note.textContent);
+            }
             if (res.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-10 text-slate-400"><i class="fas fa-users text-3xl block mb-2"></i>No hay residentes para mostrar.</td></tr>';
                 return;
             }
             tbody.innerHTML = res.map(r => {
                 const closed = !isResidentActive(r);
-                // SISDEL: con regla de mora el saldo incluye la mora a hoy (y se dice cuanto es)
-                const ms = sisdelMoraOf(r.id, r.balance);
-                const shownBalance = ms ? ms.total : r.balance;
+                const ms = balanceOf.get(r.id).ms;
+                const shownBalance = balanceOf.get(r.id).shown;
                 const moraLine = ms && ms.mora > 0.005 ? `<span class="block text-[10px] font-semibold text-amber-600 dark:text-amber-400">incl. mora ${formatMoney(ms.mora)}</span>` : '';
                 const balCls = shownBalance < -0.005 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400';
                 const closedBadge = closed

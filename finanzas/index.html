@@ -16,7 +16,7 @@
     <script src="./vendor/chart.umd.min.js"></script>
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
-    <script src="./sisdel-cuotas.js?v=20261115b"></script>
+    <script src="./sisdel-cuotas.js?v=20261115c"></script>
     <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
     <script src="./sisdel-mora.js?v=20261115b"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
@@ -559,6 +559,17 @@
                                 </div>
                                 <p class="text-xs mt-3 text-slate-600 dark:text-slate-300"><span class="font-semibold">Descripción del cargo:</span> <span id="cfg-fee-preview"></span></p>
                             </div>
+                            <!-- SISDEL: precio del agua por paja; el agua de cada lote (residente.waterUnits) se suma a la cuota (ver sisdel-cuotas.js) -->
+                            <div class="mt-2 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40" id="cfg-water-box">
+                                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fas fa-droplet mr-1 text-blue-500"></i>Agua por lote (paja de agua)</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Si el agua se cobra según la paja de cada lote, escriba aquí lo que paga al mes cada tipo de lote. Se suma a la cuota mensual de ese lote; los lotes sin casa no pagan agua. Deje en blanco si todos pagan la misma cuota. La paja de cada lote se elige en su ficha (pestaña Cuota y agua).</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-water-full">Paja completa (por mes)</label><input type="number" step="0.01" min="0" id="cfg-water-full" oninput="updateWaterPreview()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" for="cfg-water-half">Media paja (por mes)</label><input type="number" step="0.01" min="0" id="cfg-water-half" oninput="updateWaterPreview()" placeholder="0.00" class="w-full px-4 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                </div>
+                                <p class="text-[11px] mt-2 text-slate-500 dark:text-slate-400">Si deja uno en blanco se calcula del otro: la media paja es la mitad de la paja completa (y la paja completa, el doble de la media). Escriba los dos si no guardan esa proporción.</p>
+                                <p class="text-xs mt-3 text-slate-600 dark:text-slate-300"><span class="font-semibold">Cuota mensual de un lote:</span> <span id="cfg-water-preview"></span></p>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-fee">Cuota Mensual (suma del desglose)</label><input type="number" step="0.01" id="cfg-fee" readonly class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-day">Día de Cobro (1-28)</label><input type="number" min="1" max="28" id="cfg-day" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
@@ -893,9 +904,9 @@
                         <select id="res-water" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" onchange="renderResConcepts()">
                             <option value="0">Sin agua</option>
                             <option value="0.5">Media paja</option>
-                            <option value="1">Una paja</option>
+                            <option value="1">Paja completa</option>
                         </select>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">El agua se cobra solo a los lotes con casa.</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1" id="res-water-help">El agua se cobra solo a los lotes con casa.</p>
                     </div>
                     <div id="res-fee-info" class="text-sm px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200"></div>
                 <!-- Selector de meses a cargar (cuotas). Aplica al CREAR y al EDITAR. Grid de 12 meses del año visible con
@@ -2121,7 +2132,7 @@
                 scanDuplicateFees();
                 if (currentView === 'residents') renderResidents();
                 if (currentView === 'dashboard') renderDashboard();
-                setTimeout(() => showToast(`Cargos automáticos aplicados: ${appliedThisRun} cuota(s)${s.waterUnitPrice ? ' (cada lote con su agua)' : ` de ${formatMoney(fee)}`}.`), 1500);
+                setTimeout(() => showToast(`Cargos automáticos aplicados: ${appliedThisRun} cuota(s)${SisdelCuotas.waterPrices(s).full > 0 ? ' (cada lote con su agua)' : ` de ${formatMoney(fee)}`}.`), 1500);
             }
             persist();
         }
@@ -2557,8 +2568,22 @@
         function resChosenFee(period) { return SisdelCuotas.monthFee(Store.get('settings'), resFormLot(), [...resConceptKeys], period); }
         // Los cinco conceptos con su monto de Configuracion (desglose) y el agua del lote. Los montos se cambian solo en
         // Configuracion; un concepto sin monto no se marca
+        // SISDEL: el selector de agua muestra lo que cuesta cada paja (Configuracion > Agua por lote)
+        function renderResWaterOptions(s) {
+            const prices = SisdelCuotas.waterPrices(s);
+            const label = (name, price) => price > 0 ? `${name} - ${formatMoney(price)} al mes` : name;
+            const half = document.querySelector('#res-water option[value="0.5"]');
+            const full = document.querySelector('#res-water option[value="1"]');
+            if (half) half.textContent = label('Media paja', prices.half);
+            if (full) full.textContent = label('Paja completa', prices.full);
+            const help = document.getElementById('res-water-help');
+            if (help) help.textContent = prices.full > 0
+                ? 'El agua se cobra solo a los lotes con casa y se suma a la cuota mensual. El precio de cada paja se cambia en Configuración.'
+                : 'Todavía no hay precio del agua: escríbalo en Configuración (Agua por lote) para que la paja se sume a la cuota.';
+        }
         function renderResConcepts() {
             const s = Store.get('settings') || {};
+            renderResWaterOptions(s);
             const lot = resFormLot();
             const amounts = {};
             SisdelCuotas.lotParts(s, lot).forEach(p => { amounts[p.key] = p.amount; });
@@ -2855,7 +2880,7 @@
             const { period, pending } = feeRunTargets();
             if (pending.length === 0) return;
             const totalFees = pending.reduce((sum, r) => sum + SisdelCuotas.residentFee(s, r), 0);
-            if (!confirm(`¿Aplicar la cuota de ${feePeriodLongLabel(period)} a ${pending.length} residente(s)? Total ${formatMoney(totalFees)}${s.waterUnitPrice ? ' (cada lote con su agua)' : ''}.`)) return;
+            if (!confirm(`¿Aplicar la cuota de ${feePeriodLongLabel(period)} a ${pending.length} residente(s)? Total ${formatMoney(totalFees)}${SisdelCuotas.waterPrices(s).full > 0 ? ' (cada lote con su agua)' : ''}.`)) return;
             History.push();
             const txs = Store.getRaw('transactions');
             const curKey = currentFeePeriod();
@@ -4662,12 +4687,39 @@
             if (preview) preview.textContent = sum > 0
                 ? SisdelCuotas.describe(breakdown, (document.getElementById('cfg-curr') || {}).value, currentFeePeriod())
                 : 'Escriba el monto de al menos un concepto: la cuota es la suma.';
+            updateWaterPreview();
+        }
+        // SISDEL: precio del agua por paja (settings.waterUnitPrice = paja completa, settings.waterHalfPrice = media paja)
+        function readWaterPrices() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+            return { waterUnitPrice: val('cfg-water-full'), waterHalfPrice: val('cfg-water-half') };
+        }
+        function updateWaterPreview() {
+            const raw = readWaterPrices();
+            const prices = SisdelCuotas.waterPrices(raw);
+            const currency = (document.getElementById('cfg-curr') || {}).value;
+            const money = (n) => SisdelCuotas.money(n, currency);
+            // Lo que se deduce del otro precio se ve como sugerencia en el campo que quedo en blanco
+            const full = document.getElementById('cfg-water-full'), half = document.getElementById('cfg-water-half');
+            if (full) full.placeholder = prices.full > 0 && !(parseFloat(raw.waterUnitPrice) > 0) ? `${prices.full.toFixed(2)} (el doble de la media)` : '0.00';
+            if (half) half.placeholder = prices.half > 0 && !(parseFloat(raw.waterHalfPrice) > 0) ? `${prices.half.toFixed(2)} (la mitad)` : '0.00';
+            const preview = document.getElementById('cfg-water-preview');
+            if (!preview) return;
+            const base = SisdelCuotas.total(readFeeBreakdown());
+            if (prices.full <= 0) { preview.textContent = 'Sin precio del agua: todos los lotes pagan la misma cuota mensual.'; return; }
+            if (base <= 0) { preview.textContent = 'Escriba primero la cuota mensual (desglose): el agua se suma a ella.'; return; }
+            const lot = (units) => money(SisdelCuotas.residentFee({ fee: base, waterUnitPrice: raw.waterUnitPrice, waterHalfPrice: raw.waterHalfPrice }, { waterUnits: units }));
+            preview.textContent = `sin agua ${lot(0)} · con media paja ${lot(0.5)} · con paja completa ${lot(1)}.`;
         }
         function fillFeeBreakdown(s) {
             let breakdown = SisdelCuotas.normalize(s.feeBreakdown);
             // Una cuota guardada antes del desglose se muestra completa en Mantenimiento
             if (SisdelCuotas.total(breakdown) <= 0 && parseFloat(s.fee) > 0) breakdown = { ...breakdown, maintenance: parseFloat(s.fee) };
             Object.entries(FEE_PART_INPUTS).forEach(([key, id]) => { const el = document.getElementById(id); if (el) el.value = breakdown[key] > 0 ? breakdown[key] : ''; });
+            // El precio de cada paja, tal como se guardo (en blanco = se deduce del otro)
+            const fullEl = document.getElementById('cfg-water-full'), halfEl = document.getElementById('cfg-water-half');
+            if (fullEl) fullEl.value = parseFloat(s.waterUnitPrice) > 0 ? s.waterUnitPrice : '';
+            if (halfEl) halfEl.value = parseFloat(s.waterHalfPrice) > 0 ? s.waterHalfPrice : '';
             const currency = document.getElementById('cfg-curr');
             if (currency && !currency.dataset.sisdelFee) { currency.dataset.sisdelFee = '1'; currency.addEventListener('change', updateFeeTotal); }
             updateFeeTotal();
@@ -4708,6 +4760,8 @@
             // SISDEL: la cuota es la suma del desglose
             const feeBreakdown = readFeeBreakdown();
             const feeTotal = SisdelCuotas.total(feeBreakdown);
+            const waterRaw = readWaterPrices();
+            const waterPrice = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0; };
             // Se conservan TODOS los campos previos (chargedMonths, conceptos,
             // contador de recibos, etc.) y se sobreescriben solo los editables.
             const s = {
@@ -4717,6 +4771,9 @@
                 currency: document.getElementById('cfg-curr').value,
                 fee: feeTotal,   // SISDEL: la suma del desglose; 0 = no hay cuota configurada y no se cobra nada
                 feeBreakdown,
+                // SISDEL: precio del agua por paja; en blanco guarda 0 (nada se borra) y el otro precio se deduce
+                waterUnitPrice: waterPrice(waterRaw.waterUnitPrice),
+                waterHalfPrice: waterPrice(waterRaw.waterHalfPrice),
                 chargeDay: Math.min(28, Math.max(1, parseInt(document.getElementById('cfg-day').value, 10) || 1)),   // SISDEL: numero 1-28
                 graceDays: Number.isFinite(parseInt(document.getElementById('cfg-grace').value, 10)) ? Math.max(0, parseInt(document.getElementById('cfg-grace').value, 10)) : 5,   // SISDEL: 0 vale 0
                 theme: document.getElementById('cfg-theme').checked ? 'dark' : 'light',

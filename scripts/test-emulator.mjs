@@ -1048,6 +1048,7 @@ async function run() {
     // Configuracion: cuota y cobro, datos generales y conceptos
     const cfgCuota = await opWith('u-cfc', 'PCFC1', 'Cuota y cobro', ['finanzas.config_cuota']);
     await allowed('config cuota: cambia el desglose de la cuota (mantenimiento, agua...)', () => patchCfg(cfgCuota, { fee: 500, feeBreakdown: { maintenance: 400, water: 100, garbage: 0, electricity: 0, other: 0 } }));
+    await allowed('config cuota: cambia el precio del agua (paja completa y media paja)', () => patchCfg(cfgCuota, { waterUnitPrice: 160, waterHalfPrice: 100 }));
     await allowed('config cuota: cambia cuota, dia, gracia y modo', () => patchCfg(cfgCuota, { fee: 350, chargeDay: 5, graceDays: 3, feeMode: 'manual' }));
     await denied('config cuota: no cambia la moneda', () => patchCfg(cfgCuota, { currency: 'USD' }));
     await denied('config cuota: no cambia el nombre', () => patchCfg(cfgCuota, { name: 'Otro' }));
@@ -1055,6 +1056,9 @@ async function run() {
     await allowed('config general: cambia moneda, idioma, nombre y tema', () => patchCfg(cfgGen, { currency: 'GTQ', lang: 'es', name: 'Villa Ferrer', theme: 'light' }));
     await denied('config general: no cambia el desglose de la cuota', () => patchCfg(cfgGen, { feeBreakdown: { maintenance: 1 } }));
     await denied('config general: no cambia la cuota', () => patchCfg(cfgGen, { fee: 1 }));
+    await denied('config general: no cambia el precio del agua', () => patchCfg(cfgGen, { waterUnitPrice: 1 }));
+    await denied('config general: no cambia el precio de la media paja', () => patchCfg(cfgGen, { waterHalfPrice: 1 }));
+    await denied('config cuota: no mezcla el precio del agua con la moneda', () => patchCfg(cfgCuota, { waterUnitPrice: 90, currency: 'USD' }));
     await denied('config general: no cambia el modo de cobro', () => patchCfg(cfgGen, { feeMode: 'auto' }));
     const cfgCon = await opWith('u-cfn', 'PCFN1', 'Conceptos', ['finanzas.config_conceptos']);
     await allowed('config conceptos: edita ambas listas', () => patchCfg(cfgCon, { customIncomeConcepts: ['A'], customExpenseConcepts: ['B'] }));

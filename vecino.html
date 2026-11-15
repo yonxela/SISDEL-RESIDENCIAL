@@ -366,7 +366,7 @@
             // dejan cambiar eso (usuarios: phone y email; finanzas_residentes: propietario, NIT, direccion y DPI)
             const canFicha = SISDEL.can('vecino.ficha');
             const fichaEl = (id) => document.getElementById(id);
-            const WATER_NAMES = { 0: 'Sin agua', 0.5: 'Media paja', 1: 'Una paja' };
+            const WATER_NAMES = { 0: 'Sin agua', 0.5: 'Media paja', 1: 'Paja completa' };
             let fichaUser = null;
             let fichaData = null;
             fichaEl('btnMyFicha').style.display = canFicha ? 'inline-flex' : 'none';

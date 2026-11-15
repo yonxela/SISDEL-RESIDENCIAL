@@ -12,8 +12,9 @@
    de la cuota (movimiento.period, AAAA-MM), no de la fecha en que se registra: una cuota de octubre cobrada
    en noviembre dice octubre.
 
-   Agua por lote: si el condominio cobra el agua por paja (settings.waterUnitPrice), la cuota de cada lote es la
-   del condominio mas su agua (residentFee y residentFeeInfo, al final del archivo).
+   Agua por lote: si el condominio cobra el agua por paja (settings.waterUnitPrice = paja completa y
+   settings.waterHalfPrice = media paja), la cuota de cada lote es la del condominio mas su agua (residentFee y
+   residentFeeInfo, al final del archivo).
 
    Lo carga OIKOS (finanzas/index.html) en el navegador y lo usa el servidor al generar las cuotas del dia
    (functions/src/finanzas/mora.js). functions/src/finanzas/cuotas.js es una COPIA IDENTICA de este archivo
@@ -108,18 +109,27 @@
     }
 
     // ── Agua por lote ──
-    // En un condominio que cobra el agua por "paja de agua", el precio de la paja se guarda en la configuracion
-    // (settings.waterUnitPrice) y cada lote guarda cuanta tiene (residente.waterUnits): 0 = sin casa, no paga agua;
-    // 0.5 = media paja; 1 = una paja. La cuota de un lote es la cuota del condominio (settings.fee) mas su agua.
-    // Sin precio de la paja nada cambia: todos pagan la misma cuota.
+    // En un condominio que cobra el agua por "paja de agua", los precios se guardan en la configuracion: la paja
+    // completa en settings.waterUnitPrice y la media paja en settings.waterHalfPrice. Cada lote guarda cuanta
+    // tiene (residente.waterUnits): 0 = sin casa, no paga agua; 0.5 = media paja; 1 = paja completa. La cuota de
+    // un lote es la cuota del condominio (settings.fee) mas su agua. Con solo uno de los dos precios escrito, el
+    // otro se calcula (la mitad o el doble); sin ninguno nada cambia: todos pagan la misma cuota.
     const WATER_UNITS = [0, 0.5, 1];
     function waterUnits(resident) {
         const n = parseFloat(resident && resident.waterUnits);
         return WATER_UNITS.includes(n) ? n : 0;
     }
+    // Precio mensual del agua: { full, half } (0 y 0 si el condominio no cobra el agua por paja)
+    function waterPrices(settings) {
+        const full = amountOf(settings && settings.waterUnitPrice);
+        const half = amountOf(settings && settings.waterHalfPrice);
+        return { full: full > 0 ? full : round2(half * 2), half: half > 0 ? half : round2(full / 2) };
+    }
     // Lo que paga de agua el lote cada mes
     function waterOf(settings, resident) {
-        return round2(waterUnits(resident) * amountOf(settings && settings.waterUnitPrice));
+        const units = waterUnits(resident);
+        const prices = waterPrices(settings);
+        return units === 1 ? prices.full : units === 0.5 ? prices.half : 0;
     }
     // La cuota mensual de un residente; 0 si el condominio no cobra cuota
     function residentFee(settings, resident) {
@@ -167,6 +177,6 @@
 
     return {
         PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel,
-        WATER_UNITS, waterUnits, waterOf, residentFee, residentFeeInfo, lotParts, monthFee
+        WATER_UNITS, waterUnits, waterPrices, waterOf, residentFee, residentFeeInfo, lotParts, monthFee
     };
 });

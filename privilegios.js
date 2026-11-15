@@ -54,6 +54,7 @@
                 { key: 'usuarios.editar', sub: 'Editar', label: 'Editar usuarios', description: 'Cambiar nombre, casa, teléfono y cargo de un usuario.', roles: ['admin'], requires: ['usuarios.ver'], enforce: 'reglas' },
                 { key: 'usuarios.estado', sub: 'Editar', parent: 'usuarios.editar', label: 'Activar o desactivar usuarios', description: 'Un usuario desactivado no puede entrar hasta que se vuelva a activar.', sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.pago', sub: 'Editar', parent: 'usuarios.editar', label: 'Cambiar el estado de pago', description: 'Marcar a un vecino como moroso o al día a mano (con la mora automática lo calcula el Sistema Financiero).', sensitive: true, enforce: 'reglas' },
+                { key: 'usuarios.ficha', sub: 'Editar', parent: 'usuarios.editar', label: 'Botón Editar de la ficha del vecino', description: 'La ventana del vecino se abre en solo lectura y este botón la desbloquea. Además deja ver y cambiar los datos del propietario (nombre, NIT, dirección, DPI y observaciones) aunque no use el Sistema Financiero. El agua, el cobro y las cuotas siguen pidiendo sus privilegios del Sistema Financiero.', sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.emergencia', sub: 'Editar', parent: 'usuarios.editar', label: 'Editar contactos de emergencia de vecinos', description: 'Los familiares a quienes avisa el botón de pánico de un vecino.', enforce: 'reglas' },
                 { key: 'usuarios.eliminar', sub: 'Eliminar', label: 'Eliminar usuarios', description: 'Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.codigos', sub: 'Códigos y privilegios', label: 'Ver y cambiar códigos de acceso', description: 'Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true, enforce: 'reglas' },
@@ -106,6 +107,7 @@
                 { key: 'vecino.vehiculos', sub: 'Vehículos', label: 'Registrar sus vehículos', description: 'El vecino registra sus vehículos.', roles: ['vecino'], enforce: 'reglas' },
                 { key: 'vecino.vehiculos_quitar', sub: 'Vehículos', parent: 'vecino.vehiculos', label: 'Quitar sus vehículos', description: 'El vecino borra un vehículo registrado.', enforce: 'reglas' },
                 { key: 'vecino.marbete', sub: 'Vehículos', parent: 'vecino.vehiculos', label: 'Ver y descargar su marbete', description: 'El pase vehicular con su código QR.', enforce: 'pantalla' },
+                { key: 'vecino.ficha', sub: 'Mis datos', label: 'Ver y editar su ficha', description: 'En su panel, el vecino ve su ficha (casa, fase, contacto, propietario y agua del lote) y con el botón Editar cambia su teléfono, su correo y los datos del propietario (nombre, NIT, dirección y DPI). No cambia su nombre, su casa, el agua ni lo que se le cobra.', roles: ['vecino'], enforce: 'reglas' },
                 { key: 'vecino.contactos', sub: 'Emergencia', label: 'Editar sus contactos de emergencia', description: 'Los familiares a quienes avisa su botón de pánico.', roles: ['vecino'], enforce: 'reglas' },
                 { key: 'panico.activar', sub: 'Emergencia', label: 'Usar el botón de pánico', description: 'Enviar una alerta de pánico a la garita y a la administración.', roles: ['vecino', 'policia', 'supervisor'], enforce: 'reglas' },
                 { key: 'panico.cancelar', sub: 'Emergencia', parent: 'panico.activar', label: 'Cancelar su alerta', description: 'El vecino anula su alerta de pánico mientras siga activa.', enforce: 'reglas' }
@@ -306,7 +308,7 @@
             id: 'sys-secretaria', name: 'Secretaria / oficina', role: 'operador', system: true,
             description: 'Atiende vecinos: los registra y edita, manda mensajes y ve visitas y alertas.',
             claves: [
-                ...tree('usuarios.panel', 'usuarios.ver', 'usuarios.crear'), 'usuarios.editar', 'usuarios.emergencia',
+                ...tree('usuarios.panel', 'usuarios.ver', 'usuarios.crear'), 'usuarios.editar', 'usuarios.ficha', 'usuarios.emergencia',
                 'mensajes.recibir', ...tree('mensajes.enviar'), 'mensajes.historial',
                 ...tree('visitas.ver'), 'visitas.gestionar', 'visitas.crear', 'visitas.editar', 'vehiculos.crear', 'vehiculos.editar',
                 'panico.ver', 'panico.contactos'
@@ -315,7 +317,7 @@
         {
             id: 'sys-contador', name: 'Contador / tesorero', role: 'operador', system: true,
             description: 'Solo el Sistema Financiero (residentes, cargos, pagos, egresos y reportes) y los datos de los vecinos que necesita.',
-            claves: [...tree('usuarios.ver'), 'usuarios.crear', 'usuarios.editar', 'mensajes.recibir', ...tree('finanzas.ver', 'finanzas.usar')]
+            claves: [...tree('usuarios.ver'), 'usuarios.crear', 'usuarios.editar', 'usuarios.ficha', 'mensajes.recibir', ...tree('finanzas.ver', 'finanzas.usar')]
         },
         {
             id: 'sys-jefe-seguridad', name: 'Jefe de seguridad', role: 'operador', system: true,

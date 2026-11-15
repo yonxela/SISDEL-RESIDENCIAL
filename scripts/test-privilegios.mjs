@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 145 privilegios: 30 paraguas y 115 acciones', [P.KEYS.length, roots.length, kids.length], [145, 30, 115]);
+equal('hay 147 privilegios: 31 paraguas y 116 acciones', [P.KEYS.length, roots.length, kids.length], [147, 31, 116]);
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
 yes('el arbol tiene como maximo cuatro niveles (paraguas, pantalla, reporte, impresion)', P.ITEMS.every((i) => i.depth <= 3));

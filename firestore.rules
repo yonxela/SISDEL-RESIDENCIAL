@@ -65,6 +65,7 @@ service cloud.firestore {
     function pUsuariosEditar(c) { return can(c, 'usuarios.editar', ['admin']); }
     function pUsuariosEstado(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.estado'); }
     function pUsuariosPago(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.pago'); }
+    function pUsuariosFicha(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.ficha'); }
     function pUsuariosEmergencia(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.emergencia'); }
     function pUsuariosEliminar(c) { return can(c, 'usuarios.eliminar', ['admin']); }
     function pUsuariosCodigos(c) { return can(c, 'usuarios.codigos', ['admin']); }
@@ -98,6 +99,7 @@ service cloud.firestore {
     function pVecinoHistorial(c) { return can(c, 'vecino.historial', ['vecino']); }
     function pVecinoVehiculos(c) { return can(c, 'vecino.vehiculos', ['vecino']); }
     function pVecinoVehiculosQuitar(c) { return pVecinoVehiculos(c) && childOk(c, 'vecino.vehiculos_quitar'); }
+    function pVecinoFicha(c) { return can(c, 'vecino.ficha', ['vecino']); }
     function pVecinoContactos(c) { return can(c, 'vecino.contactos', ['vecino']); }
     function pPanicoActivar(c) { return can(c, 'panico.activar', ['vecino', 'policia', 'supervisor']); }
     function pPanicoCancelar(c) { return pPanicoActivar(c) && childOk(c, 'panico.cancelar'); }
@@ -301,7 +303,13 @@ service cloud.firestore {
         allow update: if isMaster()
           || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights()
               && manageable(condoId, resource.data.role) && manageable(condoId, request.resource.data.role)
-              && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)));
+              && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)))
+          // El vecino, desde su ficha (vecino.ficha), cambia solo su telefono y su correo
+          || (pVecinoFicha(condoId) && request.auth.uid == userId && resource.data.role == 'vecino'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phone', 'email', 'updatedAt'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasAny(['phone', 'email'])
+              && request.resource.data.get('phone', '') is string && request.resource.data.get('phone', '').size() <= 40
+              && request.resource.data.get('email', '') is string && request.resource.data.get('email', '').size() <= 120);
         allow delete: if isMaster()
           || (pUsuariosEliminar(condoId) && manageable(condoId, resource.data.role) && userId != request.auth.uid);
       }
@@ -406,16 +414,44 @@ service cloud.firestore {
           && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'restored_at', 'updated_at', 'created_at', 'createdAt'])
               || pFinanzasResidentesEditar(condoId));
       }
+      // Ficha del vecino fuera del Sistema Financiero: el boton Editar de la ventana del vecino (usuarios.ficha) y el propio
+      // vecino desde su panel (vecino.ficha) solo tocan los datos del propietario. El agua, "cobrar desde", el finiquito y
+      // las cuotas siguen siendo del Sistema Financiero (residentRights y los movimientos).
+      function ownerKeys() { return ['propietario', 'nit', 'direccion', 'dpi', 'notes', 'ownerGroup']; }
+      function selfOwnerKeys() { return ['propietario', 'nit', 'direccion', 'dpi', 'ownerGroup']; }
+      function ownFicha(docId) { return isResident(condoId) && request.auth.uid == docId && pVecinoFicha(condoId); }
+      // ownerGroup es la clave del NIT ('nit:' + digitos y K) o vacio: nadie se une a los lotes de otro dueno a mano
+      function ownerGroupOk() {
+        return !('ownerGroup' in request.resource.data) || request.resource.data.ownerGroup == ''
+          || request.resource.data.ownerGroup == 'nit:' + string(request.resource.data.get('nit', '')).upper().replace('[^0-9K]', '');
+      }
+      // Mes actual de Guatemala (UTC-6): una ficha nueva fuera del Sistema Financiero se cobra desde este mes, como OIKOS
+      function guatemalaMonth() {
+        let t = request.time - duration.value(6, 'h');
+        return string(t.year()) + '-' + (t.month() < 10 ? '0' : '') + string(t.month());
+      }
+      // La fecha de alta (createdAt) decide desde cuando se cobran las cuotas automaticas: tiene que ser la de ahora
+      function newFichaOk(keys) {
+        return request.resource.data.keys().hasOnly(['id', 'feeFrom', 'createdAt', 'updated_at'].concat(keys))
+          && request.resource.data.get('feeFrom', '') == guatemalaMonth() && ownerGroupOk()
+          && (!('createdAt' in request.resource.data)
+              || (timestamp.value(request.resource.data.createdAt) > request.time - duration.value(10, 'm')
+                  && timestamp.value(request.resource.data.createdAt) < request.time + duration.value(10, 'm')));
+      }
       match /finanzas_residentes/{docId} {
-        allow read: if canReadFinance();
+        allow read: if canReadFinance() || pUsuariosFicha(condoId) || ownFicha(docId);
         // El residente nuevo con sus datos lo crea quien puede registrar residentes; el registro minimo (id, feeFrom) que
         // OIKOS crea solo al abrir para un vecino sin datos financieros lo admite cualquiera que use el Sistema Financiero
         allow create: if validFinanceItem()
           && (pFinanzasResidentesCrear(condoId)
-              || (pFinanzasUsar(condoId) && request.resource.data.keys().hasOnly(['id', 'feeFrom', 'updated_at', 'created_at', 'createdAt'])));
+              || (pFinanzasUsar(condoId) && request.resource.data.keys().hasOnly(['id', 'feeFrom', 'updated_at', 'created_at', 'createdAt']))
+              || (pUsuariosFicha(condoId) && request.resource.data.id == docId && newFichaOk(ownerKeys()))
+              || (ownFicha(docId) && request.resource.data.id == docId && newFichaOk(selfOwnerKeys())));
         // Un "toque" (solo la fecha de modificacion, y createdAt que OIKOS copia del vecino) lo hace OIKOS al operar
-        allow update: if pFinanzasUsar(condoId) && validFinanceItem()
-          && (finChanged().hasOnly(['updated_at', 'created_at', 'createdAt']) || residentRights());
+        allow update: if validFinanceItem()
+          && ((pFinanzasUsar(condoId) && (finChanged().hasOnly(['updated_at', 'created_at', 'createdAt']) || residentRights()))
+              || (pUsuariosFicha(condoId) && finChanged().hasOnly(ownerKeys().concat(['updated_at'])) && ownerGroupOk())
+              || (ownFicha(docId) && finChanged().hasOnly(selfOwnerKeys().concat(['updated_at'])) && ownerGroupOk()));
         allow delete: if false;
       }
       // Movimientos: cada tipo tiene su privilegio (cargo, pago, egreso) y anular es otro aparte

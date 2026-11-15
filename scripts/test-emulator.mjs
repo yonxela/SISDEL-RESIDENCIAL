@@ -386,7 +386,8 @@ async function run() {
     await denied('guardia no lee el sistema financiero', () => getDocs(collection(guard.db, `condominios/${A}/finanzas_movimientos`)));
     await denied('guardia no ve el DPI ni las notas de los vecinos', () => getDoc(finRef('finanzas_residentes', 'u-ana')(guard)));
     await denied('vecino no lee el sistema financiero', () => getDocs(collection(ana.db, `condominios/${A}/finanzas_residentes`)));
-    await denied('vecino no ve su propio registro financiero', () => getDoc(finRef('finanzas_residentes', finRes.id)(ana)));
+    // Con "Mi ficha" (vecino.ficha, de siempre para vecinos) lee su propio registro; el de otros y la lista, no
+    await allowed('vecino ve su propio registro financiero (Mi ficha)', () => getDoc(finRef('finanzas_residentes', finRes.id)(ana)));
     const luciaFin = await loginAs('LL200');
     await denied('admin de otro condominio no lee', () => getDocs(collection(luciaFin.db, `condominios/${A}/finanzas_movimientos`)));
     await denied('admin de otro condominio no escribe', () => setDoc(finRef('finanzas_movimientos', 'ajeno')(luciaFin), { id: 'ajeno', type: 'income', amount: 1 }));
@@ -678,7 +679,8 @@ async function run() {
     await allowed('la secretaria ve las visitas', () => getDocs(rcol(sec, 'visitas')));
     await allowed('la secretaria crea una visita para un vecino', () => setDoc(rref(sec, 'visitas', 'vis-sec'), { id: 'vis-sec', condominioId: A, userId: 'u-ana', visitorName: 'Proveedor', visitorInfo: '', vehiclePlate: '', plateNorm: '', visitDate: localDate(0), visitTime: null, casa: 'Casa 12', qrCode: 'VISSEC', status: 'pending', visitType: null, endDate: null, enteredAt: null, createdAt: ts() }));
     await denied('la secretaria no ve el historial de la camara', () => getDocs(rcol(sec, 'camera_logs')));
-    await denied('la secretaria no ve las finanzas', () => getDocs(rcol(sec, 'finanzas_residentes')));
+    await denied('la secretaria no ve las finanzas', () => getDocs(rcol(sec, 'finanzas_movimientos')));
+    await allowed('la secretaria ve la ficha de los vecinos (boton Editar de la ficha)', () => getDocs(rcol(sec, 'finanzas_residentes')));
     await denied('la secretaria no administra rondas', () => setDoc(rref(sec, 'rondas_rutas', 'ruta-sec'), { ...rutaTest, id: 'ruta-sec' }));
     await denied('la secretaria no atiende alertas de panico', () => updateDoc(rref(sec, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sec' }));
     await denied('la secretaria no usa la verificacion de garita', () => httpsCallable(sec.functions, 'verifyAccessCode')({ code: 'VA101' }));
@@ -1086,7 +1088,7 @@ async function run() {
     await allowed('y registra pagos', () => setDoc(mref(adm5, 'adm5-in'), mv('adm5-in', { type: 'income' })));
     await allowed('y cambia la cuota', () => patchCfg(adm5, { fee: 320 }));
     await denied('admin sin finanzas.usar: ninguna accion de finanzas', async () => { await createUserAs(admin, mkUser('u-adm6', 'Admin sin finanzas', 'admin', { privilegios: { 'finanzas.usar': false } }), 'PA060'); const a6 = await loginAs('PA060'); return setDoc(mref(a6, 'adm6-in'), mv('adm6-in', { type: 'income' })); });
-    await denied('lo mismo con las acciones sueltas aunque se las pongan (sin el paraguas)', async () => { const a6 = await loginAs('PA060'); return updateDoc(xref(a6, 'res-t1'), { dpi: '1', updated_at: ts() }); });
+    await denied('lo mismo con las acciones sueltas aunque se las pongan (sin el paraguas)', async () => { const a6 = await loginAs('PA060'); return updateDoc(xref(a6, 'res-t1'), { waterUnits: 1, updated_at: ts() }); });
 
     // ───────── Rondas: una llave por operacion ─────────
     console.log('\nPrivilegios por accion: rondas');
@@ -1345,6 +1347,52 @@ async function run() {
     await denied('vecino: sin "quitar vehiculos" no borra su vehiculo', () => deleteDoc(rref(v36, 'vehiculos', 'veh-v36')));
     await setDoc(rref(ana, 'vehiculos', 'veh-ana-q'), vehNuevo('veh-ana-q', 'u-ana'));
     await allowed('vecino: de siempre quita su vehiculo', () => deleteDoc(rref(ana, 'vehiculos', 'veh-ana-q')));
+
+    // Ficha del vecino: el boton Editar de la ventana del vecino (usuarios.ficha) y "Mi ficha" del vecino (vecino.ficha)
+    const gtMonth = new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 7);
+    const fichaRef = (c, id) => rref(c, 'finanzas_residentes', id);
+    const fichaNueva = (id, extra = {}) => ({ id, feeFrom: gtMonth, createdAt: ts(), updated_at: ts(), nit: '1234567-8', ownerGroup: 'nit:12345678', direccion: 'Calle Inventada 1', ...extra });
+    await createUserAs(admin, mkUser('u-v37', 'Vecino con ficha', 'vecino', { casa: 'Casa 37' }), 'PV037');
+    await createUserAs(admin, mkUser('u-v38', 'Vecino sin ficha', 'vecino', { casa: 'Casa 38', privilegios: { 'vecino.ficha': false } }), 'PV038');
+    await createUserAs(admin, mkUser('u-v39', 'Vecino para el operador', 'vecino', { casa: 'Casa 39' }), 'PV039');
+    const v37 = await loginAs('PV037');
+    const v38 = await loginAs('PV038');
+    await allowed('vecino: cambia su telefono y su correo desde su ficha', () => updateDoc(uref(v37, 'u-v37'), { phone: '5555-3737', email: 'vecino37@ejemplo.test', updatedAt: ts() }));
+    await denied('vecino: no cambia su casa desde su ficha', () => updateDoc(uref(v37, 'u-v37'), { casa: 'Casa 99' }));
+    await denied('vecino: no cambia su nombre desde su ficha', () => updateDoc(uref(v37, 'u-v37'), { name: 'Otro nombre', phone: '5555-1111' }));
+    await denied('vecino: no cambia su estado de pago', () => updateDoc(uref(v37, 'u-v37'), { paymentStatus: 'moroso', phone: '5555-1112' }));
+    await denied('vecino: no cambia el telefono de otro vecino', () => updateDoc(uref(v37, 'u-v39'), { phone: '5555-0001' }));
+    await denied('vecino: sin "su ficha" no cambia su telefono', () => updateDoc(uref(v38, 'u-v38'), { phone: '5555-3838' }));
+    await denied('vecino: su ficha nueva se cobra desde este mes (no desde otro)', () => setDoc(fichaRef(v37, 'u-v37'), fichaNueva('u-v37', { feeFrom: '2030-01' })));
+    await denied('vecino: su ficha nueva no lleva una fecha de alta adelantada', () => setDoc(fichaRef(v37, 'u-v37'), fichaNueva('u-v37', { createdAt: '2030-01-01T00:00:00.000Z' })));
+    await denied('vecino: su ficha nueva no trae el agua del lote', () => setDoc(fichaRef(v37, 'u-v37'), fichaNueva('u-v37', { waterUnits: 0 })));
+    await denied('vecino: no se une a los lotes de otro dueno a mano', () => setDoc(fichaRef(v37, 'u-v37'), fichaNueva('u-v37', { ownerGroup: 'nit:999' })));
+    await denied('vecino: no crea la ficha de otro vecino', () => setDoc(fichaRef(v37, 'u-v39'), fichaNueva('u-v39')));
+    await denied('vecino: sin "su ficha" no la crea', () => setDoc(fichaRef(v38, 'u-v38'), fichaNueva('u-v38')));
+    await allowed('vecino: crea su ficha con los datos del propietario', () => setDoc(fichaRef(v37, 'u-v37'), fichaNueva('u-v37', { propietario: 'Duena Inventada', dpi: '1111222233334' })));
+    await allowed('vecino: lee su ficha', () => getDoc(fichaRef(v37, 'u-v37')));
+    await allowed('vecino: cambia su NIT y su direccion', () => updateDoc(fichaRef(v37, 'u-v37'), { nit: 'C/F', ownerGroup: '', direccion: 'Calle Inventada 2', updated_at: ts() }));
+    await denied('vecino: no cambia el agua de su lote', () => updateDoc(fichaRef(v37, 'u-v37'), { waterUnits: 1, updated_at: ts() }));
+    await denied('vecino: no cambia desde cuando se le cobra', () => updateDoc(fichaRef(v37, 'u-v37'), { feeFrom: '2030-01', updated_at: ts() }));
+    await denied('vecino: no escribe las observaciones de la administracion', () => updateDoc(fichaRef(v37, 'u-v37'), { notes: 'Nota', updated_at: ts() }));
+    await denied('vecino: no lee la ficha de otro vecino', () => getDoc(fichaRef(v37, 'u-v39')));
+    await denied('vecino: sin "su ficha" no la lee', () => getDoc(fichaRef(v38, 'u-v38')));
+    await denied('vecino: con su ficha no lee los movimientos del Sistema Financiero', () => getDocs(rcol(v37, 'finanzas_movimientos')));
+    // Operadores: editar usuarios con y sin el boton Editar de la ficha (ninguno usa el Sistema Financiero)
+    await createUserAs(admin, mkUser('u-opf', 'Operador con ficha', 'operador', { privilegios: { 'usuarios.panel': true, 'usuarios.ver': true, 'usuarios.editar': true } }), 'POPF1');
+    await createUserAs(admin, mkUser('u-opn', 'Operador sin ficha', 'operador', { privilegios: { 'usuarios.panel': true, 'usuarios.ver': true, 'usuarios.editar': true, 'usuarios.ficha': false } }), 'POPN1');
+    const opf = await loginAs('POPF1');
+    const opn = await loginAs('POPN1');
+    await allowed('ficha: con el boton Editar lee la ficha de un vecino', () => getDoc(fichaRef(opf, 'u-v37')));
+    await allowed('ficha: con el boton Editar cambia los datos del propietario y las observaciones', () => updateDoc(fichaRef(opf, 'u-v37'), { propietario: 'Otra Duena', notes: 'Alquila', updated_at: ts() }));
+    await denied('ficha: el boton Editar no cambia el agua del lote', () => updateDoc(fichaRef(opf, 'u-v37'), { waterUnits: 1, updated_at: ts() }));
+    await denied('ficha: el boton Editar no finiquita', () => updateDoc(fichaRef(opf, 'u-v37'), { status: 'closed', updated_at: ts() }));
+    await allowed('ficha: con el boton Editar crea la ficha de un vecino que no la tiene', () => setDoc(fichaRef(opf, 'u-v39'), fichaNueva('u-v39', { notes: 'Nueva' })));
+    await denied('ficha: el boton Editar no lee los movimientos del Sistema Financiero', () => getDocs(rcol(opf, 'finanzas_movimientos')));
+    await denied('ficha: sin el boton Editar no lee la ficha de un vecino', () => getDoc(fichaRef(opn, 'u-v37')));
+    await denied('ficha: sin el boton Editar no cambia los datos del propietario', () => updateDoc(fichaRef(opn, 'u-v37'), { nit: '7654321', ownerGroup: 'nit:7654321', updated_at: ts() }));
+    await allowed('ficha: sin el boton Editar sigue editando el usuario (las reglas de siempre)', () => updateDoc(uref(opn, 'u-v39'), { casa: 'Casa 39-B', updatedAt: ts() }));
+    await allowed('ficha: el administrador lee y cambia la ficha', () => updateDoc(fichaRef(admin, 'u-v37'), { notes: 'Revisado', updated_at: ts() }));
 
     // Fiscalizador: un vecino con la plantilla del sistema (reportes en solo lectura)
     const fiscalOv = PRIV.toOverrides('vecino', PRIV.templateKeys(PRIV.templateById('sys-fiscalizador')));

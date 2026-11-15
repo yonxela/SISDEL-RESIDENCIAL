@@ -24,8 +24,11 @@
         .fin-months { border-top: 1px solid var(--border-subtle); margin-top: 1.25rem; padding-top: 1rem; }
         .fin-months > label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
         .fin-concepts { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
-        .fin-concept { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.4rem 0.6rem; background: var(--bg-item); border-radius: 8px; cursor: pointer; }
-        .fin-concept .fin-amount { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+        .fin-concept { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.3rem 0.4rem 0.3rem 0.6rem; background: var(--bg-item); border-radius: 8px; }
+        .fin-concept label { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; cursor: pointer; font-weight: 500; }
+        .fin-concept .fin-amount { display: flex; align-items: center; gap: 0.3rem; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+        .fin-amount-input { width: 6.2rem; padding: 0.3rem 0.45rem; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); text-align: right; font: inherit; font-variant-numeric: tabular-nums; }
+        .fin-amount-input:focus { outline: none; border-color: var(--primary); }
         .fin-year { display: flex; align-items: center; justify-content: space-between; background: var(--bg-item); border-radius: 8px; padding: 0.15rem 0.35rem; }
         .fin-year .btn { font-size: 1.2rem; line-height: 1; padding: 0.2rem 0.75rem; }
         .fin-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0; font-size: 0.78rem; }
@@ -40,6 +43,10 @@
         .fin-month.is-done { cursor: default; color: var(--success); opacity: 0.85; }
         .fin-month.is-done small { color: var(--success); }
         @media (max-width: 420px) { .fin-month-grid { grid-template-columns: repeat(3, 1fr); } }
+        /* Ventana del usuario en solo lectura (antes de pulsar Editar): sin acciones de escritura */
+        #editUserForm.is-locked .edit-only { display: none !important; }
+        #editUserForm.is-locked #editPlatesList button { display: none; }
+        #editUserForm.is-locked .form-input:disabled { opacity: 0.85; cursor: default; }
     </style>
 </head>
 
@@ -309,7 +316,7 @@
     <div class="modal-overlay" id="modalEditUser" style="display:none;">
         <div class="modal" style="max-width:450px;">
             <div class="modal-header">
-                <h3>Editar Usuario</h3>
+                <h3 id="editUserTitle">Editar Usuario</h3>
                 <button class="btn btn-ghost btn-icon modal-close" id="btnCloseEditUser">&times;</button>
             </div>
             <form id="editUserForm" style="padding:1.5rem;">
@@ -364,7 +371,7 @@
                 <div class="form-group" id="editGroupPlates" style="display:none;">
                     <label>🚗 Vehículos Registrados</label>
                     <div id="editPlatesList" style="margin-bottom:0.5rem;"></div>
-                    <div style="display:flex; gap:0.5rem;">
+                    <div class="edit-only" style="display:flex; gap:0.5rem;">
                         <input type="text" class="form-input" id="editNewPlate" placeholder="Agregar placa (ej. P123ABC)" style="text-transform:uppercase; flex:1;">
                         <button type="button" class="btn btn-primary btn-sm" id="btnAddPlate" style="white-space:nowrap;">+ Agregar</button>
                     </div>
@@ -373,6 +380,12 @@
                 <div data-pane-body="propietario" style="display:none;"></div>
                 <div data-pane-body="cuota" style="display:none;"></div>
 
+                <!-- La ventana se abre en solo lectura: Editar la desbloquea (para vecinos pide usuarios.ficha) -->
+                <button type="button" class="btn btn-primary" id="btnUnlockEdit" style="width:100%; margin-top:1rem; display:none; align-items:center; justify-content:center; gap:0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    Editar
+                </button>
+                <p class="fin-note" id="editLockedHelp" style="display:none; text-align:center;">Para editar la ficha de un vecino hace falta el privilegio "Botón Editar de la ficha del vecino".</p>
                 <button type="submit" class="btn btn-primary" id="btnSaveEdit" style="width:100%; margin-top:1rem;">Guardar
                     Cambios</button>
                 <button type="button" class="btn btn-ghost" id="btnEditPrivileges"
@@ -390,8 +403,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115d"></script>
-    <script src="sisdel-core.js?v=20261115d"></script>
+    <script src="privilegios.js?v=20261115e"></script>
+    <script src="sisdel-core.js?v=20261115e"></script>
     <script src="finanzas/sisdel-cuotas.js?v=20261115b"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261110b"></script>
@@ -828,7 +841,9 @@
                 datos: SISDEL.can('finanzas.residentes_datos'),
                 editar: SISDEL.can('finanzas.residentes_editar'),
                 cobro: SISDEL.can('finanzas.residentes_finiquitar'),
-                meses: SISDEL.can('finanzas.cuotas_meses') // "Cargar cuotas por mes a un residente", como en OIKOS
+                meses: SISDEL.can('finanzas.cuotas_meses'), // "Cargar cuotas por mes a un residente", como en OIKOS
+                // "Boton Editar de la ficha del vecino": desbloquea la ventana del vecino y abre los datos del propietario
+                ficha: SISDEL.can('usuarios.ficha')
             };
             let financeSettings = null; // cuota y precio de la paja (se leen al abrir la ventana)
             let editingFicha = null;    // ficha guardada del vecino que se edita (null si todavia no tiene)
@@ -837,18 +852,20 @@
             const ownerMirror = { new: true, edit: true }; // el propietario sigue al nombre del vecino hasta que se cambie
             // Selector de meses de cada ventana: año visible, meses marcados (AAAA-MM), conceptos marcados y las cuotas
             // que ya tiene el vecino (charged: periodo -> 'live' | 'deleted'; ids: para no reusar el de una anulada)
-            const newMonthState = () => ({ on: false, year: new Date().getFullYear(), selected: new Set(), keys: null, charged: new Map(), ids: new Set() });
+            // amounts: monto de cada concepto para los meses marcados (sale de la configuracion y del agua del lote, y se
+            // puede escribir otro); edited: los que se escribieron a mano (el agua del lote ya no los cambia)
+            const newMonthState = () => ({ on: false, year: new Date().getFullYear(), selected: new Set(), keys: null, amounts: {}, edited: new Set(), charged: new Map(), ids: new Set() });
             const monthState = { new: newMonthState(), edit: newMonthState() };
             const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
             const periodKey = (y, m) => `${y}-${String(m + 1).padStart(2, '0')}`;
             const moneyOf = (n) => SisdelCuotas.money(n, (financeSettings && financeSettings.currency) || 'GTQ');
             const lotOf = (prefix) => ({ waterUnits: validWater(finInput(prefix, 'Water').value) });
 
-            // Arma el selector de meses de la ventana (sin privilegio o sin cuota configurada queda oculto)
+            // Arma el selector de meses de la ventana (sin el privilegio, o sin poder leer sus cuotas, queda oculto).
+            // Aparece aunque el condominio no tenga cuota configurada: los montos se escriben en cada concepto
             function setupMonths(prefix, charges) {
                 const st = monthState[prefix] = newMonthState();
-                const parts = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix));
-                st.on = finCaps.meses && charges !== null && parts.length > 0;
+                st.on = finCaps.meses && charges !== null;
                 document.getElementById(`${prefix}FinMonthsBox`).style.display = st.on ? '' : 'none';
                 if (!st.on) return;
                 (charges || []).forEach((t) => {
@@ -862,18 +879,35 @@
                 paintMonths(prefix);
             }
 
-            // Conceptos del lote (con el agua que tiene marcada); al principio van todos marcados
+            // Los cinco conceptos siempre a la vista (mantenimiento, agua, basura, electricidad y otros), cada uno con su
+            // monto: el de la configuracion del Sistema Financiero (el agua, segun la paja del lote) o el que se escriba.
+            // Al principio van marcados los que tienen monto; escribir un monto marca su concepto
             function paintConcepts(prefix) {
                 const st = monthState[prefix];
                 if (!st.on) return;
-                const parts = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix));
-                if (!st.keys) st.keys = new Set(parts.map((p) => p.key));
-                else parts.forEach((p) => { if (p.key === 'water' && !st.keys.has('water') && !st.waterSeen) st.keys.add('water'); });
-                st.waterSeen = st.waterSeen || parts.some((p) => p.key === 'water');
-                document.getElementById(`${prefix}FinConcepts`).innerHTML = parts.map((p) => `
-                    <label class="fin-concept"><input type="checkbox" data-concept="${p.key}" ${st.keys.has(p.key) ? 'checked' : ''}>
-                        <span>${esc(p.label)}</span><span class="fin-amount">${moneyOf(p.amount)}</span></label>`).join('');
+                const configured = {};
+                SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix)).forEach((p) => { configured[p.key] = p.amount; });
+                SisdelCuotas.PARTS.forEach((p) => { if (!st.edited.has(p.key)) st.amounts[p.key] = configured[p.key] || 0; });
+                if (!st.keys) st.keys = new Set(SisdelCuotas.PARTS.filter((p) => st.amounts[p.key] > 0).map((p) => p.key));
+                // El agua aparece al elegir media paja o una paja: se marca sola la primera vez
+                if (st.amounts.water > 0 && !st.waterSeen) st.keys.add('water');
+                st.waterSeen = st.waterSeen || st.amounts.water > 0;
+                const symbol = SisdelCuotas.symbolOf((financeSettings && financeSettings.currency) || 'GTQ');
+                document.getElementById(`${prefix}FinConcepts`).innerHTML = SisdelCuotas.PARTS.map((p) => `
+                    <div class="fin-concept">
+                        <label><input type="checkbox" data-concept="${p.key}" ${st.keys.has(p.key) ? 'checked' : ''}> <span>${esc(p.label)}</span></label>
+                        <span class="fin-amount">${esc(symbol)} <input type="number" class="fin-amount-input" data-amount="${p.key}" min="0" step="0.01" inputmode="decimal" value="${st.amounts[p.key] > 0 ? st.amounts[p.key] : ''}" placeholder="0.00" aria-label="Monto de ${esc(p.label)}"></span>
+                    </div>`).join('');
                 paintMonthCount(prefix);
+            }
+
+            // Monto de un mes con los conceptos marcados: { amount, concept, breakdown } (descripcion con el mes, como OIKOS)
+            function chosenFee(prefix, period) {
+                const st = monthState[prefix];
+                const breakdown = {};
+                [...(st.keys || [])].forEach((key) => { if (st.amounts[key] > 0) breakdown[key] = st.amounts[key]; });
+                const currency = (financeSettings && financeSettings.currency) || 'GTQ';
+                return SisdelCuotas.monthFee({ currency, feeBreakdown: breakdown }, {}, Object.keys(breakdown), period);
             }
 
             function paintMonths(prefix) {
@@ -897,12 +931,12 @@
                 const st = monthState[prefix];
                 if (!st.on) return;
                 const keys = [...st.selected].filter((k) => st.charged.get(k) !== 'live').sort();
-                const perMonth = SisdelCuotas.lotParts(financeSettings || {}, lotOf(prefix))
-                    .filter((p) => st.keys && st.keys.has(p.key)).reduce((sum, p) => sum + p.amount, 0);
+                const fee = chosenFee(prefix, keys[0] || null);
+                const perMonth = fee ? fee.amount : 0;
                 document.getElementById(`${prefix}FinCount`).textContent = `${keys.length} mes${keys.length === 1 ? '' : 'es'} · ${moneyOf(perMonth * keys.length)}`;
                 document.getElementById(`${prefix}FinSummary`).textContent = !keys.length ? ''
                     : perMonth > 0 ? `Se cargarán: ${keys.map((k) => SisdelCuotas.monthLabel(k)).join(', ')}.`
-                        : 'Marque al menos un concepto para cargar los meses elegidos.';
+                        : 'Marque al menos un concepto con su monto para cargar los meses elegidos.';
             }
 
             // Atajos: hasta el mes actual del año visible, el año completo o limpiar todo
@@ -932,7 +966,7 @@
                 const out = [];
                 [...st.selected].sort().forEach((period) => {
                     if (st.charged.get(period) === 'live') return;
-                    const fee = SisdelCuotas.monthFee(s, lotOf(prefix), [...st.keys], period);
+                    const fee = chosenFee(prefix, period);
                     if (!fee) return;
                     const [y, m] = period.split('-').map((n) => parseInt(n, 10));
                     let id = `fee_${residentId}_${period}`;
@@ -952,7 +986,7 @@
             function monthsReady(prefix, form) {
                 const st = monthState[prefix];
                 const pending = st.on && [...st.selected].some((k) => st.charged.get(k) !== 'live');
-                if (!pending || (st.keys && st.keys.size)) return true;
+                if (!pending || chosenFee(prefix, null)) return true;
                 showPane(form, 'cuota');
                 SISDEL.showToast('Marque al menos un concepto (mantenimiento, agua...) para los meses elegidos, o limpie los meses.', 'warning');
                 return false;
@@ -989,6 +1023,7 @@
                     <div class="form-group">
                         <label>Observaciones</label>
                         <textarea class="form-input" id="${prefix}FinNotes" rows="2" maxlength="500" style="resize:vertical;"></textarea>
+                        <p class="fin-note">Viajan con la ficha del vecino: no escriba aquí nada que él no deba saber.</p>
                     </div>`;
                 form.querySelector('[data-pane-body="cuota"]').innerHTML = `
                     <div class="form-group">
@@ -1006,7 +1041,7 @@
                         <p class="fin-note" id="${prefix}FinFeeFromHelp">Mes de la primera cuota que se le cobra.</p>
                     </div>
                     <div class="fin-fee" id="${prefix}FinFee"></div>
-                    <div class="fin-months" id="${prefix}FinMonthsBox" style="display:none;">
+                    <div class="fin-months edit-only" id="${prefix}FinMonthsBox" style="display:none;">
                         <label>Cargar cuotas de meses anteriores o posteriores</label>
                         <p class="fin-note" style="margin-bottom:0.6rem;">Marque qué conceptos lleva la cuota y los meses que se le cobran. Se crea una cuota por mes; los meses que ya tienen su cuota no se repiten.</p>
                         <div class="fin-concepts" id="${prefix}FinConcepts"></div>
@@ -1042,6 +1077,20 @@
                     const concept = event.target.getAttribute('data-concept');
                     if (period) { if (event.target.checked) st.selected.add(period); else st.selected.delete(period); paintMonths(prefix); }
                     if (concept) { if (event.target.checked) st.keys.add(concept); else st.keys.delete(concept); paintMonthCount(prefix); }
+                });
+                // Escribir un monto: queda como el de ese concepto (y lo marca); vaciarlo, lo desmarca
+                box.addEventListener('input', (event) => {
+                    const key = event.target.getAttribute('data-amount');
+                    if (!key) return;
+                    const st = monthState[prefix];
+                    const value = Math.round((parseFloat(event.target.value) || 0) * 100) / 100;
+                    st.amounts[key] = value > 0 ? value : 0;
+                    st.edited.add(key);
+                    if (key === 'water') st.waterSeen = true;
+                    const check = box.querySelector(`input[data-concept="${key}"]`);
+                    if (value > 0 && !st.keys.has(key)) { st.keys.add(key); if (check) check.checked = true; }
+                    if (!(value > 0) && st.keys.has(key)) { st.keys.delete(key); if (check) check.checked = false; }
+                    paintMonthCount(prefix);
                 });
                 // El nombre del propietario sigue al de la pestaña Datos hasta que se escriba otro
                 const nameInput = document.getElementById(prefix === 'new' ? 'newUserName' : 'editUserName');
@@ -1122,7 +1171,12 @@
                 const money = (n) => SisdelCuotas.money(n, s.currency || 'GTQ');
                 const base = parseFloat(s.fee) || 0;
                 const units = validWater(finInput(prefix, 'Water').value);
-                if (!base) { box.textContent = 'El Sistema Financiero todavía no tiene cuota mensual configurada.'; return; }
+                if (!base) {
+                    box.textContent = monthState[prefix].on
+                        ? 'El Sistema Financiero todavía no tiene cuota mensual configurada. Para cargar meses, escriba abajo el monto de cada concepto.'
+                        : 'El Sistema Financiero todavía no tiene cuota mensual configurada.';
+                    return;
+                }
                 const water = SisdelCuotas.waterOf(s, { waterUnits: units });
                 let html = `Cuota del lote: <strong>${money(SisdelCuotas.residentFee(s, { waterUnits: units }))}</strong> al mes`;
                 if (water > 0) html += `<br><span class="text-muted">Cuota ${money(base)} + agua ${money(water)}</span>`;
@@ -1155,15 +1209,15 @@
             // keep: no borrar lo ya escrito (al elegir una plantilla que no cambia el rol)
             async function prepareNewFinance(keep) {
                 const isVecino = document.getElementById('newUserRole').value === 'vecino';
-                newPanes = { owner: isVecino && finCaps.crear && finCaps.datos, fee: isVecino && finCaps.crear };
+                newPanes = { owner: isVecino && ((finCaps.crear && finCaps.datos) || finCaps.ficha), fee: isVecino && finCaps.crear };
                 setFinanceTabs(newUserForm, newPanes);
                 if (!newPanes.owner && !newPanes.fee) return;
                 if (!keep || !finInput('new', 'FeeFrom').value) fillFinance('new', null, document.getElementById('newUserName').value);
                 if (newPanes.fee) {
                     financeSettings = await SISDEL.getFinanceSettings(condoId);
-                    paintFee('new');
                     // Un vecino nuevo no tiene cuotas todavia
                     if (!keep || !monthState.new.on) setupMonths('new', []);
+                    paintFee('new');
                 } else {
                     setupMonths('new', null);
                 }
@@ -1172,14 +1226,18 @@
             // Ventana de edición: lee la ficha guardada y deja escribir solo con el privilegio de cada cosa
             async function prepareEditFinance(user, editable) {
                 const isVecino = user.role === SISDEL.ROLES.VECINO;
-                const panes = { owner: isVecino && finCaps.datos, fee: isVecino && finCaps.ver };
+                const panes = { owner: isVecino && (finCaps.datos || finCaps.ficha), fee: isVecino && finCaps.ver };
                 editingFicha = panes.owner || panes.fee ? await SISDEL.getFinanceResident(condoId, user.id) : null;
-                const write = editable && (editingFicha ? finCaps.editar : finCaps.crear);
-                editingPanes = { ...panes, write };
+                // Los datos del propietario los cambia tambien quien tiene el boton Editar de la ficha; el agua, solo el
+                // Sistema Financiero (editar residentes, o registrarlos si todavia no tiene ficha)
+                const ownerWrite = editable && (editingFicha ? (finCaps.editar || finCaps.ficha) : (finCaps.crear || finCaps.ficha));
+                const waterWrite = editable && (editingFicha ? finCaps.editar : finCaps.crear);
+                editingPanes = { ...panes, write: ownerWrite || waterWrite };
                 setFinanceTabs(editUserForm, panes);
                 if (!panes.owner && !panes.fee) return;
                 fillFinance('edit', editingFicha, user.name);
-                ['Propietario', 'Nit', 'Direccion', 'Dpi', 'Notes', 'Water'].forEach((name) => { finInput('edit', name).disabled = !write; });
+                ['Propietario', 'Nit', 'Direccion', 'Dpi', 'Notes'].forEach((name) => { finInput('edit', name).disabled = !ownerWrite; });
+                finInput('edit', 'Water').disabled = !waterWrite;
                 // "Cobrar desde" de una ficha que ya existe es de finiquitar; al crearla, de registrar residentes
                 const feeFromOk = editable && (editingFicha ? finCaps.cobro : finCaps.crear);
                 finInput('edit', 'FeeFrom').disabled = !feeFromOk;
@@ -1188,9 +1246,9 @@
                     : 'Mes de la primera cuota que se le cobra. Cambiarlo es del privilegio de finiquitar residentes.';
                 if (panes.fee) {
                     financeSettings = await SISDEL.getFinanceSettings(condoId);
-                    paintFee('edit');
                     // Las cuotas que ya tiene, para marcarlas como cargadas y no repetirlas
                     setupMonths('edit', editable && finCaps.meses ? await SISDEL.getFinanceCharges(condoId, user.id) : null);
+                    paintFee('edit');
                 } else {
                     setupMonths('edit', null);
                 }
@@ -1252,8 +1310,34 @@
                 }
                 await prepareEditFinance(user, editable);
 
+                // Se abre en solo lectura; Editar desbloquea lo que este usuario puede cambiar
+                const canUnlock = editable && (user.role !== SISDEL.ROLES.VECINO || finCaps.ficha);
+                lockEditForm(canUnlock);
+                document.getElementById('editLockedHelp').style.display = editable && !canUnlock ? '' : 'none';
                 modalEditUser.style.display = 'flex';
             };
+
+            // Solo lectura: cada campo recuerda si se podra cambiar (data-allowed) y queda bloqueado; sin Guardar ni
+            // acciones de escritura (placas, cargar meses) hasta pulsar Editar
+            function lockEditForm(canUnlock) {
+                editUserForm.querySelectorAll('input:not([type=hidden]), select, textarea').forEach((el) => {
+                    if (el.id === 'editUserCode') return;
+                    el.dataset.allowed = el.disabled ? '0' : '1';
+                    el.disabled = true;
+                });
+                editUserForm.classList.add('is-locked');
+                document.getElementById('btnSaveEdit').style.display = 'none';
+                document.getElementById('btnUnlockEdit').style.display = canUnlock ? 'flex' : 'none';
+                document.getElementById('editUserTitle').textContent = editing && editing.role === SISDEL.ROLES.VECINO ? 'Ficha del vecino' : 'Datos del usuario';
+            }
+            function unlockEditForm() {
+                editUserForm.querySelectorAll('[data-allowed]').forEach((el) => { el.disabled = el.dataset.allowed !== '1'; delete el.dataset.allowed; });
+                editUserForm.classList.remove('is-locked');
+                document.getElementById('btnSaveEdit').style.display = '';
+                document.getElementById('btnUnlockEdit').style.display = 'none';
+                document.getElementById('editUserTitle').textContent = editing && editing.role === SISDEL.ROLES.VECINO ? 'Editar ficha del vecino' : 'Editar Usuario';
+            }
+            document.getElementById('btnUnlockEdit').addEventListener('click', unlockEditForm);
 
             // Render plates in edit modal
             async function renderEditPlates(userId) {

@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-145 privilegios: 30 paraguas y 115 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+147 privilegios: 31 paraguas y 116 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Usuarios y vecinos
 
@@ -57,6 +57,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `usuarios.editar` | Editar usuarios. Cambiar nombre, casa, teléfono y cargo de un usuario. | `admin` | Reglas |
 | `usuarios.estado` | Activar o desactivar usuarios **(sensible)**. Un usuario desactivado no puede entrar hasta que se vuelva a activar. | los de su paraguas | Reglas |
 | `usuarios.pago` | Cambiar el estado de pago **(sensible)**. Marcar a un vecino como moroso o al día a mano (con la mora automática lo calcula el Sistema Financiero). | los de su paraguas | Reglas |
+| `usuarios.ficha` | Botón Editar de la ficha del vecino **(sensible)**. La ventana del vecino se abre en solo lectura y este botón la desbloquea. Además deja ver y cambiar los datos del propietario (nombre, NIT, dirección, DPI y observaciones) aunque no use el Sistema Financiero. El agua, el cobro y las cuotas siguen pidiendo sus privilegios del Sistema Financiero. | los de su paraguas | Reglas |
 | `usuarios.emergencia` | Editar contactos de emergencia de vecinos. Los familiares a quienes avisa el botón de pánico de un vecino. | los de su paraguas | Reglas |
 | `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso). | `admin` | Reglas |
 | `usuarios.codigos` | Ver y cambiar códigos de acceso **(sensible)**. Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios. | `admin` | Reglas |
@@ -113,6 +114,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `vecino.vehiculos` | Registrar sus vehículos. El vecino registra sus vehículos. | `vecino` | Reglas |
 | `vecino.vehiculos_quitar` | Quitar sus vehículos. El vecino borra un vehículo registrado. | los de su paraguas | Reglas |
 | `vecino.marbete` | Ver y descargar su marbete. El pase vehicular con su código QR. | los de su paraguas | Pantalla |
+| `vecino.ficha` | Ver y editar su ficha. En su panel, el vecino ve su ficha (casa, fase, contacto, propietario y agua del lote) y con el botón Editar cambia su teléfono, su correo y los datos del propietario (nombre, NIT, dirección y DPI). No cambia su nombre, su casa, el agua ni lo que se le cobra. | `vecino` | Reglas |
 | `vecino.contactos` | Editar sus contactos de emergencia. Los familiares a quienes avisa su botón de pánico. | `vecino` | Reglas |
 | `panico.activar` | Usar el botón de pánico. Enviar una alerta de pánico a la garita y a la administración. | `vecino`, `policia`, `supervisor` | Reglas |
 | `panico.cancelar` | Cancelar su alerta. El vecino anula su alerta de pánico mientras siga activa. | los de su paraguas | Reglas |

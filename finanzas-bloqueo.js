@@ -29,7 +29,9 @@
     'use strict';
 
     const PREFIX = 'finanzas.';
-    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro'];
+    // SISDEL: el reporte financiero (reportes_resumen) tambien abre Reportes: ahi estan el de ingresos, egresos y saldo
+    // por mes y el acceso a su ventana
+    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen'];
     const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular'];
     const CONFIG_WRITE_KEYS = ['config_general', 'config_cuota', 'config_conceptos'];
 
@@ -43,8 +45,8 @@
     };
     const VIEW_ORDER = ['dashboard', 'residents', 'accounting', 'reports', 'settings'];
 
-    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro' };
-    const REPORT_TAB_ORDER = ['income', 'morosos', 'expense-cat', 'account-statement'];
+    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen' };
+    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'account-statement'];
 
     // Atributo onclick / onsubmit (cada sentencia) -> privilegios de los que basta UNO.
     const ACTIONS = [
@@ -73,10 +75,11 @@
         [/^selectReport\('morosos'\)/, ['reportes_morosos']],
         [/^selectReport\('expense-cat'\)/, ['reportes_gastos']],
         [/^selectReport\('account-statement'\)/, ['reportes_libro']],
+        [/^selectReport\('month-balance'\)/, ['reportes_resumen']],
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
         [/^openResidentStatusReport\(/, ['reportes_morosos']],
         [/^(openReportModal|shareReportWhatsApp|setReportMode)\(/, ['reportes_resumen']],
-        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportCSV|exportToPDF)\(/, ['reportes_exportar']],
+        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportCSV|exportToPDF)\(/, ['reportes_exportar']],
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
@@ -123,9 +126,10 @@
         ]],
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement']],
-        [['reportes_resumen'], ['#view-accounting button[onclick="openReportModal()"]', '#rep-tab-resumen', '#modal-report', '#btn-rep-share']],
+        [['reportes_resumen'], ['#view-accounting button[onclick="openReportModal()"]', '#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share']],
         [['reportes_exportar'], [
-            '#view-reports button[onclick="printReport()"]', '#view-reports button[onclick="downloadReportPDF()"]', '#view-reports button[onclick="exportReportCSV()"]',
+            '#view-reports button[onclick="printCurrentReport()"]', '#view-reports button[onclick="downloadCurrentReportPDF()"]',
+            '#view-reports button[onclick="exportCurrentReportExcel()"]', '#view-reports button[onclick="shareCurrentReportWhatsApp()"]',
             '#modal-report button[onclick="downloadReportPDF()"]', '#modal-report button[onclick="exportReportExcel()"]', '#modal-report button[onclick="printReport()"]',
             '#modal-res-status button[onclick="exportResStatusPDF()"]', '#modal-res-status button[onclick="exportResStatusExcel()"]',
             '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]',

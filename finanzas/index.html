@@ -19,6 +19,10 @@
     <script src="./sisdel-cuotas.js?v=20261115b"></script>
     <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
     <script src="./sisdel-mora.js?v=20261115b"></script>
+    <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
+         reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
+    <script src="./sisdel-reportes.js?v=20261115a"></script>
+    <script src="../reportes-export.js?v=20261110b"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -625,6 +629,7 @@
                             <ul class="p-1.5">
                                 <li><button type="button" onclick="selectReport('income')" id="rep-tab-income" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago."><span>Ingresos por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="En qué se gasta el dinero del condominio en el período que elija."><span>Gastos por período y categoría</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('month-balance')" id="rep-tab-month-balance" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año."><span>Ingresos, egresos y saldo por mes</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
@@ -657,14 +662,20 @@
                                 <button onclick="toggleReportChart()" id="rep-chart-btn" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-semibold text-sm transition">
                                     <i class="fas fa-chart-bar mr-1.5"></i><span id="rep-chart-btn-label">Ver gráfica</span>
                                 </button>
-                                <button onclick="printReport()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition" title="Imprimir el reporte tal como se ve">
+                                <!-- SISDEL: estos botones llaman funciones propias de esta pantalla (printCurrentReport...). Antes
+                                     llamaban printReport() y downloadReportPDF(), que la ventana "Reporte financiero" vuelve a
+                                     definir mas abajo: se imprimia esa ventana (en cero) y no el reporte que se veia. -->
+                                <button onclick="printCurrentReport()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition" title="Imprimir el reporte tal como se ve">
                                     <i class="fas fa-print mr-1.5"></i>Imprimir
                                 </button>
-                                <button onclick="downloadReportPDF()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition" title="Descargar el reporte como PDF">
+                                <button onclick="downloadCurrentReportPDF()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition" title="Descargar el reporte como PDF">
                                     <i class="fas fa-file-pdf mr-1.5"></i>PDF
                                 </button>
-                                <button onclick="exportReportCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition" title="Exportar a Excel / CSV">
+                                <button onclick="exportCurrentReportExcel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition" title="Descargar el reporte en Excel">
                                     <i class="fas fa-file-excel mr-1.5"></i>Excel
+                                </button>
+                                <button onclick="shareCurrentReportWhatsApp()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition" title="Enviar un resumen del reporte por WhatsApp">
+                                    <i class="fab fa-whatsapp mr-1.5"></i>WhatsApp
                                 </button>
                             </div>
                         </div>
@@ -746,7 +757,7 @@
         </div>
     </div>
     <div id="modal-report" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[90vh] flex flex-col relative">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[90vh] flex flex-col relative overflow-y-auto">
             <h3 class="text-xl font-bold mb-1 dark:text-white" id="title-modal-rep">Reporte Financiero</h3>
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" id="subtitle-modal-rep">Resumen Administrativo</p>
             <!-- Report Mode Tabs -->
@@ -778,7 +789,10 @@
                 <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-rose-800 dark:text-rose-400 font-medium" id="lbl-rep-exp">Total Gastos</span><span class="text-rose-700 dark:text-rose-300 font-bold text-lg" id="rep-val-exp">$0.00</span></div>
                 <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 p-4 rounded-xl flex items-center justify-between"><span class="text-indigo-900 dark:text-indigo-300 font-bold" id="lbl-rep-bal">Balance</span><span class="text-indigo-700 dark:text-indigo-400 font-black text-xl" id="rep-val-bal">$0.00</span></div>
             </div>
+            <!-- SISDEL: grafica de barras del reporte financiero (ingresos, gastos y balance del periodo) -->
+            <div id="rep-sum-chart-wrap" class="hidden h-56 relative w-full mb-5"><canvas id="rep-sum-chart"></canvas></div>
             <div class="border-t border-slate-100 dark:border-slate-700 pt-4 space-y-2 mt-auto">
+                <button type="button" onclick="toggleSummaryChart()" id="rep-sum-chart-btn" class="w-full px-4 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-bold transition shadow-md flex justify-center items-center"><i class="fas fa-chart-bar mr-2"></i><span id="rep-sum-chart-label">Ver gráfica</span></button>
                 <div class="flex space-x-2">
                     <button type="button" onclick="downloadReportPDF()" class="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold transition shadow-md flex justify-center items-center"><i class="fas fa-file-pdf mr-2"></i>PDF</button>
                     <button type="button" onclick="exportReportExcel()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition shadow-md flex justify-center items-center"><i class="fas fa-file-excel mr-2"></i>Excel</button>
@@ -3401,6 +3415,7 @@
         const SISDEL_REPORT_NAMES = {
             income: 'Ingresos por período',
             'expense-cat': 'Gastos por período y categoría',
+            'month-balance': 'Ingresos, egresos y saldo por mes',
             morosos: 'Morosos y meses adeudados',
             'account-statement': 'Estado de cuenta general'
         };
@@ -3426,7 +3441,7 @@
             // El filtro de fechas aplica a todos menos 'morosos'.
             const periodWrap = document.getElementById('rep-period-wrap');
             const periodWrapTo = document.getElementById('rep-period-wrap-to');
-            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement';
+            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance';
             if (periodWrap) periodWrap.style.display = showPeriod ? '' : 'none';
             if (periodWrapTo) periodWrapTo.style.display = showPeriod ? '' : 'none';
             renderCurrentReport();
@@ -3440,6 +3455,7 @@
             else if (currentReportKey === 'morosos') currentReportData = buildMorososReport();
             else if (currentReportKey === 'expense-cat') currentReportData = buildExpenseByCategoryReport();
             else if (currentReportKey === 'account-statement') currentReportData = buildAccountStatementReport();
+            else if (currentReportKey === 'month-balance') currentReportData = buildMonthBalanceReport();
             paintReportTable();
             if (repChartVisible) paintReportChart();
         }
@@ -3454,7 +3470,8 @@
             const emptyEl = document.getElementById('rep-empty');
             if (!d || !thead || !tbody || !tfoot) return;
             titleEl.textContent = d.title;
-            summaryEl.textContent = d.summary || '';
+            // SISDEL: la indicacion de uso (hint) solo va en pantalla; el resumen tambien va al PDF, Excel y WhatsApp
+            summaryEl.textContent = [d.summary, d.hint].filter(Boolean).join(' · ');
             thead.innerHTML = '<tr>' + d.headers.map(function (h, i) {
                 const align = i === 0 ? 'text-left' : 'text-right';
                 return '<th class="px-4 py-3 ' + align + '">' + h + '</th>';
@@ -3487,6 +3504,9 @@
                     hoverCls = 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer transition';
                     chevronColor = 'text-emerald-400';
                     title = 'Ver ingresos del mes';
+                } else if (m && m.kind === 'subtotal') {
+                    // SISDEL: fila de total de un ano (reporte de ingresos, egresos y saldo por mes)
+                    hoverCls = 'bg-slate-50 dark:bg-slate-700/40 font-bold text-slate-900 dark:text-white';
                 }
                 const isClickable = !!onclick;
                 const trAttrs = isClickable
@@ -3521,7 +3541,7 @@
 
         function paintReportChart() {
             const d = currentReportData;
-            if (!d || !d.chartLabels || !d.chartValues) return;
+            if (!d || !d.chartLabels || (!d.chartValues && !d.chartDatasets)) return;
             const ctx = document.getElementById('rep-chart');
             if (!ctx) return;
             if (currentReportChart) {
@@ -3543,21 +3563,66 @@
                     y: { beginAtZero: true, ticks: { color: tick }, grid: { color: grid } },
                 };
             }
+            // SISDEL: un reporte puede traer varias series (chartDatasets: ingresos, egresos y saldo de cada mes)
+            const series = d.chartDatasets || [{ label: d.chartLabel || 'Total', data: d.chartValues, color: d.chartColors, border: d.chartColorsBorder }];
             currentReportChart = new Chart(ctx, {
                 type: chartType,
                 data: {
                     labels: d.chartLabels,
-                    datasets: [{
-                        label: d.chartLabel || 'Total',
-                        data: d.chartValues,
-                        backgroundColor: d.chartColors || 'rgba(59,130,246,0.7)',
-                        borderColor: d.chartColorsBorder || '#2563EB',
-                        borderWidth: 1.5,
-                        borderRadius: isCircular ? 0 : 4,
-                    }],
+                    datasets: series.map(function (s) {
+                        return {
+                            label: s.label,
+                            data: s.data,
+                            backgroundColor: s.color || 'rgba(59,130,246,0.7)',
+                            borderColor: s.border || '#2563EB',
+                            borderWidth: 1.5,
+                            borderRadius: isCircular ? 0 : 4,
+                        };
+                    }),
                 },
                 options: opts,
             });
+        }
+
+        // SISDEL: el reporte de la pantalla en el formato del modulo de reportes de SISDEL (finanzas/sisdel-reportes.js y
+        // reportes-export.js): con excel, los montos pasan a numero
+        function currentReportModel(excel) {
+            const d = currentReportData;
+            if (!d || typeof SisdelReportesOikos === 'undefined') return null;
+            const s = Store.get('settings') || {};
+            return SisdelReportesOikos.exportModel(d, { condoName: s.name || '', at: new Date(), excel: !!excel });
+        }
+
+        function reportExportReady() {
+            if (typeof SisdelReportesOikos !== 'undefined' && typeof SisdelReportExport !== 'undefined') return true;
+            alert('No se pudo preparar el archivo. Revise su conexión y recargue la página.');
+            return false;
+        }
+
+        // SISDEL: Excel de verdad (.xlsx), con los montos como numeros (antes era un CSV con los montos como texto)
+        function exportCurrentReportExcel() {
+            if (!currentReportData) return;
+            if (!reportExportReady()) return;
+            const model = currentReportModel(true);
+            const blob = new Blob([SisdelReportExport.buildXlsx(model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = model.fileName + '.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+            showToast('Excel descargado.');
+        }
+
+        // SISDEL: WhatsApp no recibe archivos por enlace: se manda un resumen (totales y las primeras filas); el detalle
+        // completo va en el PDF o el Excel
+        function shareCurrentReportWhatsApp() {
+            if (!currentReportData) return;
+            if (!reportExportReady()) return;
+            const model = currentReportModel(false);
+            window.open(SisdelReportExport.whatsappUrl(SisdelReportExport.whatsappText(model)), '_blank');
         }
 
         // ─── Helper: convertir celdas que tienen HTML (botones, etc.) a texto plano ─
@@ -3570,41 +3635,31 @@
             return (tmp.textContent || tmp.innerText || '').trim();
         }
 
-        function exportReportCSV() {
-            const d = currentReportData;
-            if (!d) return;
-            const cleanRow = function (row) { return row.map(stripCellHtml).join(';'); };
-            let str = '﻿';
-            str += d.headers.map(stripCellHtml).join(';') + '\n';
-            d.rows.forEach(function (row) { str += cleanRow(row) + '\n'; });
-            if (d.totals) str += cleanRow(d.totals) + '\n';
-            const blob = new Blob([str], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = (d.title || 'reporte').replace(/\s+/g, '_').toLowerCase() + '.csv';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
         // ─── Imprimir el reporte ──────────────────────────────────────────
         // Abre una ventana nueva con HTML formateado del reporte (título,
         // resumen, tabla con totales) y dispara window.print() automático.
-        function printReport() {
+        // SISDEL: antes se llamaba printReport() y la ventana "Reporte financiero" la volvia a definir (se imprimia esa).
+        // Los textos se escapan (nombres y conceptos los escriben los usuarios) y los montos van a la derecha.
+        function printCurrentReport() {
             const d = currentReportData;
             if (!d) return;
             const s = Store.get('settings') || {};
+            const escText = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const numericCols = new Set(d.numericCols || []);
+            const alignOf = (i) => (i > 0 && numericCols.has(i) ? 'right' : 'left');
+            const meta = d.rowsMeta || [];
             const headerCells = d.headers.map(stripCellHtml)
-                .map(h => `<th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569;background:#f1f5f9;border-bottom:2px solid #cbd5e1">${h}</th>`).join('');
-            const bodyRows = d.rows.map(row => '<tr>' + row.map((cell, i) => {
-                const align = i === 0 ? 'left' : (i >= row.length - 3 ? 'right' : 'left');
-                return `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:${align}">${stripCellHtml(cell)}</td>`;
-            }).join('') + '</tr>').join('');
+                .map((h, i) => `<th style="padding:8px 10px;text-align:${alignOf(i)};font-size:11px;text-transform:uppercase;color:#475569;background:#f1f5f9;border-bottom:2px solid #cbd5e1">${escText(h)}</th>`).join('');
+            const bodyRows = d.rows.map((row, r) => {
+                const isSubtotal = meta[r] && meta[r].kind === 'subtotal';
+                return (isSubtotal ? '<tr style="background:#f1f5f9;font-weight:700">' : '<tr>') + row.map((cell, i) => {
+                    return `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:${alignOf(i)}">${escText(stripCellHtml(cell))}</td>`;
+                }).join('') + '</tr>';
+            }).join('');
             const totalsRow = d.totals ? '<tr style="background:#f1f5f9;font-weight:700">' + d.totals.map((cell, i) => {
-                const align = i === 0 ? 'left' : (i >= d.totals.length - 3 ? 'right' : 'left');
-                return `<td style="padding:8px 10px;border-top:2px solid #475569;font-size:12px;text-align:${align}">${stripCellHtml(cell)}</td>`;
+                return `<td style="padding:8px 10px;border-top:2px solid #475569;font-size:12px;text-align:${alignOf(i)}">${escText(stripCellHtml(cell))}</td>`;
             }).join('') + '</tr>' : '';
-            const html = `<!DOCTYPE html><html><head><title>${d.title} - ${s.name || 'OIKOS'}</title>
+            const html = `<!DOCTYPE html><html><head><title>${escText(d.title)} - ${escText(s.name || 'OIKOS')}</title>
                 <style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
                     body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}
                     @media print{body{padding:15px}}
@@ -3614,8 +3669,8 @@
                     table{width:100%;border-collapse:collapse;font-family:'Inter',sans-serif}
                 </style></head><body>
                 <div class="hdr">
-                    <h1>${d.title}</h1>
-                    <p>${s.name || 'OIKOS'}${d.summary ? ' · ' + d.summary : ''}</p>
+                    <h1>${escText(d.title)}</h1>
+                    <p>${escText(s.name || 'OIKOS')}${d.summary ? ' · ' + escText(d.summary) : ''}</p>
                 </div>
                 <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody><tfoot>${totalsRow}</tfoot></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
@@ -3630,7 +3685,9 @@
         // ─── Descargar el reporte como PDF ────────────────────────────────
         // Usa jsPDF + autoTable (ya cargados). Genera un PDF horizontal o
         // vertical según la cantidad de columnas (>5 → horizontal).
-        function downloadReportPDF() {
+        // SISDEL: antes se llamaba downloadReportPDF() y la ventana "Reporte financiero" la volvia a definir (se bajaba
+        // esa, en cero). La fuente del PDF es Latin-1: las flechas y otros signos se cambian (latin1 de reportes-export.js).
+        function downloadCurrentReportPDF() {
             const d = currentReportData;
             if (!d) return;
             if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -3638,6 +3695,12 @@
                 return;
             }
             const s = Store.get('settings') || {};
+            const pdfText = (v) => {
+                const text = stripCellHtml(v);
+                return typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(text) : text;
+            };
+            const numericCols = new Set(d.numericCols || []);
+            const meta = d.rowsMeta || [];
             const { jsPDF } = window.jspdf;
             const isWide = d.headers.length > 5;
             const doc = new jsPDF({ orientation: isWide ? 'landscape' : 'portrait' });
@@ -3647,9 +3710,9 @@
             doc.rect(0, 0, pageW, 28, 'F');
             doc.setTextColor(255, 255, 255);
             doc.setFontSize(18); doc.setFont('helvetica', 'bold');
-            doc.text(d.title, 14, 13);
+            doc.text(pdfText(d.title), 14, 13);
             doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-            doc.text(s.name || 'OIKOS', 14, 21);
+            doc.text(pdfText(s.name || 'OIKOS'), 14, 21);
             doc.setFontSize(9);
             const generado = 'Generado: ' + new Date().toLocaleString('es-MX');
             doc.text(generado, pageW - 14 - doc.getTextWidth(generado), 21);
@@ -3657,13 +3720,15 @@
             if (d.summary) {
                 doc.setTextColor(100, 116, 139);
                 doc.setFontSize(10);
-                doc.text(stripCellHtml(d.summary), 14, 38);
+                doc.text(pdfText(d.summary), 14, 38);
             }
             // Tabla
-            const body = d.rows.map(row => row.map(stripCellHtml));
-            const head = [d.headers.map(stripCellHtml)];
-            const foot = d.totals ? [d.totals.map(stripCellHtml)] : undefined;
+            const body = d.rows.map(row => row.map(pdfText));
+            const head = [d.headers.map(pdfText)];
+            const foot = d.totals ? [d.totals.map(pdfText)] : undefined;
             const startY = d.summary ? 44 : 36;
+            const columnStyles = {};
+            numericCols.forEach(i => { if (i > 0) columnStyles[i] = { halign: 'right' }; });
             doc.autoTable({
                 startY,
                 head,
@@ -3673,8 +3738,19 @@
                 headStyles: { fillColor: [79, 70, 229], fontSize: 9, textColor: 255 },
                 footStyles: { fillColor: [226, 232, 240], textColor: 30, fontStyle: 'bold' },
                 bodyStyles: { fontSize: 8 },
+                columnStyles,
+                // Las filas de total de cada ano van en negrita y con fondo
+                didParseCell: (data) => {
+                    if (data.section === 'body' && meta[data.row.index] && meta[data.row.index].kind === 'subtotal') {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = [226, 232, 240];
+                    }
+                },
             });
-            doc.save((d.title || 'reporte').replace(/\s+/g, '_').toLowerCase() + '.pdf');
+            const fileName = typeof SisdelReportesOikos !== 'undefined'
+                ? SisdelReportesOikos.exportModel(d, { condoName: s.name || '', at: new Date() }).fileName
+                : (d.title || 'reporte').replace(/\s+/g, '_').toLowerCase();
+            doc.save(fileName + '.pdf');
             showToast('PDF generado.');
         }
 
@@ -3715,6 +3791,7 @@
                 // al hacer click se abre el drill-down del mes (Nivel 2).
                 rowsMeta: sorted.map(function (r) { return { kind: 'monthIncomes', monthKey: r.key, label: r.label }; }),
                 totals: ['TOTAL', String(totalCount), formatMoney(totalAmount)],
+                numericCols: [1, 2],
                 chartType: 'bar',
                 chartLabels: sorted.map(function (r) { return r.label; }),
                 chartValues: sorted.map(function (r) { return r.total; }),
@@ -3789,10 +3866,12 @@
                 // detectar morosos clickeables → abrir estado de cuenta.
                 rowsMeta: rows.map(function (r) { return { residentId: r.residentId, kind: 'resident' }; }),
                 totals: ['TOTAL', '', String(totalMonths), formatMoney(totalDebt)],
+                numericCols: [2, 3],
                 chartType: 'bar',
-                chartLabels: rows.map(function (r) { return r.name; }),
-                chartValues: rows.map(function (r) { return r.amount; }),
-                chartLabel: 'Adeudo (' + formatMoney(0).charAt(0) + ')',
+                // SISDEL: en un condominio grande la grafica muestra los 30 mayores adeudos (la tabla trae a todos)
+                chartLabels: rows.slice(0, 30).map(function (r) { return r.name; }),
+                chartValues: rows.slice(0, 30).map(function (r) { return r.amount; }),
+                chartLabel: 'Adeudo (' + formatMoney(0).charAt(0) + ')' + (rows.length > 30 ? ' — los 30 mayores' : ''),
                 chartColors: 'rgba(244,63,94,0.7)',
                 chartColorsBorder: '#E11D48',
             };
@@ -3837,7 +3916,9 @@
                     return [r.cat, String(r.count), pct, formatMoney(r.total)];
                 }),
                 totals: ['TOTAL', String(totalCount), '100.0 %', formatMoney(totalAmount)],
-                chartType: 'doughnut',
+                numericCols: [1, 3],
+                // SISDEL: barras (antes dona), como las demas graficas de los reportes
+                chartType: 'bar',
                 chartLabels: sorted.map(function (r) { return r.cat; }),
                 chartValues: sorted.map(function (r) { return r.total; }),
                 chartLabel: 'Gastos',
@@ -3941,13 +4022,19 @@
                     !isIn ? formatMoney(amt) : '',
                     formatMoney(balance),
                 ]);
-                chartLabels.push(fmtDate(t.date) + (fmtTime(t.date) !== '—' ? ' · ' + fmtTime(t.date) : ''));
-                chartValues.push(balance);
+                // SISDEL: la grafica es de barras con el saldo al cierre de cada mes (antes una linea con un punto por
+                // movimiento: en un condominio grande eran miles)
+                const monthKey = localDayKey(t.date).slice(0, 7);
+                if (chartLabels.length && chartLabels[chartLabels.length - 1] === monthKey) chartValues[chartValues.length - 1] = balance;
+                else { chartLabels.push(monthKey); chartValues.push(balance); }
             });
+            const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const monthLabels = chartLabels.map(function (k) { return (shortMonths[Number(k.slice(5, 7)) - 1] || '') + ' ' + k.slice(0, 4); });
             return {
                 title: 'Estado de cuenta general',
                 summary: (from && to ? from + ' → ' + to : 'Todo el histórico')
-                    + ' · ' + txs.length + ' movimiento(s) · tocá el No. de Documento para ver el detalle',
+                    + ' · ' + txs.length + ' movimiento(s)',
+                hint: 'tocá el No. de Documento para ver el detalle',
                 headers: ['Fecha', 'Hora', 'No. Documento', 'Concepto', 'Ingresos', 'Egresos', 'Saldo'],
                 rows: rows,
                 totals: [
@@ -3959,12 +4046,51 @@
                     formatMoney(totalOut),
                     formatMoney(balance),
                 ],
-                chartType: 'line',
-                chartLabels: chartLabels,
+                numericCols: [4, 5, 6],
+                chartType: 'bar',
+                chartLabels: monthLabels,
                 chartValues: chartValues,
-                chartLabel: 'Saldo acumulado',
-                chartColors: 'rgba(59,130,246,0.18)',
-                chartColorsBorder: '#3B82F6',
+                chartLabel: 'Saldo al cierre de cada mes',
+                chartColors: chartValues.map(function (v) { return v < 0 ? 'rgba(244,63,94,0.7)' : 'rgba(59,130,246,0.7)'; }),
+                chartColorsBorder: chartValues.map(function (v) { return v < 0 ? '#E11D48' : '#2563EB'; }),
+            };
+        }
+
+        // ─── SISDEL: Reporte 5: Ingresos, egresos y saldo por mes ─────────
+        // Una fila por mes del rango (tambien los meses sin movimientos), el total de cada ano y el total general.
+        // Ingresos = pagos; egresos = gastos; saldo = ingresos menos egresos del mes. Los cargos y cuotas no son
+        // dinero que entro. El calculo esta en finanzas/sisdel-reportes.js (se prueba en test-finanzas-reportes.mjs).
+        function buildMonthBalanceReport() {
+            const from = document.getElementById('rep-from')?.value || '';
+            const to = document.getElementById('rep-to')?.value || '';
+            const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+            const data = SisdelReportesOikos.monthBalance(Store.get('transactions') || [], { from: from, to: to, dayKey: localDayKey });
+            const rows = [];
+            const rowsMeta = [];
+            data.years.forEach(function (y) {
+                data.months.filter(function (m) { return m.year === y.year; }).forEach(function (m) {
+                    rows.push([monthNames[m.month - 1] + ' ' + m.year, formatMoney(m.income), formatMoney(m.expense), formatMoney(m.balance)]);
+                    rowsMeta.push(null);
+                });
+                rows.push(['Total ' + y.year, formatMoney(y.income), formatMoney(y.expense), formatMoney(y.balance)]);
+                rowsMeta.push({ kind: 'subtotal' });
+            });
+            const labels = data.months.map(function (m) { return monthNames[m.month - 1].slice(0, 3) + ' ' + m.year; });
+            return {
+                title: 'Ingresos, egresos y saldo por mes',
+                summary: (from && to ? from + ' → ' + to : 'Todo el histórico') + ' · saldo = ingresos menos egresos',
+                headers: ['Mes', 'Ingresos', 'Egresos', 'Saldo'],
+                rows: rows,
+                rowsMeta: rowsMeta,
+                totals: ['TOTAL', formatMoney(data.total.income), formatMoney(data.total.expense), formatMoney(data.total.balance)],
+                numericCols: [1, 2, 3],
+                chartType: 'bar',
+                chartLabels: labels,
+                chartDatasets: [
+                    { label: 'Ingresos', data: data.months.map(function (m) { return m.income; }), color: 'rgba(16,185,129,0.7)', border: '#059669' },
+                    { label: 'Egresos', data: data.months.map(function (m) { return m.expense; }), color: 'rgba(244,63,94,0.7)', border: '#E11D48' },
+                    { label: 'Saldo', data: data.months.map(function (m) { return m.balance; }), color: 'rgba(59,130,246,0.7)', border: '#2563EB' },
+                ],
             };
         }
 
@@ -4040,6 +4166,53 @@
             document.getElementById('rep-val-bal').innerText = formatMoney(mI - mE);
             document.getElementById('rep-period-label').textContent = repMonthsMap.get(mk) || '';
             repCurrentData = { inc: mI, exp: mE, bal: mI - mE, label: repMonthsMap.get(mk) };
+            if (repSummaryChartVisible) paintSummaryChart();
+        }
+
+        // SISDEL: grafica de barras del reporte financiero (ingresos, gastos y balance del mes o del periodo elegido)
+        let repSummaryChartVisible = false;
+        let repSummaryChart = null;
+
+        function toggleSummaryChart() {
+            repSummaryChartVisible = !repSummaryChartVisible;
+            const wrap = document.getElementById('rep-sum-chart-wrap');
+            const label = document.getElementById('rep-sum-chart-label');
+            if (wrap) wrap.classList.toggle('hidden', !repSummaryChartVisible);
+            if (label) label.textContent = repSummaryChartVisible ? 'Ocultar gráfica' : 'Ver gráfica';
+            if (repSummaryChartVisible) paintSummaryChart();
+        }
+
+        function paintSummaryChart() {
+            const ctx = document.getElementById('rep-sum-chart');
+            const d = repCurrentData;
+            if (!ctx || !d || typeof Chart === 'undefined') return;
+            if (repSummaryChart) { try { repSummaryChart.destroy(); } catch (e) {} }
+            const isDark = document.documentElement.classList.contains('dark');
+            const grid = isDark ? 'rgba(148,163,184,0.18)' : 'rgba(15,23,42,0.08)';
+            const tick = isDark ? '#cbd5e1' : '#475569';
+            repSummaryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Ingresos', 'Gastos', 'Balance'],
+                    datasets: [{
+                        label: d.label || 'Período',
+                        data: [d.inc, d.exp, d.bal],
+                        backgroundColor: ['rgba(16,185,129,0.7)', 'rgba(244,63,94,0.7)', d.bal < 0 ? 'rgba(244,63,94,0.45)' : 'rgba(99,102,241,0.7)'],
+                        borderColor: ['#059669', '#E11D48', d.bal < 0 ? '#E11D48' : '#4F46E5'],
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: tick }, grid: { color: grid } },
+                        y: { beginAtZero: true, ticks: { color: tick }, grid: { color: grid } },
+                    },
+                },
+            });
         }
 
         function renderReportDataPeriod() {
@@ -4062,6 +4235,7 @@
             document.getElementById('rep-val-bal').innerText = formatMoney(mI - mE);
             document.getElementById('rep-period-label').textContent = label;
             repCurrentData = { inc: mI, exp: mE, bal: mI - mE, label };
+            if (repSummaryChartVisible) paintSummaryChart();
         }
 
         function getReportTransactions() {
@@ -4077,6 +4251,36 @@
         }
 
         function exportReportExcel() {
+            // SISDEL: Excel de verdad (.xlsx) con el modulo de reportes de SISDEL: los montos van como numeros (con signo
+            // los egresos) y el resumen arriba. Sin el modulo (no cargo), sigue el CSV de siempre (abajo).
+            if (repCurrentData && typeof SisdelReportExport !== 'undefined') {
+                const d = repCurrentData;
+                const s = Store.get('settings') || {};
+                const txs = getReportTransactions();
+                const res = Store.get('residents');
+                if (txs.length === 0) return alert('No hay transacciones en este período.');
+                const nameOf = (t) => (t.resiId ? (res.find(r => r.id === t.resiId)?.name || '') : '');
+                const model = {
+                    title: 'Reporte financiero',
+                    subtitle: 'Período: ' + d.label,
+                    condoName: s.name || '',
+                    at: new Date(),
+                    kpis: [{ label: 'Ingresos netos', value: +d.inc.toFixed(2) }, { label: 'Total gastos', value: +d.exp.toFixed(2) }, { label: 'Balance', value: +d.bal.toFixed(2) }],
+                    tables: [{
+                        title: 'Movimientos',
+                        headers: ['Fecha', 'Concepto', 'Residente', 'Tipo', 'Monto'],
+                        rows: txs.map(t => [new Date(t.date).toLocaleDateString('es-MX'), t.concept || '', nameOf(t), t.type === 'income' ? 'Ingreso' : 'Egreso', (t.type === 'income' ? 1 : -1) * (parseFloat(t.amount) || 0)]),
+                        numeric: [4]
+                    }],
+                };
+                const blob = new Blob([SisdelReportExport.buildXlsx(model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'Reporte_' + String(d.label || '').replace(/[\s\/]+/g, '_') + '.xlsx';
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                showToast('Archivo Excel exportado correctamente');
+                return;
+            }
             const d = repCurrentData; if (!d) return;
             const s = Store.get('settings');
             const txs = getReportTransactions();

@@ -6,8 +6,8 @@
    - Garita y accesos: resumen por dia, ingresos y salidas de vecinos, visitas del periodo, horas pico, placas con mas
      ingresos, placas denegadas y visitas por casa (con datos de camera_logs, visitas y salidas).
    - Morosos: el listado de vecinos en mora a la fecha.
-   - Finanzas (OIKOS): accesos directos a sus reportes (ingresos, gastos, morosos con meses adeudados, estado de cuenta y
-     reporte financiero). La contabilidad no se vuelve a calcular aqui: asi las cifras son siempre las de OIKOS, que ya
+   - Finanzas (OIKOS): accesos directos a sus reportes (ingresos, gastos, ingresos y egresos por mes, morosos con meses
+     adeudados, estado de cuenta y reporte financiero). La contabilidad no se vuelve a calcular aqui: asi las cifras son siempre las de OIKOS, que ya
      trae sus propios botones de imprimir, PDF, WhatsApp y Excel.
    - Rondas (RONDIN): acceso directo al panel y al reporte semanal.
 
@@ -25,6 +25,7 @@ const SisdelReportes = (() => {
     const FIN_REPORTS = [
         { id: 'income', key: 'finanzas.reportes_ingresos', title: 'Ingresos por período', text: 'Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago.' },
         { id: 'expense-cat', key: 'finanzas.reportes_gastos', title: 'Gastos por período y categoría', text: 'En qué se gasta el dinero del condominio en el período que elija.' },
+        { id: 'month-balance', key: 'finanzas.reportes_resumen', title: 'Ingresos, egresos y saldo por mes', text: 'Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año.' },
         { id: 'morosos', key: 'finanzas.reportes_morosos', title: 'Morosos y meses adeudados', text: 'Cada residente en mora con los meses que debe y el total; también la lista de los que están al día.' },
         { id: 'account-statement', key: 'finanzas.reportes_libro', title: 'Estado de cuenta general', text: 'El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período.' },
         { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' }

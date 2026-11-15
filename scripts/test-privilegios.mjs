@@ -322,16 +322,25 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Cada clave que usa el modulo existe en el catalogo
     const used = [...rp.matchAll(/can\('([a-z_]+\.[a-z_]+)'\)/g)].map((m) => m[1]);
     yes('reportes-ui.js solo usa privilegios del catalogo', used.length > 10 && used.every((k) => P.itemOf(k)));
-    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 5);
+    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 6);
     // Los accesos directos llegan a pantallas que existen en OIKOS
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
-    equal('los cinco reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'morosos', 'account-statement', 'resumen']);
+    equal('los seis reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'account-statement', 'resumen']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
     // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
     const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
     const oikosList = [...oikosCatalog.matchAll(/id="rep-tab-([a-z-]+)"/g)].map((m) => m[1]);
     equal('la lista de Reportes de OIKOS es la misma del panel Reportes', oikosList, ids);
     yes('el reporte financiero de la lista abre su ventana', /onclick="openReportModal\(\)" id="rep-tab-resumen"/.test(oikos));
+    // Cada reporte ofrece Imprimir, PDF, Excel, WhatsApp y su grafica de barras
+    const repDetail = oikos.slice(oikos.indexOf('id="rep-detail"'), oikos.indexOf('id="rep-table-wrap"'));
+    yes('la pantalla de Reportes trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleReportChart()', 'printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].every((f) => repDetail.includes(`onclick="${f}"`)));
+    yes('la ventana del reporte financiero trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleSummaryChart()', 'printReport()', 'downloadReportPDF()', 'exportReportExcel()', 'shareReportWhatsApp()'].every((f) => oikos.includes(`onclick="${f}"`)));
+    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 5);
+    // Dos funciones con el mismo nombre: la segunda pisa a la primera (asi Imprimir y PDF de Reportes sacaban la ventana del reporte financiero)
+    const fnNames = [...oikos.matchAll(/^        (?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]);
+    equal('OIKOS no repite nombres de funciones', fnNames.filter((n, i) => fnNames.indexOf(n) !== i), []);
+    yes('OIKOS carga los calculos de reportes y el modulo de Excel y WhatsApp de SISDEL', /<script src="\.\/sisdel-reportes\.js\?v=\w+"><\/script>/.test(oikos) && /<script src="\.\.\/reportes-export\.js\?v=\w+"><\/script>/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));
     // Quien ve cada seccion (se carga el modulo con privilegios de verdad)
@@ -351,9 +360,10 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar la lectura del historial de la camara oculta la seccion de garita', sectionsFor('admin', { 'garita.camara': false }), ['morosos', 'finanzas', 'rondas']);
     // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
     const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
-    equal('el administrador ve cuatro categorias, con 7, 1, 5 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
+    equal('el administrador ve cuatro categorias, con 7, 1, 6 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:6', 'rondas:1']);
     equal('la plantilla de consulta ve solo la categoria de garita, con sus 7 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:7']);
-    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:4', 'rondas:1']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
+    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:4', 'rondas:1']);
     equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
     equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
     const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);

@@ -50,7 +50,7 @@ equal('una sentencia con stopPropagation no esconde la accion', blocked("event.s
 equal('cerrar un modal o filtrar la lista no exige nada', ["closeModal('modal-income')", "setTxFilter('all')", "setEcPeriod('year')", "toggleMenu('m1')", 'renderCurrentReport()'].map((a) => blocked(a, none)), [false, false, false, false, false]);
 equal('las pantallas del menu exigen su privilegio', [
     blocked("navigate('dashboard')", only('tablero_ver')), blocked("navigate('dashboard')", only('residentes_ver')),
-    blocked("navigate('reports')", only('reportes_libro')), blocked("navigate('reports')", only('reportes_resumen')),
+    blocked("navigate('reports')", only('reportes_libro')), blocked("navigate('reports')", only('reportes_exportar')),
     blocked("navigate('settings')", only('config_ver')), blocked("navigate('accounting')", only('contabilidad_ver'))
 ], [false, true, false, true, false, false]);
 equal('los reportes exigen el de cada uno', [
@@ -78,7 +78,10 @@ console.log('\nPantallas');
 equal('con todo, la primera pantalla es el tablero', B.firstView(all), 'dashboard');
 equal('sin tablero se lleva a la primera permitida', [B.firstView(only('residentes_ver', 'contabilidad_ver')), B.firstView(only('config_ver')), B.firstView(only('reportes_gastos'))], ['residents', 'settings', 'reports']);
 equal('sin ninguna no hay pantalla de inicio', B.firstView(none), null);
-equal('Reportes se abre con cualquiera de sus cuatro', [B.viewAllowed('reports', only('reportes_libro')), B.viewAllowed('reports', only('reportes_resumen'))], [true, false]);
+equal('Reportes se abre con cualquiera de sus cinco (el reporte financiero tambien: ahi esta el de ingresos y egresos por mes)', [B.viewAllowed('reports', only('reportes_libro')), B.viewAllowed('reports', only('reportes_resumen')), B.viewAllowed('reports', only('reportes_exportar'))], [true, true, false]);
+equal('el reporte de ingresos, egresos y saldo por mes pide el del reporte financiero', [blocked("selectReport('month-balance')", only('reportes_resumen')), blocked("selectReport('month-balance')", only('reportes_ingresos', 'reportes_libro')), B.firstReport(only('reportes_resumen'))], [false, true, 'month-balance']);
+equal('Imprimir, PDF, Excel y WhatsApp de la pantalla de Reportes piden exportar', ['printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].map((a) => [blocked(a, only('reportes_ingresos')), blocked(a, only('reportes_exportar'))]), [[true, false], [true, false], [true, false], [true, false]]);
+equal('ver la grafica no pide exportar', [blocked('toggleReportChart()', only('reportes_ingresos')), blocked('toggleSummaryChart()', only('reportes_resumen'))], [false, false]);
 equal('el primer reporte permitido', [B.firstReport(only('reportes_gastos', 'reportes_libro')), B.firstReport(none), B.firstReport(all)], ['expense-cat', null, 'income']);
 
 console.log('\nHoja de estilos');
@@ -95,6 +98,9 @@ equal('un cajero sigue viendo reportes de morosos y no exporta', [cssCashier.inc
 equal('en la lista de Reportes, cada reporte se oculta sin su privilegio (tambien el reporte financiero)',
     ['#rep-tab-income', '#rep-tab-expense-cat', '#rep-tab-account-statement', '#rep-tab-resumen'].map((s) => cssCashier.includes(s)).concat(B.cssFor(only('reportes_resumen', 'reportes_libro')).includes('#rep-tab-resumen')),
     [true, true, true, true, false]);
+equal('sin exportar se ocultan los cuatro botones de la pantalla de Reportes (tambien WhatsApp)',
+    ['printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].map((f) => cssCashier.includes(`#view-reports button[onclick="${f}"]`)), [true, true, true, true]);
+equal('sin el reporte financiero tampoco se ve el de ingresos y egresos por mes', [cssCashier.includes('#rep-tab-month-balance'), B.cssFor(only('reportes_resumen')).includes('#rep-tab-month-balance')], [true, false]);
 equal('sin estado de cuenta el nombre del residente deja de ser enlace', B.cssFor(only('residentes_ver')).includes('text-decoration: none'), true);
 equal('con configuracion solo de lectura los campos quedan bloqueados', (() => {
     const css = B.cssFor(only('config_ver'));

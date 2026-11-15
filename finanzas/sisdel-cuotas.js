@@ -12,6 +12,9 @@
    de la cuota (movimiento.period, AAAA-MM), no de la fecha en que se registra: una cuota de octubre cobrada
    en noviembre dice octubre.
 
+   Agua por lote: si el condominio cobra el agua por paja (settings.waterUnitPrice), la cuota de cada lote es la
+   del condominio mas su agua (residentFee y residentFeeInfo, al final del archivo).
+
    Lo carga OIKOS (finanzas/index.html) en el navegador y lo usa el servidor al generar las cuotas del dia
    (functions/src/finanzas/mora.js). functions/src/finanzas/cuotas.js es una COPIA IDENTICA de este archivo
    (la prueba scripts/test-finanzas-cuotas.mjs falla si difieren): al cambiar uno, copiarlo al otro.
@@ -104,5 +107,38 @@
         return { concept: describe(breakdown, s.currency, period), breakdown: parts };
     }
 
-    return { PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel };
+    // ── Agua por lote ──
+    // En un condominio que cobra el agua por "paja de agua", el precio de la paja se guarda en la configuracion
+    // (settings.waterUnitPrice) y cada lote guarda cuanta tiene (residente.waterUnits): 0 = sin casa, no paga agua;
+    // 0.5 = media paja; 1 = una paja. La cuota de un lote es la cuota del condominio (settings.fee) mas su agua.
+    // Sin precio de la paja nada cambia: todos pagan la misma cuota.
+    const WATER_UNITS = [0, 0.5, 1];
+    function waterUnits(resident) {
+        const n = parseFloat(resident && resident.waterUnits);
+        return WATER_UNITS.includes(n) ? n : 0;
+    }
+    // Lo que paga de agua el lote cada mes
+    function waterOf(settings, resident) {
+        return round2(waterUnits(resident) * amountOf(settings && settings.waterUnitPrice));
+    }
+    // La cuota mensual de un residente; 0 si el condominio no cobra cuota
+    function residentFee(settings, resident) {
+        const base = amountOf(settings && settings.fee);
+        return base > 0 ? round2(base + waterOf(settings, resident)) : 0;
+    }
+    // Concepto y desglose de la cuota de un residente (el agua de su lote se suma al concepto "agua" del desglose);
+    // null en los mismos casos que feeInfo
+    function residentFeeInfo(settings, resident, amount, period) {
+        const s = settings || {};
+        const water = waterOf(s, resident);
+        const breakdown = normalize(s.feeBreakdown);
+        if (water <= 0 || total(breakdown) <= 0) return feeInfo(s, amount, period);
+        breakdown.water = round2(breakdown.water + water);
+        return feeInfo({ ...s, feeBreakdown: breakdown }, amount, period);
+    }
+
+    return {
+        PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel,
+        WATER_UNITS, waterUnits, waterOf, residentFee, residentFeeInfo
+    };
 });

@@ -73,6 +73,41 @@ const mismatch = M.missingFees(residents, [], { ...settings, fee: 600, chargeDay
 equal('si el desglose no suma la cuota, el servidor conserva el concepto de siempre', mismatch[mismatch.length - 1].concept, 'Cuota - Noviembre 2026');
 equal('el saldo y la mora usan el monto, no el texto', M.balanceOf(withBreakdown, 'r1'), -500 * withBreakdown.length);
 
+console.log('\nAgua por lote (paja de agua)');
+// Datos inventados: mantenimiento Q300 y la paja de agua a Q160 (media paja Q80)
+const perLot = { fee: 300, currency: 'GTQ', feeBreakdown: { maintenance: 300 }, waterUnitPrice: 160 };
+equal('la cuota del lote: sin casa Q300, media paja Q380, una paja Q460', [C.residentFee(perLot, {}), C.residentFee(perLot, { waterUnits: 0.5 }), C.residentFee(perLot, { waterUnits: 1 })], [300, 380, 460]);
+equal('lo que paga de agua cada lote', [C.waterOf(perLot, {}), C.waterOf(perLot, { waterUnits: 0.5 }), C.waterOf(perLot, { waterUnits: 1 })], [0, 80, 160]);
+equal('el agua guardada como texto tambien vale', [C.residentFee(perLot, { waterUnits: '0.5' }), C.residentFee(perLot, { waterUnits: '1' })], [380, 460]);
+equal('solo valen nada, media paja o una paja: lo demas es sin agua', [C.waterUnits({ waterUnits: 2 }), C.waterUnits({ waterUnits: 0.25 }), C.waterUnits({ waterUnits: 'una' }), C.waterUnits({ waterUnits: -1 }), C.waterUnits({}), C.waterUnits(null)], [0, 0, 0, 0, 0, 0]);
+equal('sin ficha del residente, la cuota es la del condominio', [C.residentFee(perLot, null), C.residentFee(perLot, undefined)], [300, 300]);
+equal('sin precio de la paja nada cambia: todos pagan la cuota del condominio', [C.residentFee({ fee: 300 }, { waterUnits: 1 }), C.residentFee({ fee: '300', waterUnitPrice: '' }, { waterUnits: 0.5 })], [300, 300]);
+equal('un condominio que no cobra cuota tampoco cobra agua', [C.residentFee({ fee: 0, waterUnitPrice: 160 }, { waterUnits: 1 }), C.residentFee(null, { waterUnits: 1 })], [0, 0]);
+equal('la cuota de una paja nombra el agua y dice su mes', C.residentFeeInfo(perLot, { waterUnits: 1 }, 460, '2026-11'), { concept: 'Por aporte para mantenimiento y servicio de agua correspondiente a noviembre de 2026 Q 460.00', breakdown: { maintenance: 300, water: 160 } });
+equal('la de media paja', C.residentFeeInfo(perLot, { waterUnits: 0.5 }, 380, '2026-11'), { concept: 'Por aporte para mantenimiento y servicio de agua correspondiente a noviembre de 2026 Q 380.00', breakdown: { maintenance: 300, water: 80 } });
+equal('la de un lote sin casa no nombra el agua', C.residentFeeInfo(perLot, {}, 300, '2026-11'), { concept: 'Por aporte para mantenimiento correspondiente a noviembre de 2026 Q 300.00', breakdown: { maintenance: 300 } });
+equal('si el condominio ya cobra agua a todos, la del lote se suma a ese concepto', C.residentFeeInfo({ ...perLot, fee: 320, feeBreakdown: { maintenance: 300, water: 20 } }, { waterUnits: 1 }, 480, '2026-11').breakdown, { maintenance: 300, water: 180 });
+equal('sin desglose configurado, la cuota del lote conserva "Cuota - Mes Año"', C.residentFeeInfo({ fee: 300, waterUnitPrice: 160 }, { waterUnits: 1 }, 460, '2026-11'), null);
+equal('un cobro de otro monto que la cuota del lote conserva su concepto de siempre', [C.residentFeeInfo(perLot, { waterUnits: 1 }, 300, '2026-11'), C.residentFeeInfo(perLot, {}, 460, '2026-11')], [null, null]);
+equal('sin agua por lote, residentFeeInfo es feeInfo', C.residentFeeInfo(settings, { waterUnits: 1 }, 500, '2026-10'), C.feeInfo(settings, 500, '2026-10'));
+equal('la configuracion no se toca al calcular', perLot.feeBreakdown, { maintenance: 300 });
+
+const lots = [
+    { id: 'a1', status: 'active', createdAt: '2020-01-01T00:00:00Z' },
+    { id: 'b1', status: 'active', createdAt: '2020-01-01T00:00:00Z', waterUnits: 0.5 },
+    { id: 'c1', status: 'active', createdAt: '2020-01-01T00:00:00Z', waterUnits: 1 }
+];
+const lotFees = M.missingFees(lots, [], { ...perLot, chargeDay: 5, feeMode: 'auto' }, now).filter((t) => t.period === '2026-11');
+equal('el servidor cobra a cada lote su cuota', lotFees.map((t) => [t.resiId, t.amount]), [['a1', 300], ['b1', 380], ['c1', 460]]);
+equal('y cada cuota lleva su desglose', lotFees.map((t) => t.breakdown), [{ maintenance: 300 }, { maintenance: 300, water: 80 }, { maintenance: 300, water: 160 }]);
+equal('el concepto de cada una dice su monto', lotFees.map((t) => t.concept.slice(-8)), ['Q 300.00', 'Q 380.00', 'Q 460.00']);
+equal('sin precio de la paja el servidor cobra lo mismo a todos', M.missingFees(lots, [], { fee: 300, feeBreakdown: { maintenance: 300 }, chargeDay: 5, feeMode: 'auto' }, now).filter((t) => t.period === '2026-11').map((t) => t.amount), [300, 300, 300]);
+equal('con agua por lote y sin desglose, el servidor cobra el monto del lote con "Cuota - Mes Año"', M.missingFees(lots, [], { fee: 300, waterUnitPrice: 160, chargeDay: 5, feeMode: 'auto' }, now).filter((t) => t.period === '2026-11').map((t) => [t.amount, t.concept]), [[300, 'Cuota - Noviembre 2026'], [380, 'Cuota - Noviembre 2026'], [460, 'Cuota - Noviembre 2026']]);
+equal('la garita compara con la cuota del lote: una cuota de Q460 vencida no bloquea', [
+    M.moraOf('c1', [{ id: 'x', type: 'charge', kind: 'fee', period: '2026-10', amount: 460, resiId: 'c1', date: '2026-10-05T18:00:00.000Z' }], { ...perLot, chargeDay: 5 }, now, lots[2]).moroso,
+    M.moraOf('c1', [{ id: 'x', type: 'charge', kind: 'fee', period: '2026-10', amount: 460, resiId: 'c1', date: '2026-10-05T18:00:00.000Z' }], { ...perLot, chargeDay: 5 }, now).moroso
+], [false, true]);
+
 console.log('\nIntegracion en OIKOS y copia del servidor');
 yes('el servidor usa una copia IDENTICA del modulo', read('finanzas/sisdel-cuotas.js') === read('functions/src/finanzas/cuotas.js'));
 const oikos = read('finanzas/index.html');

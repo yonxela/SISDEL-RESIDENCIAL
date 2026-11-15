@@ -64,6 +64,7 @@ function createdAfterPeriod(r, period) {
 }
 
 const cuotas = require('./cuotas');
+const moraDiaria = require('./mora-diaria');
 
 function autoSkips(r, period) {
     if (!isActive(r)) return true;
@@ -87,8 +88,7 @@ function feeAmount(settings) {
 function missingFees(residents, txs, settings, now = new Date(), nowIso = now.toISOString()) {
     const s = settings || {};
     if ((s.feeMode || 'auto') === 'manual') return [];
-    const fee = feeAmount(s);
-    if (!fee || !s.chargeDay) return [];
+    if (!feeAmount(s) || !s.chargeDay) return [];
     const chargeDay = Math.min(28, Math.max(1, parseInt(s.chargeDay, 10) || 1));
     const { y, m: curMonth, d } = localParts(now);
     const ids = new Set(txs.map((t) => String(t.id)));
@@ -97,10 +97,12 @@ function missingFees(residents, txs, settings, now = new Date(), nowIso = now.to
     for (let m = 0; m <= curMonth; m++) {
         if (m === curMonth && d < chargeDay) continue;
         const period = periodKey(y, m);
-        // Con desglose configurado la cuota lleva la misma descripcion que cobra OIKOS, con su mes (ver finanzas/sisdel-cuotas.js)
-        const info = cuotas.feeInfo(s, fee, period);
         residents.forEach((r) => {
             if (autoSkips(r, period) || hasFeeCharge(all, r.id, period)) return;
+            // La cuota es la del lote: la del condominio mas su agua, si el condominio cobra el agua por paja.
+            // Con desglose configurado lleva la misma descripcion que cobra OIKOS, con su mes (ver finanzas/sisdel-cuotas.js)
+            const fee = cuotas.residentFee(s, r);
+            const info = cuotas.residentFeeInfo(s, r, fee, period);
             let id = `fee_${r.id}_${period}`;
             let n = 1;
             while (ids.has(id)) id = `fee_${r.id}_${period}_r${n++}`;
@@ -132,11 +134,25 @@ function balanceOf(txs, residentId) {
 
 // Mora del residente. La cuota del mes actual cuenta como vencida a partir del
 // dia de cobro mas los dias de gracia (como checkIsMoroso de OIKOS).
-function moraOf(residentId, txs, settings, now = new Date()) {
+// `resident` (opcional) es su ficha financiera: con agua por lote, "una cuota" es la de su lote.
+//
+// En un condominio con recargo por mora (settings.moraRules) decide el modulo de mora por dia: cada cuota
+// vence al terminar su mes mas los dias de plazo y la garita mira solo el capital vencido (el recargo se debe,
+// pero no bloquea). `balance` y `debt` incluyen el recargo.
+function moraOf(residentId, txs, settings, now = new Date(), resident = null) {
     const s = settings || {};
+    const fee = resident ? cuotas.residentFee(s, resident) : feeAmount(s);
+    if (moraDiaria.enabled(s)) {
+        const today = localParts(now);
+        const asOf = `${today.y}-${String(today.m + 1).padStart(2, '0')}-${String(today.d).padStart(2, '0')}`;
+        const state = moraDiaria.stateOf(residentId, txs, s, asOf);
+        return {
+            balance: state.balance, debt: round2(state.capital + state.mora), overdue: state.overdueCapital,
+            moroso: state.overdueCapital > fee + EPS, capital: state.capital, mora: state.mora
+        };
+    }
     const balance = balanceOf(txs, residentId);
     const debt = balance < -EPS ? -balance : 0;
-    const fee = feeAmount(s);
     if (!debt) return { balance, debt: 0, overdue: 0, moroso: false };
     const { y, m, d } = localParts(now);
     const current = periodKey(y, m);

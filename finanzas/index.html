@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261115b"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261115a"></script>
+    <script src="./sisdel-reportes.js?v=20261115b"></script>
     <script src="../reportes-export.js?v=20261110b"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
@@ -681,6 +681,9 @@
                         </div>
                     </div>
 
+                    <!-- SISDEL: aviso del reporte (p. ej. que en el periodo no hay pagos ni gastos, solo cuotas y cargos) -->
+                    <div id="rep-notice" class="hidden flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300 text-sm"><i class="fas fa-info-circle mt-0.5"></i><p id="rep-notice-text"></p></div>
+
                     <!-- Tabla del reporte -->
                     <div id="rep-table-wrap" class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                         <div class="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
@@ -696,7 +699,7 @@
                         </div>
                         <div id="rep-empty" class="hidden px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                             <i class="fas fa-inbox text-3xl opacity-40 mb-2"></i>
-                            <p>No hay datos para mostrar con los filtros actuales.</p>
+                            <p id="rep-empty-text">No hay datos para mostrar con los filtros actuales.</p>
                         </div>
                     </div>
 
@@ -789,6 +792,13 @@
                 <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-rose-800 dark:text-rose-400 font-medium" id="lbl-rep-exp">Total Gastos</span><span class="text-rose-700 dark:text-rose-300 font-bold text-lg" id="rep-val-exp">$0.00</span></div>
                 <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 p-4 rounded-xl flex items-center justify-between"><span class="text-indigo-900 dark:text-indigo-300 font-bold" id="lbl-rep-bal">Balance</span><span class="text-indigo-700 dark:text-indigo-400 font-black text-xl" id="rep-val-bal">$0.00</span></div>
             </div>
+            <!-- SISDEL: lo que se cobra a los vecinos, aparte de la caja (Ingresos, Gastos y Balance son dinero que entro o salio) -->
+            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Cobros a los vecinos</p>
+            <div class="space-y-3 mb-4">
+                <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-amber-800 dark:text-amber-400 font-medium">Cuotas y cargos emitidos</span><span class="text-amber-700 dark:text-amber-300 font-bold text-lg" id="rep-val-chg">$0.00</span></div>
+                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-orange-800 dark:text-orange-400 font-medium">Por cobrar al cierre</span><span class="text-orange-700 dark:text-orange-300 font-bold text-lg" id="rep-val-rec">$0.00</span></div>
+            </div>
+            <p id="rep-sum-notice" class="hidden mb-5 px-3 py-2 rounded-lg text-xs border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"></p>
             <!-- SISDEL: grafica de barras del reporte financiero (ingresos, gastos y balance del periodo) -->
             <div id="rep-sum-chart-wrap" class="hidden h-56 relative w-full mb-5"><canvas id="rep-sum-chart"></canvas></div>
             <div class="border-t border-slate-100 dark:border-slate-700 pt-4 space-y-2 mt-auto">
@@ -3472,6 +3482,12 @@
             titleEl.textContent = d.title;
             // SISDEL: la indicacion de uso (hint) solo va en pantalla; el resumen tambien va al PDF, Excel y WhatsApp
             summaryEl.textContent = [d.summary, d.hint].filter(Boolean).join(' · ');
+            // SISDEL: aviso del reporte (p. ej. que en el periodo solo hay cuotas y cargos) y por que la tabla sale vacia
+            const noticeEl = document.getElementById('rep-notice');
+            const noticeText = document.getElementById('rep-notice-text');
+            if (noticeEl && noticeText) { noticeText.textContent = d.notice || ''; noticeEl.classList.toggle('hidden', !d.notice); }
+            const emptyText = document.getElementById('rep-empty-text');
+            if (emptyText) emptyText.textContent = d.emptyText || 'No hay datos para mostrar con los filtros actuales.';
             thead.innerHTML = '<tr>' + d.headers.map(function (h, i) {
                 const align = i === 0 ? 'text-left' : 'text-right';
                 return '<th class="px-4 py-3 ' + align + '">' + h + '</th>';
@@ -3672,6 +3688,7 @@
                     <h1>${escText(d.title)}</h1>
                     <p>${escText(s.name || 'OIKOS')}${d.summary ? ' · ' + escText(d.summary) : ''}</p>
                 </div>
+                ${d.notice ? `<p style="margin:0 0 16px;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px">${escText(d.notice)}</p>` : ''}
                 <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody><tfoot>${totalsRow}</tfoot></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;
@@ -3716,17 +3733,26 @@
             doc.setFontSize(9);
             const generado = 'Generado: ' + new Date().toLocaleString('es-MX');
             doc.text(generado, pageW - 14 - doc.getTextWidth(generado), 21);
-            // Subtítulo (resumen del reporte)
+            // Subtítulo (resumen del reporte) y aviso; SISDEL: en varias lineas si no caben a lo ancho
+            let startY = 36;
             if (d.summary) {
                 doc.setTextColor(100, 116, 139);
                 doc.setFontSize(10);
-                doc.text(pdfText(d.summary), 14, 38);
+                const lines = doc.splitTextToSize(pdfText(d.summary), pageW - 28);
+                doc.text(lines, 14, 38);
+                startY = 38 + lines.length * 5;
+            }
+            if (d.notice) {
+                doc.setTextColor(146, 64, 14);
+                doc.setFontSize(9);
+                const lines = doc.splitTextToSize(pdfText(d.notice), pageW - 28);
+                doc.text(lines, 14, startY + 2);
+                startY += 4 + lines.length * 4.5;
             }
             // Tabla
             const body = d.rows.map(row => row.map(pdfText));
             const head = [d.headers.map(pdfText)];
             const foot = d.totals ? [d.totals.map(pdfText)] : undefined;
-            const startY = d.summary ? 44 : 36;
             const columnStyles = {};
             numericCols.forEach(i => { if (i > 0) columnStyles[i] = { halign: 'right' }; });
             doc.autoTable({
@@ -3752,6 +3778,22 @@
                 : (d.title || 'reporte').replace(/\s+/g, '_').toLowerCase();
             doc.save(fileName + '.pdf');
             showToast('PDF generado.');
+        }
+
+        // SISDEL: opciones comunes de los calculos de finanzas/sisdel-reportes.js: dia local de OIKOS y los vecinos vigentes
+        // (por cobrar suma solo lo que deben ellos, como el reporte de Morosos)
+        function sisdelReportOptions(from, to) {
+            return { from: from || '', to: to || '', dayKey: localDayKey, residents: (Store.get('residents') || []).map(function (r) { return String(r.id); }) };
+        }
+
+        // SISDEL: aviso para un periodo sin pagos ni gastos (un condominio que solo tiene cuotas y cargos cargados no debe
+        // ver ceros sin explicacion). what: 'pagos', 'gastos' o 'pagos ni gastos'.
+        function sisdelNoCashNotice(what, from, to) {
+            if (typeof SisdelReportesOikos === 'undefined') return '';
+            const p = SisdelReportesOikos.periodSummary(Store.get('transactions') || [], sisdelReportOptions(from, to));
+            const base = 'No hay ' + what + ' registrados en este período.';
+            if (p.charges > 0) return base + ' Se emitieron cuotas y cargos por ' + formatMoney(p.charges) + ' y al cierre quedan ' + formatMoney(p.receivable) + ' por cobrar (los pagos aparecen aquí cuando se registran; lo que debe cada vecino está en Morosos y meses adeudados).';
+            return base;
         }
 
         // ─── Reporte 1: Ingresos por período ──────────────────────────────
@@ -3791,6 +3833,8 @@
                 // al hacer click se abre el drill-down del mes (Nivel 2).
                 rowsMeta: sorted.map(function (r) { return { kind: 'monthIncomes', monthKey: r.key, label: r.label }; }),
                 totals: ['TOTAL', String(totalCount), formatMoney(totalAmount)],
+                notice: sorted.length ? '' : sisdelNoCashNotice('pagos', from, to),
+                emptyText: 'No hay pagos registrados en este período.',
                 numericCols: [1, 2],
                 chartType: 'bar',
                 chartLabels: sorted.map(function (r) { return r.label; }),
@@ -3916,6 +3960,7 @@
                     return [r.cat, String(r.count), pct, formatMoney(r.total)];
                 }),
                 totals: ['TOTAL', String(totalCount), '100.0 %', formatMoney(totalAmount)],
+                emptyText: 'No hay gastos registrados en este período.',
                 numericCols: [1, 3],
                 // SISDEL: barras (antes dona), como las demas graficas de los reportes
                 chartType: 'bar',
@@ -4035,6 +4080,8 @@
                 summary: (from && to ? from + ' → ' + to : 'Todo el histórico')
                     + ' · ' + txs.length + ' movimiento(s)',
                 hint: 'tocá el No. de Documento para ver el detalle',
+                notice: txs.length ? '' : sisdelNoCashNotice('pagos ni gastos', from, to),
+                emptyText: 'No hay pagos ni gastos registrados en este período.',
                 headers: ['Fecha', 'Hora', 'No. Documento', 'Concepto', 'Ingresos', 'Egresos', 'Saldo'],
                 rows: rows,
                 totals: [
@@ -4064,32 +4111,44 @@
             const from = document.getElementById('rep-from')?.value || '';
             const to = document.getElementById('rep-to')?.value || '';
             const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-            const data = SisdelReportesOikos.monthBalance(Store.get('transactions') || [], { from: from, to: to, dayKey: localDayKey });
+            const data = SisdelReportesOikos.monthBalance(Store.get('transactions') || [], sisdelReportOptions(from, to));
+            // Caja (ingresos, egresos y saldo) y, aparte, lo que se cobra: cuotas y cargos emitidos y lo que queda por cobrar
+            const cells = function (label, x) { return [label, formatMoney(x.income), formatMoney(x.expense), formatMoney(x.balance), formatMoney(x.charges), formatMoney(x.receivable)]; };
             const rows = [];
             const rowsMeta = [];
             data.years.forEach(function (y) {
                 data.months.filter(function (m) { return m.year === y.year; }).forEach(function (m) {
-                    rows.push([monthNames[m.month - 1] + ' ' + m.year, formatMoney(m.income), formatMoney(m.expense), formatMoney(m.balance)]);
+                    rows.push(cells(monthNames[m.month - 1] + ' ' + m.year, m));
                     rowsMeta.push(null);
                 });
-                rows.push(['Total ' + y.year, formatMoney(y.income), formatMoney(y.expense), formatMoney(y.balance)]);
+                rows.push(cells('Total ' + y.year, y));
                 rowsMeta.push({ kind: 'subtotal' });
             });
+            const t = data.total;
+            let notice = '';
+            if (data.months.length && t.income === 0 && t.expense === 0) {
+                notice = 'No hay pagos ni gastos registrados en este período: ingresos, egresos y saldo salen en cero.'
+                    + (t.charges > 0 ? ' Se emitieron cuotas y cargos por ' + formatMoney(t.charges) + ' y al cierre quedan ' + formatMoney(t.receivable) + ' por cobrar.' : '');
+            }
             const labels = data.months.map(function (m) { return monthNames[m.month - 1].slice(0, 3) + ' ' + m.year; });
             return {
                 title: 'Ingresos, egresos y saldo por mes',
-                summary: (from && to ? from + ' → ' + to : 'Todo el histórico') + ' · saldo = ingresos menos egresos',
-                headers: ['Mes', 'Ingresos', 'Egresos', 'Saldo'],
+                summary: (from && to ? from + ' → ' + to : 'Todo el histórico') + ' · saldo = ingresos menos egresos · por cobrar = cuotas y cargos menos pagos, al cierre de cada mes',
+                notice: notice,
+                emptyText: 'No hay movimientos en este período.',
+                headers: ['Mes', 'Ingresos', 'Egresos', 'Saldo', 'Cuotas y cargos emitidos', 'Por cobrar al cierre'],
                 rows: rows,
                 rowsMeta: rowsMeta,
-                totals: ['TOTAL', formatMoney(data.total.income), formatMoney(data.total.expense), formatMoney(data.total.balance)],
-                numericCols: [1, 2, 3],
+                totals: cells('TOTAL', t),
+                numericCols: [1, 2, 3, 4, 5],
                 chartType: 'bar',
                 chartLabels: labels,
                 chartDatasets: [
                     { label: 'Ingresos', data: data.months.map(function (m) { return m.income; }), color: 'rgba(16,185,129,0.7)', border: '#059669' },
                     { label: 'Egresos', data: data.months.map(function (m) { return m.expense; }), color: 'rgba(244,63,94,0.7)', border: '#E11D48' },
                     { label: 'Saldo', data: data.months.map(function (m) { return m.balance; }), color: 'rgba(59,130,246,0.7)', border: '#2563EB' },
+                    { label: 'Cuotas y cargos emitidos', data: data.months.map(function (m) { return m.charges; }), color: 'rgba(245,158,11,0.7)', border: '#D97706' },
+                    { label: 'Por cobrar al cierre', data: data.months.map(function (m) { return m.receivable; }), color: 'rgba(249,115,22,0.45)', border: '#EA580C' },
                 ],
             };
         }
@@ -4154,18 +4213,49 @@
             txs.forEach(t => { const d = new Date(t.date); const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; if (!repMonthsMap.has(k)) { const l = formatter.format(new Date(d.getFullYear(), d.getMonth(), 2)); repMonthsMap.set(k, l.charAt(0).toUpperCase() + l.slice(1)); } });
             const sorted = Array.from(repMonthsMap.keys()).sort().reverse();
             repSelect.innerHTML = sorted.map(k => `<option value="${k}">${repMonthsMap.get(k)}</option>`).join('');
+            // SISDEL: abre en el ultimo mes con movimientos hasta el mes actual (antes en el mas adelantado: un cargo
+            // fechado en diciembre lo abria en diciembre). Si todos son posteriores, en el primero de ellos.
+            const nowKey = localDayKey(new Date()).slice(0, 7);
+            const initial = sorted.find(k => k <= nowKey) || sorted[sorted.length - 1];
+            repSelect.value = initial;
             setReportMode('monthly');
-            renderReportData(sorted[0]); openModal('modal-report');
+            renderReportData(initial); openModal('modal-report');
         }
 
         function renderReportData(mk) {
-            const txs = Store.get('transactions'); let mI = 0, mE = 0;
-            txs.forEach(t => { const d = new Date(t.date); const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; if (k === mk) { if (t.type === 'income') mI += parseFloat(t.amount) || 0; else if (t.type === 'expense') mE += parseFloat(t.amount) || 0; } });
-            document.getElementById('rep-val-inc').innerText = formatMoney(mI);
-            document.getElementById('rep-val-exp').innerText = formatMoney(mE);
-            document.getElementById('rep-val-bal').innerText = formatMoney(mI - mE);
-            document.getElementById('rep-period-label').textContent = repMonthsMap.get(mk) || '';
-            repCurrentData = { inc: mI, exp: mE, bal: mI - mE, label: repMonthsMap.get(mk) };
+            // SISDEL: el mes va del dia 1 al ultimo ('-31' compara bien con cualquier dia del mes)
+            showReportSummary(String(mk || '') + '-01', String(mk || '') + '-31', repMonthsMap.get(mk) || '');
+        }
+
+        // SISDEL: llena la ventana con el periodo [from, to]: la caja (ingresos, gastos y balance) y, aparte, las cuotas y
+        // cargos emitidos y lo que queda por cobrar al cierre (finanzas/sisdel-reportes.js). Sin pagos ni gastos, un aviso
+        // explica los ceros (un condominio que solo tiene cargos cargados veia todo en cero sin explicacion).
+        function showReportSummary(from, to, label) {
+            const txs = Store.get('transactions') || [];
+            let p;
+            if (typeof SisdelReportesOikos !== 'undefined') p = SisdelReportesOikos.periodSummary(txs, sisdelReportOptions(from, to));
+            else {
+                p = { income: 0, expense: 0, charges: 0, receivable: null };
+                txs.forEach(t => { const td = localDayKey(t.date); if (td >= from && td <= to) { if (t.type === 'income') p.income += parseFloat(t.amount) || 0; else if (t.type === 'expense') p.expense += parseFloat(t.amount) || 0; else if (t.type === 'charge') p.charges += parseFloat(t.amount) || 0; } });
+                p.balance = p.income - p.expense;
+            }
+            let notice = '';
+            if (p.income === 0 && p.expense === 0) {
+                notice = p.charges > 0
+                    ? 'No hay pagos ni gastos registrados en este período; se emitieron cuotas y cargos por ' + formatMoney(p.charges) + '. Los pagos aparecen aquí cuando se registran.'
+                    : 'No hay pagos, gastos ni cargos registrados en este período.';
+            }
+            if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {}) && p.receivable) notice = (notice ? notice + ' ' : '') + 'Por cobrar no incluye la mora por día.';
+            document.getElementById('rep-val-inc').innerText = formatMoney(p.income);
+            document.getElementById('rep-val-exp').innerText = formatMoney(p.expense);
+            document.getElementById('rep-val-bal').innerText = formatMoney(p.balance);
+            document.getElementById('rep-val-chg').innerText = formatMoney(p.charges);
+            document.getElementById('rep-val-rec').innerText = p.receivable === null ? '—' : formatMoney(p.receivable);
+            document.getElementById('rep-period-label').textContent = label;
+            const noticeEl = document.getElementById('rep-sum-notice');
+            noticeEl.textContent = notice;
+            noticeEl.classList.toggle('hidden', !notice);
+            repCurrentData = { inc: p.income, exp: p.expense, bal: p.balance, chg: p.charges, rec: p.receivable || 0, label, notice };
             if (repSummaryChartVisible) paintSummaryChart();
         }
 
@@ -4193,12 +4283,12 @@
             repSummaryChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: ['Ingresos', 'Gastos', 'Balance'],
+                    labels: ['Ingresos', 'Gastos', 'Balance', 'Cuotas y cargos', 'Por cobrar'],
                     datasets: [{
                         label: d.label || 'Período',
-                        data: [d.inc, d.exp, d.bal],
-                        backgroundColor: ['rgba(16,185,129,0.7)', 'rgba(244,63,94,0.7)', d.bal < 0 ? 'rgba(244,63,94,0.45)' : 'rgba(99,102,241,0.7)'],
-                        borderColor: ['#059669', '#E11D48', d.bal < 0 ? '#E11D48' : '#4F46E5'],
+                        data: [d.inc, d.exp, d.bal, d.chg || 0, d.rec || 0],
+                        backgroundColor: ['rgba(16,185,129,0.7)', 'rgba(244,63,94,0.7)', d.bal < 0 ? 'rgba(244,63,94,0.45)' : 'rgba(99,102,241,0.7)', 'rgba(245,158,11,0.7)', 'rgba(249,115,22,0.45)'],
+                        borderColor: ['#059669', '#E11D48', d.bal < 0 ? '#E11D48' : '#4F46E5', '#D97706', '#EA580C'],
                         borderWidth: 1.5,
                         borderRadius: 4,
                     }],
@@ -4219,23 +4309,9 @@
             const from = document.getElementById('rep-date-from').value;
             const to = document.getElementById('rep-date-to').value;
             if (!from || !to) return;
-            const txs = Store.get('transactions'); let mI = 0, mE = 0;
-            txs.forEach(t => {
-                const td = localDayKey(t.date);
-                if (td >= from && td <= to) {
-                    if (t.type === 'income') mI += parseFloat(t.amount) || 0;
-                    else if (t.type === 'expense') mE += parseFloat(t.amount) || 0;
-                }
-            });
             const fromD = new Date(from + 'T12:00:00'); const toD = new Date(to + 'T12:00:00');
             const fmt = (d) => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
-            const label = fmt(fromD) + ' — ' + fmt(toD);
-            document.getElementById('rep-val-inc').innerText = formatMoney(mI);
-            document.getElementById('rep-val-exp').innerText = formatMoney(mE);
-            document.getElementById('rep-val-bal').innerText = formatMoney(mI - mE);
-            document.getElementById('rep-period-label').textContent = label;
-            repCurrentData = { inc: mI, exp: mE, bal: mI - mE, label };
-            if (repSummaryChartVisible) paintSummaryChart();
+            showReportSummary(from, to, fmt(fromD) + ' — ' + fmt(toD));
         }
 
         function getReportTransactions() {
@@ -4258,14 +4334,17 @@
                 const s = Store.get('settings') || {};
                 const txs = getReportTransactions();
                 const res = Store.get('residents');
-                if (txs.length === 0) return alert('No hay transacciones en este período.');
+                // Sin pagos ni gastos igual se descarga: lleva el resumen con las cuotas y cargos y lo que queda por cobrar
                 const nameOf = (t) => (t.resiId ? (res.find(r => r.id === t.resiId)?.name || '') : '');
                 const model = {
                     title: 'Reporte financiero',
-                    subtitle: 'Período: ' + d.label,
+                    subtitle: 'Período: ' + d.label + (d.notice ? ' · ' + d.notice : ''),
                     condoName: s.name || '',
                     at: new Date(),
-                    kpis: [{ label: 'Ingresos netos', value: +d.inc.toFixed(2) }, { label: 'Total gastos', value: +d.exp.toFixed(2) }, { label: 'Balance', value: +d.bal.toFixed(2) }],
+                    kpis: [
+                        { label: 'Ingresos netos', value: +d.inc.toFixed(2) }, { label: 'Total gastos', value: +d.exp.toFixed(2) }, { label: 'Balance', value: +d.bal.toFixed(2) },
+                        { label: 'Cuotas y cargos emitidos', value: +(d.chg || 0).toFixed(2) }, { label: 'Por cobrar al cierre', value: +(d.rec || 0).toFixed(2) }
+                    ],
                     tables: [{
                         title: 'Movimientos',
                         headers: ['Fecha', 'Concepto', 'Residente', 'Tipo', 'Monto'],
@@ -4309,7 +4388,10 @@
 
         function shareReportWhatsApp() {
             const s = Store.get('settings');
-            const msg = `\u2705 *Reporte Financiero:* ${s.name}\n\uD83D\uDCC5 *Período:* ${repCurrentData.label}\n\n\uD83D\uDFE2 Ingresos: ${formatMoney(repCurrentData.inc)}\n\uD83D\uDD34 Gastos: ${formatMoney(repCurrentData.exp)}\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u2696\uFE0F *Balance: ${formatMoney(repCurrentData.bal)}*`;
+            const msg = `\u2705 *Reporte Financiero:* ${s.name}\n\uD83D\uDCC5 *Período:* ${repCurrentData.label}\n\n\uD83D\uDFE2 Ingresos: ${formatMoney(repCurrentData.inc)}\n\uD83D\uDD34 Gastos: ${formatMoney(repCurrentData.exp)}\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u2696\uFE0F *Balance: ${formatMoney(repCurrentData.bal)}*`
+                // SISDEL: lo que se cobra a los vecinos, aparte de la caja, y el aviso si no hay pagos ni gastos
+                + `\n\n*Cobros a los vecinos*\nCuotas y cargos emitidos: ${formatMoney(repCurrentData.chg || 0)}\nPor cobrar al cierre: ${formatMoney(repCurrentData.rec || 0)}`
+                + (repCurrentData.notice ? `\n\n_${repCurrentData.notice}_` : '');
             window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
         }
 
@@ -4334,13 +4416,26 @@
             doc.setTextColor(22, 163, 74); doc.text('INGRESOS NETOS', 16, 48); doc.setFontSize(14); doc.text(formatMoney(d.inc), 16, 57);
             doc.setFontSize(8); doc.setTextColor(225, 29, 72); doc.text('TOTAL GASTOS', 79, 48); doc.setFontSize(14); doc.text(formatMoney(d.exp), 79, 57);
             doc.setFontSize(8); doc.setTextColor(79, 70, 229); doc.text('BALANCE', 142, 48); doc.setFontSize(14); doc.text(formatMoney(d.bal), 142, 57);
+            // SISDEL: cobros a los vecinos (aparte de la caja) y el aviso si no hay pagos ni gastos
+            doc.setFillColor(255, 251, 235); doc.roundedRect(14, 68, 87, 22, 3, 3, 'F');
+            doc.setFillColor(255, 247, 237); doc.roundedRect(108, 68, 87, 22, 3, 3, 'F');
+            doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+            doc.setTextColor(180, 83, 9); doc.text('CUOTAS Y CARGOS EMITIDOS', 16, 76); doc.setFontSize(14); doc.text(formatMoney(d.chg || 0), 16, 85);
+            doc.setFontSize(8); doc.setTextColor(194, 65, 12); doc.text('POR COBRAR AL CIERRE', 110, 76); doc.setFontSize(14); doc.text(formatMoney(d.rec || 0), 110, 85);
+            let tableY = 98;
+            if (d.notice) {
+                doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(146, 64, 14);
+                const lines = doc.splitTextToSize(typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(d.notice) : d.notice, 181);
+                doc.text(lines, 14, 98);
+                tableY = 100 + lines.length * 5;
+            }
             // Transactions table
             if (txs.length > 0) {
                 const body = txs.map(t => { const rn = t.resiId ? (res.find(r => r.id === t.resiId)?.name || '') : ''; const isI = t.type === 'income'; return [new Date(t.date).toLocaleDateString('es-MX'), t.concept, rn, isI ? 'Ingreso' : 'Egreso', (isI ? '+' : '-') + formatMoney(t.amount)]; });
-                doc.autoTable({ startY: 70, head: [['Fecha', 'Concepto', 'Residente', 'Tipo', 'Monto']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 4: { halign: 'right' } } });
+                doc.autoTable({ startY: tableY, head: [['Fecha', 'Concepto', 'Residente', 'Tipo', 'Monto']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 4: { halign: 'right' } } });
             }
             // Footer
-            const fy = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 75;
+            const fy = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : tableY + 5;
             doc.setFontSize(7); doc.setTextColor(150, 150, 170); doc.text('Generado el ' + new Date().toLocaleString('es-MX'), 105, fy, { align: 'center' });
             doc.save('Reporte_' + d.label.replace(/[\s\/]+/g, '_') + '.pdf');
             showToast('PDF del reporte generado.');
@@ -4351,14 +4446,21 @@
             const d = repCurrentData; if (!d) return;
             const txs = getReportTransactions();
             const res = Store.get('residents');
-            const rowsHtml = txs.map(t => { const rn = t.resiId ? (res.find(r => r.id === t.resiId)?.name || '') : ''; const isI = t.type === 'income'; return `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(t.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${t.concept}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${rn}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${isI ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${isI ? 'Ingreso' : 'Egreso'}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${isI ? '#059669' : '#e11d48'}">${isI ? '+' : '-'}${formatMoney(t.amount)}</td></tr>`; }).join('');
-            const html = `<!DOCTYPE html><html><head><title>Reporte - ${d.label}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}@media print{body{padding:15px}}</style></head><body>
-                <div style="background:#4f46e5;color:white;padding:18px 22px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:22px">REPORTE FINANCIERO</h1><p style="margin:4px 0 0;font-size:14px;opacity:.8">${s.name || 'OIKOS'}  |  ${d.label}</p></div>
+            // SISDEL: el concepto y el nombre los escriben los usuarios: se escapan antes de escribirlos en la ventana
+            const escText = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const rowsHtml = txs.map(t => { const rn = escText(t.resiId ? (res.find(r => r.id === t.resiId)?.name || '') : ''); const isI = t.type === 'income'; return `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(t.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${escText(t.concept)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${rn}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${isI ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${isI ? 'Ingreso' : 'Egreso'}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${isI ? '#059669' : '#e11d48'}">${isI ? '+' : '-'}${formatMoney(t.amount)}</td></tr>`; }).join('');
+            const html = `<!DOCTYPE html><html><head><title>Reporte - ${escText(d.label)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}@media print{body{padding:15px}}</style></head><body>
+                <div style="background:#4f46e5;color:white;padding:18px 22px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:22px">REPORTE FINANCIERO</h1><p style="margin:4px 0 0;font-size:14px;opacity:.8">${escText(s.name || 'OIKOS')}  |  ${escText(d.label)}</p></div>
                 <div style="display:flex;gap:12px;margin-bottom:24px">
                     <div style="flex:1;background:#ecfdf5;border:1px solid #a7f3d0;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#059669;margin:0">INGRESOS NETOS</p><p style="font-size:20px;font-weight:700;color:#166534;margin:4px 0 0">${formatMoney(d.inc)}</p></div>
                     <div style="flex:1;background:#fff1f2;border:1px solid #fecdd3;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#e11d48;margin:0">TOTAL GASTOS</p><p style="font-size:20px;font-weight:700;color:#9f1239;margin:4px 0 0">${formatMoney(d.exp)}</p></div>
                     <div style="flex:1;background:#eef2ff;border:1px solid #c7d2fe;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#4f46e5;margin:0">BALANCE</p><p style="font-size:20px;font-weight:700;color:${d.bal >= 0 ? '#166534' : '#9f1239'};margin:4px 0 0">${formatMoney(d.bal)}</p></div>
                 </div>
+                <div style="display:flex;gap:12px;margin-bottom:${d.notice ? '12px' : '24px'}">
+                    <div style="flex:1;background:#fffbeb;border:1px solid #fde68a;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#b45309;margin:0">CUOTAS Y CARGOS EMITIDOS</p><p style="font-size:20px;font-weight:700;color:#92400e;margin:4px 0 0">${formatMoney(d.chg || 0)}</p></div>
+                    <div style="flex:1;background:#fff7ed;border:1px solid #fed7aa;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#c2410c;margin:0">POR COBRAR AL CIERRE</p><p style="font-size:20px;font-weight:700;color:#9a3412;margin:4px 0 0">${formatMoney(d.rec || 0)}</p></div>
+                </div>
+                ${d.notice ? `<p style="margin:0 0 24px;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px">${escText(d.notice)}</p>` : ''}
                 <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Concepto</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Residente</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Tipo</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Monto</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;

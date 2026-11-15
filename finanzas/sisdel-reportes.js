@@ -7,6 +7,11 @@
    - monthBalance: ingresos, egresos y saldo de cada mes, con el total de cada ano y el total general.
      Ingresos = pagos (type 'income'); egresos = gastos (type 'expense'). Los cargos y cuotas ('charge') no
      son dinero que entro: son lo que se cobra. Saldo = ingresos menos egresos del mes.
+     Aparte (sin mezclarlo con la caja): cuotas y cargos emitidos en el mes y lo que queda por cobrar al cierre.
+   - periodSummary: lo mismo para un periodo (la ventana "Reporte financiero").
+   - Por cobrar al cierre = de cada vecino, sus cuotas y cargos menos sus pagos hasta ese dia (si pago de mas, cuenta
+     cero, no resta lo de otros), sumado. Es el mismo total del reporte de Morosos (sin la mora por dia, que no se
+     guarda como movimiento). Con opts.residents (ids de los vecinos vigentes) solo cuentan ellos, como en Morosos.
    - exportModel: convierte un reporte de OIKOS (encabezados, filas con texto ya formateado y totales) en el
      modelo de reportes-export.js (SisdelReportExport), que arma el Excel (.xlsx) y el mensaje de WhatsApp.
      Para el Excel las columnas de montos pasan a numero (se pueden sumar); para WhatsApp quedan con su formato.
@@ -29,26 +34,84 @@
         return month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
     }
 
-    // txs: movimientos vivos de OIKOS. opts: { from, to } ('AAAA-MM-DD', opcionales) y dayKey(fecha ISO) -> dia
-    // local 'AAAA-MM-DD' (el mismo criterio de los demas reportes de OIKOS).
-    function monthBalance(txs, opts) {
-        const options = opts || {};
-        const dayKey = typeof options.dayKey === 'function' ? options.dayKey : (iso) => String(iso || '').slice(0, 10);
+    const dayKeyOf = (options) => (typeof options.dayKey === 'function' ? options.dayKey : (iso) => String(iso || '').slice(0, 10));
+    const zeroSums = () => ({ income: 0, expense: 0, charge: 0 });
+    const totalsOf = (s, receivable) => ({
+        income: fromCents(s.income), expense: fromCents(s.expense), balance: fromCents(s.income - s.expense),
+        charges: fromCents(s.charge), receivable: fromCents(receivable)
+    });
+
+    // Lo que se debe al cierre de cada dia, avanzando en orden: advanceTo(dia) devuelve el total por cobrar (centavos)
+    // con todas las cuotas, cargos y pagos de los vecinos hasta ese dia (de cualquier fecha anterior, aunque quede
+    // antes del rango del reporte).
+    function receivableTracker(txs, options) {
+        const dayKey = dayKeyOf(options);
+        const only = options.residents ? new Set(Array.from(options.residents, String)) : null;
+        const ledger = [];
+        (txs || []).forEach((t) => {
+            if (!t || t.deleted || !t.date || (t.type !== 'income' && t.type !== 'charge')) return;
+            if (t.resiId === undefined || t.resiId === null || t.resiId === '') return;
+            const id = String(t.resiId);
+            if (only && !only.has(id)) return;
+            ledger.push({ day: dayKey(t.date), id, delta: t.type === 'charge' ? cents(t.amount) : -cents(t.amount) });
+        });
+        ledger.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+        const owed = new Map();
+        let total = 0;
+        let next = 0;
+        return function advanceTo(cutoff) {
+            while (next < ledger.length && (!cutoff || ledger[next].day <= cutoff)) {
+                const e = ledger[next++];
+                const before = owed.get(e.id) || 0;
+                const after = before + e.delta;
+                owed.set(e.id, after);
+                total += Math.max(0, after) - Math.max(0, before);
+            }
+            return total;
+        };
+    }
+
+    // Movimientos del rango sumados por mes (pagos, gastos y cargos)
+    function sumsByMonth(txs, options) {
+        const dayKey = dayKeyOf(options);
         const from = options.from || '';
         const to = options.to || '';
-        const empty = { months: [], years: [], total: { income: 0, expense: 0, balance: 0 } };
-        if (from && to && from > to) return empty;
         const sums = new Map();
         (txs || []).forEach((t) => {
-            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.date) return;
+            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense' && t.type !== 'charge') || !t.date) return;
             const day = dayKey(t.date);
             if (from && day < from) return;
             if (to && day > to) return;
             const key = monthOf(day);
             if (!validMonth(key)) return;
-            if (!sums.has(key)) sums.set(key, { income: 0, expense: 0 });
+            if (!sums.has(key)) sums.set(key, zeroSums());
             sums.get(key)[t.type] += cents(t.amount);
         });
+        return sums;
+    }
+
+    // Un periodo (dias 'AAAA-MM-DD', opcionales): { income, expense, balance, charges, receivable }. Por cobrar es al
+    // cierre del periodo (sin 'to', con todo lo registrado).
+    function periodSummary(txs, opts) {
+        const options = opts || {};
+        const s = zeroSums();
+        if (!(options.from && options.to && options.from > options.to)) {
+            sumsByMonth(txs, options).forEach((m) => { s.income += m.income; s.expense += m.expense; s.charge += m.charge; });
+        }
+        return totalsOf(s, receivableTracker(txs, options)(options.to || ''));
+    }
+
+    // txs: movimientos vivos de OIKOS. opts: { from, to } ('AAAA-MM-DD', opcionales), dayKey(fecha ISO) -> dia local
+    // 'AAAA-MM-DD' (el mismo criterio de los demas reportes de OIKOS) y residents (ids de los vecinos vigentes).
+    // Cada mes, ano y el total traen income, expense, balance, charges y receivable (por cobrar al cierre: el del
+    // ultimo dia del mes, o el dia 'to' si el rango termina antes).
+    function monthBalance(txs, opts) {
+        const options = opts || {};
+        const from = options.from || '';
+        const to = options.to || '';
+        const empty = { months: [], years: [], total: totalsOf(zeroSums(), 0) };
+        if (from && to && from > to) return empty;
+        const sums = sumsByMonth(txs, options);
         const keys = Array.from(sums.keys()).sort();
         let start = from ? monthOf(from) : keys[0];
         const end = to ? monthOf(to) : keys[keys.length - 1];
@@ -60,23 +123,26 @@
             if (!keys.length) return empty;
             start = keys[0];
         }
+        const advanceTo = receivableTracker(txs, options);
         const months = [];
         const years = new Map();
-        const total = { income: 0, expense: 0 };
+        const total = zeroSums();
+        let receivable = 0;
         for (let key = start; key <= end; key = nextMonth(key)) {
-            const s = sums.get(key) || { income: 0, expense: 0 };
+            const s = sums.get(key) || zeroSums();
             const year = Number(key.slice(0, 4));
-            months.push({ key, year, month: Number(key.slice(5, 7)), income: fromCents(s.income), expense: fromCents(s.expense), balance: fromCents(s.income - s.expense) });
-            if (!years.has(year)) years.set(year, { income: 0, expense: 0 });
-            years.get(year).income += s.income;
-            years.get(year).expense += s.expense;
-            total.income += s.income;
-            total.expense += s.expense;
+            // Cierre del mes: su ultimo dia ('-31' compara bien con cualquier dia del mes) o 'to' si cae antes
+            receivable = advanceTo(to && monthOf(to) === key ? to : `${key}-31`);
+            months.push({ key, year, month: Number(key.slice(5, 7)), ...totalsOf(s, receivable) });
+            if (!years.has(year)) years.set(year, { s: zeroSums(), receivable: 0 });
+            const y = years.get(year);
+            ['income', 'expense', 'charge'].forEach((k) => { y.s[k] += s[k]; total[k] += s[k]; });
+            y.receivable = receivable;
         }
         return {
             months,
-            years: Array.from(years.entries()).map(([year, s]) => ({ year, income: fromCents(s.income), expense: fromCents(s.expense), balance: fromCents(s.income - s.expense) })),
-            total: { income: fromCents(total.income), expense: fromCents(total.expense), balance: fromCents(total.income - total.expense) }
+            years: Array.from(years.entries()).map(([year, y]) => ({ year, ...totalsOf(y.s, y.receivable) })),
+            total: totalsOf(total, receivable)
         };
     }
 
@@ -105,7 +171,7 @@
         return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
     }
 
-    // report: { title, summary, headers, rows, rowsMeta, totals, numericCols }. opts: { condoName, at, excel }
+    // report: { title, summary, notice, headers, rows, rowsMeta, totals, numericCols }. opts: { condoName, at, excel }
     function exportModel(report, opts) {
         const options = opts || {};
         const numeric = new Set(report.numericCols || []);
@@ -139,7 +205,8 @@
             : '';
         return {
             title: plain(report.title) || 'Reporte',
-            subtitle: plain(report.summary),
+            // El aviso (p. ej. que no hay pagos ni gastos en el periodo) tambien va al Excel y a WhatsApp
+            subtitle: [plain(report.summary), plain(report.notice)].filter(Boolean).join(' · '),
             condoName: options.condoName || '',
             at,
             kpis,
@@ -148,5 +215,5 @@
         };
     }
 
-    return { MAX_MONTHS, monthBalance, plain, moneyValue, slug, exportModel };
+    return { MAX_MONTHS, monthBalance, periodSummary, plain, moneyValue, slug, exportModel };
 });

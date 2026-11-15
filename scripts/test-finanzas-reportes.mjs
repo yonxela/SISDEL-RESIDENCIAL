@@ -40,8 +40,8 @@ const txs = [
 const all = R.monthBalance(txs, { dayKey: gtDay });
 equal('una fila por mes, tambien los meses sin movimientos (febrero en cero)', all.months.map((m) => m.key), ['2025-12', '2026-01', '2026-02', '2026-03']);
 equal('ingresos = pagos; egresos = gastos; los cargos y lo anulado no cuentan', all.months.map((m) => [m.income, m.expense, m.balance]), [[200, 0, 200], [750.5, 120, 630.5], [0, 0, 0], [300, 1000, -700]]);
-equal('el total de cada ano', all.years, [{ year: 2025, income: 200, expense: 0, balance: 200 }, { year: 2026, income: 1050.5, expense: 1120, balance: -69.5 }]);
-equal('el total general', all.total, { income: 1250.5, expense: 1120, balance: 130.5 });
+equal('el total de cada ano', all.years, [{ year: 2025, income: 200, expense: 0, balance: 200, charges: 0, receivable: 0 }, { year: 2026, income: 1050.5, expense: 1120, balance: -69.5, charges: 300, receivable: 0 }]);
+equal('el total general', all.total, { income: 1250.5, expense: 1120, balance: 130.5, charges: 300, receivable: 0 });
 equal('un gasto del 31 de marzo a las 5 pm de Guatemala cae en marzo (dia local, no el UTC)', R.monthBalance([tx('g', 'expense', '2026-03-31T23:00:00.000Z', 10)], { dayKey: gtDay }).months.map((m) => m.key), ['2026-03']);
 const ranged = R.monthBalance(txs, { from: '2026-01-15', to: '2026-04-30', dayKey: gtDay });
 equal('el rango Desde-Hasta filtra por dia y muestra todos sus meses', ranged.months.map((m) => [m.key, m.income, m.expense]), [['2026-01', 450.5, 120], ['2026-02', 0, 0], ['2026-03', 300, 1000], ['2026-04', 0, 0]]);
@@ -53,6 +53,35 @@ equal('montos escritos como texto tambien cuentan', R.monthBalance([tx('t', 'inc
 const longAgo = R.monthBalance([tx('a', 'income', '2026-06-01T15:00:00.000Z', 10)], { from: '1900-01-01', to: '2026-06-30' });
 equal('una fecha Desde mal escrita (1900) no llena la tabla: arranca en el primer mes con movimientos', [longAgo.months.length, longAgo.months[0].key], [1, '2026-06']);
 equal('dos anos completos son 24 filas', R.monthBalance([], { from: '2025-01-01', to: '2026-12-31' }).months.length, 24);
+
+console.log('\nCuotas y cargos emitidos y por cobrar (aparte de la caja)');
+const fee = (id, resiId, date, amount) => tx(id, 'charge', date, amount, { resiId, kind: 'fee' });
+const pay = (id, resiId, date, amount) => tx(id, 'income', date, amount, { resiId });
+// Un condominio como La Perla al cargarlo: solo cuotas y cargos, ningun pago ni gasto
+const onlyCharges = [
+    fee('a1', 'a', '2026-08-01T15:00:00.000Z', 300), fee('a2', 'a', '2026-09-01T15:00:00.000Z', 300),
+    fee('b1', 'b', '2026-09-01T15:00:00.000Z', 460), tx('m1', 'charge', '2026-09-15T15:00:00.000Z', 25.5, { resiId: 'b', moraFixed: true }),
+    fee('c1', 'c', '2026-12-01T15:00:00.000Z', 380)
+];
+const perla = R.monthBalance(onlyCharges, { from: '2026-08-01', to: '2026-11-15', dayKey: gtDay });
+equal('solo cargos: la caja en cero y los cargos emitidos de cada mes', perla.months.map((m) => [m.key, m.income, m.expense, m.balance, m.charges]), [['2026-08', 0, 0, 0, 300], ['2026-09', 0, 0, 0, 785.5], ['2026-10', 0, 0, 0, 0], ['2026-11', 0, 0, 0, 0]]);
+equal('por cobrar crece con cada cargo y se arrastra a los meses siguientes', perla.months.map((m) => m.receivable), [300, 1085.5, 1085.5, 1085.5]);
+equal('un cargo fechado despues del cierre (diciembre) no cuenta todavia', [perla.total.receivable, perla.total.charges], [1085.5, 1085.5]);
+const paid = [...onlyCharges, pay('p1', 'a', '2026-10-05T15:00:00.000Z', 300), pay('p2', 'b', '2026-10-06T15:00:00.000Z', 1000)];
+const withPays = R.monthBalance(paid, { from: '2026-08-01', to: '2026-10-31', dayKey: gtDay });
+equal('los pagos bajan lo que se debe; quien pago de mas cuenta cero (no resta lo que deben otros)', withPays.months.map((m) => [m.key, m.income, m.receivable]), [['2026-08', 0, 300], ['2026-09', 0, 1085.5], ['2026-10', 1300, 300]]);
+equal('el total del ano lleva lo que se debe al cierre del ano, no la suma de los meses', [withPays.years[0].receivable, withPays.years[0].charges], [300, 1085.5]);
+const beforeRange = R.monthBalance(paid, { from: '2026-10-01', to: '2026-10-31', dayKey: gtDay });
+equal('por cobrar cuenta tambien lo que venia de antes del rango', [beforeRange.months[0].charges, beforeRange.months[0].receivable], [0, 300]);
+equal('con los vecinos vigentes, lo de un vecino que ya no esta no cuenta (como en Morosos)', R.monthBalance(onlyCharges, { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay, residents: ['a'] }).months[0].receivable, 600);
+equal('un pago sin vecino (otro ingreso) entra en la caja pero no baja lo que se debe', (() => { const m = R.monthBalance([...onlyCharges, tx('o', 'income', '2026-09-20T15:00:00.000Z', 50)], { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay }).months[0]; return [m.income, m.receivable]; })(), [50, 1085.5]);
+equal('lo anulado no cuenta ni en cargos ni en por cobrar', R.monthBalance([...onlyCharges, { ...fee('x', 'a', '2026-09-02T15:00:00.000Z', 999), deleted: true }], { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay }).months[0].receivable, 1085.5);
+
+console.log('\nUn periodo (ventana del reporte financiero)');
+equal('septiembre solo con cargos: caja en cero, cargos emitidos y por cobrar al cierre', R.periodSummary(onlyCharges, { from: '2026-09-01', to: '2026-09-31', dayKey: gtDay }), { income: 0, expense: 0, balance: 0, charges: 785.5, receivable: 1085.5 });
+equal('octubre con pagos', R.periodSummary(paid, { from: '2026-10-01', to: '2026-10-31', dayKey: gtDay }), { income: 1300, expense: 0, balance: 1300, charges: 0, receivable: 300 });
+equal('un periodo al reves no suma nada', R.periodSummary(paid, { from: '2026-10-31', to: '2026-10-01', dayKey: gtDay }).charges, 0);
+equal('sin fin de periodo, por cobrar es con todo lo registrado', R.periodSummary(onlyCharges, { dayKey: gtDay }).receivable, 1465.5);
 
 console.log('\nMontos y textos');
 equal('lee montos con el formato de OIKOS', ['Q1,234.50', 'Q-50.00', '$0.00', 'Q300.00', '12', '—', '', 'Lote 5'].map(R.moneyValue), [1234.5, -50, 0, 300, 12, null, null, null]);
@@ -95,6 +124,7 @@ equal('con muchas filas, WhatsApp lleva las primeras y avisa del resto; los tota
 const html = { headers: ['No. Documento', 'Monto'], rows: [['<button onclick="openTxDetail(\'a\')">R-1</button>', 'Q5.00']], totals: null, numericCols: [1], title: 'Libro' };
 equal('una celda con HTML llega al Excel como texto limpio', R.exportModel(html, { excel: true }).tables[0].rows[0], ['R-1', 5]);
 equal('sin totales no hay cifras de resumen', R.exportModel(html, {}).kpis, []);
+equal('el aviso del reporte va al Excel y a WhatsApp junto al resumen', R.exportModel({ ...report, notice: 'No hay pagos ni gastos registrados en este período.' }, { at }).subtitle, '2026-01-01 → 2026-03-31 · saldo = ingresos menos egresos · No hay pagos ni gastos registrados en este período.');
 
 console.log('\nCopia en el navegador');
 const sandbox = { self: {} };

@@ -340,6 +340,10 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Dos funciones con el mismo nombre: la segunda pisa a la primera (asi Imprimir y PDF de Reportes sacaban la ventana del reporte financiero)
     const fnNames = [...oikos.matchAll(/^        (?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]);
     equal('OIKOS no repite nombres de funciones', fnNames.filter((n, i) => fnNames.indexOf(n) !== i), []);
+    // Un condominio que solo tiene cuotas y cargos (La Perla al cargarlo) no debe ver ceros sin explicacion
+    yes('la ventana del reporte financiero muestra cuotas y cargos emitidos, por cobrar y un aviso sin pagos ni gastos', ['rep-val-chg', 'rep-val-rec', 'rep-sum-notice'].every((id) => oikos.includes(`id="${id}"`)) && /SisdelReportesOikos\.periodSummary\(/.test(oikos));
+    yes('la ventana del reporte financiero abre en el ultimo mes con movimientos hasta hoy (no en el mas adelantado)', /const initial = sorted\.find\(k => k <= nowKey\)/.test(oikos));
+    yes('los reportes muestran un aviso y explican por que la tabla sale vacia', ['rep-notice', 'rep-notice-text', 'rep-empty-text'].every((id) => oikos.includes(`id="${id}"`)) && (oikos.match(/sisdelNoCashNotice\(/g) || []).length === 3);
     yes('OIKOS carga los calculos de reportes y el modulo de Excel y WhatsApp de SISDEL', /<script src="\.\/sisdel-reportes\.js\?v=\w+"><\/script>/.test(oikos) && /<script src="\.\.\/reportes-export\.js\?v=\w+"><\/script>/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));

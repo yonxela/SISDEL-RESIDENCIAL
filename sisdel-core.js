@@ -360,7 +360,7 @@ const SISDEL = (() => {
 
     // preferredCode: codigo que propone la pantalla (RONDIN muestra el codigo del guardia antes de guardarlo);
     // si no es valido o ya esta ocupado se genera uno nuevo
-    // extra: { privilegios, cargo } (solo diferencias con los privilegios del rol; ver privilegios.js)
+    // extra: { privilegios, cargo, fase } (privilegios: solo diferencias con los del rol; ver privilegios.js)
     async function createUser(condominioId, name, role, casa, phone, email, preferredCode, extra) {
         try {
             await authReady();
@@ -377,6 +377,8 @@ const SISDEL = (() => {
             const overrides = PRIV.cleanOverrides(extra && extra.privilegios);
             if (Object.keys(overrides).length) user.privilegios = overrides;
             if (extra && extra.cargo) user.cargo = String(extra.cargo).trim().slice(0, 60);
+            // Fase o etapa del condominio donde esta la casa (La Perla: Fase 1 a Fase 5); texto libre y opcional
+            if (extra && extra.fase) user.fase = String(extra.fase).trim().slice(0, 40);
 
             // El codigo es el id del documento: si ya existe, la escritura se rechaza y se prueba otro
             let lastError = null;

@@ -16,6 +16,7 @@ function equal(name, actual, expected) {
     if (ok) { passed++; console.log(`  ok   ${name}`); }
     else { failures.push(name); console.log(`  FALLA ${name} -> esperado ${JSON.stringify(expected)}, recibido ${JSON.stringify(actual)}`); }
 }
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const yes = (name, value) => equal(name, !!value, true);
 const throws = (name, fn) => { let failed = false; try { fn(); } catch (e) { failed = true; } equal(name, failed, true); };
 
@@ -150,6 +151,14 @@ equal('cada residente con lo suyo', [Object.keys(many).sort(), many.r1.balance, 
 equal('los movimientos de otro residente no cuentan', brief([nov, fee('g11', '2026-11', 460, '2026-11-05', 'r2')], '2026-12-20'), { capital: 300, overdue: 300, mora: 6, balance: -306 });
 equal('sin movimientos, todo en cero', (({ capital, mora, credit, balance, items }) => ({ capital, mora, credit, balance, items }))(D.stateOf('r1', [], S, '2026-12-20')), { capital: 0, mora: 0, credit: 0, balance: 0, items: [] });
 
+console.log('\nMora por dia y saldo del libro');
+const withFixed = D.stateOf('r1', [oct, nov, extra('m', '2026-10-31', 50, { moraFixed: true }), pay('p', '2026-12-20', 100)], S, '2026-12-30');
+equal('moraDaily es solo la mora por dia (sin la mora fija cargada)', [withFixed.moraDaily > 0, withFixed.moraDaily], [true, round2(withFixed.moraAccrued - 50)]);
+const ahead = [nov, fee('d', '2026-12', 300, '2026-12-31')];
+const aheadState = D.stateOf('r1', ahead, S, '2026-12-20');
+equal('una cuota fechada despues de hoy no cuenta en el estado del dia', [aheadState.capital, aheadState.balance], [300, -306]);
+equal('el saldo del libro (con todo) menos la mora por dia cuadra: Q 600 + Q 6', round2(-600 - aheadState.moraDaily), -606);
+
 console.log('\nServidor: quien es moroso para la garita');
 const dec20 = M.gtDate(2026, 11, 20, 12);
 equal('una cuota vencida con su mora: debe Q 306 pero la garita mira solo el capital (no bloquea)', M.moraOf('r1', [nov], S, dec20), { balance: -306, debt: 306, overdue: 300, moroso: false, capital: 300, mora: 6 });
@@ -168,6 +177,19 @@ vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-mora.js'), sandbox);
 yes('en el navegador queda como SisdelMora', sandbox.self.SisdelMora && typeof sandbox.self.SisdelMora.stateOf === 'function');
 equal('el navegador y el servidor calculan lo mismo', JSON.stringify(sandbox.self.SisdelMora.stateOf('r1', [oct, nov, pay('p', '2026-12-20', 400)], S, '2026-12-30')), JSON.stringify(feeFirst));
+
+console.log('\nOIKOS y el recalculo del servidor');
+const oikos = read('finanzas/index.html');
+const recalc = read('functions/src/finanzas/recalc.js');
+yes('OIKOS carga el modulo despues de las cuotas', /<script src="\.\/sisdel-mora\.js\?v=\w+"><\/script>/.test(oikos) && oikos.indexOf('<script src="./sisdel-cuotas.js') < oikos.indexOf('<script src="./sisdel-mora.js'));
+yes('el saldo de cada residente es el del libro mas la mora del dia', /const ms = sisdelMoraOf\(r\.id, r\.balance\);/.test(oikos) && /const shownBalance = ms \? ms\.total : r\.balance;/.test(oikos) && /\(parseFloat\(ledgerBalance\) \|\| 0\) - \(ms\.moraDaily \|\| 0\)/.test(oikos));
+yes('el estado de cuenta, el PDF y la impresion usan el mismo total con mora', (oikos.match(/formatMoney\(Math\.max\(0, -ms\.total\)\)/g) || []).length === 3 && !/-ms\.balance/.test(oikos));
+yes('el estado de cuenta muestra capital vencido, mora y total a pagar', ['ec-mora-box', 'ec-overdue', 'ec-mora', 'ec-total-due'].every((id) => oikos.includes(`id="${id}"`)));
+yes('el PDF y la impresion del estado de cuenta llevan la mora', (oikos.match(/sisdelMoraRuleText\(\)/g) || []).length >= 3);
+yes('sin reglas de mora no se calcula nada (OIKOS como siempre)', /if \(typeof SisdelMora === 'undefined' \|\| !SisdelMora\.enabled\(s\)\) return null;/.test(oikos));
+yes('el servidor lee la fecha de cada cargo y si es mora fija', /const TX_FIELDS = \[[^\]]*'date'[^\]]*'moraFixed'/.test(recalc));
+yes('el servidor pasa la ficha del lote al decidir quien es moroso', /moraOf\(r\.id, txs, settings, now, r\)/.test(recalc) && /moraOf\(String\(residentId\), txSnap\.docs\.map\(txOf\), settings, now, extraSnap\.exists \? extraSnap\.data\(\) : null\)/.test(recalc));
+yes('cambiar el desglose, el agua o la mora recalcula el condominio', /const FEE_SETTINGS = \[[^\]]*'feeBreakdown', 'waterUnitPrice', 'moraRules'\]/.test(read('functions/src/finanzas/index.js')));
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));

@@ -137,8 +137,11 @@ yes('OIKOS tiene los cinco campos del desglose en Configuracion', ['maintenance'
 yes('la cuota mensual es la suma y no se edita a mano', /id="cfg-fee" readonly/.test(oikos));
 yes('hay una vista previa de la descripcion del cargo, con el mes actual de ejemplo', /id="cfg-fee-preview"/.test(oikos) && /SisdelCuotas\.describe\(breakdown, \(document\.getElementById\('cfg-curr'\) \|\| \{\}\)\.value, currentFeePeriod\(\)\)/.test(oikos));
 yes('Configuracion muestra el desglose al abrir y lo guarda al guardar', /fillFeeBreakdown\(s\);/.test(oikos) && /feeBreakdown,\n/.test(oikos) && /fee: feeTotal,/.test(oikos));
-yes('toda cuota (automatica, manual o por meses) pasa por createFeeCharge con el concepto del desglose y su mes', /const feeInfo = SisdelCuotas\.feeInfo\(Store\.get\('settings'\), fee, period\);/.test(oikos) && /concept: feeInfo \? feeInfo\.concept : feeConceptFor\(y, m\),/.test(oikos) && /\.\.\.\(feeInfo \? \{ breakdown: feeInfo\.breakdown \} : \{\}\)/.test(oikos));
+yes('toda cuota (automatica, manual o por meses) pasa por createFeeCharge con el concepto del desglose y su mes', /const feeInfo = SisdelCuotas\.residentFeeInfo\(Store\.get\('settings'\), r, fee, period\);/.test(oikos) && /concept: feeInfo \? feeInfo\.concept : feeConceptFor\(y, m\),/.test(oikos) && /\.\.\.\(feeInfo \? \{ breakdown: feeInfo\.breakdown \} : \{\}\)/.test(oikos));
 yes('las cuatro vias de cobro llaman a createFeeCharge', (oikos.match(/createFeeCharge\(txs, /g) || []).length >= 4);
+yes('la cuota automatica y "Cuota del mes" cobran a cada lote su cuota con agua', (oikos.match(/createFeeCharge\(txs, r, period, SisdelCuotas\.residentFee\(s, r\)/g) || []).length === 2);
+yes('"Cuota del mes" no cobra a quien se cobra desde un mes posterior (feeFrom)', /if \(r\.feeFrom && period < r\.feeFrom\) \{ notYet\.push\(r\); return; \}/.test(oikos));
+yes('la vista previa de "Cuota del mes" suma la cuota de cada lote', /function updateFeeRunPreview[\s\S]{0,1500}SisdelCuotas\.residentFee\(s, r\)/.test(oikos));
 yes('el detalle de un movimiento muestra el desglose', /SisdelCuotas\.listParts\(tx\.breakdown/.test(oikos));
 yes('el desglose es un privilegio de la cuota: el bloqueo de pantalla y el filtro de subida lo tratan como tal', /'#cfg-fee-maintenance'/.test(read('finanzas-bloqueo.js')) && /'feeBreakdown'/.test(read('finanzas-sync.js')) && /hasAny\(\['fee', 'feeBreakdown'/.test(read('firestore.rules')));
 

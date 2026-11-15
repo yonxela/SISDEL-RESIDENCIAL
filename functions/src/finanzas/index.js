@@ -7,8 +7,10 @@ const { recalcCondo, recalcResident, recalcAll } = require('./recalc');
 const { TIME_ZONE } = require('./mora');
 const { SERVER_STAMP, needsStamp, onlyStampChanged } = require('./sello');
 
-// Campos de la configuracion que cambian cuanto debe cada vecino
-const FEE_SETTINGS = ['fee', 'chargeDay', 'graceDays', 'feeMode'];
+// Campos de la configuracion que cambian cuanto debe cada vecino (el desglose, el precio de la paja de agua
+// y las reglas de mora por dia tambien cambian la cuota de cada lote o su mora)
+const FEE_SETTINGS = ['fee', 'chargeDay', 'graceDays', 'feeMode', 'feeBreakdown', 'waterUnitPrice', 'moraRules'];
+const sameValue = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
 
 // Un cargo o pago nuevo, editado o anulado: se recalcula ese vecino al instante,
 // asi la talanquera se abre en cuanto el vecino paga.
@@ -35,12 +37,12 @@ const onFinanceMovement = onDocumentWritten('condominios/{condoId}/finanzas_movi
     }
 });
 
-// Cambio de cuota, dia de cobro, dias de gracia o modo: se recalcula el condominio
+// Cambio de cuota, desglose, agua, dia de cobro, dias de gracia, mora o modo: se recalcula el condominio
 const onFinanceSettings = onDocumentWritten('condominios/{condoId}/finanzas_config/{docId}', async (event) => {
     if (!event.data || !event.data.after.exists) return;
     const before = event.data.before.exists ? event.data.before.data() : {};
     const after = event.data.after.data();
-    const relevant = !event.data.before.exists || FEE_SETTINGS.some((k) => String(before[k]) !== String(after[k]));
+    const relevant = !event.data.before.exists || FEE_SETTINGS.some((k) => !sameValue(before[k], after[k]));
     if (!relevant) return;
     logger.info('finanzas: configuracion cambiada', await recalcCondo(event.params.condoId));
 });

@@ -232,7 +232,10 @@
         });
         open.forEach((item) => accrue(item, asOf, rules));
 
-        const totals = { capital: 0, overdueCapital: 0, mora: 0, moraAccrued: 0, moraPaid: 0 };
+        // moraDaily: la mora por dia que se acumulo (sin la mora fija cargada como movimiento). No esta en el libro de
+        // OIKOS: el saldo del libro (con TODOS sus movimientos, tambien los fechados despues de hoy) menos moraDaily es lo
+        // que se debe con mora, pagado o no lo que toque (los pagos ya estan en el libro).
+        const totals = { capital: 0, overdueCapital: 0, mora: 0, moraAccrued: 0, moraPaid: 0, moraDaily: 0 };
         const out = items.map((item) => {
             const accrued = round2(item.moraRaw);
             const pending = round2(accrued - item.moraPaid);
@@ -242,6 +245,7 @@
             totals.mora += pending;
             totals.moraAccrued += accrued;
             totals.moraPaid += item.moraPaid;
+            if (item.kind !== 'mora') totals.moraDaily += accrued;
             return {
                 id: item.id, kind: item.kind, period: item.period, amount: item.amount, capital: item.capital,
                 moraAccrued: accrued, moraPaid: item.moraPaid, mora: pending,
@@ -258,7 +262,8 @@
         return day === null ? dayOf(new Date()) : day;
     };
 
-    // Estado de un residente: { asOf, capital, overdueCapital, mora, moraAccrued, moraPaid, credit, balance, items }
+    // Estado de un residente: { asOf, capital, overdueCapital, mora, moraAccrued, moraPaid, moraDaily, credit, balance, items }
+    // (solo con los movimientos hasta `asOf`: un pago o cargo fechado despues todavia no existe)
     //   capital         lo que falta pagar de cuotas y cargos
     //   overdueCapital  la parte ya vencida (lo que mira la garita: la mora no cuenta para bloquear)
     //   mora            la mora que se debe hoy

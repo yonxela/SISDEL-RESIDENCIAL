@@ -17,6 +17,8 @@
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="./sisdel-cuotas.js?v=20261115b"></script>
+    <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
+    <script src="./sisdel-mora.js?v=20261115b"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1040,6 +1042,14 @@
                 <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-3 rounded-xl text-center"><p class="text-xs text-rose-600 font-semibold uppercase">Cargos</p><p class="text-lg font-bold text-rose-700 dark:text-rose-400" id="ec-total-charges">$0.00</p></div>
                 <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 p-3 rounded-xl text-center"><p class="text-xs text-indigo-600 font-semibold uppercase">Saldo</p><p class="text-lg font-bold text-indigo-700 dark:text-indigo-400" id="ec-balance">$0.00</p></div>
             </div>
+            <!-- SISDEL: con regla de mora (settings.moraRules) la mora corre por dia sobre cada cuota vencida; no es un cargo:
+                 se calcula a hoy (finanzas/sisdel-mora.js) y se suma al saldo para el total a pagar -->
+            <div id="ec-mora-box" class="hidden grid grid-cols-3 gap-3 mb-4 -mt-1">
+                <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-3 rounded-xl text-center"><p class="text-xs text-amber-600 font-semibold uppercase">Cuotas vencidas</p><p class="text-lg font-bold text-amber-700 dark:text-amber-400" id="ec-overdue">Q0.00</p></div>
+                <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-3 rounded-xl text-center"><p class="text-xs text-amber-600 font-semibold uppercase">Mora a hoy</p><p class="text-lg font-bold text-amber-700 dark:text-amber-400" id="ec-mora">Q0.00</p></div>
+                <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-3 rounded-xl text-center"><p class="text-xs text-rose-600 font-semibold uppercase">Total con mora</p><p class="text-lg font-bold text-rose-700 dark:text-rose-400" id="ec-total-due">Q0.00</p></div>
+                <p class="col-span-3 text-[11px] text-slate-500 dark:text-slate-400 -mt-1" id="ec-mora-note"></p>
+            </div>
             <div class="flex-1 overflow-y-auto mb-4 rounded-xl border border-slate-200 dark:border-slate-600">
                 <table class="w-full text-left border-collapse text-sm">
                     <thead class="sticky top-0"><tr class="bg-slate-100 dark:bg-slate-700 text-xs text-slate-500 uppercase"><th class="py-3 px-4">Fecha</th><th class="py-3 px-4">Concepto</th><th class="py-3 px-4">Tipo</th><th class="py-3 px-4 text-right">Monto</th><th class="py-3 px-4 text-right">Saldo</th><th class="py-3 px-2 w-8"></th></tr></thead>
@@ -1905,8 +1915,9 @@
             let id = `fee_${r.id}_${period}`;
             let n = 1;
             while (txs.some(t => t && String(t.id) === id)) { id = `fee_${r.id}_${period}_r${n++}`; }
-            // SISDEL: con desglose configurado, una sola linea nombra los conceptos con monto y el mes de la cuota (sisdel-cuotas.js)
-            const feeInfo = SisdelCuotas.feeInfo(Store.get('settings'), fee, period);
+            // SISDEL: con desglose configurado, una sola linea nombra los conceptos con monto y el mes de la cuota (sisdel-cuotas.js);
+            // con agua por paja, el desglose del lote suma su agua (cuota del lote = la del condominio + su agua)
+            const feeInfo = SisdelCuotas.residentFeeInfo(Store.get('settings'), r, fee, period);
             const tx = Object.assign({
                 id,
                 date: new Date(y, m, cDay, 6, 0, 0).toISOString(),
@@ -2063,7 +2074,8 @@
                 residents.forEach(r => {
                     if (feeAutoSkips(r, period)) return;
                     if (findFeeCharge(txs, r.id, period, true)) return;
-                    if (createFeeCharge(txs, r, period, fee, cDay)) appliedThisRun++;
+                    // SISDEL: la cuota de cada lote (la del condominio + su agua por paja), igual que el servidor
+                    if (createFeeCharge(txs, r, period, SisdelCuotas.residentFee(s, r), cDay)) appliedThisRun++;
                 });
                 if (!s.chargedMonths.includes(period)) { s.chargedMonths.push(period); settingsChanged = true; }
             }
@@ -2073,7 +2085,7 @@
                 scanDuplicateFees();
                 if (currentView === 'residents') renderResidents();
                 if (currentView === 'dashboard') renderDashboard();
-                setTimeout(() => showToast(`Cargos automáticos aplicados: ${appliedThisRun} cuota(s) de ${formatMoney(fee)}.`), 1500);
+                setTimeout(() => showToast(`Cargos automáticos aplicados: ${appliedThisRun} cuota(s)${s.waterUnitPrice ? ' (cada lote con su agua)' : ` de ${formatMoney(fee)}`}.`), 1500);
             }
             persist();
         }
@@ -2138,6 +2150,40 @@
             const debtBeforeCurrent = -r.balance - curFee;
             if (debtBeforeCurrent > 0.005) return true;
             return d.getTime() >= new Date(d.getFullYear(), d.getMonth(), cDay + gDays).getTime();   // SISDEL: con rollover al mes siguiente
+        }
+
+        // SISDEL: mora por dia (finanzas/sisdel-mora.js) de cada residente, calculada a hoy. Solo en condominios con regla
+        // de mora (settings.moraRules); sin regla devuelve null y todo queda como siempre. La mora no es un cargo: corre
+        // sobre el capital de cada cuota vencida y se congela cuando la cuota se paga. Se calcula una vez por cambio de la
+        // lista de movimientos (y por dia).
+        function sisdelMoraStates() {
+            const s = Store.get('settings');
+            if (typeof SisdelMora === 'undefined' || !SisdelMora.enabled(s)) return null;
+            const day = localDayKey(new Date());
+            const mem = sisdelMem();
+            if (mem) return sisdelDerived(mem, 'mora:' + day + ':' + JSON.stringify(s.moraRules), txs => SisdelMora.statesByResident(txs, s, day));
+            return SisdelMora.statesByResident(Store.get('transactions'), s, day);
+        }
+        // { capital, overdueCapital, mora, moraDaily, credit, balance } del residente a hoy (solo con lo fechado hasta hoy);
+        // null sin regla. Con `ledgerBalance` (el saldo del libro, r.balance) agrega `total`: el libro menos la mora por dia,
+        // el saldo con mora que se muestra (asi cuadra con la lista del estado de cuenta, que trae todos los movimientos).
+        function sisdelMoraOf(residentId, ledgerBalance) {
+            const states = sisdelMoraStates();
+            if (!states) return null;
+            const ms = states[String(residentId)] || { capital: 0, overdueCapital: 0, mora: 0, moraDaily: 0, credit: 0, balance: 0 };
+            if (ledgerBalance === undefined) return ms;
+            return Object.assign({}, ms, { total: Math.round(((parseFloat(ledgerBalance) || 0) - (ms.moraDaily || 0) + Number.EPSILON) * 100) / 100 });
+        }
+        // El saldo del libro de un residente (todos sus movimientos vivos, como r.balance)
+        function sisdelLedgerBalance(residentId) {
+            const r = Store.get('residents').find(x => String(x.id) === String(residentId));
+            return r ? r.balance : 0;
+        }
+        // "3 % al mes por día, con 5 días de plazo" (la regla vigente hoy)
+        function sisdelMoraRuleText() {
+            const rules = SisdelMora.rulesOf(Store.get('settings'));
+            const rule = SisdelMora.ruleAt(rules, SisdelMora.dayOfKey(localDayKey(new Date()))) || rules[rules.length - 1];
+            return rule ? `${rule.percent} % al mes por día sobre cada cuota vencida, desde el fin de su mes, con ${rule.graceDays} días de plazo; la mora no genera mora` : '';
         }
 
         // ========== RENDER VIEWS ==========
@@ -2212,7 +2258,11 @@
             }
             tbody.innerHTML = res.map(r => {
                 const closed = !isResidentActive(r);
-                const balCls = r.balance < -0.005 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400';
+                // SISDEL: con regla de mora el saldo incluye la mora a hoy (y se dice cuanto es)
+                const ms = sisdelMoraOf(r.id, r.balance);
+                const shownBalance = ms ? ms.total : r.balance;
+                const moraLine = ms && ms.mora > 0.005 ? `<span class="block text-[10px] font-semibold text-amber-600 dark:text-amber-400">incl. mora ${formatMoney(ms.mora)}</span>` : '';
+                const balCls = shownBalance < -0.005 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400';
                 const closedBadge = closed
                     ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 align-middle" title="Finiquitado el ${r.closedAt ? new Date(r.closedAt).toLocaleDateString('es-MX') : '—'}${r.closeReason ? ' · ' + esc(r.closeReason) : ''}">Finiquitado</span>`
                     : '';
@@ -2230,7 +2280,7 @@
                     <td class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">${esc(r.contact || '-')}</td>
                     <td class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">${esc(r.lot || '-')}</td>
                     <td class="py-4 px-6 text-right font-bold font-mono text-sm ${balCls}">
-                        <button onclick="openEstadoCuenta('${r.id}')" class="hover:underline" title="Ver estado de cuenta">${formatMoney(r.balance)}</button>
+                        <button onclick="openEstadoCuenta('${r.id}')" class="hover:underline" title="Ver estado de cuenta">${formatMoney(shownBalance)}</button>${moraLine}
                     </td>
                     <td class="py-4 px-6 text-center relative">
                         <button onclick="editResident('${r.id}')" title="Editar" class="text-slate-400 hover:text-blue-600 px-2"><i class="fas fa-edit"></i></button>
@@ -2731,25 +2781,33 @@
             const period = feePeriodKey(y, m);
             const residents = Store.get('residents');
             const txs = Store.getRaw('transactions');
-            const pending = [], skippedDeleted = [], done = [], inactive = [];
+            const pending = [], skippedDeleted = [], done = [], inactive = [], notYet = [];
             residents.forEach(r => {
                 if (!isResidentActive(r)) { inactive.push(r); return; }
                 if (residentCreatedAfterPeriod(r, period)) { inactive.push(r); return; }
                 if (findFeeCharge(txs, r.id, period, false)) { done.push(r); return; }
                 if (findFeeCharge(txs, r.id, period, true)) { skippedDeleted.push(r); return; }
+                // SISDEL: cada vecino se cobra desde su feeFrom (al cargar un condominio, el mes siguiente al ultimo que ya traia)
+                if (r.feeFrom && period < r.feeFrom) { notYet.push(r); return; }
                 pending.push(r);
             });
-            return { period, pending, skippedDeleted, done, inactive };
+            return { period, pending, skippedDeleted, done, inactive, notYet };
         }
         function updateFeeRunPreview() {
             const s = Store.get('settings');
             const fee = parseFloat(s.fee) || 0;
-            const { period, pending, skippedDeleted, done } = feeRunTargets();
+            const { period, pending, skippedDeleted, done, notYet } = feeRunTargets();
             const el = document.getElementById('fr-preview');
             const parts = [];
-            parts.push(`<p class="text-sm"><strong class="text-blue-700 dark:text-blue-300">${pending.length}</strong> residente(s) activo(s) sin la cuota de <strong>${feePeriodLongLabel(period)}</strong> · ${formatMoney(fee)} c/u = <strong>${formatMoney(fee * pending.length)}</strong></p>`);
+            // SISDEL: cada lote paga la cuota del condominio mas su agua (si el condominio cobra el agua por paja)
+            const fees = pending.map(r => SisdelCuotas.residentFee(s, r));
+            const totalFees = fees.reduce((a, b) => a + b, 0);
+            const distinct = [...new Set(fees)].sort((a, b) => a - b);
+            const each = distinct.length > 1 ? `${distinct.map(formatMoney).join(', ')} según el agua de cada lote` : `${formatMoney(distinct.length ? distinct[0] : fee)} c/u`;
+            parts.push(`<p class="text-sm"><strong class="text-blue-700 dark:text-blue-300">${pending.length}</strong> residente(s) activo(s) sin la cuota de <strong>${feePeriodLongLabel(period)}</strong> · ${each} = <strong>${formatMoney(totalFees)}</strong></p>`);
             if (done.length) parts.push(`<p class="text-xs text-slate-500 dark:text-slate-400"><i class="fas fa-check text-emerald-500 mr-1"></i>${done.length} ya tienen esa cuota (no se duplican).</p>`);
             if (skippedDeleted.length) parts.push(`<p class="text-xs text-slate-500 dark:text-slate-400"><i class="fas fa-ban text-slate-400 mr-1"></i>${skippedDeleted.length} tenían la cuota anulada: se omiten (cárguela desde el residente si corresponde).</p>`);
+            if (notYet.length) parts.push(`<p class="text-xs text-slate-500 dark:text-slate-400"><i class="fas fa-calendar-check text-slate-400 mr-1"></i>${notYet.length} se cobran desde un mes posterior (ya tenían cubierto este mes): se omiten.</p>`);
             if (fee <= 0) parts.push('<p class="text-xs text-rose-600 font-semibold">Configure la Cuota Mensual en Configuración.</p>');
             el.innerHTML = parts.join('');
             document.getElementById('btn-fee-run').disabled = pending.length === 0 || fee <= 0;
@@ -2760,12 +2818,14 @@
             if (fee <= 0) return alert('Configure la Cuota Mensual en Configuración.');
             const { period, pending } = feeRunTargets();
             if (pending.length === 0) return;
-            if (!confirm(`¿Aplicar la cuota de ${feePeriodLongLabel(period)} (${formatMoney(fee)}) a ${pending.length} residente(s)?`)) return;
+            const totalFees = pending.reduce((sum, r) => sum + SisdelCuotas.residentFee(s, r), 0);
+            if (!confirm(`¿Aplicar la cuota de ${feePeriodLongLabel(period)} a ${pending.length} residente(s)? Total ${formatMoney(totalFees)}${s.waterUnitPrice ? ' (cada lote con su agua)' : ''}.`)) return;
             History.push();
             const txs = Store.getRaw('transactions');
             const curKey = currentFeePeriod();
             let n = 0;
-            pending.forEach(r => { if (createFeeCharge(txs, r, period, fee, s.chargeDay, { auto: false, manual: true, retro: period < curKey })) n++; });
+            // SISDEL: la cuota de cada lote (la del condominio + su agua por paja)
+            pending.forEach(r => { if (createFeeCharge(txs, r, period, SisdelCuotas.residentFee(s, r), s.chargeDay, { auto: false, manual: true, retro: period < curKey })) n++; });
             Store.set('transactions', txs);
             scanDuplicateFees();
             closeModal('modal-fee-run'); renderResidents(); renderDashboard(); renderAccounting();
@@ -4649,6 +4709,18 @@
             const balEl = document.getElementById('ec-balance');
             balEl.textContent = formatMoney(balance);
             balEl.className = 'text-lg font-bold ' + (balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400');
+            // SISDEL: mora por dia a hoy (no depende del rango de fechas de la lista)
+            const ms = sisdelMoraOf(ecResidentId, sisdelLedgerBalance(ecResidentId));
+            const moraBox = document.getElementById('ec-mora-box');
+            if (moraBox) {
+                moraBox.classList.toggle('hidden', !ms);
+                if (ms) {
+                    document.getElementById('ec-overdue').textContent = formatMoney(ms.overdueCapital);
+                    document.getElementById('ec-mora').textContent = formatMoney(ms.mora);
+                    document.getElementById('ec-total-due').textContent = formatMoney(Math.max(0, -ms.total));
+                    document.getElementById('ec-mora-note').textContent = `Mora calculada al ${new Date().toLocaleDateString('es-MX')}: ${sisdelMoraRuleText()}.`;
+                }
+            }
             const tbody = document.getElementById('ec-table-body');
             const openingRow = Math.abs(opening) >= 0.005
                 ? `<tr class="bg-slate-50 dark:bg-slate-700/40"><td colspan="4" class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">Saldo anterior al ${document.getElementById('ec-date-from').value}</td><td class="py-2 px-4 text-right font-mono text-xs ${opening >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${formatMoney(opening)}</td><td></td></tr>`
@@ -4938,11 +5010,21 @@
             doc.setTextColor(22, 163, 74); doc.text('PAGOS', 16, 58); doc.setFontSize(12); doc.text(formatMoney(totInc), 16, 66);
             doc.setFontSize(8); doc.setTextColor(225, 29, 72); doc.text('CARGOS', 79, 58); doc.setFontSize(12); doc.text(formatMoney(totChg), 79, 66);
             doc.setFontSize(8); doc.setTextColor(79, 70, 229); doc.text('SALDO', 142, 58); doc.setFontSize(12); doc.text(formatMoney(balance), 142, 66);
+            // SISDEL: mora por dia a hoy y total a pagar
+            const ms = sisdelMoraOf(r.id, r.balance !== undefined ? r.balance : sisdelLedgerBalance(r.id));
+            let tableY = 76;
+            if (ms) {
+                doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(180, 83, 9);
+                doc.text(`Cuotas vencidas ${formatMoney(ms.overdueCapital)}  ·  Mora a hoy ${formatMoney(ms.mora)}  ·  Total con mora ${formatMoney(Math.max(0, -ms.total))}`, 14, 77);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+                doc.text(doc.splitTextToSize(`Mora: ${sisdelMoraRuleText()}.`, 182), 14, 82);
+                tableY = 88;
+            }
             // Table
             const openingBody = Math.abs(opening) >= 0.005 ? [[from, 'Saldo anterior', '', '', formatMoney(opening)]] : [];
             if (rows.length > 0 || openingBody.length > 0) {
                 const body = openingBody.concat(rows.map(row => [new Date(row.date).toLocaleDateString('es-MX'), row.concept, row.tipo, (row.tipo === 'Pago' ? '+' : '-') + formatMoney(row.monto), formatMoney(row.runBal)]));
-                doc.autoTable({ startY: 76, head: [['Fecha', 'Concepto', 'Tipo', 'Monto', 'Saldo']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } } });
+                doc.autoTable({ startY: tableY, head: [['Fecha', 'Concepto', 'Tipo', 'Monto', 'Saldo']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } } });
             } else {
                 doc.setFontSize(11); doc.setTextColor(150, 150, 170); doc.text('No hay movimientos en este período.', 14, 82);
             }
@@ -4966,6 +5048,7 @@
                     <div style="flex:1;background:#fff1f2;border:1px solid #fecdd3;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#e11d48;margin:0">CARGOS</p><p style="font-size:18px;font-weight:700;color:#9f1239;margin:4px 0 0">${formatMoney(totChg)}</p></div>
                     <div style="flex:1;background:#eef2ff;border:1px solid #c7d2fe;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#4f46e5;margin:0">SALDO</p><p style="font-size:18px;font-weight:700;color:${balance >= 0 ? '#166534' : '#9f1239'};margin:4px 0 0">${formatMoney(balance)}</p></div>
                 </div>
+                ${(() => { const ms = sisdelMoraOf(r.id, r.balance !== undefined ? r.balance : sisdelLedgerBalance(r.id)); return ms ? `<div style="background:#fffbeb;border:1px solid #fde68a;padding:10px 12px;border-radius:10px;margin:-8px 0 20px;font-size:13px;color:#92400e"><b>Cuotas vencidas ${formatMoney(ms.overdueCapital)} · Mora a hoy ${formatMoney(ms.mora)} · Total con mora ${formatMoney(Math.max(0, -ms.total))}</b><br><span style="font-size:11px;color:#64748b">Mora: ${sisdelMoraRuleText()}.</span></div>` : ''; })()}
                 <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Concepto</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Tipo</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Monto</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Saldo</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;

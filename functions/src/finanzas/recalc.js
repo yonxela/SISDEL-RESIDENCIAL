@@ -14,7 +14,8 @@ const { SERVER_STAMP, staleStamp } = require('./sello');
 const SETTINGS_DOC = 'oikos_settings';
 const BATCH_SIZE = 400;
 // Solo los campos que hacen falta: los movimientos pueden traer fotos de comprobantes
-const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', SERVER_STAMP];
+// `date` y `moraFixed` los pide la mora por dia (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy
+const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', 'date', 'moraFixed', SERVER_STAMP];
 
 const docIdOf = (id) => String(id).replace(/\//g, '_');
 
@@ -109,7 +110,7 @@ async function recalcCondo(condoId, now = new Date(), options = {}) {
     txs.push(...fees);
 
     residents.forEach((r) => {
-        const update = statusUpdate(users.get(r.id), moraOf(r.id, txs, settings, now), nowIso);
+        const update = statusUpdate(users.get(r.id), moraOf(r.id, txs, settings, now, r), nowIso);
         if (!update) return;
         changes++;
         writes.push((b) => b.update(condoRef.collection('usuarios').doc(r.id), update));
@@ -140,7 +141,7 @@ async function recalcResident(condoId, residentId, now = new Date()) {
         return null;
     }
 
-    const mora = moraOf(String(residentId), txSnap.docs.map(txOf), settings, now);
+    const mora = moraOf(String(residentId), txSnap.docs.map(txOf), settings, now, extraSnap.exists ? extraSnap.data() : null);
     const update = statusUpdate(userSnap.data(), mora, now.toISOString());
     if (update) await userRef.update(update);
     return { condoId, residentId, moroso: mora.moroso, overdue: mora.overdue, changed: !!update };

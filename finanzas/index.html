@@ -611,23 +611,34 @@
                     </div>
                 </div>
                 <!-- VIEW 5: REPORTES -->
-                <div id="view-reports" class="space-y-6 hidden-section fade-in">
-                    <!-- Selector de reporte -->
+                <div id="view-reports" class="hidden-section fade-in">
+                    <!-- SISDEL: los reportes se eligen de una lista, como en el panel Reportes de SISDEL (admin.html); al
+                         elegir uno se abre con "Volver a los reportes". Los id rep-tab-* y los onclick son los de siempre:
+                         finanzas-bloqueo.js oculta y bloquea cada reporte por su privilegio con ellos. -->
+                    <div id="rep-catalog">
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Click en un reporte para abrirlo.</p>
+                        <div class="rounded-xl border border-blue-600 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
+                            <div class="flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700">
+                                <i class="fas fa-dollar-sign w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
+                                <span class="flex-1 font-bold text-slate-900 dark:text-white">Finanzas (OIKOS)</span>
+                            </div>
+                            <ul class="p-1.5">
+                                <li><button type="button" onclick="selectReport('income')" id="rep-tab-income" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago."><span>Ingresos por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="En qué se gasta el dinero del condominio en el período que elija."><span>Gastos por período y categoría</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div id="rep-detail" class="space-y-6 hidden">
+                    <!-- Reporte abierto: volver a la lista, filtros y acciones -->
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
                         <div class="flex flex-wrap items-center gap-3">
-                            <h3 class="text-lg font-bold dark:text-white mr-2">Reportes</h3>
-                            <button onclick="selectReport('income')" id="rep-tab-income" class="rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-blue-600 text-white">
-                                <i class="fas fa-arrow-down mr-1.5"></i>Ingresos por período
+                            <button type="button" onclick="showReportCatalog()" id="rep-back" class="px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600">
+                                <i class="fas fa-arrow-left mr-1.5"></i>Volver a los reportes
                             </button>
-                            <button onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600">
-                                <i class="fas fa-exclamation-triangle mr-1.5"></i>Morosos y meses adeudados
-                            </button>
-                            <button onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600">
-                                <i class="fas fa-arrow-up mr-1.5"></i>Gastos por categoría
-                            </button>
-                            <button onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600">
-                                <i class="fas fa-book mr-1.5"></i>Estado de cuenta general
-                            </button>
+                            <h3 id="rep-current" class="text-lg font-bold dark:text-white">Ingresos por período</h3>
                         </div>
                         <!-- Filtros + acciones (cambian según reporte) -->
                         <div class="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 dark:border-slate-700 pt-4">
@@ -684,6 +695,7 @@
                         <div class="h-80 relative w-full">
                             <canvas id="rep-chart"></canvas>
                         </div>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -3381,20 +3393,36 @@
             if (toEl && !toEl.value) {
                 toEl.value = localDayKey(today);
             }
-            selectReport(currentReportKey || 'income');
+            // SISDEL: al entrar a Reportes se ve la lista de reportes (antes se abria Ingresos directamente)
+            showReportCatalog();
+        }
+
+        // SISDEL: nombre de cada reporte en el encabezado del reporte abierto (el mismo de la lista)
+        const SISDEL_REPORT_NAMES = {
+            income: 'Ingresos por período',
+            'expense-cat': 'Gastos por período y categoría',
+            morosos: 'Morosos y meses adeudados',
+            'account-statement': 'Estado de cuenta general'
+        };
+
+        // SISDEL: muestra la lista de reportes o el reporte abierto (uno a la vez)
+        function showReportPane(detail) {
+            const catalog = document.getElementById('rep-catalog');
+            const pane = document.getElementById('rep-detail');
+            if (catalog) catalog.classList.toggle('hidden', detail);
+            if (pane) pane.classList.toggle('hidden', !detail);
+        }
+
+        function showReportCatalog() {
+            showReportPane(false);
         }
 
         function selectReport(key) {
             currentReportKey = key;
-            ['income', 'morosos', 'expense-cat', 'account-statement'].forEach((k) => {
-                const tab = document.getElementById('rep-tab-' + k);
-                if (!tab) return;
-                if (k === key) {
-                    tab.className = 'rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-blue-600 text-white';
-                } else {
-                    tab.className = 'rep-tab px-4 py-2 rounded-lg text-sm font-semibold transition bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600';
-                }
-            });
+            // SISDEL: el reporte elegido reemplaza a la lista, con su nombre arriba
+            showReportPane(true);
+            const nameEl = document.getElementById('rep-current');
+            if (nameEl) nameEl.textContent = SISDEL_REPORT_NAMES[key] || '';
             // El filtro de fechas aplica a todos menos 'morosos'.
             const periodWrap = document.getElementById('rep-period-wrap');
             const periodWrapTo = document.getElementById('rep-period-wrap-to');

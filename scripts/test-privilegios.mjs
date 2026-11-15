@@ -327,6 +327,11 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
     equal('los cinco reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'morosos', 'account-statement', 'resumen']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
+    // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
+    const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
+    const oikosList = [...oikosCatalog.matchAll(/id="rep-tab-([a-z-]+)"/g)].map((m) => m[1]);
+    equal('la lista de Reportes de OIKOS es la misma del panel Reportes', oikosList, ids);
+    yes('el reporte financiero de la lista abre su ventana', /onclick="openReportModal\(\)" id="rep-tab-resumen"/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));
     // Quien ve cada seccion (se carga el modulo con privilegios de verdad)

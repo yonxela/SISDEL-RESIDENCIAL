@@ -92,6 +92,9 @@ const cssCashier = B.cssFor(cashier);
 equal('un cajero ve el boton de pagos y no el de egresos ni el de cargos', [cssCashier.includes("modal-income"), cssCashier.includes("openModal('modal-expense')"), cssCashier.includes("openModal('modal-bulk-charge')")], [false, true, true]);
 equal('un cajero no ve los datos personales ni la configuracion', [cssCashier.includes('#res-dpi'), cssCashier.includes('#nav-settings'), cssCashier.includes('#btn-save-cfg')], [true, true, true]);
 equal('un cajero sigue viendo reportes de morosos y no exporta', [cssCashier.includes('#rep-tab-morosos'), cssCashier.includes('printReport()'), cssCashier.includes('#nav-reports')], [false, true, false]);
+equal('en la lista de Reportes, cada reporte se oculta sin su privilegio (tambien el reporte financiero)',
+    ['#rep-tab-income', '#rep-tab-expense-cat', '#rep-tab-account-statement', '#rep-tab-resumen'].map((s) => cssCashier.includes(s)).concat(B.cssFor(only('reportes_resumen', 'reportes_libro')).includes('#rep-tab-resumen')),
+    [true, true, true, true, false]);
 equal('sin estado de cuenta el nombre del residente deja de ser enlace', B.cssFor(only('residentes_ver')).includes('text-decoration: none'), true);
 equal('con configuracion solo de lectura los campos quedan bloqueados', (() => {
     const css = B.cssFor(only('config_ver'));

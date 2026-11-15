@@ -123,7 +123,7 @@
         ]],
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement']],
-        [['reportes_resumen'], ['#view-accounting button[onclick="openReportModal()"]', '#modal-report', '#btn-rep-share']],
+        [['reportes_resumen'], ['#view-accounting button[onclick="openReportModal()"]', '#rep-tab-resumen', '#modal-report', '#btn-rep-share']],
         [['reportes_exportar'], [
             '#view-reports button[onclick="printReport()"]', '#view-reports button[onclick="downloadReportPDF()"]', '#view-reports button[onclick="exportReportCSV()"]',
             '#modal-report button[onclick="downloadReportPDF()"]', '#modal-report button[onclick="exportReportExcel()"]', '#modal-report button[onclick="printReport()"]',

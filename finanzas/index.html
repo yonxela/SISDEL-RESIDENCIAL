@@ -147,11 +147,19 @@
           //      nombre real de la empresa MULTISYS — no el fallback
           //      genérico "OIKOS Residencial".
           try {
-            var settingsKey = 'oikos_' + oikosCompanyId + '_settings';
-            var prev = JSON.parse(localStorage.getItem(settingsKey) || 'null') || {};
-            if (msname && prev.name !== msname) {
-              prev.name = msname;
-              localStorage.setItem(settingsKey, JSON.stringify(prev));
+            // SISDEL: dentro de SISDEL la configuracion vive en la memoria de finanzas.html (ver finanzas-datos.js)
+            var sisdelMemory = null;
+            try { sisdelMemory = window.parent !== window ? window.parent.sisdelFinanzasStore : null; } catch (e) { sisdelMemory = null; }
+            if (sisdelMemory && sisdelMemory.prefix === 'oikos_' + oikosCompanyId + '_') {
+              var current = sisdelMemory.read('settings') || {};
+              if (msname && current.name !== msname) sisdelMemory.write('settings', Object.assign({}, current, { name: msname }));
+            } else {
+              var settingsKey = 'oikos_' + oikosCompanyId + '_settings';
+              var prev = JSON.parse(localStorage.getItem(settingsKey) || 'null') || {};
+              if (msname && prev.name !== msname) {
+                prev.name = msname;
+                localStorage.setItem(settingsKey, JSON.stringify(prev));
+              }
             }
           } catch (e) { /* ignore */ }
 
@@ -211,6 +219,9 @@
         .dropdown.active { display: block; }
         @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 5px rgba(139,92,246,0.3); } 50% { box-shadow: 0 0 20px rgba(139,92,246,0.6); } }
         .code-glow { animation: pulse-glow 2s infinite; }
+        /* SISDEL: la X de cerrar de las ventanas, 30 % mas grande (antes 1.125 rem y 1 rem) */
+        .sisdel-x-lg { font-size: 1.46rem; }
+        .sisdel-x-md { font-size: 1.3rem; }
     </style>
 </head>
 <body class="text-slate-800 dark:text-slate-200 h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
@@ -673,7 +684,7 @@
                     <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg" id="rs-icon-wrap"><i class="fas fa-users"></i></div>
                     <div><h3 class="text-xl font-bold dark:text-white" id="rs-title">Reporte de Residentes</h3><p class="text-sm text-slate-500 dark:text-slate-400" id="rs-subtitle">Estado de pagos</p></div>
                 </div>
-                <button onclick="closeModal('modal-res-status')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times text-lg"></i></button>
+                <button onclick="closeModal('modal-res-status')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
             <!-- Tabs -->
             <div class="flex space-x-2 mb-4 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg">
@@ -938,7 +949,7 @@
                     <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar text-lg"></i></div>
                     <div><h3 class="text-xl font-bold dark:text-white">Estado de Cuenta</h3><p class="text-sm text-slate-500 dark:text-slate-400" id="ec-resident-info">Residente</p></div>
                 </div>
-                <button onclick="closeModal('modal-estado-cuenta')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times text-lg"></i></button>
+                <button onclick="closeModal('modal-estado-cuenta')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
             <div class="flex flex-wrap items-end gap-3 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
                 <div><label class="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label><input type="date" id="ec-date-from" class="px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" onchange="renderEstadoCuenta()"></div>
@@ -977,7 +988,7 @@
                 <div class="flex items-center space-x-2"><i class="fas fa-image text-indigo-500"></i><span class="font-bold dark:text-white">Referencia</span></div>
                 <div class="flex items-center space-x-2">
                     <button onclick="downloadReceiptImage()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-lg text-sm font-medium transition"><i class="fas fa-download mr-1"></i>Descargar</button>
-                    <button onclick="closeModal('modal-receipt-viewer')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times text-lg"></i></button>
+                    <button onclick="closeModal('modal-receipt-viewer')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times sisdel-x-lg"></i></button>
                 </div>
             </div>
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-3" id="receipt-viewer-info"></p>
@@ -1002,7 +1013,7 @@
                     </div>
                 </div>
                 <button onclick="closeModal('modal-voucher-options')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-lg transition" aria-label="Cerrar">
-                    <i class="fas fa-times"></i>
+                    <i class="fas fa-times sisdel-x-md"></i>
                 </button>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-300 mb-5">
@@ -1036,7 +1047,7 @@
                 </button>
                 <h3 class="text-base font-bold text-slate-800 dark:text-white" id="mi-title">Ingresos del mes</h3>
                 <button onclick="closeModal('modal-month-incomes')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-lg transition" aria-label="Cerrar">
-                    <i class="fas fa-times"></i>
+                    <i class="fas fa-times sisdel-x-md"></i>
                 </button>
             </div>
             <!-- KPIs + tabla + chart -->
@@ -1108,7 +1119,7 @@
                 </button>
                 <h3 class="text-base font-bold text-slate-800 dark:text-white" id="tx-detail-title">Detalle del movimiento</h3>
                 <button onclick="closeModal('modal-tx-detail')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1.5 rounded-lg transition" aria-label="Cerrar">
-                    <i class="fas fa-times"></i>
+                    <i class="fas fa-times sisdel-x-md"></i>
                 </button>
             </div>
             <!-- Body -->
@@ -1125,7 +1136,25 @@
     <!-- Toast -->
     <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white px-5 py-3 rounded-xl shadow-xl transition-all duration-300 transform translate-y-20 opacity-0 z-50"><i class="fas fa-check-circle text-emerald-400 mr-2"></i><span id="toast-msg">Exito</span></div>
 
+    <!-- SISDEL: memoria compartida con finanzas.html y copias de registros (misma version que en finanzas.html) -->
+    <script src="../finanzas-datos.js?v=20261112a"></script>
     <script>
+        // SISDEL: si finanzas.html ofrece su memoria pero finanzas-datos.js no cargo (falla de red), OIKOS no sigue en
+        // localStorage: lo que se registrara ahi no se subiria a la nube. Se detiene y pide recargar.
+        (function () {
+            var offered = false;
+            try { offered = window.parent !== window && !!window.parent.sisdelFinanzasStore; } catch (e) { offered = false; }
+            if (!offered || typeof SisdelFinanzasDatos !== 'undefined') return;
+            document.documentElement.innerHTML =
+                '<head><meta charset="utf-8"><title>Sistema Financiero</title></head>' +
+                '<body style="margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif">' +
+                '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center">' +
+                '<h1 style="margin:0 0 12px;font-size:20px">No se pudo abrir el Sistema Financiero</h1>' +
+                '<p style="margin:0;max-width:420px;line-height:1.5;color:#94A3B8">Faltó cargar una parte de la página. Revise su conexión y recargue.</p>' +
+                '</div></body>';
+            throw new Error('finanzas: no cargo finanzas-datos.js');
+        })();
+
         // ========== MASTER STORE (Companies) ==========
         const MasterStore = {
             get: () => JSON.parse(localStorage.getItem('oikos_master_companies')) || [],
@@ -1169,10 +1198,39 @@
             _balanceCache.raw = rawTxStr; _balanceCache.map = map;
             return map;
         }
+        // SISDEL: dentro de SISDEL los datos del condominio viven en la memoria de finanzas.html
+        // (window.parent.sisdelFinanzasStore, ver finanzas-datos.js) y ya no en localStorage, que un condominio grande
+        // llenaba en meses. Las reglas son las de siempre (anular en vez de borrar, saldo derivado, sello updated_at):
+        // quien lee recibe copias y quien guarda entrega una lista nueva; los registros guardados no se modifican.
+        // Sin esa memoria (OIKOS abierto fuera de SISDEL) todo sigue en localStorage como antes.
+        function sisdelMem() {
+            try {
+                const mem = window.parent !== window ? window.parent.sisdelFinanzasStore : null;
+                return mem && typeof SisdelFinanzasDatos !== 'undefined' && mem.prefix === Store.prefix() ? mem : null;
+            } catch (e) { return null; }
+        }
+        // SISDEL: calculos que valen mientras no cambie la lista de movimientos (saldos, indices por residente,
+        // orden por fecha). Antes cada uno recorria todos los movimientos por cada residente o por cada pantalla.
+        const _sisdelDerived = { mem: null, version: -1, values: new Map() };
+        function sisdelDerived(mem, name, compute) {
+            const version = mem.version('transactions');
+            if (_sisdelDerived.mem !== mem || _sisdelDerived.version !== version) {
+                _sisdelDerived.mem = mem; _sisdelDerived.version = version; _sisdelDerived.values = new Map();
+            }
+            if (!_sisdelDerived.values.has(name)) _sisdelDerived.values.set(name, compute(mem.read('transactions') || []));
+            return _sisdelDerived.values.get(name);
+        }
         const Store = {
             prefix: () => 'oikos_' + (sessionStorage.getItem('oikos_active_company') || 'default') + '_',
             /** Lectura cruda: incluye registros anulados (tombstones). */
             getRaw: (k) => {
+                const mem = sisdelMem();
+                if (mem) {
+                    const stored = mem.read(k);
+                    if (!stored) return defaultState[k] ? JSON.parse(JSON.stringify(defaultState[k])) : [];
+                    if (k === 'settings') return { ...defaultSettings, ...SisdelFinanzasDatos.cloneJson(stored) };
+                    return Array.isArray(stored) ? SisdelFinanzasDatos.cloneList(stored) : [];
+                }
                 let val = null;
                 try { val = JSON.parse(localStorage.getItem(Store.prefix() + k)); } catch (e) { val = null; }
                 if (!val) return defaultState[k] ? JSON.parse(JSON.stringify(defaultState[k])) : [];
@@ -1181,6 +1239,17 @@
             },
             /** Lectura normal: solo registros vivos; residentes con saldo calculado. */
             get: (k) => {
+                const mem = sisdelMem();
+                if (mem && k !== 'settings') {
+                    const stored = mem.read(k);
+                    const live = [];
+                    if (Array.isArray(stored)) for (let i = 0; i < stored.length; i++) { const x = stored[i]; if (x && !x.deleted) live.push(SisdelFinanzasDatos.cloneRecord(x)); }
+                    if (k === 'residents') {
+                        const map = sisdelDerived(mem, 'balances', SisdelFinanzasDatos.balanceMap);
+                        live.forEach(r => { r.balance = Math.round(((map.get(String(r.id)) || 0) + Number.EPSILON) * 100) / 100; });
+                    }
+                    return live;
+                }
                 const val = Store.getRaw(k);
                 if (k === 'settings') return val;
                 const live = val.filter(x => x && !x.deleted);
@@ -1191,9 +1260,29 @@
                 return live;
             },
             getDeleted: (k) => Store.getRaw(k).filter(x => x && x.deleted),
+            /** SISDEL: foto de una lista para deshacer. En memoria la lista guardada nunca se modifica: la foto es la lista misma. */
+            snapshot: (k) => {
+                const mem = sisdelMem();
+                if (mem) { const stored = mem.read(k); return Array.isArray(stored) ? stored : []; }
+                return JSON.parse(JSON.stringify(Store.getRaw(k)));
+            },
+            /** SISDEL: movimientos vivos de un residente, en el orden de la lista (copias, como Store.get). */
+            txOf: (resiId) => {
+                const mem = sisdelMem();
+                // (un residente sin id no existe en SISDEL; si lo hubiera, se resuelve como antes, recorriendo la lista)
+                if (!mem || resiId === null || resiId === undefined) return Store.get('transactions').filter(t => String(t.resiId) === String(resiId));
+                return SisdelFinanzasDatos.cloneList(sisdelDerived(mem, 'byResident', SisdelFinanzasDatos.byResident).get(String(resiId)) || []);
+            },
             set: (k, v) => {
                 const key = Store.prefix() + k;
                 const now = new Date().toISOString();
+                const mem = sisdelMem();
+                if (mem) {
+                    // SISDEL: mismas reglas que abajo (SisdelFinanzasDatos.stampList), sin pasar por texto
+                    if (k === 'settings') mem.write(k, SisdelFinanzasDatos.cloneJson({ ...v, updated_at: now }));
+                    else mem.write(k, SisdelFinanzasDatos.stampList(mem.read(k), v, now));
+                    return;
+                }
                 if (k === 'settings') { localStorage.setItem(key, JSON.stringify({ ...v, updated_at: now })); return; }
                 const prevArr = Store.getRaw(k);
                 const prevById = new Map(prevArr.map(x => [String(x && x.id), x]));
@@ -1646,22 +1735,24 @@
         // SISDEL: las fotos son de la lista CRUDA (con anulados) para que rehacer una anulacion conserve su motivo y fecha,
         // y la pila se vacia cuando finanzas-sync.js escribe un cambio de otro equipo o del servidor (ver el evento 'storage'):
         // si no, deshacer reescribia la lista sin ese movimiento y la sincronizacion lo subia como anulado.
+        // SISDEL: la foto ya no copia todos los movimientos (con 20 fotos de un condominio grande se agotaba la memoria):
+        // Store.snapshot entrega la lista guardada, que nunca se modifica.
         const History = {
             stack: [], redoStack: [], max: 20,
             push() {
-                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
+                this.stack.push({ residents: Store.snapshot('residents'), transactions: Store.snapshot('transactions') });
                 this.redoStack = [];
                 if (this.stack.length > this.max) this.stack.shift();
             },
             undo() {
                 if (this.stack.length === 0) return false;
-                this.redoStack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
+                this.redoStack.push({ residents: Store.snapshot('residents'), transactions: Store.snapshot('transactions') });
                 this._apply(this.stack.pop());
                 showToast('Acción deshecha'); return true;
             },
             redo() {
                 if (this.redoStack.length === 0) return false;
-                this.stack.push({ residents: JSON.parse(JSON.stringify(Store.getRaw('residents'))), transactions: JSON.parse(JSON.stringify(Store.getRaw('transactions'))) });
+                this.stack.push({ residents: Store.snapshot('residents'), transactions: Store.snapshot('transactions') });
                 this._apply(this.redoStack.pop());
                 showToast('Acción rehecha'); return true;
             },
@@ -1952,9 +2043,24 @@
             const d = new Date();
             const curPeriod = feePeriodKey(d.getFullYear(), d.getMonth());
             let curFee = 0;
-            Store.get('transactions').forEach(t => {
-                if (String(t.resiId) === String(r.id) && txFeePeriod(t) === curPeriod) curFee += parseFloat(t.amount) || 0;
-            });
+            const mem = sisdelMem();
+            if (mem) {
+                // SISDEL: la suma de las cuotas del mes de cada residente se calcula una vez por cambio de la lista
+                // (antes se recorrian todos los movimientos por cada residente). Misma suma, en el mismo orden.
+                curFee = sisdelDerived(mem, 'feeOf:' + curPeriod, txs => {
+                    const sums = new Map();
+                    txs.forEach(t => {
+                        if (!t || t.deleted || txFeePeriod(t) !== curPeriod) return;
+                        const key = String(t.resiId);
+                        sums.set(key, (sums.get(key) || 0) + (parseFloat(t.amount) || 0));
+                    });
+                    return sums;
+                }).get(String(r.id)) || 0;
+            } else {
+                Store.get('transactions').forEach(t => {
+                    if (String(t.resiId) === String(r.id) && txFeePeriod(t) === curPeriod) curFee += parseFloat(t.amount) || 0;
+                });
+            }
             const debtBeforeCurrent = -r.balance - curFee;
             if (debtBeforeCurrent > 0.005) return true;
             return d.getTime() >= new Date(d.getFullYear(), d.getMonth(), cDay + gDays).getTime();   // SISDEL: con rollover al mes siguiente
@@ -2071,13 +2177,34 @@
         }
 
         let currentTxFilter = 'all';
-        function setTxFilter(f) { currentTxFilter = f; renderAccounting(); }
+        // SISDEL: la tabla se pinta por tramos (los mas recientes primero); "Mostrar más" agrega otro tramo
+        const ACCOUNTING_PAGE = 300;
+        let accountingShown = ACCOUNTING_PAGE;
+        function setTxFilter(f) { currentTxFilter = f; accountingShown = ACCOUNTING_PAGE; renderAccounting(); }
+        function showMoreAccounting() { accountingShown += ACCOUNTING_PAGE; renderAccounting(); }
 
         function renderAccounting() {
-            let txs = Store.get('transactions').sort((a, b) => new Date(b.date) - new Date(a.date));
-            txs = txs.filter(t => t.type !== 'charge');
+            let txs;
+            const mem = sisdelMem();
+            if (mem) {
+                // SISDEL: el orden por fecha se calcula una vez por cambio de la lista (mismo orden que abajo: la misma
+                // comparacion sobre la misma lista). Son los registros guardados: aqui solo se leen.
+                txs = sisdelDerived(mem, 'byDateDesc', all => {
+                    const live = all.filter(x => x && !x.deleted);
+                    const time = new Map(live.map(t => [t, new Date(t.date) - 0]));
+                    return live.sort((a, b) => time.get(b) - time.get(a)).filter(t => t.type !== 'charge');
+                });
+            } else {
+                txs = Store.get('transactions').sort((a, b) => new Date(b.date) - new Date(a.date));
+                txs = txs.filter(t => t.type !== 'charge');
+            }
             if (currentTxFilter !== 'all') txs = txs.filter(t => t.type === currentTxFilter);
             const res = Store.get('residents');
+            const totalRows = txs.length;
+            if (mem) txs = txs.slice(0, accountingShown);   // fuera de SISDEL la tabla se pinta completa, como antes
+            const moreRow = totalRows > txs.length
+                ? `<tr><td colspan="3" class="py-4 px-6 text-center"><button onclick="showMoreAccounting()" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-sm font-semibold">Mostrar más (${txs.length} de ${totalRows})</button></td></tr>`
+                : '';
             document.getElementById('accounting-table-body').innerHTML = txs.map(t => {
                 const rName = t.resiId ? (res.find(r => r.id === t.resiId)?.name || 'Desconocido') : (t.category || '');
                 const isInc = t.type === 'income';
@@ -2090,7 +2217,7 @@
                     <td class="py-4 px-6"><span class="font-semibold block">${t.concept}</span><span class="text-xs text-slate-500 dark:text-slate-400">${rName}</span></td>
                     <td class="py-4 px-6 text-right font-bold ${isInc ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${isInc ? '+' : '-'}${formatMoney(t.amount)}</td>
                 </tr>`;
-            }).join('');
+            }).join('') + moreRow;
             renderCharges();
         }
 
@@ -2524,7 +2651,8 @@
         let rsCurrentData = [];
 
         function getResidentPaymentInfo(resident) {
-            const txs = Store.get('transactions');
+            // SISDEL: solo los movimientos de este residente (esta funcion corre una vez por residente)
+            const txs = Store.txOf(resident.id);
             const s = Store.get('settings');
             const fee = parseFloat(s.fee) || 0;
             // Get all income transactions for this resident
@@ -4031,6 +4159,9 @@
             const pass = prompt('Ingresa la contraseña admin para borrar todo:');
             if (pass === '1122') {
                 const prefix = Store.prefix();
+                // SISDEL: en memoria se vacian las listas; finanzas-sync.js las restaura desde la nube (nunca se borra nada alla)
+                const mem = sisdelMem();
+                if (mem) { mem.write('residents', []); mem.write('transactions', []); alert('Datos eliminados'); return; }
                 localStorage.removeItem(prefix + 'residents');
                 localStorage.removeItem(prefix + 'transactions');
                 alert('Datos eliminados'); location.reload();
@@ -4224,6 +4355,20 @@
                 if (typeof renderAccounting === 'function') renderAccounting();
             } catch (err) { /* ignore */ }
         });
+        // SISDEL: dentro de SISDEL los cambios de otros equipos (o del servidor) llegan por la memoria compartida y no por
+        // el evento 'storage'. Mismo efecto: se vacia la pila de deshacer y se repintan las tres vistas.
+        (function () {
+            const mem = sisdelMem();
+            if (!mem) return;
+            mem.setRemoteListener(function (kind) {
+                try {
+                    if (kind === 'transactions' || kind === 'residents') { History.stack = []; History.redoStack = []; }
+                    if (typeof renderDashboard === 'function') renderDashboard();
+                    if (typeof renderResidents === 'function') renderResidents();
+                    if (typeof renderAccounting === 'function') renderAccounting();
+                } catch (err) { /* ignore */ }
+            });
+        })();
 
         // ========== ESTADO DE CUENTA (ACCOUNT STATEMENT) ==========
         let ecResidentId = null;

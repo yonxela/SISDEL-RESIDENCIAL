@@ -155,7 +155,7 @@
         <div class="modal" style="max-width:500px;">
             <div class="modal-header">
                 <h3 id="detailTitle">Detalles del Condominio</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseDetail">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseDetail">&times;</button>
             </div>
             <div class="modal-body" id="detailBody" style="padding:1.5rem;">
             </div>
@@ -167,7 +167,7 @@
         <div class="modal" style="max-width:480px;">
             <div class="modal-header">
                 <h3 style="color:var(--danger);">Eliminar condominio por completo</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseDeleteCondo" type="button">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseDeleteCondo" type="button">&times;</button>
             </div>
             <form id="deleteCondoForm" style="padding:1.5rem;" autocomplete="off">
                 <p id="deleteCondoSummary" class="text-sm" style="line-height:1.5; margin:0 0 1rem;"></p>
@@ -198,7 +198,7 @@
         <div class="modal" style="max-width:450px;">
             <div class="modal-header">
                 <h3>Nuevo Condominio</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseNewCondo">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseNewCondo">&times;</button>
             </div>
             <form id="condoForm" style="padding:1.5rem;">
                 <div class="form-group">
@@ -233,7 +233,7 @@
         <div class="modal" style="max-width:450px;">
             <div class="modal-header">
                 <h3>Editar Usuario</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseEditUser">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseEditUser">&times;</button>
             </div>
             <form id="editUserForm" style="padding:1.5rem;">
                 <input type="hidden" id="editUserId">
@@ -271,9 +271,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110f"></script>
-    <script src="sisdel-core.js?v=20261110f"></script>
-    <script src="privilegios-ui.js?v=20261108i"></script>
+    <script src="privilegios.js?v=20261112a"></script>
+    <script src="sisdel-core.js?v=20261112a"></script>
+    <script src="privilegios-ui.js?v=20261115a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             // Nombres y datos los escriben otros usuarios: siempre se escapan

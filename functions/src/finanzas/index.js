@@ -2,17 +2,30 @@
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions/v2');
+const { FieldValue } = require('firebase-admin/firestore');
 const { recalcCondo, recalcResident, recalcAll } = require('./recalc');
 const { TIME_ZONE } = require('./mora');
+const { SERVER_STAMP, needsStamp, onlyStampChanged } = require('./sello');
 
 // Campos de la configuracion que cambian cuanto debe cada vecino
 const FEE_SETTINGS = ['fee', 'chargeDay', 'graceDays', 'feeMode'];
 
 // Un cargo o pago nuevo, editado o anulado: se recalcula ese vecino al instante,
 // asi la talanquera se abre en cuanto el vecino paga.
+// Ademas le pone el sello del servidor (ver sello.js): con el, cada equipo pide solo lo que cambio.
 const onFinanceMovement = onDocumentWritten('condominios/{condoId}/finanzas_movimientos/{txId}', async (event) => {
     const before = event.data && event.data.before.exists ? event.data.before.data() : null;
     const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+    if (needsStamp(before, after)) {
+        try {
+            await event.data.after.ref.update({ [SERVER_STAMP]: FieldValue.serverTimestamp() });
+        } catch (error) {
+            // Si el movimiento ya no existe no hay nada que sellar; cualquier otra falla la repone la tarea diaria
+            logger.warn('finanzas: no se pudo sellar el movimiento', { condoId: event.params.condoId, txId: event.params.txId, message: error.message });
+        }
+    }
+    // El sello no cambia saldos ni cuotas
+    if (onlyStampChanged(before, after)) return;
     // Las cuotas que crea el propio recalculo ya se tuvieron en cuenta
     if (!before && after && after.serverGenerated) return;
     const residentIds = new Set([before && before.resiId, after && after.resiId].filter(Boolean).map(String));

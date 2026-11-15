@@ -6,13 +6,15 @@
 //   el estado de pago se sigue manejando a mano en el panel admin.
 // - Una vez activa, paymentStatus y morosoSince los escribe solo el servidor.
 const { logger } = require('firebase-functions/v2');
+const { FieldValue } = require('firebase-admin/firestore');
 const { db } = require('../firebase');
 const { missingFees, moraOf, periodKey, localParts } = require('./mora');
+const { SERVER_STAMP, staleStamp } = require('./sello');
 
 const SETTINGS_DOC = 'oikos_settings';
 const BATCH_SIZE = 400;
 // Solo los campos que hacen falta: los movimientos pueden traer fotos de comprobantes
-const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept'];
+const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', SERVER_STAMP];
 
 const docIdOf = (id) => String(id).replace(/\//g, '_');
 
@@ -43,7 +45,8 @@ async function readSettings(condoRef) {
 
 // Recalcula todo el condominio: crea las cuotas automaticas que falten y actualiza
 // el estado de pago de cada vecino. Devuelve un resumen para la bitacora.
-async function recalcCondo(condoId, now = new Date()) {
+// options.sweep (tarea diaria): repone los sellos del servidor que falten o hayan quedado atrasados (ver sello.js).
+async function recalcCondo(condoId, now = new Date(), options = {}) {
     const condoRef = db.collection('condominios').doc(condoId);
     const [condoSnap, settings] = await Promise.all([condoRef.get(), readSettings(condoRef)]);
     if (!condoSnap.exists || !settings) return { condoId, active: false };
@@ -64,10 +67,20 @@ async function recalcCondo(condoId, now = new Date()) {
     const extras = new Map(extrasSnap.docs.map((d) => [d.id, d.data()]));
     const writes = [];
 
+    let stamped = 0;
+    if (options.sweep) {
+        txSnap.docs.forEach((doc) => {
+            if (!staleStamp(doc.updateTime, doc.get(SERVER_STAMP), now.getTime())) return;
+            stamped++;
+            writes.push((b) => b.update(doc.ref, { [SERVER_STAMP]: FieldValue.serverTimestamp() }));
+        });
+    }
+
     if (condo.moraAutomatica !== true) {
         writes.push((b) => b.update(condoRef, { moraAutomatica: true, moraAutomaticaDesde: nowIso }));
     }
 
+    let changes = 0;
     // Vecinos sin datos financieros: se cobran desde este mes (igual que finanzas-sync.js)
     const residents = [];
     const users = new Map();
@@ -95,7 +108,6 @@ async function recalcCondo(condoId, now = new Date()) {
     fees.forEach((fee) => writes.push((b) => b.set(condoRef.collection('finanzas_movimientos').doc(docIdOf(fee.id)), fee)));
     txs.push(...fees);
 
-    let changes = 0;
     residents.forEach((r) => {
         const update = statusUpdate(users.get(r.id), moraOf(r.id, txs, settings, now), nowIso);
         if (!update) return;
@@ -104,7 +116,7 @@ async function recalcCondo(condoId, now = new Date()) {
     });
 
     await commitInChunks(writes);
-    return { condoId, active: true, fees: fees.length, changes };
+    return { condoId, active: true, fees: fees.length, changes, ...(options.sweep ? { stamped } : {}) };
 }
 
 // Recalcula un solo vecino (al registrar o anular un cargo o pago)
@@ -140,7 +152,7 @@ async function recalcAll(now = new Date()) {
     const results = [];
     for (const condo of condos.docs) {
         try {
-            results.push(await recalcCondo(condo.id, now));
+            results.push(await recalcCondo(condo.id, now, { sweep: true }));
         } catch (error) {
             logger.error('finanzas: no se pudo recalcular', { condoId: condo.id, message: error.message });
         }

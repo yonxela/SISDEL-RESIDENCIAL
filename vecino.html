@@ -19,7 +19,7 @@
         .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
         /* Modales: titulo a la izquierda y cerrar a la derecha; si no caben en la pantalla, se desplazan por dentro */
         .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-        .modal { max-height: 100vh; max-height: 100dvh; overflow-y: auto; }
+        .modal { max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
         /* Los campos de los modales no llevan icono adentro: sin el margen izquierdo de 3rem del login */
         .modal .form-input { padding-left: 1rem; min-width: 0; }
         /* Fecha y hora lado a lado si caben; en pantallas angostas, una debajo de la otra */
@@ -116,7 +116,7 @@
         <div class="modal" style="max-width:480px;">
             <div class="modal-header">
                 <h3>Contactos de emergencia</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseContacts" type="button">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseContacts" type="button">&times;</button>
             </div>
             <div style="padding:1.25rem;">
                 <p class="text-xs text-muted" style="margin-bottom:0.75rem;">Hasta 5 personas. Si activa el botón de pánico, reciben un WhatsApp con su ubicación.</p>
@@ -131,7 +131,7 @@
         <div class="modal" style="max-width:400px;">
             <div class="modal-header">
                 <h3>Registrar Nueva Visita</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseNewVisit">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseNewVisit">&times;</button>
             </div>
             <form id="visitForm" style="padding-top:1.5rem;">
                 <div class="form-group">
@@ -185,7 +185,7 @@
         <div class="modal" style="max-width:450px;">
             <div class="modal-header">
                 <h3>🚗 Mis Pases Vehiculares</h3>
-                <button class="btn btn-ghost btn-icon" id="btnCloseMarbete">&times;</button>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseMarbete">&times;</button>
             </div>
             <div style="padding:1.5rem;">
                 <div id="vehicleList" style="margin-bottom:1.5rem;"></div>
@@ -256,8 +256,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110f"></script>
-    <script src="sisdel-core.js?v=20261110f"></script>
+    <script src="privilegios.js?v=20261112a"></script>
+    <script src="sisdel-core.js?v=20261112a"></script>
     <script src="rondas-core.js?v=20261108b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {

@@ -293,8 +293,10 @@ service cloud.firestore {
         allow read: if isMaster()
           || (isMember(condoId) && request.auth.uid == userId)
           || pUsuariosVer(condoId);
+        // El id 'master' queda reservado: es el de la cuenta del master (functions/src/auth.js) y en la bitacora
+        // un usuario con ese id se confundiria con el
         allow create: if isMaster()
-          || (validUser() && canCreateRole(condoId, request.resource.data.role)
+          || (userId != 'master' && validUser() && canCreateRole(condoId, request.resource.data.role)
               && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
         allow update: if isMaster()
           || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights()
@@ -375,6 +377,16 @@ service cloud.firestore {
         allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
       }
 
+      // ── Bitacora: el rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (quien, que y cuando) ──
+      // La escribe solo el servidor (functions/src/bitacora.js): desde una pantalla nadie la escribe, la cambia ni
+      // la borra. La lee quien asigna privilegios (equivale a control total del condominio) o quien puede ver a la
+      // vez todo lo que la bitacora anota: usuarios, vehiculos y finanzas (el auditor). Con uno solo no alcanza.
+      match /bitacora/{entryId} {
+        allow read: if isMaster() || pUsuariosPrivilegios(condoId)
+          || (pUsuariosVer(condoId) && pVehiculosVer(condoId) && pFinanzasVer(condoId));
+        allow write: if false;
+      }
+
       // ── Sistema Financiero (OIKOS, ver finanzas-sync.js) ──
       // Lo edita quien tiene finanzas.usar; el master y quien solo tiene finanzas.ver leen. Nunca se borra:
       // OIKOS anula con deleted:true para que la anulacion llegue a todos los equipos.
@@ -390,8 +402,8 @@ service cloud.firestore {
       // Datos financieros del residente (el nombre, la casa y el telefono viven en usuarios)
       function residentRights() {
         return (!finChanged().hasAny(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom']) || pFinanzasResidentesFiniquitar(condoId))
-          && (!finChanged().hasAny(['deleted', 'deleted_at']) || pFinanzasResidentesEliminar(condoId))
-          && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'updated_at', 'created_at', 'createdAt'])
+          && (!finChanged().hasAny(['deleted', 'deleted_at', 'restored_at']) || pFinanzasResidentesEliminar(condoId))
+          && (finChanged().hasOnly(['status', 'closedAt', 'closeReason', 'closeNotes', 'reactivatedAt', 'feeFrom', 'deleted', 'deleted_at', 'restored_at', 'updated_at', 'created_at', 'createdAt'])
               || pFinanzasResidentesEditar(condoId));
       }
       match /finanzas_residentes/{docId} {
@@ -409,7 +421,11 @@ service cloud.firestore {
       // Movimientos: cada tipo tiene su privilegio (cargo, pago, egreso) y anular es otro aparte
       function movementCreateOk() {
         // Todo movimiento nace con un monto numerico mayor que cero (un pago negativo seria un cargo escondido)
+        // y sin sello del servidor (ver stampUntouched)
+        // ni marcado como generado por el servidor (esa marca evita el recalculo inmediato de la mora)
         return request.resource.data.get('amount', 0) is number && request.resource.data.amount > 0
+          && !('server_at' in request.resource.data)
+          && request.resource.data.get('serverGenerated', false) != true
           && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
           || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,
@@ -426,27 +442,35 @@ service cloud.firestore {
       function undoWindow(field) {
         return request.time < timestamp.value(resource.data.get(field, '1970-01-01T00:00:00Z')) + duration.value(2, 'h');
       }
+      // Sello del servidor (server_at): lo pone solo el servidor a cada movimiento que se crea o cambia, y con el cada
+      // equipo pide lo que cambio desde su ultima visita (functions/src/finanzas/sello.js, finanzas-sync.js). Un
+      // cliente no lo escribe ni lo altera: lo deja como esta o, si reescribe el documento entero, lo pierde y el
+      // servidor lo repone (por eso las listas de abajo lo admiten entre los campos que cambian).
+      function stampUntouched() {
+        return !('server_at' in request.resource.data) || request.resource.data.server_at == resource.data.get('server_at', null);
+      }
       function movementUpdateOk() {
-        return finChanged().hasOnly(['updated_at'])
+        return finChanged().hasOnly(['updated_at', 'server_at'])
           // OIKOS le pone periodo y tipo a un cargo viejo que no lo tiene (migracion); uno que ya lo tiene no se reasigna
-          || (resource.data.get('type', '') == 'charge' && resource.data.get('period', '') == '' && finChanged().hasOnly(['period', 'kind', 'updated_at']))
+          || (resource.data.get('type', '') == 'charge' && resource.data.get('period', '') == '' && finChanged().hasOnly(['period', 'kind', 'updated_at', 'server_at']))
           // Anular: el mismo documento con deleted:true (nunca se borra)
           || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
-              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at', 'server_at'])
               && ((pFinanzasDeshacer(condoId) && undoWindow('created_at'))
                   || (resource.data.get('type', '') == 'income' && pFinanzasPagosAnular(condoId))
                   || (resource.data.get('type', '') == 'expense' && pFinanzasEgresosAnular(condoId))
                   || (resource.data.get('type', '') == 'charge'
                       && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId))))))
           // Devolver una anulacion es "deshacer"
+          // (el motivo y la fecha de la anulacion quedan en el documento; restored_at anota cuando se devolvio)
           || (resource.data.get('deleted', false) == true && request.resource.data.get('deleted', false) != true
-              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at'])
+              && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'restored_at', 'updated_at', 'server_at'])
               && pFinanzasDeshacer(condoId) && undoWindow('updated_at'));
       }
       match /finanzas_movimientos/{docId} {
         allow read: if canReadFinance();
         allow create: if validFinanceItem() && movementCreateOk();
-        allow update: if pFinanzasUsar(condoId) && validFinanceItem() && movementUpdateOk();
+        allow update: if pFinanzasUsar(condoId) && validFinanceItem() && stampUntouched() && movementUpdateOk();
         allow delete: if false;
       }
       // ── Rondas: SISDEL RONDIN sobre la base de SISDEL (ver rondin/js/sisdel-api.js) ──

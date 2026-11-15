@@ -354,7 +354,7 @@ const SisdelPrivilegiosUI = (() => {
                         <h3>Privilegios de ${esc(user.name)}</h3>
                         <div class="text-xs text-muted">${esc(SISDEL.getRoleName(user.role))}${user.cargo ? ' · ' + esc(user.cargo) : ''}</div>
                     </div>
-                    <button type="button" class="btn btn-ghost btn-icon" data-act="close" aria-label="Cerrar">&times;</button>
+                    <button type="button" class="btn btn-ghost btn-icon modal-close" data-act="close" aria-label="Cerrar">&times;</button>
                 </div>
                 <div class="pv-modal-body" data-ref="body"></div>
             </div>`;

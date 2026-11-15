@@ -37,3 +37,41 @@ export async function writeAll(db, writes) {
         await batch.commit();
     }
 }
+
+// ¿Responden los disparadores de functions del EMULADOR? Escribe un movimiento de sonda y espera a que el servidor
+// lo selle (functions/src/finanzas/sello.js).
+export async function emulatorTriggersRespond(db, timeoutMs = 6000) {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const probe = db.doc('condominios/_sonda-disparadores/finanzas_movimientos/sonda');
+    try {
+        await probe.set({ id: 'sonda', type: 'expense', amount: 1, updated_at: new Date().toISOString() });
+        const until = Date.now() + timeoutMs;
+        while (Date.now() < until) {
+            if ((await probe.get()).get('server_at')) return true;
+            await sleep(250);
+        }
+        return false;
+    } finally {
+        try { await probe.delete(); } catch { /* ya no existe */ }
+    }
+}
+
+// Pausa o reanuda los disparadores de functions en el EMULADOR (para sembrar miles de documentos sin ejecutar una
+// funcion por cada uno). Al reanudar, el emulador a veces no vuelve a entregarlos (sobre todo tras escribir o borrar
+// mucho con ellos en pausa): se comprueba con la sonda y se reintenta. Devuelve true si quedaron como se pidio.
+// Las pruebas de `npm test` no los pausan nunca.
+export async function setEmulatorTriggers(db, enabled, hub = process.env.FIREBASE_EMULATOR_HUB || '127.0.0.1:4400') {
+    const toggle = async (on) => {
+        try { return (await fetch(`http://${hub}/functions/${on ? 'enable' : 'disable'}BackgroundTriggers`, { method: 'PUT' })).ok; } catch { return false; }
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (!(await toggle(enabled))) return false;
+    if (!enabled) return true;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (await emulatorTriggersRespond(db)) return true;
+        await toggle(false);
+        await sleep(500);
+        await toggle(true);
+    }
+    return false;
+}

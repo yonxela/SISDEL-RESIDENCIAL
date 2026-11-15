@@ -895,24 +895,38 @@ const SISDEL = (() => {
 
     function clearSession() { sessionStorage.removeItem(STORAGE_KEYS.session); }
 
-    // Copia local del Sistema Financiero (OIKOS guarda en localStorage con prefijo oikos_).
-    // Los datos viven en Firestore: al salir se borra la copia del equipo, salvo que tenga
-    // cambios que todavia no subieron (marca sisdel_fin_pendiente_*; ver finanzas-sync.js).
+    // Copia local del Sistema Financiero: el espejo de los movimientos en IndexedDB (ver finanzas-datos.js: una base
+    // 'sisdel-finanzas-<condominio>' por cada condominio anotado en sisdel_fin_bases) y lo que la version anterior
+    // dejaba en localStorage con prefijo oikos_. Los datos viven en Firestore: al salir se borra la copia del equipo,
+    // salvo que tenga cambios que todavia no subieron (marca sisdel_fin_pendiente_*; ver finanzas-sync.js).
+    // Devuelve una promesa que se cumple cuando termina de borrar (o pasado un momento).
     function clearFinanceCache() {
         try {
             const keys = Object.keys(localStorage);
-            if (keys.some((k) => k.startsWith('sisdel_fin_pendiente_'))) return;
-            keys.filter((k) => k.startsWith('oikos_')).forEach((k) => localStorage.removeItem(k));
-        } catch { /* sin acceso a localStorage */ }
+            if (keys.some((k) => k.startsWith('sisdel_fin_pendiente_'))) return Promise.resolve();
+            keys.filter((k) => k.startsWith('oikos_') || k.startsWith('sisdel_fin_sin_subir_')).forEach((k) => localStorage.removeItem(k));
+            let condos = [];
+            try { condos = JSON.parse(localStorage.getItem('sisdel_fin_bases') || '[]'); } catch { condos = []; }
+            localStorage.removeItem('sisdel_fin_bases');
+            if (!Array.isArray(condos) || !condos.length || typeof indexedDB === 'undefined') return Promise.resolve();
+            const removed = Promise.all(condos.map((id) => new Promise((resolve) => {
+                try {
+                    const request = indexedDB.deleteDatabase('sisdel-finanzas-' + id);
+                    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+                } catch { resolve(); }
+            })));
+            return Promise.race([removed, new Promise((resolve) => setTimeout(resolve, 1500))]);
+        } catch { return Promise.resolve(); /* sin acceso a localStorage */ }
     }
 
     // `to`: pagina a la que se va al salir (por defecto el login). RONDIN vive en rondin/ y sale a ../index.html
     function logout(to) {
         const destination = typeof to === 'string' && to ? to : 'index.html';
         clearSession();
-        clearFinanceCache();
+        const cleared = clearFinanceCache();
         const leave = () => { window.location.href = destination; };
-        try { services().auth.signOut().then(leave, leave); } catch { leave(); }
+        const signedOut = (() => { try { return services().auth.signOut().catch(() => {}); } catch { return Promise.resolve(); } })();
+        Promise.all([cleared, signedOut]).then(leave, leave);
     }
 
     // Vuelve a leer la ficha del usuario para tomar sus privilegios, rol y nombre actuales: el administrador

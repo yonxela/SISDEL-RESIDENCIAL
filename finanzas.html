@@ -98,10 +98,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261110f"></script>
-    <script src="sisdel-core.js?v=20261110f"></script>
-    <script src="finanzas-sync.js?v=20261109f"></script>
-    <script src="finanzas-bloqueo.js?v=20261109f"></script>
+    <script src="privilegios.js?v=20261112a"></script>
+    <script src="sisdel-core.js?v=20261112a"></script>
+    <script src="finanzas-datos.js?v=20261112a"></script>
+    <script src="finanzas-sync.js?v=20261112a"></script>
+    <script src="finanzas-bloqueo.js?v=20261112a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
@@ -163,6 +164,18 @@
                 iframe.classList.add('pendiente');
                 const mounted = iframe;
                 mounted.addEventListener('load', () => {
+                    // OIKOS debe estar trabajando sobre la memoria de esta pagina (finanzas-datos.js). Si no (no cargo
+                    // esa parte), no se muestra: lo que se registrara ahi no llegaria a la nube.
+                    let usesMemory = false;
+                    try { usesMemory = mounted.contentWindow.eval('typeof sisdelMem === "function" && sisdelMem() !== null') === true; } catch { usesMemory = false; }
+                    if (!usesMemory) {
+                        mounted.remove();
+                        if (iframe === mounted) iframe = null;
+                        message.style.display = '';
+                        message.textContent = 'No se pudo abrir el Sistema Financiero. Revise su conexión y recargue la página.';
+                        setStatus('error');
+                        return;
+                    }
                     try {
                         SisdelFinanzasBloqueo.install(mounted.contentWindow, (key) => SISDEL.can(key));
                     } catch (error) {
@@ -210,8 +223,16 @@
             const banner = document.getElementById('remoteBanner');
             // Aviso de lo que se descarto por falta de privilegio (como maximo uno cada 8 s)
             let lastBlockedToast = 0;
+            // finanzas.html?recargar=1 rehace la copia de este equipo desde la nube (soporte)
+            const reload = new URLSearchParams(window.location.search).get('recargar') === '1';
             const sync = SisdelFinanzas.start(condoId, {
                 onStatus: setStatus,
+                reload,
+                // La primera vez (o al rehacer la copia) los movimientos se bajan por paginas: se muestra el avance
+                onProgress: (count) => {
+                    if (iframe || !count) return;
+                    message.textContent = `Cargando datos financieros... ${count.toLocaleString('es-GT')} movimientos`;
+                },
                 // Un cambio que el usuario no puede hacer no se sube: la copia local vuelve a ser la de la nube
                 can: (key) => SISDEL.can(key),
                 onBlocked: ({ count, silent }) => {
@@ -238,6 +259,8 @@
 
             try {
                 await sync.ready;
+                // La copia ya se rehizo: se quita ?recargar=1 para que recargar la pagina no vuelva a bajar todo
+                if (reload) { try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch { /* sin historial */ } }
                 mountOikos();
             } catch (error) {
                 console.error('Sistema Financiero: no se pudo cargar', error);
@@ -268,7 +291,11 @@
             async function leave(action) {
                 setStatus('saving');
                 const saved = await sync.waitIdle(10000);
-                if (!saved && !confirm('Hay cambios que todavía no se guardaron en la nube. Quedan en este equipo y se subirán la próxima vez que abra el Sistema Financiero.\n\n¿Salir de todos modos?')) {
+                // Lo pendiente queda anotado en este equipo; si este navegador no deja guardar nada, se dice claro
+                const warning = sync.pendingIsSafe()
+                    ? 'Hay cambios que todavía no se guardaron en la nube. Quedan en este equipo y se subirán la próxima vez que abra el Sistema Financiero.\n\n¿Salir de todos modos?'
+                    : 'Hay cambios que todavía no se guardaron en la nube y este navegador no permite guardarlos en el equipo: si sale ahora SE PIERDEN.\n\nEspere a que vuelva la conexión y diga "Guardado en la nube".\n\n¿Salir de todos modos?';
+                if (!saved && !confirm(warning)) {
                     return;
                 }
                 action();

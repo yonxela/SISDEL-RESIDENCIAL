@@ -118,6 +118,13 @@ async function run() {
         const active = await oikos(`(() => { navigate('residents'); openFeeRun(); return feeRunTargets().pending.length; })()`);
         const txBefore = await oikos(`Store.getRaw('transactions').length`);
         await oikos(`applyFeeRun()`);
+        // Cobro manual: aplicar la cuota del mes pide la clave de quien la aplica (la verifica el servidor: confirmOwnCode)
+        equal('en cobro manual pide la clave y todavia no crea nada', [await oikos(`!document.getElementById('modal-fee-confirm').classList.contains('hidden-section')`), (await oikos(`Store.getRaw('transactions').length`)) - txBefore], [true, 0]);
+        await oikos(`(() => { document.getElementById('fc-code').value = 'CLAVE-MALA'; submitFeeConfirm(); })()`);
+        await waitFor('una clave incorrecta se rechaza con aviso', async () => oikos(`document.getElementById('fc-error').classList.contains('hidden') ? '' : document.getElementById('fc-error').textContent`));
+        equal('y no se aplica ninguna cuota ni se cierra la ventana', [(await oikos(`Store.getRaw('transactions').length`)) - txBefore, await oikos(`!document.getElementById('modal-fee-confirm').classList.contains('hidden-section')`)], [0, true]);
+        await oikos(`(() => { document.getElementById('fc-code').value = ${JSON.stringify(CODE)}; submitFeeConfirm(); })()`);
+        await waitFor('con la clave propia se aplica la cuota', async () => (await oikos(`Store.getRaw('transactions').length`)) - txBefore === active);
         equal('crea una cuota por residente activo', (await oikos(`Store.getRaw('transactions').length`)) - txBefore, active);
         equal('se guardan en la nube', await idle(), 'ok');
         const period = await oikos(`currentFeePeriod()`);

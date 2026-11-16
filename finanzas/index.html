@@ -1265,6 +1265,18 @@
             <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeModal('modal-fee-run')" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button><button type="button" id="btn-fee-run" onclick="applyFeeRun()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition"><i class="fas fa-check mr-2"></i>Aplicar cuota</button></div>
         </div>
     </div>
+    <!-- SISDEL: con el cobro manual, aplicar la cuota del mes a todos pide la clave de quien la aplica (ver applyFeeRun y
+         confirmOwnCode en functions/src/auth.js): asi nadie aplica una cuota por error o con la sesion abierta de otro -->
+    <div id="modal-fee-confirm" class="fixed inset-0 z-[60] flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeFeeConfirm()}">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-amber-500">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center mr-3"><i class="fas fa-lock text-amber-600"></i></div><div><h3 class="text-xl font-bold dark:text-white">Confirme con su clave</h3><p class="text-xs text-slate-500 dark:text-slate-400">Cobro manual: aplicar la cuota del mes</p></div></div>
+            <div id="fc-summary" class="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200 mb-4"></div>
+            <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1" for="fc-code">Su clave de acceso</label>
+            <input type="password" id="fc-code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Escriba su clave" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 tracking-widest" onkeydown="if(event.key==='Enter'){event.preventDefault();submitFeeConfirm()}else if(event.key==='Escape'){closeFeeConfirm()}">
+            <p id="fc-error" class="hidden mt-2 text-sm font-semibold text-rose-600 dark:text-rose-400"></p>
+            <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeFeeConfirm()" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button><button type="button" id="fc-submit" onclick="submitFeeConfirm()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-wait">Confirmar y aplicar</button></div>
+        </div>
+    </div>
     <!-- ACCOUNT STATEMENT MODAL -->
     <div id="modal-estado-cuenta" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-8 max-h-[92vh] flex flex-col border-t-4 border-indigo-500">
@@ -3720,7 +3732,21 @@
             const { period, pending } = feeRunTargets();
             if (pending.length === 0) return;
             const totalFees = pending.reduce((sum, r) => sum + SisdelCuotas.residentFee(s, r), 0);
+            const summary = `Aplicar la cuota de <strong>${feePeriodLongLabel(period)}</strong> a <strong>${pending.length}</strong> residente(s). Total <strong>${formatMoney(totalFees)}</strong>${SisdelCuotas.waterPrices(s).full > 0 ? ' (cada lote con su agua)' : ''}.`;
+            // SISDEL: con el cobro manual activado en Configuracion, cada vez que se aplica la cuota del mes se pide la clave de
+            // quien la aplica (la verifica el servidor). Con cobro automatico, o con OIKOS fuera de SISDEL (no hay a quien
+            // verificar), queda la pregunta de siempre.
+            if (feeRunNeedsKey(s)) { openFeeConfirm(summary, () => commitFeeRun(period)); return; }
             if (!confirm(`¿Aplicar la cuota de ${feePeriodLongLabel(period)} a ${pending.length} residente(s)? Total ${formatMoney(totalFees)}${SisdelCuotas.waterPrices(s).full > 0 ? ' (cada lote con su agua)' : ''}.`)) return;
+            commitFeeRun(period);
+        }
+        // La aplicacion en si. Vuelve a calcular a quien le toca (pudo cambiar mientras se escribia la clave)
+        function commitFeeRun(period) {
+            const s = Store.get('settings');
+            const targets = feeRunTargets();
+            if (targets.period !== period) return;   // la ventana cambio de mes mientras tanto: no se aplica nada
+            const pending = targets.pending;
+            if (pending.length === 0) { closeModal('modal-fee-run'); return showToast('Ya no queda nadie a quien aplicarle esa cuota.'); }
             History.push();
             const txs = Store.getRaw('transactions');
             const curKey = currentFeePeriod();
@@ -3731,6 +3757,51 @@
             scanDuplicateFees();
             closeModal('modal-fee-run'); renderResidents(); renderDashboard(); renderAccounting();
             showToast(`Cuota de ${feePeriodLongLabel(period)} aplicada a ${n} residente(s).`);
+        }
+
+        // ─── SISDEL: clave de quien aplica la cuota del mes (cobro manual) ─────────────────────────
+        // La clave es el codigo de acceso de la propia persona; la verifica el servidor (confirmOwnCode) con pocos intentos.
+        // Si no se puede verificar (sin conexion, funcion no disponible) NO se aplica nada: se falla cerrado.
+        function sisdelConfirmBridge() {
+            try { return window.parent && window.parent !== window && typeof window.parent.sisdelConfirmCode === 'function' ? window.parent.sisdelConfirmCode : null; } catch (e) { return null; }
+        }
+        function feeRunNeedsKey(settings) { return (settings.feeMode || 'auto') === 'manual' && !!sisdelConfirmBridge(); }
+        let feeConfirmAction = null, feeConfirmBusy = false;
+        function openFeeConfirm(summaryHtml, action) {
+            feeConfirmAction = action; feeConfirmBusy = false;
+            document.getElementById('fc-summary').innerHTML = summaryHtml;
+            const input = document.getElementById('fc-code'); input.value = '';
+            const err = document.getElementById('fc-error'); err.classList.add('hidden'); err.textContent = '';
+            const btn = document.getElementById('fc-submit'); btn.disabled = false; btn.textContent = 'Confirmar y aplicar';
+            openModal('modal-fee-confirm');
+            setTimeout(() => input.focus(), 120);
+        }
+        function closeFeeConfirm() {
+            if (feeConfirmBusy) return;
+            feeConfirmAction = null;
+            const input = document.getElementById('fc-code'); if (input) input.value = '';
+            closeModal('modal-fee-confirm');
+        }
+        async function submitFeeConfirm() {
+            if (feeConfirmBusy || !feeConfirmAction) return;
+            const input = document.getElementById('fc-code'), err = document.getElementById('fc-error'), btn = document.getElementById('fc-submit');
+            const fail = (text) => { err.textContent = text; err.classList.remove('hidden'); input.value = ''; input.focus(); };
+            const code = input.value.trim();
+            if (!code) return fail('Escriba su clave para continuar.');
+            const confirmCode = sisdelConfirmBridge();
+            if (!confirmCode) return fail('No se pudo verificar la clave desde esta pantalla. Cierre y vuelva a abrir el Sistema Financiero.');
+            feeConfirmBusy = true; btn.disabled = true; btn.textContent = 'Verificando...'; err.classList.add('hidden');
+            let result = null, problem = '';
+            try { result = await confirmCode(code); } catch (error) {
+                problem = error && error.code === 'functions/resource-exhausted' ? ((error.message || '').trim() || 'Demasiados intentos. Espere unos minutos.') : 'No se pudo verificar la clave. Revise su conexión e intente de nuevo: no se aplicó ninguna cuota.';
+            }
+            feeConfirmBusy = false; btn.disabled = false; btn.textContent = 'Confirmar y aplicar';
+            if (problem) return fail(problem);
+            if (!result || result.ok !== true) return fail('Clave incorrecta. No se aplicó ninguna cuota.');
+            const action = feeConfirmAction;
+            feeConfirmAction = null; input.value = '';
+            closeModal('modal-fee-confirm');
+            if (action) action();
         }
 
         function editResident(id) {

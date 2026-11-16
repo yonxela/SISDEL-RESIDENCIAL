@@ -116,6 +116,13 @@
             try { const condo = await SISDEL.getCondominio(condoId); if (condo && condo.name) condoName = condo.name; } catch { /* se queda el de la sesion */ }
             document.getElementById('condoName').textContent = condoName || 'Sistema Financiero';
 
+            // OIKOS (el iframe) pide aqui confirmar la clave de quien lo usa antes de aplicar la cuota del mes en cobro
+            // manual: la verifica el servidor (confirmOwnCode, functions/src/auth.js) y solo dice si es la clave de esa persona
+            window.sisdelConfirmCode = async (code) => {
+                const result = await window.sisdelFirebase.functions.httpsCallable('confirmOwnCode')({ code });
+                return result.data || { ok: false };
+            };
+
             const STATUS_TEXT = {
                 loading: 'Cargando', ok: 'Guardado en la nube', saving: 'Guardando...',
                 offline: 'Sin conexión', error: 'Error al guardar, reintentando', denied: 'Sin permisos'

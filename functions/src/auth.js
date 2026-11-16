@@ -10,6 +10,8 @@ const privilegios = require('./privilegios');
 // Todo un condominio suele salir por la misma IP publica: el limite es compartido, por eso es amplio
 const LOGIN_LIMIT = { max: 30, windowMs: 15 * 60 * 1000 };
 const VERIFY_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
+// Confirmar la propia clave: pocos intentos fallidos por usuario (no es un login, es una confirmacion de una accion delicada)
+const CONFIRM_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
 
 // Roles de condominio que pueden entrar (el master tiene su propia ruta). A donde van lo decide
 // privilegios.landing: la pagina de su rol y, si el administrador se la quito, la primera que si le toca.
@@ -130,4 +132,39 @@ const verifyAccessCode = onCall(async (request) => {
     };
 });
 
-module.exports = { login, verifyAccessCode };
+// Reautenticacion: quien va a hacer una accion delicada (aplicar la cuota del mes a todos en cobro manual) vuelve a
+// escribir SU propio codigo de acceso. Solo dice si ese codigo es el suyo: nunca revela de quien es otro codigo, asi que
+// no sirve para adivinar claves ajenas. Pocos intentos fallidos por usuario (CONFIRM_LIMIT); el codigo nunca se registra.
+const confirmOwnCode = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sesión requerida');
+    const { uid, token } = request.auth;
+    const code = normalizeCode(request.data?.code);
+    const log = (outcome) => logger.info('confirmar clave', { outcome, uid, role: token.role || null });
+
+    if (await rateLimit.isBlocked('confirm', uid, CONFIRM_LIMIT)) {
+        log('blocked');
+        throw new HttpsError('resource-exhausted', 'Demasiados intentos con la clave. Espere unos minutos e intente de nuevo.');
+    }
+
+    let mine = false;
+    if (code) {
+        if (token.role === ROLES.MASTER) {
+            mine = await isMasterCode(code);
+        } else if (token.condominioId) {
+            const found = await findUserByCode(code);
+            mine = !!found && found.user.condominioId === token.condominioId && found.user.id === uid && found.user.active !== false;
+        } else {
+            throw new HttpsError('permission-denied', 'Sin permisos');
+        }
+    }
+    if (!mine) {
+        await rateLimit.hit('confirm', uid, CONFIRM_LIMIT);
+        log('bad');
+        return { ok: false };
+    }
+    await rateLimit.reset('confirm', uid);
+    log('ok');
+    return { ok: true };
+});
+
+module.exports = { login, verifyAccessCode, confirmOwnCode };

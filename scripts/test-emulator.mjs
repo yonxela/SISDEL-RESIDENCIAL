@@ -230,6 +230,20 @@ async function run() {
     await denied('vecino no escribe historial', () => setDoc(doc(ana.db, `condominios/${A}/camera_logs/log-malo`), { id: 'log-malo', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: new Date().toISOString() }));
     await denied('vecino no usa la verificacion de garita', () => httpsCallable(ana.functions, 'verifyAccessCode')({ code: 'VF100' }));
 
+    // ───────── Confirmar la propia clave (aplicar la cuota del mes en cobro manual) ─────────
+    console.log('\nConfirmar la propia clave');
+    const confirmOwn = (user, code) => httpsCallable(user.functions, 'confirmOwnCode')({ code });
+    equal('confirmar: la clave propia vale (sin importar mayusculas)', (await confirmOwn(admin, 'vf100')).data.ok, true);
+    equal('confirmar: el codigo de otra persona NO vale y no dice de quien es', (await confirmOwn(admin, 'VA101')).data, { ok: false });
+    equal('confirmar: una clave inventada o vacia tampoco', [(await confirmOwn(admin, 'ZZZ999')).data.ok, (await confirmOwn(admin, '')).data.ok, (await confirmOwn(admin, '   ')).data.ok], [false, false, false]);
+    equal('confirmar: el guardia confirma su propio codigo y no el del administrador', [(await confirmOwn(guard, 'vp103')).data.ok, (await confirmOwn(guard, 'VF100')).data.ok], [true, false]);
+    equal('confirmar: el master confirma su clave y no una de condominio', [(await confirmOwn(master, seed.masterCode)).data.ok, (await confirmOwn(master, 'VF100')).data.ok], [true, false]);
+    // Pocos intentos fallidos: a los 5 se bloquea (aunque despues se escriba la clave correcta) y no afecta a los demas usuarios
+    for (let i = 0; i < 5; i++) await confirmOwn(ana, 'MALA' + i);
+    const blockedAfter = await confirmOwn(ana, 'VA101').then(() => 'permitido', (e) => String(e.code || e.message));
+    equal('confirmar: tras 5 fallos se bloquea unos minutos, aunque despues se escriba la clave correcta', blockedAfter.includes('resource-exhausted'), true);
+    equal('confirmar: el bloqueo es de ese usuario, el resto sigue confirmando', (await confirmOwn(admin, 'VF100')).data.ok, true);
+
     // ───────── Camara LPR ─────────
     console.log('\nCamara LPR');
     const itms = (plate) => ({ Picture: { Plate: { PlateNumber: plate }, SnapInfo: { DeviceID: 'CAM-01' } } });

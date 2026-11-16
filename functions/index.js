@@ -13,7 +13,7 @@ setGlobalOptions({
     serviceAccount: `firebase-adminsdk-fbsvc@${PROJECT_ID}.iam.gserviceaccount.com`
 });
 
-const { login, verifyAccessCode } = require('./src/auth');
+const { login, verifyAccessCode, confirmOwnCode } = require('./src/auth');
 const { deleteCondominio, renameCondominio } = require('./src/condominios');
 // Bancos: cambiar la cuenta favorita con el codigo del administrador (src/bancos.js)
 const { setFavoriteBank } = require('./src/bancos');
@@ -24,7 +24,7 @@ const { onPanicCreated, dailyRondas } = require('./src/rondas');
 const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements } = require('./src/bitacora');
 
 module.exports = {
-    login, verifyAccessCode, deleteCondominio, renameCondominio, setFavoriteBank, anprWebhook,
+    login, verifyAccessCode, confirmOwnCode, deleteCondominio, renameCondominio, setFavoriteBank, anprWebhook,
     onFinanceMovement, onFinanceSettings, dailyFinance,
     onPanicCreated, dailyRondas,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements

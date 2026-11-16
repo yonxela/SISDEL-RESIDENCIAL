@@ -144,7 +144,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.residentes_finiquitar` | Finiquitar y reactivar residentes **(sensible)**. Cerrar la relación con un residente (deja de cobrársele) o reactivarlo. | los de su paraguas | Reglas |
 | `finanzas.residentes_eliminar` | Eliminar residentes **(sensible)**. Quitar del Sistema Financiero a un residente que no tiene movimientos. | los de su paraguas | Reglas |
 | `finanzas.residentes_contactar` | Recordatorios y WhatsApp. Avisar por WhatsApp a los residentes en mora o con saldo pendiente. | los de su paraguas | Pantalla |
-| `finanzas.cuotas_mes` | Cobrar la cuota del mes a todos **(sensible)**. El botón Cuota del mes y la generación automática de cuotas: afecta a todos los residentes. | los de su paraguas | Reglas |
+| `finanzas.cuotas_mes` | Cuota del mes: aplicarla a todos los residentes **(sensible)**. El botón Cuota del mes de Residentes y la generación automática de cuotas: carga la cuota de un mes a todos los residentes. Con el cobro manual activado en Configuración, cada vez pide la clave de quien la aplica. Quitarlo deja a ese usuario sin el botón. | los de su paraguas | Reglas |
 | `finanzas.cuotas_meses` | Cargar cuotas por mes a un residente. Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí. | los de su paraguas | Reglas |
 | `finanzas.cuotas_corregir` | Corregir cuotas duplicadas **(sensible)**. Anular en bloque las cuotas repetidas. | los de su paraguas | Reglas |
 | `finanzas.cargos_crear` | Crear cargos especiales y multas **(sensible)**. Un cargo a todos los residentes o a uno solo, con el concepto que se elija. | los de su paraguas | Reglas |

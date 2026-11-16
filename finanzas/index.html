@@ -503,8 +503,16 @@
                             <button onclick="openModal('modal-resident')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fas fa-plus mr-2"></i><span id="lbl-new-res">Nuevo Residente</span></button>
                         </div>
                     </div>
-                    <div class="flex items-center gap-3 mb-0">
+                    <div class="flex flex-wrap items-center gap-3 mb-0">
                         <div class="relative flex-1 max-w-sm"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="res-search" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar residente..." oninput="resSearchChanged()"></div>
+                        <!-- SISDEL: como se ordena la lista (alfabetico, por morosidad o por casa) -->
+                        <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><i class="fas fa-sort-amount-down"></i><span class="sr-only sm:not-sr-only">Ordenar</span>
+                            <select id="res-order" onchange="resOrderChanged(this.value)" class="px-3 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                                <option value="name">Alfabético (A–Z)</option>
+                                <option value="debt">Mayor morosidad primero</option>
+                                <option value="unit">Por casa / referencia</option>
+                            </select>
+                        </label>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
                     <!-- SISDEL: la lista va en orden alfabetico y de 50 en 50, con flechas arriba y abajo (ver renderResidents) -->
@@ -2318,6 +2326,16 @@
         let resPage = 0;
         function toggleShowClosed() { showClosedResidents = !showClosedResidents; resPage = 0; renderResidents(); }
         function resSearchChanged() { resPage = 0; renderResidents(); }
+        // SISDEL: orden de la lista: 'name' (alfabetico), 'debt' (mayor morosidad primero) o 'unit' (casa/referencia).
+        // Se recuerda en este equipo (es solo como se ve la lista)
+        const RES_ORDERS = { name: 'en orden alfabético', debt: 'de mayor a menor morosidad', unit: 'por casa / referencia' };
+        let resOrder = (() => { try { const v = localStorage.getItem('sisdel_res_orden'); return RES_ORDERS[v] ? v : 'name'; } catch (e) { return 'name'; } })();
+        function resOrderChanged(value) {
+            resOrder = RES_ORDERS[value] ? value : 'name';
+            try { localStorage.setItem('sisdel_res_orden', resOrder); } catch (e) { /* solo se pierde la preferencia */ }
+            resPage = 0;
+            renderResidents();
+        }
         function resGoPage(page, fromBottom) {
             resPage = page;
             renderResidents();
@@ -2333,17 +2351,24 @@
             const ms = sisdelMoraOf(r.id, r.balance);
             return { ms, shown: ms ? ms.total : r.balance };
         }
-        // SISDEL: la lista que muestra OIKOS: sin busqueda, todos en orden alfabetico por nombre (sin importar acentos ni
-        // mayusculas; a igual nombre, por casa); con busqueda, las coincidencias con las mejores primero. Se ve de
+        // SISDEL: la lista que muestra OIKOS: sin busqueda, todos en el orden elegido (resOrder): alfabetico por nombre (sin
+        // importar acentos ni mayusculas; a igual nombre, por casa), de mayor a menor morosidad (lo que debe con la mora del
+        // dia) o por casa; con busqueda, las coincidencias con las mejores primero. Se ve de
         // RES_PAGE_SIZE en RES_PAGE_SIZE (pagina resPage). `ordered` es la lista completa en ese orden: la usa el
         // anterior/siguiente del formulario del residente (recorre a todos, no solo la pagina).
         function residentsView() {
             const search = document.getElementById('res-search')?.value || '';
             const all = Store.get('residents');
             const res = showClosedResidents ? all : all.filter(isResidentActive);
-            const ordered = search.trim()
-                ? SisdelBusqueda.filter(res, search, residentSearchFields)
-                : res.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }));
+            const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base', numeric: true }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true });
+            const byUnit = (a, b) => String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true, sensitivity: 'base' }) || byName(a, b);
+            let ordered;
+            if (search.trim()) ordered = SisdelBusqueda.filter(res, search, residentSearchFields);
+            else if (resOrder === 'debt') {
+                // Lo que debe cada uno con la mora del dia (el saldo que se ve); a igual deuda, por nombre
+                const owed = new Map(res.map(r => [r.id, Math.max(0, -residentShownBalance(r).shown)]));
+                ordered = res.slice().sort((a, b) => (owed.get(b.id) - owed.get(a.id)) || byName(a, b));
+            } else ordered = res.slice().sort(resOrder === 'unit' ? byUnit : byName);
             const pages = Math.max(1, Math.ceil(ordered.length / RES_PAGE_SIZE));
             const page = Math.min(Math.max(0, resPage), pages - 1);
             const start = page * RES_PAGE_SIZE;
@@ -2362,6 +2387,8 @@
             const closedCount = all.filter(r => !isResidentActive(r)).length;
             const view = residentsView();
             resPage = view.page;
+            const orderSel = document.getElementById('res-order');
+            if (orderSel && orderSel.value !== resOrder) orderSel.value = resOrder;
             const res = view.list;
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
@@ -2378,7 +2405,7 @@
             if (note) {
                 note.textContent = view.search
                     ? `${view.ordered.length} residente(s) encontrado(s)${view.pages > 1 ? ` · mostrando ${range}` : ''}.`
-                    : (view.ordered.length ? `Mostrando ${range} residentes, en orden alfabético.` : '');
+                    : (view.ordered.length ? `Mostrando ${range} residentes, ${RES_ORDERS[resOrder]}.` : '');
                 note.classList.toggle('hidden', !note.textContent);
             }
             const pagerTop = document.getElementById('res-pager-top');

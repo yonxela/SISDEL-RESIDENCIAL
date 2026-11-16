@@ -466,9 +466,7 @@
             <header class="h-16 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-8 z-10 sticky top-0">
                 <h2 id="page-title" class="text-xl font-semibold text-slate-800 dark:text-white tracking-tight">Dashboard General</h2>
                 <div class="flex items-center space-x-5">
-                    <button onclick="History.undo()" class="flex items-center space-x-1.5 px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition-all" title="Deshacer (Ctrl+Z)" id="btn-undo-header"><i class="fas fa-undo-alt text-xs"></i><span class="text-xs font-bold uppercase tracking-wider" id="lbl-undo">Deshacer</span></button>
-                    <button onclick="History.redo()" class="flex items-center space-x-1.5 px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-lg transition-all" title="Rehacer (Ctrl+Y)" id="btn-redo-header"><i class="fas fa-redo-alt text-xs"></i><span class="text-xs font-bold uppercase tracking-wider" id="lbl-redo">Rehacer</span></button>
-                    <div class="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                    <!-- SISDEL: sin botones Deshacer / Rehacer (pedido del usuario, 2026-11-15); para corregir se anula el movimiento -->
                     <span class="text-sm font-medium text-slate-500 dark:text-slate-400" id="current-date"></span>
                 </div>
             </header>
@@ -5755,13 +5753,8 @@
             setTimeout(() => { w.print(); }, 500);
         }
 
-        // Keyboard shortcuts
-        window.addEventListener('keydown', (e) => {
-            const active = document.activeElement;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
-            if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) History.redo(); else History.undo(); }
-            else if (e.ctrlKey && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); History.redo(); }
-        });
+        // SISDEL: sin atajos Ctrl+Z / Ctrl+Y: al quitar los botones Deshacer / Rehacer (2026-11-15) un Ctrl+Z por costumbre
+        // desharia un movimiento sin que se vea ni haya boton para rehacerlo. History sigue por dentro (OIKOS lo alimenta).
     </script>
 </body>
 </html>

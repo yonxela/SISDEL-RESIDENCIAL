@@ -504,15 +504,16 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-3 mb-0">
-                        <div class="relative flex-1 max-w-sm"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="res-search" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar residente..." oninput="renderResidents()"></div>
+                        <div class="relative flex-1 max-w-sm"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="res-search" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar residente..." oninput="resSearchChanged()"></div>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
-                    <!-- SISDEL: con muchos residentes la lista muestra los 50 que mas deben; los demas se buscan (ver renderResidents) -->
-                    <p id="res-list-note" class="hidden text-xs text-slate-500 dark:text-slate-400 -mt-2"></p>
+                    <!-- SISDEL: la lista va en orden alfabetico y de 50 en 50, con flechas arriba y abajo (ver renderResidents) -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2"><p id="res-list-note" class="hidden text-xs text-slate-500 dark:text-slate-400"></p><div id="res-pager-top"></div></div>
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-visible">
                         <table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50/50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-600 text-xs text-slate-500 dark:text-slate-300 uppercase"><th class="py-4 px-6" id="th-res-unit">Referencia</th><th class="py-4 px-6" id="th-res-name">Nombre</th><th class="py-4 px-6">DPI</th><th class="py-4 px-6" id="th-res-phone">Teléfono</th><th class="py-4 px-6" id="th-res-lot">Lote</th><th class="py-4 px-6 text-right" id="th-res-bal">Saldo</th><th class="py-4 px-6 text-center" id="th-res-ac">Acciones</th></tr></thead>
                         <tbody id="residents-table-body" class="text-sm text-slate-700 dark:text-slate-200 divide-y divide-slate-200 dark:divide-slate-600"></tbody></table>
                     </div>
+                    <div id="res-pager" class="flex justify-center"></div>
                 </div>
                 <!-- VIEW 3: ACCOUNTING -->
                 <div id="view-accounting" class="space-y-6 hidden-section fade-in">
@@ -2312,9 +2313,17 @@
         window.onclick = function (e) { if (!e.target.matches('.drop-btn') && !e.target.closest('.drop-btn')) document.querySelectorAll('.dropdown').forEach(el => el.classList.remove('active')); }
 
         let showClosedResidents = false;
-        // SISDEL: cuantos residentes muestra la lista sin busqueda (los que mas deben); los demas, con el buscador
-        const RES_LIST_LIMIT = 50;
-        function toggleShowClosed() { showClosedResidents = !showClosedResidents; renderResidents(); }
+        // SISDEL: la lista de residentes va de RES_PAGE_SIZE en RES_PAGE_SIZE, con flechas para avanzar (resPage, desde 0)
+        const RES_PAGE_SIZE = 50;
+        let resPage = 0;
+        function toggleShowClosed() { showClosedResidents = !showClosedResidents; resPage = 0; renderResidents(); }
+        function resSearchChanged() { resPage = 0; renderResidents(); }
+        function resGoPage(page, fromBottom) {
+            resPage = page;
+            renderResidents();
+            // Desde las flechas de abajo, vuelve al principio de la tabla para leer la pagina nueva desde arriba
+            if (fromBottom) document.getElementById('res-search')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         // SISDEL: busqueda inteligente de residentes (sisdel-busqueda.js): por el principio de cada palabra, sin importar
         // acentos ni mayusculas, en cualquier orden y con los mejores resultados primero. El primer campo es el nombre.
         function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi]; }
@@ -2324,27 +2333,35 @@
             const ms = sisdelMoraOf(r.id, r.balance);
             return { ms, shown: ms ? ms.total : r.balance };
         }
-        // SISDEL: la lista que muestra OIKOS. Sin busqueda y con mas de RES_LIST_LIMIT residentes son los que mas deben
-        // (saldo con mora, de mayor a menor deuda; si deben menos de RES_LIST_LIMIT se completa con los demas en su orden):
-        // los demas se encuentran con el buscador. Asi un condominio grande (La Perla, 719 lotes) abre rapido y empieza
-        // por lo importante. Con busqueda, todas las coincidencias. La usan la tabla y el anterior/siguiente del formulario.
+        // SISDEL: la lista que muestra OIKOS: sin busqueda, todos en orden alfabetico por nombre (sin importar acentos ni
+        // mayusculas; a igual nombre, por casa); con busqueda, las coincidencias con las mejores primero. Se ve de
+        // RES_PAGE_SIZE en RES_PAGE_SIZE (pagina resPage). `ordered` es la lista completa en ese orden: la usa el
+        // anterior/siguiente del formulario del residente (recorre a todos, no solo la pagina).
         function residentsView() {
             const search = document.getElementById('res-search')?.value || '';
             const all = Store.get('residents');
             const res = showClosedResidents ? all : all.filter(isResidentActive);
-            if (search.trim()) return { list: SisdelBusqueda.filter(res, search, residentSearchFields), total: res.length, search: true, limited: false };
-            if (res.length <= RES_LIST_LIMIT) return { list: res, total: res.length, search: false, limited: false };
-            const list = res.map((r, i) => ({ r, i, owed: Math.max(0, -residentShownBalance(r).shown) }))
-                .sort((a, b) => (b.owed - a.owed) || (a.i - b.i))
-                .slice(0, RES_LIST_LIMIT)
-                .map(x => x.r);
-            return { list, total: res.length, search: false, limited: true };
+            const ordered = search.trim()
+                ? SisdelBusqueda.filter(res, search, residentSearchFields)
+                : res.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }));
+            const pages = Math.max(1, Math.ceil(ordered.length / RES_PAGE_SIZE));
+            const page = Math.min(Math.max(0, resPage), pages - 1);
+            const start = page * RES_PAGE_SIZE;
+            return { ordered, list: ordered.slice(start, start + RES_PAGE_SIZE), total: res.length, search: !!search.trim(), page, pages, start };
         }
-        function visibleResidents() { return residentsView().list; }
+        function visibleResidents() { return residentsView().ordered; }
+        // Flechas de la lista: primera, anterior, "pagina X de Y", siguiente y ultima
+        function resPagerHtml(view, fromBottom) {
+            if (view.pages <= 1) return '';
+            const btn = (page, label, title, disabled) => `<button type="button" onclick="resGoPage(${page}${fromBottom ? ', true' : ''})" title="${title}" aria-label="${title}" ${disabled ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg text-sm font-semibold border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed">${label}</button>`;
+            const last = view.pages - 1;
+            return `<div class="flex items-center gap-2">${btn(0, '<i class="fas fa-angle-double-left"></i>', 'Primera página', view.page === 0)}${btn(view.page - 1, '<i class="fas fa-chevron-left mr-1"></i>Anteriores', 'Los 50 anteriores', view.page === 0)}<span class="px-2 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">Página ${view.page + 1} de ${view.pages}</span>${btn(view.page + 1, 'Siguientes 50<i class="fas fa-chevron-right ml-1"></i>', 'Los 50 siguientes', view.page === last)}${btn(last, '<i class="fas fa-angle-double-right"></i>', 'Última página', view.page === last)}</div>`;
+        }
         function renderResidents() {
             const all = Store.get('residents');
             const closedCount = all.filter(r => !isResidentActive(r)).length;
             const view = residentsView();
+            resPage = view.page;
             const res = view.list;
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
@@ -2355,14 +2372,19 @@
             const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const tbody = document.getElementById('residents-table-body');
             const balanceOf = new Map(res.map(r => [r.id, residentShownBalance(r)]));
-            // SISDEL: la nota dice que la lista es de los que mas deben (y que los demas se buscan) o cuantos encontro la busqueda
+            // SISDEL: la nota dice que parte de la lista se ve (o cuantos encontro la busqueda) y las flechas cambian de pagina
             const note = document.getElementById('res-list-note');
+            const range = view.ordered.length ? `${view.start + 1}–${view.start + res.length} de ${view.ordered.length}` : '';
             if (note) {
-                note.textContent = view.limited
-                    ? `Se muestran los ${RES_LIST_LIMIT} residentes con más deuda, de mayor a menor (de ${view.total}). Para ver a los demás, búsquelos por nombre, casa o teléfono.`
-                    : (view.search ? `${res.length} residente(s) encontrado(s).` : '');
+                note.textContent = view.search
+                    ? `${view.ordered.length} residente(s) encontrado(s)${view.pages > 1 ? ` · mostrando ${range}` : ''}.`
+                    : (view.ordered.length ? `Mostrando ${range} residentes, en orden alfabético.` : '');
                 note.classList.toggle('hidden', !note.textContent);
             }
+            const pagerTop = document.getElementById('res-pager-top');
+            const pagerBottom = document.getElementById('res-pager');
+            if (pagerTop) pagerTop.innerHTML = resPagerHtml(view, false);
+            if (pagerBottom) pagerBottom.innerHTML = resPagerHtml(view, true);
             if (res.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-10 text-slate-400"><i class="fas fa-users text-3xl block mb-2"></i>No hay residentes para mostrar.</td></tr>';
                 return;

@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261115b"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261115d"></script>
+    <script src="./sisdel-reportes.js?v=20261116a"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -480,7 +480,7 @@
                     <div class="dup-fee-banner hidden"></div>
                     <div id="dash-debt-alert" class="hidden cursor-pointer" onclick="openReminders()">
                         <div class="bg-rose-50 border border-rose-200 dark:bg-rose-900/20 dark:border-rose-800 rounded-2xl p-4 flex items-center justify-between hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors shadow-sm">
-                            <div class="flex items-center space-x-3"><div class="w-10 h-10 bg-rose-100 dark:bg-rose-900/50 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-400"><i class="fas fa-exclamation-triangle"></i></div><h3 class="font-semibold text-rose-800 dark:text-rose-300" id="lbl-debt-count">0 Residentes en Mora</h3></div>
+                            <div class="flex items-center space-x-3"><div class="w-10 h-10 bg-rose-100 dark:bg-rose-900/50 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-400"><i class="fas fa-exclamation-triangle"></i></div><div><h3 class="font-semibold text-rose-800 dark:text-rose-300" id="lbl-debt-count">0 Residentes en Mora</h3><p class="text-sm text-rose-700 dark:text-rose-300/90" id="lbl-debt-total"></p></div></div>
                             <div class="flex items-center space-x-2 text-rose-600 dark:text-rose-400 font-medium text-sm"><span id="lbl-debt-action">Ver Listado y Notificar</span><i class="fas fa-chevron-right text-xs"></i></div>
                         </div>
                     </div>
@@ -989,7 +989,14 @@
             <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Cobros a los vecinos</p>
             <div class="space-y-3 mb-4">
                 <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-amber-800 dark:text-amber-400 font-medium">Cuotas y cargos emitidos</span><span class="text-amber-700 dark:text-amber-300 font-bold text-lg" id="rep-val-chg">$0.00</span></div>
-                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-orange-800 dark:text-orange-400 font-medium">Por cobrar al cierre</span><span class="text-orange-700 dark:text-orange-300 font-bold text-lg" id="rep-val-rec">$0.00</span></div>
+                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-orange-800 dark:text-orange-400 font-medium">Por cobrar al cierre <span class="text-xs font-normal">(cuotas y cargos, sin la mora)</span></span><span class="text-orange-700 dark:text-orange-300 font-bold text-lg" id="rep-val-rec">$0.00</span></div>
+            </div>
+            <!-- SISDEL: lo que deben hoy los residentes con la mora: las mismas cifras de Morosos, la Tabla general y Residentes -->
+            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Lo que deben hoy los residentes</p>
+            <div class="space-y-3 mb-4">
+                <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-rose-800 dark:text-rose-400 font-medium">Cuotas y cargos pendientes</span><span class="text-rose-700 dark:text-rose-300 font-bold text-lg" id="rep-val-owed-pending">$0.00</span></div>
+                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 p-4 rounded-xl flex justify-between items-center"><span class="text-orange-800 dark:text-orange-400 font-medium">Mora a hoy</span><span class="text-orange-700 dark:text-orange-300 font-bold text-lg" id="rep-val-owed-mora">$0.00</span></div>
+                <div class="bg-slate-100 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 p-4 rounded-xl flex justify-between items-center"><span class="text-slate-900 dark:text-white font-bold">Total que deben <span class="text-xs font-normal">(cuotas + mora)</span></span><span class="text-slate-900 dark:text-white font-black text-xl" id="rep-val-owed-total">$0.00</span></div>
             </div>
             <p id="rep-sum-notice" class="hidden mb-5 px-3 py-2 rounded-lg text-xs border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"></p>
             <!-- SISDEL: grafica de barras del reporte financiero (ingresos, gastos y balance del periodo) -->
@@ -2813,6 +2820,10 @@
             const alertEl = document.getElementById('dash-debt-alert');
             if (debtorsCount > 0) { document.getElementById('lbl-debt-count').innerText = `${debtorsCount} Residentes en Mora`; alertEl.classList.remove('hidden'); }
             else alertEl.classList.add('hidden');
+            // SISDEL: cuanto deben entre todos, con las mismas cifras de los reportes (cuotas y cargos pendientes + mora a hoy)
+            const owed = sisdelOwedTotals(res);
+            const owedEl = document.getElementById('lbl-debt-total');
+            if (owedEl) owedEl.textContent = owed.total > 0 ? 'Deben ' + formatMoney(owed.total) + ' en total: ' + formatMoney(owed.pending) + ' de cuotas y cargos' + (owed.mora > 0 ? ' + ' + formatMoney(owed.mora) + ' de mora a hoy' : '') : '';
             renderChart(txs);
         }
 
@@ -2874,6 +2885,32 @@
         function residentShownBalance(r) {
             const ms = sisdelMoraOf(r.id, r.balance);
             return { ms, shown: ms ? ms.total : r.balance };
+        }
+        // SISDEL: lo que debe un residente a hoy, con las mismas cifras en todos los reportes, la Tabla general y Residentes:
+        //   pending = cuotas y cargos sin pagar (el libro: cargos menos pagos; los pagos cubren primero cuotas y cargos),
+        //   mora    = la mora por dia a hoy que falta pagar (sisdel-mora.js; si los pagos pasan de las cuotas, lo que sobra la cubre),
+        //   total   = pending + mora, que es el saldo con mora de Residentes (residentShownBalance) cuando debe.
+        // Siempre cuadra (se suma en centavos). Sin regla de mora por dia, mora = 0 y total = lo que debe del libro.
+        function sisdelOwedOf(r) {
+            const c = (v) => Math.round((parseFloat(v) || 0) * 100);
+            const ledger = c(r.balance);
+            const ms = sisdelMoraOf(r.id);
+            const accrued = ms ? Math.max(0, c(ms.moraDaily)) : 0;
+            const pending = Math.max(0, -ledger);
+            const mora = Math.max(0, accrued - Math.max(0, ledger));
+            return { pending: pending / 100, mora: mora / 100, total: (pending + mora) / 100 };
+        }
+        // Lo que deben entre todos (residentes no eliminados, tambien los finiquitados que deben): { count, pending, mora, total }
+        function sisdelOwedTotals(residents) {
+            let count = 0, pending = 0, mora = 0;
+            (residents || Store.get('residents') || []).forEach(r => {
+                const o = sisdelOwedOf(r);
+                if (o.total <= 0) return;
+                count++;
+                pending += Math.round(o.pending * 100);
+                mora += Math.round(o.mora * 100);
+            });
+            return { count, pending: pending / 100, mora: mora / 100, total: (pending + mora) / 100 };
         }
         // SISDEL: la lista que muestra OIKOS: sin busqueda, todos en el orden elegido (resOrder): alfabetico por nombre (sin
         // importar acentos ni mayusculas; a igual nombre, por casa), de mayor a menor morosidad (lo que debe con la mora del
@@ -4379,6 +4416,7 @@
             pending: { bar: '#fbbf24', value: 'text-amber-600 dark:text-amber-300', swatch: 'bg-amber-400' },
             paid: { bar: '#10b981', value: 'text-emerald-600 dark:text-emerald-400', swatch: 'bg-emerald-600' },
             none: { bar: '#94a3b8', value: 'text-slate-600 dark:text-slate-300', swatch: 'bg-slate-200 border border-slate-400 dark:bg-slate-600 dark:border-slate-400' },
+            mora: { bar: '#f97316', value: 'text-orange-600 dark:text-orange-400', swatch: 'bg-orange-500' },
             total: { bar: '#3b82f6', value: 'text-slate-900 dark:text-white', swatch: 'bg-blue-500' }
         };
         function repHighlightsHtml(d) {
@@ -4394,7 +4432,10 @@
             }).join('');
             const notes = [d.highlightsNote ? '<span><i class="fas fa-calendar-day mr-1.5"></i>' + esc(d.highlightsNote) + '</span>' : '',
                 d.hint ? '<span><i class="fas fa-hand-pointer mr-1.5"></i>' + esc(d.hint) + '</span>' : ''].join('');
-            return '<div class="grid grid-cols-2 lg:grid-cols-' + Math.min(4, (d.highlights || []).length || 1) + ' gap-3">' + cards + '</div>'
+            // Hasta 4 tarjetas por fila; 6 van en dos filas de 3 (cuantos y, abajo, lo que deben)
+            const count = (d.highlights || []).length || 1;
+            const cols = count === 6 ? 3 : Math.min(4, count);
+            return '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-' + cols + ' gap-3">' + cards + '</div>'
                 + (legend || notes ? '<div class="mt-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 space-y-2">'
                     + (legend ? '<div class="flex flex-wrap gap-x-6 gap-y-2 text-base font-medium text-slate-800 dark:text-slate-100">' + legend + '</div>' : '')
                     + (notes ? '<div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600 dark:text-slate-300">' + notes + '</div>' : '')
@@ -4415,7 +4456,8 @@
             // Un reporte con cifras grandes (highlights) las muestra arriba de la tabla con su leyenda, en vez de la linea chica.
             const highlightsEl = document.getElementById('rep-highlights');
             const hasHighlights = !!(d.highlights && d.highlights.length && highlightsEl);
-            summaryEl.textContent = hasHighlights ? '' : [d.summary, d.hint].filter(Boolean).join(' · ');
+            // (hideSummary: las tarjetas ya dicen lo mismo que el resumen; el hint va abajo de las tarjetas)
+            summaryEl.textContent = hasHighlights ? (d.hideSummary ? '' : (d.summary || '')) : [d.summary, d.hint].filter(Boolean).join(' · ');
             if (highlightsEl) {
                 highlightsEl.innerHTML = hasHighlights ? repHighlightsHtml(d) : '';
                 highlightsEl.classList.toggle('hidden', !hasHighlights);
@@ -4640,6 +4682,8 @@
                     <p>${escText(s.name || 'OIKOS')}${d.summary ? ' · ' + escText(d.summary) : ''}</p>
                 </div>
                 ${d.notice ? `<p style="margin:0 0 16px;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px">${escText(d.notice)}</p>` : ''}
+                ${(d.highlights || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 ${d.highlightsNote ? '6px' : '16px'}">${d.highlights.map(h => `<div style="flex:1 1 150px;border:1px solid #e2e8f0;border-left:5px solid ${(REP_TONES[h.tone] || REP_TONES.total).bar};border-radius:8px;padding:8px 12px"><div style="font-size:18px;font-weight:700">${escText(h.value)}</div><div style="font-size:11px;font-weight:600;color:#475569">${escText(h.label)}</div></div>`).join('')}</div>` : ''}
+                ${(d.highlights || []).length && d.highlightsNote ? `<p style="margin:0 0 16px;font-size:11px;color:#64748b">${escText(d.highlightsNote)}</p>` : ''}
                 <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody><tfoot>${totalsRow}</tfoot></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;
@@ -4699,6 +4743,25 @@
                 const lines = doc.splitTextToSize(pdfText(d.notice), pageW - 28);
                 doc.text(lines, 14, startY + 2);
                 startY += 4 + lines.length * 4.5;
+            }
+            // SISDEL: las cifras grandes del reporte (en mora, lo que deben, la mora...) en una fila antes de la tabla
+            if ((d.highlights || []).length) {
+                doc.autoTable({
+                    startY,
+                    head: [d.highlights.map(h => pdfText(h.label))],
+                    body: [d.highlights.map(h => pdfText(h.value))],
+                    theme: 'grid',
+                    headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontSize: 7, halign: 'center' },
+                    bodyStyles: { fontSize: 11, fontStyle: 'bold', halign: 'center' },
+                });
+                startY = doc.lastAutoTable.finalY + 2;
+                if (d.highlightsNote) {
+                    doc.setTextColor(100, 116, 139); doc.setFontSize(8);
+                    const lines = doc.splitTextToSize(pdfText(d.highlightsNote), pageW - 28);
+                    doc.text(lines, 14, startY + 3);
+                    startY += 3 + lines.length * 4;
+                }
+                startY += 4;
             }
             // Tabla
             const body = d.rows.map(row => row.map(pdfText));
@@ -4824,16 +4887,31 @@
             // SISDEL: parte del saldo real (pagos menos cargos vivos, de cualquier fecha) y reparte los pagos en orden
             // sobre TODOS los cargos vivos (cuotas de cualquier ano y cargos especiales). Asi el total coincide con el saldo
             // del residente y nunca se marca como adeudado un mes que ya se cubrio con un pago de otro ano.
+            // SISDEL (2026-11-16): cada residente con lo mismo que la Tabla general y Residentes: cuotas vencidas, por vencer,
+            // la mora a hoy y el total que debe (sisdelPayMap / sisdelOwedOf); tambien el que solo debe mora. Por el total.
             const settings = Store.get('settings') || {};
             const fee = parseFloat(settings.fee || 0);
-            const residents = Store.get('residents') || [];
             const txs = Store.get('transactions') || [];
+            const { map, today } = sisdelPayMap();
             const rows = [];
-            let totalDebt = 0;
             let totalMonths = 0;
-            residents.forEach(function (r) {
-                if (!(r.balance < -0.005)) return;
-                const mine = txs.filter(function (t) { return t && String(t.resiId) === String(r.id); });
+            // Movimientos de cada residente (una pasada, no una por residente: La Perla tiene 719)
+            const byResident = new Map();
+            txs.forEach(function (t) {
+                if (!t || t.resiId === undefined || t.resiId === null) return;
+                const k = String(t.resiId);
+                if (!byResident.has(k)) byResident.set(k, []);
+                byResident.get(k).push(t);
+            });
+            map.rows.forEach(function (x) {
+                const r = x.resident;
+                if (!(x.owed.total > 0)) return;
+                const base = {
+                    name: (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'),
+                    residentId: r.id, late: x.late, upcoming: x.upcoming, mora: x.owed.mora, pending: x.owed.pending, amount: x.owed.total
+                };
+                if (!(r.balance < -0.005)) { rows.push(Object.assign(base, { months: 'Solo mora', count: 0 })); return; }
+                const mine = byResident.get(String(r.id)) || [];
                 let remaining = mine.filter(function (t) { return t.type === 'income'; }).reduce(function (sum, t) { return sum + (parseFloat(t.amount) || 0); }, 0);
                 const charges = mine.filter(function (t) { return t.type === 'charge'; }).map(function (t) {
                     const period = txFeePeriod(t);
@@ -4846,37 +4924,44 @@
                     remaining = 0;
                     if (owed > 0.005) debts.push({ label: c.label, owed: owed, isFee: c.isFee });
                 });
-                if (debts.length === 0) return;
-                const totalRes = +debts.reduce(function (sum, d) { return sum + d.owed; }, 0).toFixed(2);
                 const feeMonths = debts.filter(function (d) { return d.isFee; }).length;
-                totalDebt += totalRes;
                 totalMonths += feeMonths;
-                rows.push({
-                    name: (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'),
-                    months: debts.map(function (d) { return d.label; }).join(', '),
-                    count: feeMonths,
-                    amount: totalRes,
-                    residentId: r.id,  // metadata para click → estado de cuenta
-                });
+                rows.push(Object.assign(base, { months: debts.map(function (d) { return d.label; }).join(', ') || '—', count: feeMonths }));
             });
-            rows.sort(function (a, b) { return b.amount - a.amount; });
+            // De mayor a menor lo que debe (el orden de sisdelPayMap); a igual total, por nombre
+            rows.sort(function (a, b) { return (b.amount - a.amount) || String(a.name).localeCompare(String(b.name), 'es', { numeric: true }); });
+            const sumOf = (k) => rows.reduce(function (acc, r) { return acc + Math.round(r[k] * 100); }, 0) / 100;
+            const debt = { pending: sumOf('pending'), mora: sumOf('mora'), total: sumOf('amount') };
+            const money = (x) => (x > 0 ? formatMoney(x) : '—');
             return {
                 title: 'Vecinos con morosidad — meses adeudados',
-                summary: rows.length + ' residente(s) con saldo pendiente · cuota ' + formatMoney(fee),
-                headers: ['Residente', 'Meses adeudados', 'Cantidad de meses', 'Total adeudado'],
+                summary: rows.length + ' residente(s) deben · cuota ' + formatMoney(fee) + ' · al ' + today + ' · de mayor a menor total que debe',
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [{ tone: 'owed', value: String(rows.length), label: rows.length === 1 ? 'residente debe' : 'residentes deben' }].concat(sisdelDebtHighlights(debt)),
+                highlightsNote: 'Al ' + today + ' · cuota ' + formatMoney(fee) + ' · total = cuotas y cargos pendientes + mora a hoy (lo mismo que la Tabla general y Residentes)',
+                hint: 'Toque un residente para ver su estado de cuenta',
+                headers: ['Residente', 'Meses adeudados', 'Cantidad de meses', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total que debe'],
                 // SISDEL: el nombre, la casa y el concepto de un cargo los escriben usuarios: se escapan (la tabla pinta cada
                 // celda como HTML)
-                rows: rows.map(function (r) { const e = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); return [e(r.name), e(r.months), String(r.count), formatMoney(r.amount)]; }),
+                rows: rows.map(function (r) { const e = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); return [e(r.name), e(r.months), String(r.count), money(r.late), money(r.upcoming), money(r.mora), formatMoney(r.amount)]; }),
                 // rowsMeta es paralelo a rows[]. Lo usa paintReportTable para
                 // detectar morosos clickeables → abrir estado de cuenta.
                 rowsMeta: rows.map(function (r) { return { residentId: r.residentId, kind: 'resident' }; }),
-                totals: ['TOTAL', '', String(totalMonths), formatMoney(totalDebt)],
-                numericCols: [2, 3],
+                totals: ['TOTAL', '', String(totalMonths), formatMoney(sumOf('late')), formatMoney(sumOf('upcoming')), formatMoney(debt.mora), formatMoney(debt.total)],
+                numericCols: [2, 3, 4, 5, 6],
+                // WhatsApp: residente, cuotas pendientes, mora y total
+                compact: {
+                    headers: ['Residente', 'Cuotas pendientes', 'Mora a hoy', 'Total que debe'],
+                    rows: rows.map(function (r) { const e = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); return [e(r.name), formatMoney(r.pending), formatMoney(r.mora), formatMoney(r.amount)]; }),
+                    totals: ['TOTAL', formatMoney(debt.pending), formatMoney(debt.mora), formatMoney(debt.total)],
+                    numericCols: [1, 2, 3]
+                },
                 chartType: 'bar',
                 // SISDEL: en un condominio grande la grafica muestra los 30 mayores adeudos (la tabla trae a todos)
                 chartLabels: rows.slice(0, 30).map(function (r) { return r.name; }),
                 chartValues: rows.slice(0, 30).map(function (r) { return r.amount; }),
-                chartLabel: 'Adeudo (' + formatMoney(0).charAt(0) + ')' + (rows.length > 30 ? ' — los 30 mayores' : ''),
+                chartLabel: 'Total que debe, con mora (' + formatMoney(0).charAt(0) + ')' + (rows.length > 30 ? ' — los 30 mayores' : ''),
                 chartColors: 'rgba(244,63,94,0.7)',
                 chartColorsBorder: '#E11D48',
             };
@@ -5040,7 +5125,11 @@
                 title: 'Estado de cuenta general',
                 summary: (from && to ? from + ' → ' + to : 'Todo el histórico')
                     + ' · ' + txs.length + ' movimiento(s)',
-                hint: 'tocá el No. de Documento para ver el detalle',
+                // SISDEL: aparte de la caja del periodo, lo que deben hoy los residentes (las mismas cifras de Morosos,
+                // la Tabla general y Residentes)
+                highlights: sisdelDebtHighlights(sisdelOwedTotals()),
+                highlightsNote: 'Lo que deben hoy los residentes (al ' + localDayKey(new Date()) + '), aparte de la caja de este reporte',
+                hint: 'Toque el No. de Documento para ver el detalle',
                 notice: txs.length ? '' : sisdelNoCashNotice('pagos ni gastos', from, to),
                 emptyText: 'No hay pagos ni gastos registrados en este período.',
                 headers: ['Fecha', 'Hora', 'No. Documento', 'Concepto', 'Ingresos', 'Egresos', 'Saldo'],
@@ -5094,7 +5183,10 @@
             const labels = data.months.map(function (m) { return monthNames[m.month - 1].slice(0, 3) + ' ' + m.year; });
             return {
                 title: 'Ingresos, egresos y saldo por mes',
-                summary: (from && to ? from + ' → ' + to : 'Todo el histórico') + ' · saldo = ingresos menos egresos · por cobrar = cuotas y cargos menos pagos, al cierre de cada mes',
+                summary: (from && to ? from + ' → ' + to : 'Todo el histórico') + ' · saldo = ingresos menos egresos · por cobrar = cuotas y cargos menos pagos, al cierre de cada mes (sin la mora)',
+                // SISDEL: lo que deben hoy los residentes con la mora (las mismas cifras de Morosos, la Tabla general y Residentes)
+                highlights: sisdelDebtHighlights(sisdelOwedTotals()),
+                highlightsNote: 'Lo que deben hoy los residentes (al ' + localDayKey(new Date()) + '), con la mora; "Por cobrar al cierre" de cada mes son solo cuotas y cargos',
                 notice: notice,
                 emptyText: 'No hay movimientos en este período.',
                 headers: ['Mes', 'Ingresos', 'Egresos', 'Saldo', 'Cuotas y cargos emitidos', 'Por cobrar al cierre'],
@@ -5156,8 +5248,11 @@
             return at || null;
         }
 
-        function buildPayMapReport() {
-            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        // SISDEL: el mapa de pagos de todos los residentes (finanzas/sisdel-reportes.js paymentMap) con lo que debe cada uno
+        // a hoy (sisdelOwedOf): lo usan la Tabla general y Morosos, asi las dos dicen lo mismo que Residentes.
+        // Cada fila trae ademas `owed` ({ pending, mora, total }), `late` (cuotas y cargos ya vencidos) y `upcoming` (por
+        // vencer): late + upcoming = owed.pending y owed.pending + owed.mora = owed.total, siempre.
+        function sisdelPayMap() {
             const today = localDayKey(new Date());
             const residents = Store.get('residents') || [];
             // Residentes de la carga inicial (dados de alta hasta un dia despues de la carga): sus meses anteriores a
@@ -5165,13 +5260,38 @@
             const loadAt = sisdelInitialLoadAt();
             const loadLimit = loadAt ? new Date(new Date(loadAt).getTime() + 86400000).toISOString() : null;
             const fromLoad = (r) => !!(loadLimit && r.createdAt && String(r.createdAt) <= loadLimit);
+            const owedById = new Map(residents.map(r => [String(r.id), sisdelOwedOf(r)]));
+            const owedOf = (r) => owedById.get(String(r.id)) || sisdelOwedOf(r);
             const map = SisdelReportesOikos.paymentMap(residents, Store.get('transactions') || [], {
                 today: today, dayKey: localDayKey, feePeriodOf: txFeePeriod, dueOf: sisdelPeriodDue,
-                // Total con mora: el mismo saldo de Residentes (libro mas la mora del dia); la mora a hoy es la del dia
-                totalOf: (r) => -residentShownBalance(r).shown,
-                moraOf: (r) => { const b = residentShownBalance(r); return b.ms ? (b.ms.moraDaily || 0) : 0; },
+                // Total que debe: el mismo saldo con mora de Residentes; la mora a hoy, la que falta pagar
+                totalOf: (r) => owedOf(r).total,
+                moraOf: (r) => owedOf(r).mora,
                 paidBefore: (r) => (fromLoad(r) ? r.feeFrom : null)
             });
+            map.rows.forEach(function (x) {
+                const owed = owedOf(x.resident);
+                const pc = Math.round(owed.pending * 100);
+                const late = Math.min(Math.round(x.lateTotal * 100), pc);
+                x.owed = owed;
+                x.late = late / 100;
+                x.upcoming = (pc - late) / 100;
+            });
+            return { map, today };
+        }
+        // Las tres cifras de lo que se debe, igual en todos los reportes (tarjetas grandes arriba de la tabla y en los
+        // indicadores del PDF, Excel, impresion y WhatsApp)
+        function sisdelDebtHighlights(t) {
+            return [
+                { tone: 'owed', value: formatMoney(t.pending), label: 'cuotas y cargos pendientes' },
+                { tone: 'mora', value: formatMoney(t.mora), label: 'mora a hoy' },
+                { tone: 'total', value: formatMoney(t.total), label: 'total que deben (cuotas + mora)' }
+            ];
+        }
+
+        function buildPayMapReport() {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const { map, today } = sisdelPayMap();
             const nameOf = function (r) { return esc((r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)')); };
             const cellText = function (c) {
                 if (c.status === 'owed' || c.status === 'pending') return formatMoney(c.owed);
@@ -5180,23 +5300,26 @@
             const money = (x) => (x > 0 ? formatMoney(x) : '—');
             const rows = map.rows.map(function (x) {
                 return [nameOf(x.resident)].concat(map.columns.map(function (col) { return cellText(x.cells[col.key]); }),
-                    [String(x.lateMonths), x.sinceLabel || '—', money(x.lateTotal), money(x.pendingTotal), money(x.mora), formatMoney(x.totalOwed)]);
+                    [String(x.lateMonths), x.sinceLabel || '—', money(x.late), money(x.upcoming), money(x.owed.mora), formatMoney(x.owed.total)]);
             });
             const n = map.columns.length;
-            const sum = (key) => map.rows.reduce(function (acc, x) { return acc + x[key]; }, 0);
-            const totalLateMonths = sum('lateMonths');
+            // Sumas en centavos (asi el total cuadra con la suma de sus partes)
+            const sum = (get) => map.rows.reduce(function (acc, x) { return acc + Math.round(get(x) * 100); }, 0) / 100;
+            const totalLateMonths = map.rows.reduce(function (acc, x) { return acc + x.lateMonths; }, 0);
+            const debt = { pending: sum(x => x.owed.pending), mora: sum(x => x.owed.mora), total: sum(x => x.owed.total) };
             return {
                 title: 'Tabla general',
-                summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total con mora',
-                // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); el
-                // resumen de arriba sigue yendo al PDF, Excel, impresion y WhatsApp
+                summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe',
+                hideSummary: true,
+                kpisFromTotals: false,
+                // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); tambien
+                // van como indicadores al PDF, Excel, impresion y WhatsApp
                 highlights: [
                     { tone: 'owed', value: String(map.late), label: map.late === 1 ? 'residente en mora' : 'residentes en mora' },
                     { tone: 'pending', value: String(map.pending), label: 'con cuota por vencer' },
-                    { tone: 'paid', value: String(map.upToDate), label: 'al día' },
-                    { tone: 'total', value: formatMoney(sum('totalOwed')), label: 'total con mora' }
-                ],
-                highlightsNote: 'Al ' + today + ' · ordenado de mayor a menor total con mora',
+                    { tone: 'paid', value: String(map.upToDate), label: 'al día en cuotas' }
+                ].concat(sisdelDebtHighlights(debt)),
+                highlightsNote: 'Al ' + today + ' · ordenado de mayor a menor total que debe · total = cuotas y cargos pendientes + mora a hoy',
                 legend: [
                     { tone: 'owed', text: 'Rojo: debe (ya venció)' },
                     { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') },
@@ -5205,19 +5328,19 @@
                 ],
                 hint: 'Toque un residente para ver su estado de cuenta',
                 emptyText: 'No hay residentes.',
-                headers: ['Residente'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total con mora']),
+                headers: ['Residente'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total que debe']),
                 rows: rows,
                 rowsMeta: map.rows.map(function (x) { return { kind: 'resident', residentId: x.resident.id }; }),
                 cellStatus: map.rows.map(function (x) { return [null].concat(map.columns.map(function (col) { return x.cells[col.key].status; })); }),
                 totals: ['TOTAL'].concat(map.columns.map(function (col) { return map.totals[col.key] ? formatMoney(map.totals[col.key]) : ''; }),
-                    [String(totalLateMonths), '', formatMoney(sum('lateTotal')), formatMoney(sum('pendingTotal')), formatMoney(sum('mora')), formatMoney(sum('totalOwed'))]),
+                    [String(totalLateMonths), '', formatMoney(sum(x => x.late)), formatMoney(sum(x => x.upcoming)), formatMoney(debt.mora), formatMoney(debt.total)]),
                 numericCols: [n + 1, n + 3, n + 4, n + 5, n + 6],
-                // WhatsApp: residente, meses en mora y total con mora (las columnas de meses no caben en un mensaje)
+                // WhatsApp: residente, cuotas pendientes, mora y total (las columnas de meses no caben en un mensaje)
                 compact: {
-                    headers: ['Residente', 'Meses en mora', 'Total con mora'],
-                    rows: map.rows.filter(function (x) { return x.totalOwed > 0; }).map(function (x) { return [nameOf(x.resident), String(x.lateMonths), formatMoney(x.totalOwed)]; }),
-                    totals: ['TOTAL', String(totalLateMonths), formatMoney(sum('totalOwed'))],
-                    numericCols: [1, 2]
+                    headers: ['Residente', 'Cuotas pendientes', 'Mora a hoy', 'Total que debe'],
+                    rows: map.rows.filter(function (x) { return x.owed.total > 0; }).map(function (x) { return [nameOf(x.resident), formatMoney(x.owed.pending), formatMoney(x.owed.mora), formatMoney(x.owed.total)]; }),
+                    totals: ['TOTAL', formatMoney(debt.pending), formatMoney(debt.mora), formatMoney(debt.total)],
+                    numericCols: [1, 2, 3]
                 },
                 chartType: 'bar',
                 chartLabels: map.columns.map(function (c) { return c.label; }),
@@ -5320,7 +5443,12 @@
                     ? 'No hay pagos ni gastos registrados en este período; se emitieron cuotas y cargos por ' + formatMoney(p.charges) + '. Los pagos aparecen aquí cuando se registran.'
                     : 'No hay pagos, gastos ni cargos registrados en este período.';
             }
-            if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {}) && p.receivable) notice = (notice ? notice + ' ' : '') + 'Por cobrar no incluye la mora por día.';
+            if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {}) && p.receivable) notice = (notice ? notice + ' ' : '') + 'Por cobrar al cierre no incluye la mora por día; lo que deben hoy con la mora va aparte.';
+            // SISDEL: lo que deben hoy los residentes (cuotas y cargos pendientes + mora a hoy = total)
+            const owed = sisdelOwedTotals();
+            document.getElementById('rep-val-owed-pending').innerText = formatMoney(owed.pending);
+            document.getElementById('rep-val-owed-mora').innerText = formatMoney(owed.mora);
+            document.getElementById('rep-val-owed-total').innerText = formatMoney(owed.total);
             document.getElementById('rep-val-inc').innerText = formatMoney(p.income);
             document.getElementById('rep-val-exp').innerText = formatMoney(p.expense);
             document.getElementById('rep-val-bal').innerText = formatMoney(p.balance);
@@ -5330,7 +5458,7 @@
             const noticeEl = document.getElementById('rep-sum-notice');
             noticeEl.textContent = notice;
             noticeEl.classList.toggle('hidden', !notice);
-            repCurrentData = { inc: p.income, exp: p.expense, bal: p.balance, chg: p.charges, rec: p.receivable || 0, label, notice };
+            repCurrentData = { inc: p.income, exp: p.expense, bal: p.balance, chg: p.charges, rec: p.receivable || 0, label, notice, owed };
             if (repSummaryChartVisible) paintSummaryChart();
         }
 
@@ -5418,8 +5546,11 @@
                     at: new Date(),
                     kpis: [
                         { label: 'Ingresos netos', value: +d.inc.toFixed(2) }, { label: 'Total gastos', value: +d.exp.toFixed(2) }, { label: 'Balance', value: +d.bal.toFixed(2) },
-                        { label: 'Cuotas y cargos emitidos', value: +(d.chg || 0).toFixed(2) }, { label: 'Por cobrar al cierre', value: +(d.rec || 0).toFixed(2) }
-                    ],
+                        { label: 'Cuotas y cargos emitidos', value: +(d.chg || 0).toFixed(2) }, { label: 'Por cobrar al cierre (sin mora)', value: +(d.rec || 0).toFixed(2) }
+                    ].concat(d.owed ? [
+                        { label: 'Deben hoy: cuotas y cargos pendientes', value: d.owed.pending }, { label: 'Deben hoy: mora a hoy', value: d.owed.mora },
+                        { label: 'Deben hoy: total (cuotas + mora)', value: d.owed.total }
+                    ] : []),
                     tables: [{
                         title: 'Movimientos',
                         headers: ['Fecha', 'Concepto', 'Residente', 'Tipo', 'Monto'],
@@ -5465,7 +5596,8 @@
             const s = Store.get('settings');
             const msg = `\u2705 *Reporte Financiero:* ${s.name}\n\uD83D\uDCC5 *Período:* ${repCurrentData.label}\n\n\uD83D\uDFE2 Ingresos: ${formatMoney(repCurrentData.inc)}\n\uD83D\uDD34 Gastos: ${formatMoney(repCurrentData.exp)}\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\u2696\uFE0F *Balance: ${formatMoney(repCurrentData.bal)}*`
                 // SISDEL: lo que se cobra a los vecinos, aparte de la caja, y el aviso si no hay pagos ni gastos
-                + `\n\n*Cobros a los vecinos*\nCuotas y cargos emitidos: ${formatMoney(repCurrentData.chg || 0)}\nPor cobrar al cierre: ${formatMoney(repCurrentData.rec || 0)}`
+                + `\n\n*Cobros a los vecinos*\nCuotas y cargos emitidos: ${formatMoney(repCurrentData.chg || 0)}\nPor cobrar al cierre (sin mora): ${formatMoney(repCurrentData.rec || 0)}`
+                + (repCurrentData.owed ? `\n\n*Lo que deben hoy los residentes*\nCuotas y cargos pendientes: ${formatMoney(repCurrentData.owed.pending)}\nMora a hoy: ${formatMoney(repCurrentData.owed.mora)}\n*Total que deben: ${formatMoney(repCurrentData.owed.total)}*` : '')
                 + (repCurrentData.notice ? `\n\n_${repCurrentData.notice}_` : '');
             window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
         }
@@ -5496,13 +5628,24 @@
             doc.setFillColor(255, 247, 237); doc.roundedRect(108, 68, 87, 22, 3, 3, 'F');
             doc.setFontSize(8); doc.setFont('helvetica', 'bold');
             doc.setTextColor(180, 83, 9); doc.text('CUOTAS Y CARGOS EMITIDOS', 16, 76); doc.setFontSize(14); doc.text(formatMoney(d.chg || 0), 16, 85);
-            doc.setFontSize(8); doc.setTextColor(194, 65, 12); doc.text('POR COBRAR AL CIERRE', 110, 76); doc.setFontSize(14); doc.text(formatMoney(d.rec || 0), 110, 85);
+            doc.setFontSize(8); doc.setTextColor(194, 65, 12); doc.text('POR COBRAR AL CIERRE (SIN MORA)', 110, 76); doc.setFontSize(14); doc.text(formatMoney(d.rec || 0), 110, 85);
             let tableY = 98;
+            // SISDEL: lo que deben hoy los residentes (cuotas y cargos pendientes + mora a hoy = total)
+            if (d.owed) {
+                doc.setFillColor(255, 241, 242); doc.roundedRect(14, 96, 56, 22, 3, 3, 'F');
+                doc.setFillColor(255, 247, 237); doc.roundedRect(77, 96, 56, 22, 3, 3, 'F');
+                doc.setFillColor(241, 245, 249); doc.roundedRect(140, 96, 55, 22, 3, 3, 'F');
+                doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+                doc.setTextColor(190, 18, 60); doc.text('DEBEN HOY: CUOTAS', 16, 104); doc.setFontSize(13); doc.text(formatMoney(d.owed.pending), 16, 113);
+                doc.setFontSize(8); doc.setTextColor(194, 65, 12); doc.text('MORA A HOY', 79, 104); doc.setFontSize(13); doc.text(formatMoney(d.owed.mora), 79, 113);
+                doc.setFontSize(8); doc.setTextColor(15, 23, 42); doc.text('TOTAL QUE DEBEN', 142, 104); doc.setFontSize(13); doc.text(formatMoney(d.owed.total), 142, 113);
+                tableY = 126;
+            }
             if (d.notice) {
                 doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(146, 64, 14);
                 const lines = doc.splitTextToSize(typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(d.notice) : d.notice, 181);
-                doc.text(lines, 14, 98);
-                tableY = 100 + lines.length * 5;
+                doc.text(lines, 14, tableY);
+                tableY += 2 + lines.length * 5;
             }
             // Transactions table
             if (txs.length > 0) {
@@ -5533,8 +5676,14 @@
                 </div>
                 <div style="display:flex;gap:12px;margin-bottom:${d.notice ? '12px' : '24px'}">
                     <div style="flex:1;background:#fffbeb;border:1px solid #fde68a;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#b45309;margin:0">CUOTAS Y CARGOS EMITIDOS</p><p style="font-size:20px;font-weight:700;color:#92400e;margin:4px 0 0">${formatMoney(d.chg || 0)}</p></div>
-                    <div style="flex:1;background:#fff7ed;border:1px solid #fed7aa;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#c2410c;margin:0">POR COBRAR AL CIERRE</p><p style="font-size:20px;font-weight:700;color:#9a3412;margin:4px 0 0">${formatMoney(d.rec || 0)}</p></div>
+                    <div style="flex:1;background:#fff7ed;border:1px solid #fed7aa;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#c2410c;margin:0">POR COBRAR AL CIERRE (SIN MORA)</p><p style="font-size:20px;font-weight:700;color:#9a3412;margin:4px 0 0">${formatMoney(d.rec || 0)}</p></div>
                 </div>
+                ${d.owed ? `<p style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px">Lo que deben hoy los residentes</p>
+                <div style="display:flex;gap:12px;margin-bottom:${d.notice ? '12px' : '24px'}">
+                    <div style="flex:1;background:#fff1f2;border:1px solid #fecdd3;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#be123c;margin:0">CUOTAS Y CARGOS PENDIENTES</p><p style="font-size:20px;font-weight:700;color:#9f1239;margin:4px 0 0">${formatMoney(d.owed.pending)}</p></div>
+                    <div style="flex:1;background:#fff7ed;border:1px solid #fed7aa;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#c2410c;margin:0">MORA A HOY</p><p style="font-size:20px;font-weight:700;color:#9a3412;margin:4px 0 0">${formatMoney(d.owed.mora)}</p></div>
+                    <div style="flex:1;background:#f1f5f9;border:1px solid #cbd5e1;padding:14px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#0f172a;margin:0">TOTAL QUE DEBEN (CUOTAS + MORA)</p><p style="font-size:20px;font-weight:700;color:#0f172a;margin:4px 0 0">${formatMoney(d.owed.total)}</p></div>
+                </div>` : ''}
                 ${d.notice ? `<p style="margin:0 0 24px;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px">${escText(d.notice)}</p>` : ''}
                 <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Concepto</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Residente</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Tipo</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Monto</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>

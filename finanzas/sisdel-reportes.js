@@ -345,9 +345,16 @@
         const rows = (report.rows || []).map((row, r) => row.map((value, i) => cell(value, i, !!(meta[r] && meta[r].kind === 'subtotal'), STATUS_STYLE[(status[r] || [])[i]])));
         const totals = report.totals ? report.totals.map((value, i) => cell(value, i, true)) : null;
         if (totals && options.excel) rows.push(totals);
-        // Los totales van tambien como cifras de resumen: en WhatsApp se ven aunque la tabla se recorte
+        // Las cifras grandes del reporte (highlights: en mora, lo que deben, la mora...) van primero como indicadores
         const kpis = [];
-        if (report.totals) {
+        (report.highlights || []).forEach((h) => {
+            const text = plain(h.label);
+            const number = moneyValue(h.value);
+            kpis.push({ label: text.charAt(0).toUpperCase() + text.slice(1), value: options.excel && number !== null ? number : plain(h.value) });
+        });
+        // Los totales van tambien como cifras de resumen: en WhatsApp se ven aunque la tabla se recorte (salvo que las
+        // cifras grandes ya los digan: kpisFromTotals false)
+        if (report.totals && report.kpisFromTotals !== false) {
             report.totals.forEach((value, i) => {
                 if (i === 0 || !numeric.has(i) || plain(value) === '') return;
                 const header = plain((report.headers || [])[i]);

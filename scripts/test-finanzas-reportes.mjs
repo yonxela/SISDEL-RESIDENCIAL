@@ -124,6 +124,11 @@ equal('con muchas filas, WhatsApp lleva las primeras y avisa del resto; los tota
 const html = { headers: ['No. Documento', 'Monto'], rows: [['<button onclick="openTxDetail(\'a\')">R-1</button>', 'Q5.00']], totals: null, numericCols: [1], title: 'Libro' };
 equal('una celda con HTML llega al Excel como texto limpio', R.exportModel(html, { excel: true }).tables[0].rows[0], ['R-1', 5]);
 equal('sin totales no hay cifras de resumen', R.exportModel(html, {}).kpis, []);
+// Las cifras grandes de un reporte (lo que deben, la mora...) van primero como indicadores; con kpisFromTotals false, solo ellas
+const owedReport = { ...report, highlights: [{ tone: 'owed', value: '3', label: 'residentes deben' }, { tone: 'owed', value: 'Q40,201.66', label: 'cuotas y cargos pendientes' }, { tone: 'mora', value: 'Q121,452.24', label: 'mora a hoy' }, { tone: 'total', value: 'Q161,653.90', label: 'total que deben (cuotas + mora)' }] };
+equal('las cifras grandes van como indicadores (numeros en el Excel) antes de los totales', R.exportModel(owedReport, { excel: true }).kpis.slice(0, 5), [{ label: 'Residentes deben', value: 3 }, { label: 'Cuotas y cargos pendientes', value: 40201.66 }, { label: 'Mora a hoy', value: 121452.24 }, { label: 'Total que deben (cuotas + mora)', value: 161653.9 }, { label: 'Total ingresos', value: 750.5 }]);
+equal('con kpisFromTotals false solo van las cifras grandes', R.exportModel({ ...owedReport, kpisFromTotals: false }, {}).kpis.map((k) => k.value), ['3', 'Q40,201.66', 'Q121,452.24', 'Q161,653.90']);
+equal('WhatsApp trae lo que deben con la mora', X.whatsappText(R.exportModel({ ...owedReport, kpisFromTotals: false }, { condoName: 'X', at })).includes('- Total que deben (cuotas + mora): *Q161,653.90*'), true);
 equal('el aviso del reporte va al Excel y a WhatsApp junto al resumen', R.exportModel({ ...report, notice: 'No hay pagos ni gastos registrados en este período.' }, { at }).subtitle, '2026-01-01 → 2026-03-31 · saldo = ingresos menos egresos · No hay pagos ni gastos registrados en este período.');
 
 console.log('\nTabla general (mapa de pagos por residente)');

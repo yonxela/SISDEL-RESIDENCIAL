@@ -96,4 +96,45 @@ const renameCondominio = onCall(async (request) => {
     return { success: true, name: newName, changed: true };
 });
 
-module.exports = { deleteCondominio, renameCondominio };
+// Cambiar el nombre de un administrador: igual que el del condominio, solo el programador y con la clave master (las reglas
+// no dejan cambiar el nombre de un admin desde el navegador, ni al master ni a otro administrador). La bitacora anota el
+// cambio (auditUsers) y el registro del servidor guarda el nombre de antes.
+const renameAdmin = onCall(async (request) => {
+    if (request.auth?.token?.role !== ROLES.MASTER) {
+        throw new HttpsError('permission-denied', 'Solo el programador puede cambiar el nombre de un administrador');
+    }
+    const condominioId = String(request.data?.condominioId || '').trim();
+    const userId = String(request.data?.userId || '').trim();
+    if (!condominioId || condominioId.includes('/') || !userId || userId.includes('/')) {
+        throw new HttpsError('invalid-argument', 'Administrador inválido');
+    }
+    const newName = cleanName(request.data?.newName);
+    if (newName.length < NAME_MIN || newName.length > NAME_MAX) {
+        throw new HttpsError('invalid-argument', `El nombre debe tener entre ${NAME_MIN} y ${NAME_MAX} caracteres`);
+    }
+
+    const uid = request.auth.uid;
+    if (await rateLimit.isBlocked('renombrar', uid, RENAME_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiados intentos. Espere 15 minutos e intente de nuevo.');
+    }
+    const masterCode = normalizeCode(request.data?.masterCode);
+    if (!masterCode || !(await isMasterCode(masterCode))) {
+        await rateLimit.hit('renombrar', uid, RENAME_LIMIT);
+        logger.warn('cambiar nombre de administrador: clave master incorrecta', { condominioId, userId });
+        throw new HttpsError('permission-denied', 'La clave master no es correcta');
+    }
+
+    const userRef = db.doc(`condominios/${condominioId}/usuarios/${userId}`);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) throw new HttpsError('not-found', 'El usuario no existe');
+    if (userSnap.data().role !== ROLES.ADMIN) throw new HttpsError('failed-precondition', 'Ese usuario no es administrador');
+    await rateLimit.reset('renombrar', uid);
+    const oldName = userSnap.data().name || '';
+    if (newName === oldName) return { success: true, name: newName, changed: false };
+
+    await userRef.update({ name: newName, previousName: oldName, renamedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    logger.warn('administrador renombrado', { condominioId, userId, antes: oldName, despues: newName });
+    return { success: true, name: newName, changed: true };
+});
+
+module.exports = { deleteCondominio, renameCondominio, renameAdmin };

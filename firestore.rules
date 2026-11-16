@@ -302,6 +302,12 @@ service cloud.firestore {
           return (request.resource.data.get('active', true) == resource.data.get('active', true) || pUsuariosEstado(condoId))
             && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'morosoSince']) || pUsuariosPago(condoId));
         }
+        // El nombre de un administrador solo lo cambia el programador con la clave master (renameAdmin, en el servidor):
+        // ni el master ni otro administrador lo cambian directo
+        function adminNameKept() {
+          return resource.data.role != 'admin'
+            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name', 'previousName', 'renamedAt']);
+        }
         // Cada miembro lee su propia ficha (de ahi salen sus privilegios); las demas, con usuarios.ver
         allow read: if isMaster()
           || (isMember(condoId) && request.auth.uid == userId)
@@ -311,8 +317,8 @@ service cloud.firestore {
         allow create: if isMaster()
           || (userId != 'master' && validUser() && canCreateRole(condoId, request.resource.data.role)
               && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
-        allow update: if isMaster()
-          || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights()
+        allow update: if (isMaster() && adminNameKept())
+          || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights() && adminNameKept()
               && manageable(condoId, resource.data.role) && manageable(condoId, request.resource.data.role)
               && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)))
           // El vecino, desde su ficha (vecino.ficha), cambia solo su telefono y su correo

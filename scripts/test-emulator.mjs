@@ -1600,6 +1600,38 @@ async function run() {
     await allowed('y vuelve al nombre de antes', () => renameCondoCall(master, { condominioId: A, newName: originalNameA, masterCode: seed.masterCode }));
     equal('el condominio tiene otra vez su nombre', (await condoDocA()).name, originalNameA);
 
+    // ───────── Nombre del administrador ─────────
+    // Igual que el del condominio: solo el programador, con la clave master (renameAdmin)
+    console.log('\nNombre del administrador');
+    const renameAdminCall = (c, data) => httpsCallable(c.functions, 'renameAdmin')(data);
+    const adminIdA = admin.login.user.id;
+    const anaId = ana.login.user.id;
+    const adminDocA = async () => (await getDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`))).data();
+    const originalAdminName = (await adminDocA()).name;
+    await denied('ni el master cambia el nombre de un administrador directo', () => updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { name: 'Nombre Directo' }));
+    await denied('ni el propio administrador cambia su nombre', () => updateDoc(doc(admin.db, `condominios/${A}/usuarios/${adminIdA}`), { name: 'Mi Nombre Nuevo' }));
+    await allowed('el master sigue cambiando lo demas del administrador', () => updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { phone: '+50255550000' }));
+    await allowed('el nombre de un vecino se sigue cambiando como siempre', async () => {
+        const before = (await getDoc(doc(master.db, `condominios/${A}/usuarios/${anaId}`))).data().name;
+        await updateDoc(doc(admin.db, `condominios/${A}/usuarios/${anaId}`), { name: before + ' X' });
+        await updateDoc(doc(admin.db, `condominios/${A}/usuarios/${anaId}`), { name: before });
+    });
+    await rejectedWith('el administrador no usa la funcion ni con la clave master', () => renameAdminCall(admin, { condominioId: A, userId: adminIdA, newName: 'Otro Admin', masterCode: seed.masterCode }), 'permission-denied');
+    await rejectedWith('el master sin la clave master no cambia el nombre del administrador', () => renameAdminCall(master, { condominioId: A, userId: adminIdA, newName: 'Otro Admin' }), 'permission-denied');
+    await rejectedWith('ni con una clave incorrecta (administrador)', () => renameAdminCall(master, { condominioId: A, userId: adminIdA, newName: 'Otro Admin', masterCode: 'ZZZZZZ' }), 'permission-denied');
+    await rejectedWith('la funcion solo cambia administradores (no un vecino)', () => renameAdminCall(master, { condominioId: A, userId: anaId, newName: 'Otro Nombre', masterCode: seed.masterCode }), 'failed-precondition');
+    await rejectedWith('un usuario que no existe se avisa', () => renameAdminCall(master, { condominioId: A, userId: 'no-existe', newName: 'Otro Nombre', masterCode: seed.masterCode }), 'not-found');
+    equal('con los intentos rechazados el nombre del administrador no cambio', (await adminDocA()).name, originalAdminName);
+    await allowed('el master cambia el nombre del administrador con su clave', async () => {
+        const result = await renameAdminCall(master, { condominioId: A, userId: adminIdA, newName: '  Administrador   Renombrado ', masterCode: seed.masterCode });
+        if (!result.data.changed || result.data.name !== 'Administrador Renombrado') throw new Error(JSON.stringify(result.data));
+    });
+    const renamedAdmin = await adminDocA();
+    equal('el nombre nuevo queda (sin espacios de mas) y guarda el de antes', [renamedAdmin.name, renamedAdmin.previousName, typeof renamedAdmin.renamedAt, renamedAdmin.role], ['Administrador Renombrado', originalAdminName, 'string', 'admin']);
+    equal('el administrador sigue entrando con su mismo codigo', (await httpsCallable(nobody.functions, 'login')({ code: 'VF100' })).data.user?.name, 'Administrador Renombrado');
+    await allowed('y vuelve a su nombre de antes', () => renameAdminCall(master, { condominioId: A, userId: adminIdA, newName: originalAdminName, masterCode: seed.masterCode }));
+    equal('el administrador tiene otra vez su nombre', (await adminDocA()).name, originalAdminName);
+
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');
     let blocked = null;

@@ -14,7 +14,7 @@ setGlobalOptions({
 });
 
 const { login, verifyAccessCode, confirmOwnCode } = require('./src/auth');
-const { deleteCondominio, renameCondominio } = require('./src/condominios');
+const { deleteCondominio, renameCondominio, renameAdmin } = require('./src/condominios');
 // Bancos: cambiar la cuenta favorita con el codigo del administrador (src/bancos.js)
 const { setFavoriteBank } = require('./src/bancos');
 const { anprWebhook } = require('./src/anpr/webhook');
@@ -24,7 +24,7 @@ const { onPanicCreated, dailyRondas } = require('./src/rondas');
 const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements } = require('./src/bitacora');
 
 module.exports = {
-    login, verifyAccessCode, confirmOwnCode, deleteCondominio, renameCondominio, setFavoriteBank, anprWebhook,
+    login, verifyAccessCode, confirmOwnCode, deleteCondominio, renameCondominio, renameAdmin, setFavoriteBank, anprWebhook,
     onFinanceMovement, onFinanceSettings, dailyFinance,
     onPanicCreated, dailyRondas,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements

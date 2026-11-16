@@ -716,6 +716,9 @@ console.log('\nNombre del condominio (solo el programador, con la clave master)'
     yes('el nucleo llama a la funcion del servidor', /httpsCallable\('renameCondominio'\)/.test(read('sisdel-core.js')));
     yes('las reglas no dejan cambiar el nombre directo', /allow update: if isMaster\(\) && !request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['name'/.test(rules) && /request\.resource\.data\.name == officialName\(\)/.test(rules));
     yes('en OIKOS el nombre es de solo lectura y no se guarda desde el campo', /id="cfg-name" readonly/.test(oikosHtml) && /name: oldS\.name,/.test(oikosHtml) && !/name: document\.getElementById\('cfg-name'\)\.value/.test(oikosHtml));
+    yes('el nombre de un administrador tambien se cambia solo con la clave master', /data-rename-admin=/.test(masterHtml) && /SISDEL\.renameAdmin\(/.test(masterHtml) && /httpsCallable\('renameAdmin'\)/.test(read('sisdel-core.js')) && /function adminNameKept\(\)/.test(rules) && /allow update: if \(isMaster\(\) && adminNameKept\(\)\)/.test(rules));
+    yes('las ventanas Editar no mandan el nombre de un administrador', /isAdminUser \? \{ accessCode: code, casa \}/.test(masterHtml) && /editing\.role === SISDEL\.ROLES\.ADMIN\) delete updates\.name/.test(read('admin.html')));
+    yes('la ventana de cambio de nombre queda por encima de las demas', /id="modalRenameCondo" style="display:none; z-index:1100;"/.test(masterHtml));
     yes('el Sistema Financiero abre con el nombre vigente del condominio', /SISDEL\.getCondominio\(condoId\)/.test(read('finanzas.html')) && /msname: condoName/.test(read('finanzas.html')));
 }
 

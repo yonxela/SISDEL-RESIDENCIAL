@@ -166,6 +166,22 @@ equal('con muchos anos, los mas viejos se juntan en una columna', old.columns.sl
 equal('y lo de esos anos se ve ahi', old.rows[0].cells.older.status, 'owed');
 equal('un residente sin movimientos sale al dia y en gris', R.paymentMap([{ id: 'z' }], [], { today: '2026-11-15', dueOf: due }).rows[0].cells['2026-11'].status, 'none');
 
+// Orden por el total con mora (el saldo de Residentes) y meses dados por pagados (carga inicial desde una cartera)
+const withMora = R.paymentMap(people, mapTxs, { today: '2026-11-15', dayKey: gtDay, dueOf: due, totalOf: (r) => ({ a: 2400, c: 9000, d: 400 })[r.id] || 0, moraOf: (r) => (r.id === 'c' ? 8400 : 0) });
+equal('arriba el que mas debe con la mora del dia, aunque lleve menos meses en mora', withMora.rows.map((r) => r.resident.id), ['c', 'a', 'd', 'b', 'e']);
+equal('cada fila trae su total con mora y su mora a hoy', [withMora.rows[0].totalOwed, withMora.rows[0].mora, withMora.rows[1].mora], [9000, 8400, 0]);
+equal('sin total con mora, el total es lo vencido mas lo por vencer (tambien lo de meses que aun no llegan)', R.paymentMap(people, mapTxs, { today: '2026-11-15', dayKey: gtDay, dueOf: due }).rows[0].totalOwed, 2400);
+const loaded = [{ id: 'p', unit: 'A001', name: 'Pagado todo' }, { id: 'q', unit: 'A002', name: 'Debe desde junio' }, { id: 'n', unit: 'A003', name: 'Nuevo' }];
+const cartera = [mfee('q6', 'q', '2026-06', 300), mfee('q7', 'q', '2026-07', 300), mfee('n1', 'n', '2026-11', 300)];
+const fromBefore = { p: '2026-11', q: '2026-08', n: null };
+const pmLoad = R.paymentMap(loaded, [...cartera, mfee('old', 'q', '2024-03', 300), mpay('qp', 'q', '2026-01-10T15:00:00.000Z', 300)], { today: '2026-11-15', dayKey: gtDay, dueOf: due, paidBefore: (r) => fromBefore[r.id] });
+const rowL = (id) => pmLoad.rows.find((r) => r.resident.id === id);
+equal('de la carga inicial: los meses antes de "cobrar desde" sin cuota salen pagados (verde)', ['2024', '2025', '2026-01', '2026-10'].map((k) => rowL('p').cells[k].status), ['paid', 'paid', 'paid', 'paid']);
+equal('desde "cobrar desde" sin cuota, gris', rowL('p').cells['2026-11'].status, 'none');
+equal('lo que si debe sigue en rojo; antes y entre las deudas, verde', ['2024', '2026-05', '2026-06', '2026-07'].map((k) => rowL('q').cells[k].status), ['paid', 'paid', 'owed', 'owed']);
+equal('se marca que el verde salio de la cartera (no de un pago registrado)', [rowL('p').cells['2026-10'].assumed, rowL('q').cells['2024'].assumed, pmLoad.assumedPaid], [true, false, true]);
+equal('un residente que entro despues: antes de entrar, gris (no se da por pagado)', ['2025', '2026-10'].map((k) => rowL('n').cells[k].status), ['none', 'none']);
+
 console.log('\nTabla general en Excel y WhatsApp');
 const mapReport = {
     title: 'Tabla general', summary: '1 en mora', headers: ['Residente', 'Oct 2026', 'Nov 2026', 'Meses en mora', 'En mora desde', 'Total en mora'],

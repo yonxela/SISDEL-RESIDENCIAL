@@ -155,9 +155,12 @@
     // Los pagos de cada residente cubren sus cuotas y cargos del mas antiguo al mas nuevo (el mismo reparto del reporte
     // de Morosos de OIKOS): una cuota por su mes (period) y un cargo suelto por el mes de su fecha.
     // opts: { today 'AAAA-MM-DD', dayKey, feePeriodOf(t) -> 'AAAA-MM' o null, dueOf(period) -> ultimo dia 'AAAA-MM-DD'
-    // para pagar sin estar en mora, maxYears (columnas de anos; los anteriores se juntan en "Antes de ...") }.
-    // Orden: primero los que mas meses llevan en mora (y a igual cantidad, los que mas deben); despues los que solo
-    // tienen algo por vencer; al final los que estan al dia, en su orden.
+    // para pagar sin estar en mora, maxYears (columnas de anos; los anteriores se juntan en "Antes de ..."),
+    // totalOf(r) -> lo que debe en total (con la mora del dia: el saldo de Residentes), moraOf(r) -> la mora a hoy,
+    // paidBefore(r) -> 'AAAA-MM' o null: los meses anteriores sin cuota cuentan como pagados (un condominio cargado
+    // desde una cartera que solo traia lo que se debe: lo que no aparece, estaba pagado) }.
+    // Orden: de mayor a menor total que debe (con totalOf, el saldo con mora; si no, lo vencido mas lo por vencer); a
+    // igual, mas meses en mora; al final los que estan al dia, en su orden.
     const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const periodLabel = (period) => `${MONTHS_SHORT[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
 
@@ -209,7 +212,8 @@
             let pendingTotal = 0;
             let since = null;
             periods.forEach((p, period) => {
-                if (period > curMonth) return;   // cuotas de meses que aun no llegan: no se muestran
+                // Cuotas de meses que aun no llegan: no se muestran, pero lo que deben va con lo por vencer
+                if (period > curMonth) { pendingTotal += p.owed; return; }
                 firstYear = Math.min(firstYear, Number(period.slice(0, 4)));
                 const status = statusOf(period, p.owed);
                 if (status === 'owed') {
@@ -231,6 +235,11 @@
 
         const totals = {};
         columns.forEach((c) => { totals[c.key] = 0; });
+        let anyAssumed = false;
+        computed.forEach((x) => {
+            const raw = typeof options.paidBefore === 'function' ? String(options.paidBefore(x.resident) || '').slice(0, 7) : '';
+            x.paidBefore = validMonth(raw) ? raw : null;
+        });
         const rows = computed.map((x) => {
             const cells = {};
             columns.forEach((c) => {
@@ -246,21 +255,38 @@
                     if (status === 'owed') late += p.owed;
                     else if (status === 'pending') pending += p.owed;
                 });
-                const status = late > 0 ? 'owed' : pending > 0 ? 'pending' : charged > 0 ? 'paid' : 'none';
-                cells[c.key] = { status, owed: fromCents(late + pending), late: fromCents(late) };
+                // Meses dados por pagados: anteriores a paidBefore, ya llegados y sin ninguna cuota ni cargo
+                let assumed = 0;
+                if (x.paidBefore) {
+                    const fromKey = c.kind === 'month' ? c.key : `${c.years[0]}-01`;
+                    const toKey = c.kind === 'month' ? c.key : `${c.years[1]}-12`;
+                    for (let key = fromKey; key <= toKey && key <= curMonth && key < x.paidBefore; key = nextMonth(key)) {
+                        if (!x.periods.has(key)) assumed++;
+                    }
+                }
+                const status = late > 0 ? 'owed' : pending > 0 ? 'pending' : (charged > 0 || assumed > 0) ? 'paid' : 'none';
+                cells[c.key] = { status, owed: fromCents(late + pending), late: fromCents(late), assumed: status === 'paid' && charged === 0 };
+                if (assumed > 0) anyAssumed = true;
                 totals[c.key] += late;
             });
+            const fallback = fromCents(x.lateTotal + x.pendingTotal);
+            const total = typeof options.totalOf === 'function' ? Number(options.totalOf(x.resident)) : fallback;
+            const mora = typeof options.moraOf === 'function' ? Number(options.moraOf(x.resident)) : 0;
             return {
                 resident: x.resident, cells, lateMonths: x.lateMonths, lateTotal: fromCents(x.lateTotal),
-                pendingTotal: fromCents(x.pendingTotal), since: x.since, sinceLabel: x.since ? periodLabel(x.since) : '', index: x.index
+                pendingTotal: fromCents(x.pendingTotal), since: x.since, sinceLabel: x.since ? periodLabel(x.since) : '', index: x.index,
+                mora: Number.isFinite(mora) && mora > 0 ? fromCents(cents(mora)) : 0,
+                totalOwed: Number.isFinite(total) && total > 0 ? fromCents(cents(total)) : 0
             };
         });
-        rows.sort((a, b) => (b.lateMonths - a.lateMonths) || (b.lateTotal - a.lateTotal) || (b.pendingTotal - a.pendingTotal) || (a.index - b.index));
+        // De mayor a menor lo que debe en total; a igual, mas meses en mora y mas vencido; despues, en su orden
+        rows.sort((a, b) => (b.totalOwed - a.totalOwed) || (b.lateMonths - a.lateMonths) || (b.lateTotal - a.lateTotal) || (a.index - b.index));
         Object.keys(totals).forEach((k) => { totals[k] = fromCents(totals[k]); });
         return {
             columns,
             rows,
             totals,
+            assumedPaid: anyAssumed,
             late: rows.filter((r) => r.lateMonths > 0).length,
             pending: rows.filter((r) => r.lateMonths === 0 && r.pendingTotal > 0).length,
             upToDate: rows.filter((r) => r.lateMonths === 0 && r.pendingTotal === 0).length

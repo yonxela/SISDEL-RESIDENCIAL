@@ -146,6 +146,127 @@
         };
     }
 
+    // ───────── Mapa de pagos por residente ─────────
+    // Por cada residente, cada ano anterior y cada mes del ano en curso (hasta hoy):
+    //   'owed'    = debe algo de ese periodo y ya vencio (rojo)
+    //   'pending' = debe algo de ese periodo pero aun no vence (amarillo; no es mora)
+    //   'paid'    = tuvo cuotas o cargos y estan pagados (verde)
+    //   'none'    = no tuvo cuotas ni cargos (gris)
+    // Los pagos de cada residente cubren sus cuotas y cargos del mas antiguo al mas nuevo (el mismo reparto del reporte
+    // de Morosos de OIKOS): una cuota por su mes (period) y un cargo suelto por el mes de su fecha.
+    // opts: { today 'AAAA-MM-DD', dayKey, feePeriodOf(t) -> 'AAAA-MM' o null, dueOf(period) -> ultimo dia 'AAAA-MM-DD'
+    // para pagar sin estar en mora, maxYears (columnas de anos; los anteriores se juntan en "Antes de ...") }.
+    // Orden: primero los que mas meses llevan en mora (y a igual cantidad, los que mas deben); despues los que solo
+    // tienen algo por vencer; al final los que estan al dia, en su orden.
+    const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const periodLabel = (period) => `${MONTHS_SHORT[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
+
+    function paymentMap(residents, txs, opts) {
+        const options = opts || {};
+        const dayKey = dayKeyOf(options);
+        const today = options.today || dayKey(new Date().toISOString());
+        const curMonth = monthOf(today);
+        const curYear = Number(today.slice(0, 4));
+        const maxYears = options.maxYears || 6;
+        const feePeriodOf = typeof options.feePeriodOf === 'function' ? options.feePeriodOf : (t) => (t.kind === 'fee' && validMonth(String(t.period || '')) ? t.period : null);
+        const dueOf = typeof options.dueOf === 'function' ? options.dueOf : (period) => `${period}-31`;
+        const statusOf = (period, owed) => (owed > 0 ? (today > dueOf(period) ? 'owed' : 'pending') : 'paid');
+
+        const byResident = new Map();
+        (txs || []).forEach((t) => {
+            if (!t || t.deleted || (t.type !== 'charge' && t.type !== 'income')) return;
+            if (t.resiId === undefined || t.resiId === null || t.resiId === '') return;
+            const id = String(t.resiId);
+            if (!byResident.has(id)) byResident.set(id, []);
+            byResident.get(id).push(t);
+        });
+
+        let firstYear = curYear;
+        const computed = (residents || []).map((r, index) => {
+            let credit = 0;
+            const charges = [];
+            (byResident.get(String(r.id)) || []).forEach((t) => {
+                if (t.type === 'income') { credit += cents(t.amount); return; }
+                const fee = feePeriodOf(t);
+                const day = t.date ? dayKey(t.date) : '';
+                const period = fee || monthOf(day);
+                if (!validMonth(period)) return;
+                charges.push({ period, sort: fee ? `${period}-00` : day, amount: cents(t.amount) });
+            });
+            // Del mas antiguo al mas nuevo (sort es estable: a igual fecha, en su orden)
+            charges.sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
+            const periods = new Map();
+            charges.forEach((c) => {
+                const paid = Math.min(Math.max(credit, 0), c.amount);
+                credit -= paid;
+                const p = periods.get(c.period) || { charged: 0, owed: 0 };
+                p.charged += c.amount;
+                p.owed += c.amount - paid;
+                periods.set(c.period, p);
+            });
+            let lateMonths = 0;
+            let lateTotal = 0;
+            let pendingTotal = 0;
+            let since = null;
+            periods.forEach((p, period) => {
+                if (period > curMonth) return;   // cuotas de meses que aun no llegan: no se muestran
+                firstYear = Math.min(firstYear, Number(period.slice(0, 4)));
+                const status = statusOf(period, p.owed);
+                if (status === 'owed') {
+                    lateMonths++;
+                    lateTotal += p.owed;
+                    if (!since || period < since) since = period;
+                } else if (status === 'pending') pendingTotal += p.owed;
+            });
+            return { resident: r, index, periods, lateMonths, lateTotal, pendingTotal, since };
+        });
+
+        // Columnas: los anos anteriores (los mas viejos juntos) y los meses del ano en curso hasta hoy
+        const columns = [];
+        const lastYear = curYear - 1;
+        const fromYear = Math.max(firstYear, lastYear - maxYears + 1);
+        if (firstYear < fromYear) columns.push({ key: 'older', kind: 'years', label: `Antes de ${fromYear}`, years: [firstYear, fromYear - 1] });
+        for (let y = fromYear; y <= lastYear; y++) columns.push({ key: String(y), kind: 'years', label: `Año ${y}`, years: [y, y] });
+        for (let key = `${curYear}-01`; key <= curMonth; key = nextMonth(key)) columns.push({ key, kind: 'month', label: periodLabel(key) });
+
+        const totals = {};
+        columns.forEach((c) => { totals[c.key] = 0; });
+        const rows = computed.map((x) => {
+            const cells = {};
+            columns.forEach((c) => {
+                let charged = 0;
+                let late = 0;
+                let pending = 0;
+                x.periods.forEach((p, period) => {
+                    if (period > curMonth) return;
+                    const inColumn = c.kind === 'month' ? period === c.key : (Number(period.slice(0, 4)) >= c.years[0] && Number(period.slice(0, 4)) <= c.years[1]);
+                    if (!inColumn) return;
+                    charged += p.charged;
+                    const status = statusOf(period, p.owed);
+                    if (status === 'owed') late += p.owed;
+                    else if (status === 'pending') pending += p.owed;
+                });
+                const status = late > 0 ? 'owed' : pending > 0 ? 'pending' : charged > 0 ? 'paid' : 'none';
+                cells[c.key] = { status, owed: fromCents(late + pending), late: fromCents(late) };
+                totals[c.key] += late;
+            });
+            return {
+                resident: x.resident, cells, lateMonths: x.lateMonths, lateTotal: fromCents(x.lateTotal),
+                pendingTotal: fromCents(x.pendingTotal), since: x.since, sinceLabel: x.since ? periodLabel(x.since) : '', index: x.index
+            };
+        });
+        rows.sort((a, b) => (b.lateMonths - a.lateMonths) || (b.lateTotal - a.lateTotal) || (b.pendingTotal - a.pendingTotal) || (a.index - b.index));
+        Object.keys(totals).forEach((k) => { totals[k] = fromCents(totals[k]); });
+        return {
+            columns,
+            rows,
+            totals,
+            late: rows.filter((r) => r.lateMonths > 0).length,
+            pending: rows.filter((r) => r.lateMonths === 0 && r.pendingTotal > 0).length,
+            upToDate: rows.filter((r) => r.lateMonths === 0 && r.pendingTotal === 0).length
+        };
+    }
+
     // Texto de una celda que puede traer HTML (p. ej. el boton del No. de documento)
     function plain(value) {
         if (value === null || value === undefined) return '';
@@ -171,22 +292,31 @@
         return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
     }
 
-    // report: { title, summary, notice, headers, rows, rowsMeta, totals, numericCols }. opts: { condoName, at, excel }
-    function exportModel(report, opts) {
+    // Estilos del Excel de reportes-export.js para las celdas de color del mapa de pagos
+    const STATUS_STYLE = { owed: 4, paid: 5, pending: 6 };
+
+    // report: { title, summary, notice, headers, rows, rowsMeta, totals, numericCols, cellStatus, compact }.
+    // cellStatus[fila][columna] = 'owed' | 'paid' | 'pending' | 'none' pinta la celda en el Excel (rojo, verde, amarillo).
+    // compact = { headers, rows, numericCols }: version corta para WhatsApp (el mapa de pagos tiene demasiadas columnas).
+    // opts: { condoName, at, excel }
+    function exportModel(fullReport, opts) {
         const options = opts || {};
+        const report = !options.excel && fullReport.compact ? { ...fullReport, ...fullReport.compact, rowsMeta: [], cellStatus: null } : fullReport;
         const numeric = new Set(report.numericCols || []);
         const meta = report.rowsMeta || [];
+        const status = report.cellStatus || [];
         const at = options.at || new Date();
-        const cell = (value, index, bold) => {
+        const cell = (value, index, bold, fill) => {
             const text = plain(value);
             let out = text;
             if (options.excel && numeric.has(index)) {
                 const number = moneyValue(text);
                 if (number !== null) out = number;
             }
+            if (options.excel && fill) return { v: out, s: fill };
             return bold ? { v: out, s: 1 } : out;
         };
-        const rows = (report.rows || []).map((row, r) => row.map((value, i) => cell(value, i, !!(meta[r] && meta[r].kind === 'subtotal'))));
+        const rows = (report.rows || []).map((row, r) => row.map((value, i) => cell(value, i, !!(meta[r] && meta[r].kind === 'subtotal'), STATUS_STYLE[(status[r] || [])[i]])));
         const totals = report.totals ? report.totals.map((value, i) => cell(value, i, true)) : null;
         if (totals && options.excel) rows.push(totals);
         // Los totales van tambien como cifras de resumen: en WhatsApp se ven aunque la tabla se recorte
@@ -215,5 +345,5 @@
         };
     }
 
-    return { MAX_MONTHS, monthBalance, periodSummary, plain, moneyValue, slug, exportModel };
+    return { MAX_MONTHS, monthBalance, periodSummary, paymentMap, periodLabel, plain, moneyValue, slug, exportModel };
 });

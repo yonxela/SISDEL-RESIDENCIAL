@@ -126,6 +126,62 @@ equal('una celda con HTML llega al Excel como texto limpio', R.exportModel(html,
 equal('sin totales no hay cifras de resumen', R.exportModel(html, {}).kpis, []);
 equal('el aviso del reporte va al Excel y a WhatsApp junto al resumen', R.exportModel({ ...report, notice: 'No hay pagos ni gastos registrados en este período.' }, { at }).subtitle, '2026-01-01 → 2026-03-31 · saldo = ingresos menos egresos · No hay pagos ni gastos registrados en este período.');
 
+console.log('\nMapa de pagos por residente');
+const mfee = (id, resiId, period, amount) => ({ id, type: 'charge', kind: 'fee', period, resiId, amount, date: `${period}-01T15:00:00.000Z` });
+const mpay = (id, resiId, date, amount) => ({ id, type: 'income', resiId, amount, date });
+// Vence el ultimo dia del mes mas 5 dias (como La Perla)
+const due = (period) => { const [y, m] = period.split('-').map(Number); const last = new Date(Date.UTC(y, m, 0)); last.setUTCDate(last.getUTCDate() + 5); return last.toISOString().slice(0, 10); };
+const people = [{ id: 'a', unit: 'A001', name: 'Uno' }, { id: 'b', unit: 'A002', name: 'Dos' }, { id: 'c', unit: 'A003', name: 'Tres' }, { id: 'd', unit: 'A004', name: 'Cuatro' }, { id: 'e', unit: 'A005', name: 'Cinco' }];
+const mapTxs = [
+    // a: debe desde 2024 (no pago nada): 2024-11, 2024-12, 2025-01 ... 2026-11
+    ...['2024-11', '2024-12', '2025-01', '2025-02', '2026-01', '2026-10', '2026-11'].map((p, i) => mfee('a' + i, 'a', p, 300)),
+    // b: pago todo
+    ...['2025-06', '2026-01', '2026-02'].map((p, i) => mfee('b' + i, 'b', p, 300)), mpay('bp', 'b', '2026-02-10T15:00:00.000Z', 900),
+    // c: pago lo viejo; debe octubre (vencido) y noviembre (aun no vence)
+    ...['2026-09', '2026-10', '2026-11'].map((p, i) => mfee('c' + i, 'c', p, 300)), mpay('cp', 'c', '2026-09-20T15:00:00.000Z', 300),
+    // d: solo debe noviembre (aun no vence) y pago parte de octubre: octubre en rojo por Q100
+    ...['2026-10', '2026-11'].map((p, i) => mfee('d' + i, 'd', p, 300)), mpay('dp', 'd', '2026-10-20T15:00:00.000Z', 200),
+    // e: sin cuotas; un cargo suelto de mora fija en septiembre, pagado
+    { id: 'e1', type: 'charge', resiId: 'e', amount: 45.5, concept: 'Mora', date: '2026-09-15T15:00:00.000Z' }, mpay('ep', 'e', '2026-09-20T15:00:00.000Z', 45.5),
+    // una cuota de diciembre (aun no llega) no se muestra
+    mfee('a-dic', 'a', '2026-12', 300)
+];
+const pm = R.paymentMap(people, mapTxs, { today: '2026-11-15', dayKey: gtDay, dueOf: due });
+equal('columnas: los anos anteriores y los meses del ano en curso hasta hoy', pm.columns.map((c) => c.label), ['Año 2024', 'Año 2025', 'Ene 2026', 'Feb 2026', 'Mar 2026', 'Abr 2026', 'May 2026', 'Jun 2026', 'Jul 2026', 'Ago 2026', 'Sep 2026', 'Oct 2026', 'Nov 2026']);
+const rowOf = (id) => pm.rows.find((r) => r.resident.id === id);
+const statusOf = (id, keys) => keys.map((k) => rowOf(id).cells[k].status);
+equal('quien no pago: rojo en sus anos y meses vencidos; noviembre aun no vence (amarillo); sin cuota, gris', statusOf('a', ['2024', '2025', '2026-01', '2026-02', '2026-10', '2026-11']), ['owed', 'owed', 'owed', 'none', 'owed', 'pending']);
+equal('quien pago todo: verde', statusOf('b', ['2025', '2026-01', '2026-02', '2026-03']), ['paid', 'paid', 'paid', 'none']);
+equal('los pagos cubren primero lo mas antiguo', statusOf('c', ['2026-09', '2026-10', '2026-11']), ['paid', 'owed', 'pending']);
+equal('un pago parcial deja el mes en rojo por lo que falta', [rowOf('d').cells['2026-10'].status, rowOf('d').cells['2026-10'].owed], ['owed', 100]);
+equal('un cargo suelto cuenta en el mes de su fecha', rowOf('e').cells['2026-09'].status, 'paid');
+equal('meses en mora, desde cuando y cuanto (sin lo que aun no vence ni lo de diciembre)', ['a', 'c', 'd'].map((id) => [rowOf(id).lateMonths, rowOf(id).sinceLabel, rowOf(id).lateTotal]), [[6, 'Nov 2024', 1800], [1, 'Oct 2026', 300], [1, 'Oct 2026', 100]]);
+equal('orden: mas meses en mora arriba; a igual, el que mas debe; al final los que estan al dia', pm.rows.map((r) => r.resident.id), ['a', 'c', 'd', 'b', 'e']);
+equal('conteo: en mora, por vencer y al dia', [pm.late, pm.pending, pm.upToDate], [3, 0, 2]);
+equal('total en mora por columna', [pm.totals['2024'], pm.totals['2025'], pm.totals['2026-10'], pm.totals['2026-11']], [600, 600, 700, 0]);
+const solo = R.paymentMap([{ id: 'x' }], [mfee('x1', 'x', '2026-11', 300)], { today: '2026-11-15', dayKey: gtDay, dueOf: due });
+equal('quien solo debe lo que aun no vence no esta en mora', [solo.late, solo.pending, solo.rows[0].lateMonths], [0, 1, 0]);
+const old = R.paymentMap([{ id: 'x' }], [mfee('x1', 'x', '2012-03', 300)], { today: '2026-11-15', dayKey: gtDay, dueOf: due, maxYears: 6 });
+equal('con muchos anos, los mas viejos se juntan en una columna', old.columns.slice(0, 2).map((c) => c.label), ['Antes de 2020', 'Año 2020']);
+equal('y lo de esos anos se ve ahi', old.rows[0].cells.older.status, 'owed');
+equal('un residente sin movimientos sale al dia y en gris', R.paymentMap([{ id: 'z' }], [], { today: '2026-11-15', dueOf: due }).rows[0].cells['2026-11'].status, 'none');
+
+console.log('\nMapa de pagos en Excel y WhatsApp');
+const mapReport = {
+    title: 'Mapa de pagos por residente', summary: '1 en mora', headers: ['Residente', 'Oct 2026', 'Nov 2026', 'Meses en mora', 'En mora desde', 'Total en mora'],
+    rows: [['A001 · Uno', 'Q300.00', 'Q300.00', '1', 'Oct 2026', 'Q300.00'], ['A002 · Dos', 'Pagado', '—', '0', '—', 'Q0.00']],
+    cellStatus: [[null, 'owed', 'pending'], [null, 'paid', 'none']],
+    totals: ['TOTAL EN MORA', 'Q300.00', '', '1', '', 'Q300.00'], numericCols: [3, 5],
+    compact: { headers: ['Residente', 'Meses en mora', 'En mora desde', 'Total en mora'], rows: [['A001 · Uno', '1', 'Oct 2026', 'Q300.00']], totals: ['TOTAL', '1', '', 'Q300.00'], numericCols: [1, 3] }
+};
+const mapExcel = R.exportModel(mapReport, { at, excel: true });
+equal('en Excel las celdas van con su color (rojo, amarillo, verde) y lo gris sin color', [mapExcel.tables[0].rows[0][1], mapExcel.tables[0].rows[0][2], mapExcel.tables[0].rows[1][1], mapExcel.tables[0].rows[1][2]], [{ v: 'Q300.00', s: 4 }, { v: 'Q300.00', s: 6 }, { v: 'Pagado', s: 5 }, '—']);
+const mapBook = readXlsx(Buffer.from(X.buildXlsx(mapExcel)));
+const mapRow = mapBook.sheets[0].rows.find((r) => r.cells[0] && r.cells[0].v === 'A001 · Uno');
+equal('el .xlsx con colores se abre y cada celda guarda su estilo', mapRow ? [mapRow.cells[1].s, mapRow.cells[2].s] : null, ['4', '6']);
+const mapWa = R.exportModel(mapReport, { at });
+equal('WhatsApp usa la version corta: residente, meses, desde y total', [mapWa.tables[0].headers, mapWa.tables[0].rows[0], mapWa.kpis], [['Residente', 'Meses en mora', 'En mora desde', 'Total en mora'], ['A001 · Uno', '1', 'Oct 2026', 'Q300.00'], [{ label: 'Total meses en mora', value: '1' }, { label: 'Total en mora', value: 'Q300.00' }]]);
+
 console.log('\nCopia en el navegador');
 const sandbox = { self: {} };
 vm.createContext(sandbox);

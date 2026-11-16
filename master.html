@@ -98,7 +98,7 @@
             <!-- Tab Content: Users -->
             <div class="tab-content" id="tabUsuarios" style="display:none;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
-                    <h3 style="font-size:1.25rem;">Usuarios Globales</h3>
+                    <h3 style="font-size:1.25rem;">Administradores</h3>
                     <select class="form-input" id="filterCondo" style="max-width:250px;">
                         <option value="">Todos los condominios</option>
                     </select>
@@ -639,12 +639,13 @@
             // --- Tab: Users Logic ---
             window.renderUsers = async function () {
                 const condoId = document.getElementById('filterCondo').value;
-                const users = await SISDEL.getUsers(condoId);
+                // Solo los administradores de cada condominio: a los vecinos y al personal los maneja su administrador
+                const users = (await SISDEL.getUsers(condoId)).filter(u => u.role === 'admin');
                 const allCondos = await SISDEL.getCondominios();
                 const list = document.getElementById('usersList');
 
                 if (users.length === 0) {
-                    list.innerHTML = '<p class="text-center text-muted" style="padding:2rem;">No se encontraron usuarios.</p>';
+                    list.innerHTML = '<p class="text-center text-muted" style="padding:2rem;">No hay administradores en ' + (condoId ? 'este condominio' : 'ningún condominio') + '.</p>';
                     return;
                 }
 

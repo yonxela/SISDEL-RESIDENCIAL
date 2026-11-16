@@ -126,7 +126,8 @@ const SisdelPrivilegiosUI = (() => {
     }
 
     // ── Tarjetas por modulo ──
-    // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search, marks (false: sin etiquetas Agregado/Quitado) }
+    // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search, marks (false: sin etiquetas Agregado/Quitado),
+    //        template (true: formulario de plantilla; las acciones optIn no se pueden marcar) }
     function renderMatrix(container, opts) {
         injectStyles();
         const defaults = PRIV.defaultsOf(opts.role);
@@ -143,7 +144,8 @@ const SisdelPrivilegiosUI = (() => {
                 // Los privilegios que su rol no puede tener (onlyRoles) no cuentan ni se activan
                 const usable = full.items.filter((i) => PRIV.allowedFor(i.key, opts.role));
                 const active = usable.filter((i) => opts.set.has(i.key)).length;
-                const allOn = active === usable.length;
+                // Las que empiezan apagadas (optIn) no cuentan para "Marcar todo": se marcan a mano
+                const allOn = usable.filter((i) => !PRIV.isOptIn(i.key)).every((i) => opts.set.has(i.key));
                 return `<section class="pv-card">
                     <div class="pv-card-head">
                         <strong>${esc(g.title)}</strong>
@@ -154,17 +156,19 @@ const SisdelPrivilegiosUI = (() => {
                     </div>
                     <div class="pv-rows">${g.items.map((i, index) => {
                         const subHeading = i.sub && (index === 0 || g.items[index - 1].sub !== i.sub) ? `<div class="pv-sub">${esc(i.sub)}</div>` : '';
-                        const locked = !PRIV.allowedFor(i.key, opts.role);
+                        // En una plantilla, una optIn no se puede marcar (se habilita usuario por usuario)
+                        const locked = !PRIV.allowedFor(i.key, opts.role) || (opts.template && PRIV.isOptIn(i.key));
                         const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
                         const marks = opts.marks !== false;
                         const state = marks && on && !inRole ? ' is-added' : (marks && !on && inRole ? ' is-removed' : '');
                         const tag = marks && on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (marks && !on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
-                        const lockTag = locked ? '<span class="pv-tag removed">Solo administradores y operadores</span>' : '';
+                        const lockTag = locked ? (PRIV.isOptIn(i.key) && PRIV.allowedFor(i.key, opts.role) ? '<span class="pv-tag removed">Se marca usuario por usuario</span>' : '<span class="pv-tag removed">Solo administradores y operadores</span>') : '';
+                        const optTag = PRIV.isOptIn(i.key) && !locked ? '<span class="pv-tag sens">Se habilita aparte</span>' : '';
                         return `${subHeading}<button type="button" class="pv-row${on ? ' is-on' : ''}${state}${i.parent ? ' pv-child' : ''}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}" ${i.depth > 1 ? `style="margin-left:${(i.depth - 1) * 1.1}rem;"` : ''}>
                             ${on ? ICONS.on : ICONS.off}
                             <span style="flex:1; min-width:0;">
-                                <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${tag}${lockTag}</span>
+                                <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${optTag}${tag}${lockTag}</span>
                                 <span class="pv-desc">${esc(i.description)}</span>
                             </span>
                         </button>`;
@@ -188,7 +192,7 @@ const SisdelPrivilegiosUI = (() => {
             button.addEventListener('click', () => {
                 const turnOn = button.dataset.on === '1';
                 PRIV.GROUPS.find((g) => g.id === button.dataset.group).items
-                    .filter((i) => PRIV.allowedFor(i.key, opts.role))
+                    .filter((i) => PRIV.allowedFor(i.key, opts.role) && (!turnOn || !PRIV.isOptIn(i.key)))
                     .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn, { children: turnOn }));
                 opts.onChange(opts.set, { group: button.dataset.group, on: turnOn, cascade: [] });
             });
@@ -284,7 +288,7 @@ const SisdelPrivilegiosUI = (() => {
                 set.clear(); Object.keys(PRIV.defaultsOf(role)).forEach((k) => set.add(k));
                 draw('Se dejaron los privilegios del rol');
             } else if (kind === 'all') {
-                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
+                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role) && !PRIV.isOptIn(k)).forEach((k) => set.add(k));
                 draw();
             } else if (kind === 'none') {
                 set.clear(); draw();
@@ -562,7 +566,7 @@ const SisdelPrivilegiosUI = (() => {
                 if (discardButton) discardButton.disabled = !changed;
             }
             function draw(note) {
-                renderMatrix(matrix, { role: form.role, set, disabled: readOnly, search, marks: false, onChange: (_s, change) => draw(cascadeNote(change)) });
+                renderMatrix(matrix, { role: form.role, set, disabled: readOnly, search, marks: false, template: true, onChange: (_s, change) => draw(cascadeNote(change)) });
                 refresh(note);
             }
 
@@ -582,7 +586,7 @@ const SisdelPrivilegiosUI = (() => {
                 const act = event.target.closest('[data-act]');
                 if (!act) return;
                 const kind = act.dataset.act;
-                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role)).forEach((k) => set.add(k)); draw(); }
+                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.isOptIn(k)).forEach((k) => set.add(k)); draw(); }
                 else if (kind === 'none') { set.clear(); draw(); }
                 else if (kind === 'discard') { mountForm(tpl); }
                 else if (kind === 'duplicate') {

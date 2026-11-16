@@ -54,10 +54,15 @@ service cloud.firestore {
       return isMember(condoId)
         && memberDoc(condoId).get('privilegios', {}).get(key, true) == true;
     }
+    // Una accion optIn (empieza apagada, p. ej. cargar cuotas por mes) vale solo si el usuario la tiene marcada
+    function childOn(condoId, key) {
+      return isMember(condoId)
+        && memberDoc(condoId).get('privilegios', {}).get(key, false) == true;
+    }
     // Las funciones pXxx (una por clave de privilegios.js que las reglas aplican) se generan con
     // `cd scripts && npm run reglas`; scripts/test-privilegios.mjs verifica que esten al dia.
     // ── BEGIN privilegios generados (scripts/generar-reglas-privilegios.mjs) ──
-    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada.
+    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada (una accion optIn, en cambio, solo si esta marcada: childOn).
     // Usuarios y vecinos
     function pUsuariosVer(c) { return can(c, 'usuarios.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
     function pUsuariosCrear(c) { return can(c, 'usuarios.crear', ['admin']); }
@@ -116,7 +121,7 @@ service cloud.firestore {
     function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_finiquitar'); }
     function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_eliminar'); }
     function pFinanzasCuotasMes(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_mes'); }
-    function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_meses'); }
+    function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOn(c, 'finanzas.cuotas_meses'); }
     function pFinanzasCuotasCorregir(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
     function pFinanzasCargosCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_crear'); }
     function pFinanzasCargosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_anular'); }

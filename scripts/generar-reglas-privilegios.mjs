@@ -23,12 +23,13 @@ export function buildBlock() {
         let up = i;
         while (up.parent) { up = P.itemOf(up.parent); need.add(up.key); }
     });
-    const lines = [BEGIN, '    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada.'];
+    const lines = [BEGIN, '    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada'
+        + ' (una accion optIn, en cambio, solo si esta marcada: childOn).'];
     let last = null;
     P.ITEMS.filter((i) => need.has(i.key)).forEach((i) => {
         if (i.groupTitle !== last) { lines.push(`    // ${i.groupTitle}`); last = i.groupTitle; }
         const body = i.parent
-            ? `${fnName(i.parent)}(c) && childOk(c, '${i.key}')`
+            ? `${fnName(i.parent)}(c) && ${i.optIn ? 'childOn' : 'childOk'}(c, '${i.key}')`
             : `can(c, '${i.key}', [${i.roles.map((r) => `'${r}'`).join(', ')}])`;
         lines.push(`    function ${fnName(i.key)}(c) { return ${body}; }`);
     });

@@ -139,7 +139,9 @@
                 { key: 'finanzas.residentes_contactar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Recordatorios y WhatsApp', description: 'Avisar por WhatsApp a los residentes en mora o con saldo pendiente.', requires: ['finanzas.residentes_ver'], enforce: 'pantalla' },
 
                 { key: 'finanzas.cuotas_mes', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cobrar la cuota del mes a todos', description: 'El botón Cuota del mes y la generación automática de cuotas: afecta a todos los residentes.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
-                { key: 'finanzas.cuotas_meses', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cargar cuotas por mes a un residente', description: 'Elegir los meses que se le cobran al crear o editar un residente.', requires: ['finanzas.residentes_editar'], enforce: 'reglas' },
+                // optIn (pedido del dueno, 2026-11-16): empieza apagado para todos, tambien para el administrador; solo lo
+                // tiene quien lo tenga marcado en Configuracion (al administrador se lo marca el Master)
+                { key: 'finanzas.cuotas_meses', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cargar cuotas por mes a un residente', description: 'Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí.', requires: ['finanzas.residentes_editar'], enforce: 'reglas', optIn: true },
                 { key: 'finanzas.cuotas_corregir', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Corregir cuotas duplicadas', description: 'Anular en bloque las cuotas repetidas.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
                 { key: 'finanzas.cargos_crear', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Crear cargos especiales y multas', description: 'Un cargo a todos los residentes o a uno solo, con el concepto que se elija.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
                 { key: 'finanzas.cargos_anular', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Anular cargos', description: 'Anular una cuota o un cargo especial desde el estado de cuenta.', requires: ['finanzas.residentes_estado'], sensitive: true, enforce: 'reglas' },
@@ -267,17 +269,23 @@
     //  - los roles por defecto se declaran solo en el paraguas raiz: las acciones los heredan.
     // Asi quien ya tenia el privilegio amplio (por rol o por la asignacion del administrador) conserva todo lo que
     // ese privilegio permitia, y las acciones nuevas se pueden quitar una por una.
+    // Excepcion: una accion `optIn` empieza APAGADA (ningun rol la trae): solo vale con { clave: true } guardado en el
+    // usuario, y no la encienden el paraguas, "Marcar todo" ni las plantillas: se marca a mano, usuario por usuario.
     // Los padres van antes que sus hijos en el catalogo (se verifica al cargar).
     ITEMS.forEach((item, index) => {
         if (item.parent && !(BY_KEY[item.parent] && KEYS.indexOf(item.parent) < index)) throw new Error(`privilegios: ${item.key} necesita su paraguas ${item.parent} definido antes`);
+        if (item.optIn && (!item.parent || item.roles)) throw new Error(`privilegios: ${item.key} es optIn y solo puede ser una accion sin roles`);
         let root = item;
         while (root.parent) root = BY_KEY[root.parent];
         item.root = root.key;
-        item.defaultRoles = root.roles || [];
+        item.defaultRoles = item.optIn ? [] : (root.roles || []);
         item.depth = item.parent ? BY_KEY[item.parent].depth + 1 : 0;
     });
     const CHILDREN = Object.assign(Object.create(null), Object.fromEntries(KEYS.map((k) => [k, ITEMS.filter((i) => i.parent === k).map((i) => i.key)])));
     const descendantsOf = (key) => (CHILDREN[key] || []).flatMap((c) => [c, ...descendantsOf(c)]);
+    // Las acciones optIn no se encienden en bloque (paraguas, "Marcar todo", plantillas): solo a mano
+    const isOptIn = (key) => !!(BY_KEY[key] && BY_KEY[key].optIn);
+    const bulkDescendantsOf = (key) => descendantsOf(key).filter((d) => !isOptIn(d));
     const ancestorsOf = (key) => (BY_KEY[key] && BY_KEY[key].parent ? [...ancestorsOf(BY_KEY[key].parent), BY_KEY[key].parent] : []);
 
     // Algunos privilegios solo los puede tener ciertos roles (onlyRoles, en el paraguas raiz): asignarlos a otro rol no tiene efecto
@@ -303,7 +311,7 @@
 
     // Plantillas del sistema: conjuntos completos de claves (paraguas y acciones), con el rol sugerido.
     // Cada condominio puede crear las suyas (condominios/{id}/plantillas_privilegios).
-    const tree = (...keys) => keys.flatMap((k) => [k, ...descendantsOf(k)]);
+    const tree = (...keys) => keys.flatMap((k) => [k, ...bulkDescendantsOf(k)]);
     const adminKeys = ITEMS.filter((i) => i.defaultRoles.includes('admin')).map((i) => i.key);
     const vecinoKeys = ITEMS.filter((i) => i.defaultRoles.includes('vecino')).map((i) => i.key);
     const without = (list, ...drop) => list.filter((k) => !drop.includes(k) && !drop.some((d) => ancestorsOf(k).includes(d)));
@@ -410,7 +418,7 @@
         const item = BY_KEY[key];
         let value;
         if (!allowedFor(key, role)) value = false;
-        else if (item.parent) value = resolve(role, own, item.parent, memo) && own[key] !== false;
+        else if (item.parent) value = resolve(role, own, item.parent, memo) && (item.optIn ? own[key] === true : own[key] !== false);
         else value = key in own ? own[key] : item.roles.includes(role);
         memo[key] = value;
         return value;
@@ -447,7 +455,8 @@
             const want = set.has(k) && allowedFor(k, role);
             if (item.parent) {
                 if (!shown[item.parent]) { shown[k] = false; return; }
-                if (!want) out[k] = false;
+                // Una accion optIn solo se guarda si esta marcada; las demas, solo si estan quitadas
+                if (item.optIn ? want : !want) out[k] = want;
                 shown[k] = want;
             } else {
                 if (want !== item.roles.includes(role)) out[k] = want;
@@ -468,7 +477,7 @@
             set.add(key);
             if (item.parent) toggle(set, item.parent, true);
             (item.requires || []).forEach((r) => toggle(set, r, true));
-            if (options.children) descendantsOf(key).forEach((d) => toggle(set, d, true));
+            if (options.children) bulkDescendantsOf(key).forEach((d) => toggle(set, d, true));
         } else {
             set.delete(key);
             (CHILDREN[key] || []).forEach((c) => { if (set.has(c)) toggle(set, c, false); });
@@ -490,7 +499,7 @@
         const set = new Set((claves || []).filter((k) => BY_KEY[k]));
         [...set].forEach((k) => {
             const kids = CHILDREN[k] || [];
-            if (kids.length && !kids.some((c) => set.has(c))) descendantsOf(k).forEach((d) => set.add(d));
+            if (kids.length && !kids.some((c) => set.has(c))) bulkDescendantsOf(k).forEach((d) => set.add(d));
         });
         return [...set];
     }
@@ -523,15 +532,17 @@
         return TEMPLATES.concat(custom || []).find((t) => t.id === id) || null;
     }
 
-    // Claves de una plantilla: las del sistema son exactas; las propias guardadas antes de las acciones se amplian
+    // Claves de una plantilla: las del sistema son exactas; las propias guardadas antes de las acciones se amplian.
+    // Las acciones optIn nunca vienen en una plantilla: se marcan a mano, usuario por usuario.
     function templateKeys(template) {
-        return template.system ? (template.claves || []).filter((k) => BY_KEY[k]) : expandTemplate(template.claves);
+        const keys = template.system ? (template.claves || []).filter((k) => BY_KEY[k]) : expandTemplate(template.claves);
+        return keys.filter((k) => !isOptIn(k));
     }
 
     return {
         ROLES, ROLE_LABELS, GROUPS, ITEMS, KEYS, PAGES, ROLE_HOME, TEMPLATES,
         defaultsOf, cleanOverrides, effective, has, allowedFor, toOverrides, toggle, cascade,
-        canEnter, pagesFor, landing, itemOf, sensitiveKeys, templateById, templateKeys, expandTemplate,
+        canEnter, pagesFor, landing, itemOf, sensitiveKeys, templateById, templateKeys, expandTemplate, isOptIn,
         childrenOf: (key) => (CHILDREN[key] || []).slice(), descendantsOf, ancestorsOf
     };
 }));

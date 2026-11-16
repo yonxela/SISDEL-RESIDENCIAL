@@ -1087,6 +1087,13 @@ async function run() {
     await denied('cargos: no genera cuotas automaticas', () => setDoc(mref(cargos, 'fee_u-ana_2031-04'), mv('fee_u-ana_2031-04', { type: 'charge', kind: 'fee', period: '2031-04', auto: true })));
     await denied('cargos: no anula cargos', () => updateDoc(mref(cargos, 'fin-ch-3'), annul()));
     await denied('cargos: no agrega conceptos de egreso', () => patchCfg(cargos, { customExpenseConcepts: ['Otro'] }));
+    // Cargar cuotas por mes empieza apagado (optIn, childOn en las reglas): solo vale marcado en el usuario
+    const meses = await opWith('u-mes', 'PMES1', 'Cuotas por mes', ['finanzas.cuotas_meses']);
+    await allowed('cuotas por mes (marcado): aplica una cuota manual', () => setDoc(mref(meses, 'fee_u-ana_2031-05'), mv('fee_u-ana_2031-05', { type: 'charge', kind: 'fee', period: '2031-05', manual: true, auto: false })));
+    await denied('cuotas por mes: no genera cuotas automaticas', () => setDoc(mref(meses, 'fee_u-ana_2031-06'), mv('fee_u-ana_2031-06', { type: 'charge', kind: 'fee', period: '2031-06', auto: true })));
+    await denied('cuotas por mes: no crea cargos especiales', () => setDoc(mref(meses, 'mes-ch'), mv('mes-ch', { type: 'charge', kind: 'extra' })));
+    const sinMeses = await opWith('u-smes', 'PSME1', 'Sin cuotas por mes', ['finanzas.residentes_editar']);
+    await denied('sin cuotas por mes marcado (aunque tenga el paraguas) no aplica una cuota manual', () => setDoc(mref(sinMeses, 'fee_u-ana_2031-07'), mv('fee_u-ana_2031-07', { type: 'charge', kind: 'fee', period: '2031-07', manual: true, auto: false })));
     const anulaCargos = await opWith('u-anc', 'PANC1', 'Anula cargos', ['finanzas.cargos_anular']);
     await allowed('anular cargos: anula un cargo especial', () => updateDoc(mref(anulaCargos, 'fin-ch-1'), annul()));
     await allowed('anular cargos: anula una cuota', () => updateDoc(mref(anulaCargos, 'fin-ch-2'), annul()));

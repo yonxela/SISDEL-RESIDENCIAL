@@ -154,7 +154,9 @@ equal('el bloqueo no menciona claves que no existen en el catalogo', unknown, []
     equal('fiscalizador: puede ver estado de cuenta, comprobantes y exportar reportes', ['modal-estado-cuenta', 'modal-voucher-options', 'printReport()'].some((s) => css.includes(s)), false);
     equal('fiscalizador: ninguna accion de escribir pasa el bloqueo de clic', ["openModal('modal-income')", "deleteTransaction('x')", 'applyFeeRun()', 'saveSettings()', 'History.undo()'].every((a) => B.checkAttribute(a, fiscal) !== null), true);
 }
-equal('un administrador (acceso de siempre) no pierde nada en pantalla', B.cssFor((key) => PRIV.has('admin', {}, key)), '');
+equal('un administrador (acceso de siempre) no pierde nada en pantalla, salvo cargar cuotas por mes (empieza apagado)', B.cssFor((key) => PRIV.has('admin', {}, key)), '#res-retro-wrap,\n#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("] { display: none !important; }');
+equal('con cargar cuotas por mes marcado, el administrador no pierde nada en pantalla', B.cssFor((key) => PRIV.has('admin', { 'finanzas.cuotas_meses': true }, key)), '');
+equal('sin cargar cuotas por mes no se abre la ventana de meses ni se marcan meses', ["openResidentFeeMonths('r1')", 'setAllResRetroMonths(true)'].map((a) => B.checkAttribute(a, (key) => PRIV.has('admin', {}, key)) !== null), [true, true]);
 equal('un auditor ve las pantallas pero no puede usar el sistema financiero', B.firstView((key) => PRIV.has('auditor', {}, key)), null);
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

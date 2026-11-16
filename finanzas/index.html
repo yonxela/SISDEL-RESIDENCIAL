@@ -523,10 +523,9 @@
                             <button onclick="setTxFilter('expense')" id="filter-expense" class="px-5 py-2 text-slate-600 dark:text-slate-400 rounded-lg text-sm font-medium whitespace-nowrap">Gastos</button>
                         </div>
                         <div class="flex space-x-2 w-full sm:w-auto">
-                            <button onclick="exportToPDF()" class="flex-1 sm:flex-none px-4 py-2 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-300 rounded-xl text-sm font-semibold transition border border-slate-200 dark:border-slate-600 flex items-center justify-center"><i class="fas fa-file-pdf mr-1 text-red-500"></i><span id="lbl-btn-export-pdf">PDF</span></button>
                             <button onclick="openModal('modal-bulk-charge')" class="flex-1 sm:flex-none px-4 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 rounded-xl text-sm font-semibold transition border border-amber-200 dark:border-amber-800 flex items-center justify-center"><i class="fas fa-bolt mr-1"></i>Cargo</button>
-                            <button onclick="openModal('modal-income')" class="flex-1 sm:flex-none bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-down mr-2"></i><span id="btn-new-inc">Ingreso</span></button>
-                            <button onclick="openModal('modal-expense')" class="flex-1 sm:flex-none bg-rose-50 text-rose-700 hover:bg-rose-100 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-up mr-2"></i><span id="btn-new-exp">Gasto</span></button>
+                            <button onclick="openModal('modal-income')" class="flex-1 sm:flex-none bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-down mr-2"></i><span id="btn-new-inc">Ingreso</span></button>
+                            <button onclick="openModal('modal-expense')" class="flex-1 sm:flex-none bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-up mr-2"></i><span id="btn-new-exp">Gasto</span></button>
                         </div>
                     </div>
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
@@ -4935,30 +4934,8 @@
             openVoucherOptions(id);
         }
 
-        function exportToPDF() {
-            if (!window.jspdf || !window.jspdf.jsPDF) return alert('Cargando PDF.');
-            const { jsPDF } = window.jspdf; const doc = new jsPDF(); const s = Store.get('settings');
-            const mk = document.getElementById('rep-month-select').value; if (!mk) return alert('Abra el reporte primero.');
-            let monthTxs = Store.get('transactions').filter(t => { const d = new Date(t.date); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === mk; });
-            if (monthTxs.length === 0) return alert('No hay datos para este mes.');
-            const incL = [], expL = []; let tI = 0, tE = 0;
-            monthTxs.forEach(t => { const dl = new Date(t.date).toLocaleDateString(); if (t.type === 'income') { tI += t.amount; incL.push([dl, t.concept, formatMoney(t.amount)]); } else if (t.type === 'expense') { tE += t.amount; expL.push([dl, t.concept, formatMoney(t.amount)]); } });
-            doc.setFontSize(22); doc.setTextColor(15, 23, 42); doc.text('Reporte Financiero Mensual', 14, 22);
-            doc.setFontSize(14); doc.setTextColor(71, 85, 105); doc.text(s.name || 'OIKOS', 14, 30);
-            doc.setFontSize(11); doc.setTextColor(100, 116, 139); doc.text('Mes: ' + (repMonthsMap.get(mk) || mk), 14, 38);
-            let fY = 50;
-            doc.setFontSize(14); doc.setTextColor(22, 163, 74); doc.text('Ingresos', 14, fY);
-            if (incL.length > 0) { doc.autoTable({ startY: fY + 4, head: [['Fecha', 'Detalle', 'Monto']], body: incL, theme: 'striped', headStyles: { fillColor: [22, 163, 74] } }); fY = doc.lastAutoTable.finalY + 15; } else { fY += 15; }
-            doc.setFontSize(14); doc.setTextColor(225, 29, 72); doc.text('Egresos', 14, fY);
-            if (expL.length > 0) { doc.autoTable({ startY: fY + 4, head: [['Fecha', 'Detalle', 'Monto']], body: expL, theme: 'striped', headStyles: { fillColor: [225, 29, 72] } }); fY = doc.lastAutoTable.finalY + 20; } else { fY += 15; }
-            if (fY > 250) { doc.addPage(); fY = 20; }
-            doc.setFillColor(248, 250, 252); doc.setDrawColor(203, 213, 225); doc.roundedRect(14, fY, 182, 30, 3, 3, 'FD');
-            doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42); doc.text('Resumen', 20, fY + 10);
-            doc.setFont('helvetica', 'normal'); doc.setTextColor(22, 163, 74); doc.text('Ingresos: ' + formatMoney(tI), 20, fY + 18);
-            doc.setTextColor(225, 29, 72); doc.text('Egresos: ' + formatMoney(tE), 80, fY + 18);
-            doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42); doc.text('Balance: ' + formatMoney(tI - tE), 140, fY + 18);
-            doc.save('Reporte_' + mk + '.pdf'); showToast('PDF generado.');
-        }
+        // SISDEL: el boton PDF de la barra de Contabilidad y su funcion se quitaron: dependia del mes elegido en la ventana del
+        // reporte financiero y casi siempre decia "Abra el reporte primero". El PDF del mes esta en Reportes.
 
         // ========== SETTINGS ==========
         function renderCustomConceptsSettings() {

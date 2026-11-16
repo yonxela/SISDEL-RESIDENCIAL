@@ -80,7 +80,7 @@
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
         [/^openResidentStatusReport\(/, ['reportes_morosos']],
         [/^(openReportModal|shareReportWhatsApp|setReportMode)\(/, ['reportes_resumen']],
-        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportCSV|exportToPDF)\(/, ['reportes_exportar']],
+        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportCSV)\(/, ['reportes_exportar']],
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
@@ -133,7 +133,7 @@
             '#modal-report button[onclick="downloadReportPDF()"]', '#modal-report button[onclick="exportReportExcel()"]', '#modal-report button[onclick="printReport()"]',
             '#modal-res-status button[onclick="exportResStatusPDF()"]', '#modal-res-status button[onclick="exportResStatusExcel()"]',
             '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]',
-            '#btn-export', 'button[onclick="exportCSV()"]', '#view-accounting button[onclick="exportToPDF()"]'
+            '#btn-export', 'button[onclick="exportCSV()"]'
         ]],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
         [CONFIG_WRITE_KEYS, ['#btn-save-cfg']]

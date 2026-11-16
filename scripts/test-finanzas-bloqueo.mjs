@@ -56,8 +56,8 @@ equal('los reportes exigen el de cada uno', [
     blocked("selectReport('morosos')", only('reportes_morosos')), blocked("selectReport('expense-cat')", only('reportes_gastos')),
     blocked("selectReport('account-statement')", only('reportes_libro')), blocked("openReportModal()", only('reportes_resumen'))
 ], [false, true, false, false, false, false]);
-equal('imprimir y exportar exigen reportes_exportar', ['printReport()', 'downloadReportPDF()', 'exportReportCSV()', 'exportReportExcel()', 'exportResStatusPDF()', 'exportResStatusExcel()', 'printEstadoCuenta()', 'downloadEstadoCuentaPDF()', 'exportCSV()', 'exportToPDF()'].map((a) => blocked(a, only('reportes_ingresos', 'reportes_resumen', 'residentes_estado'))), Array(10).fill(true));
-equal('con reportes_exportar se puede exportar', ['printReport()', 'exportCSV()', 'exportToPDF()'].map((a) => blocked(a, only('reportes_exportar'))), [false, false, false]);
+equal('imprimir y exportar exigen reportes_exportar', ['printReport()', 'downloadReportPDF()', 'exportReportCSV()', 'exportReportExcel()', 'exportResStatusPDF()', 'exportResStatusExcel()', 'printEstadoCuenta()', 'downloadEstadoCuentaPDF()', 'exportCSV()', 'shareCurrentReportWhatsApp()'].map((a) => blocked(a, only('reportes_ingresos', 'reportes_resumen', 'residentes_estado'))), Array(10).fill(true));
+equal('con reportes_exportar se puede exportar', ['printReport()', 'exportCSV()', 'exportCurrentReportExcel()'].map((a) => blocked(a, only('reportes_exportar'))), [false, false, false]);
 equal('comprobantes', ["openVoucherOptions('x')", "viewReceiptImage('x')", 'downloadReceiptImage()', 'printVoucher()'].map((a) => blocked(a, only('comprobantes'))), [false, false, false, false]);
 equal('el detalle de un movimiento se abre con cualquiera de sus pantallas', [
     blocked("openTxDetail('x')", only('contabilidad_ver')), blocked("openTxDetail('x')", only('residentes_estado')),

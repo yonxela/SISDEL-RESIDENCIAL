@@ -162,7 +162,6 @@
     // Lo que no se oculta pero tampoco debe tocarse (el nombre del residente abre su estado de cuenta, etc.)
     const LOCK = [
         [['residentes_estado'], ['#residents-table-body button[onclick^="openEstadoCuenta("]', '#rep-tbody tr[onclick^="openEstadoCuenta("]']],
-        [['residentes_contactar'], ['#dash-debt-alert']],
         [['config_general'], ['#cfg-name', '#cfg-lang', '#cfg-curr', '#cfg-theme']],
         [['config_cuota'], ['#cfg-fee', '#cfg-fee-maintenance', '#cfg-fee-water', '#cfg-fee-garbage', '#cfg-fee-electricity', '#cfg-fee-other', '#cfg-water-full', '#cfg-water-half', '#cfg-day', '#cfg-grace', '#cfg-feemode-auto', '#cfg-feemode-manual']],
         [['config_conceptos'], ['#new-inc-concept', '#new-exp-concept']]

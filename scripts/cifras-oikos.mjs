@@ -46,7 +46,7 @@ const DIGEST = `(() => {
     out.ordenDeLaLista = txs.map(t => t.id);
     out.configuracion = (() => { const s = Store.get('settings'); delete s.updated_at; return s; })();
     navigate('dashboard');
-    out.tablero = ['dash-balance', 'dash-income', 'dash-expenses', 'lbl-debt-count'].map(id => document.getElementById(id).innerText);
+    out.tablero = ['dash-balance', 'dash-income', 'dash-expenses'].map(id => document.getElementById(id).innerText);
     navigate('residents');
     out.pantallaResidentes = [...document.querySelectorAll('#residents-table-body tr')].map(tr => tr.innerText.replace(/\\s+/g, ' ').trim());
     navigate('accounting');

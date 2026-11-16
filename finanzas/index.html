@@ -478,12 +478,8 @@
                 <!-- VIEW 1: DASHBOARD -->
                 <div id="view-dashboard" class="space-y-8 fade-in">
                     <div class="dup-fee-banner hidden"></div>
-                    <div id="dash-debt-alert" class="hidden cursor-pointer" onclick="openReminders()">
-                        <div class="bg-rose-50 border border-rose-200 dark:bg-rose-900/20 dark:border-rose-800 rounded-2xl p-4 flex items-center justify-between hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors shadow-sm">
-                            <div class="flex items-center space-x-3"><div class="w-10 h-10 bg-rose-100 dark:bg-rose-900/50 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-400"><i class="fas fa-exclamation-triangle"></i></div><div><h3 class="font-semibold text-rose-800 dark:text-rose-300" id="lbl-debt-count">0 Residentes en Mora</h3><p class="text-sm text-rose-700 dark:text-rose-300/90" id="lbl-debt-total"></p></div></div>
-                            <div class="flex items-center space-x-2 text-rose-600 dark:text-rose-400 font-medium text-sm"><span id="lbl-debt-action">Ver Listado y Notificar</span><i class="fas fa-chevron-right text-xs"></i></div>
-                        </div>
-                    </div>
+                    <!-- SISDEL: la barra roja "Residentes en Mora" se quito del Dashboard (pedido del usuario, 2026-11-16); lo que
+                         deben esta en Reportes y el Envio de Recordatorios sigue en Residentes -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6"><p class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase" id="lbl-card-bal">Saldo en Caja</p><h3 class="text-4xl font-bold text-slate-900 dark:text-white mt-2" id="dash-balance">$0.00</h3></div>
                         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6"><p class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase" id="lbl-card-inc">Total Ingresos</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-2" id="dash-income">$0.00</h3></div>
@@ -2870,7 +2866,6 @@
 
         // ========== RENDER VIEWS ==========
         function renderDashboard() {
-            const res = Store.get('residents');
             const txs = Store.get('transactions');
             const s = Store.get('settings');
             let inc = 0, exp = 0;
@@ -2878,14 +2873,6 @@
             document.getElementById('dash-balance').innerText = formatMoney(inc - exp);
             document.getElementById('dash-income').innerText = formatMoney(inc);
             document.getElementById('dash-expenses').innerText = formatMoney(exp);
-            const debtorsCount = res.filter(r => isResidentActive(r) && checkIsMoroso(r)).length;
-            const alertEl = document.getElementById('dash-debt-alert');
-            if (debtorsCount > 0) { document.getElementById('lbl-debt-count').innerText = `${debtorsCount} Residentes en Mora`; alertEl.classList.remove('hidden'); }
-            else alertEl.classList.add('hidden');
-            // SISDEL: cuanto deben entre todos, con las mismas cifras de los reportes (cuotas y cargos pendientes + mora a hoy)
-            const owed = sisdelOwedTotals(res);
-            const owedEl = document.getElementById('lbl-debt-total');
-            if (owedEl) owedEl.textContent = owed.total > 0 ? 'Deben ' + formatMoney(owed.total) + ' en total: ' + formatMoney(owed.pending) + ' de cuotas y cargos' + (owed.mora > 0 ? ' + ' + formatMoney(owed.mora) + ' de mora a hoy' : '') : '';
             renderChart(txs);
         }
 

@@ -771,6 +771,9 @@
                     <!-- SISDEL: aviso del reporte (p. ej. que en el periodo no hay pagos ni gastos, solo cuotas y cargos) -->
                     <div id="rep-notice" class="hidden flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300 text-sm"><i class="fas fa-info-circle mt-0.5"></i><p id="rep-notice-text"></p></div>
 
+                    <!-- SISDEL: cifras grandes y leyenda de colores del reporte (Tabla general); las pinta paintReportTable -->
+                    <div id="rep-highlights" class="hidden"></div>
+
                     <!-- Tabla del reporte -->
                     <div id="rep-table-wrap" class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
                         <div class="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
@@ -4368,6 +4371,36 @@
             if (repChartVisible) paintReportChart();
         }
 
+        // SISDEL: cifras grandes y leyenda de colores arriba de la tabla de un reporte (la Tabla general): antes era una
+        // linea gris y chica en el encabezado (pedido del usuario: "mas visible y con letra mas grande"). Solo pantalla.
+        // bar: color del borde izquierdo de la tarjeta (en linea: la clase del tema oscuro taparia una de Tailwind)
+        var REP_TONES = {
+            owed: { bar: '#f43f5e', value: 'text-rose-600 dark:text-rose-400', swatch: 'bg-rose-600' },
+            pending: { bar: '#fbbf24', value: 'text-amber-600 dark:text-amber-300', swatch: 'bg-amber-400' },
+            paid: { bar: '#10b981', value: 'text-emerald-600 dark:text-emerald-400', swatch: 'bg-emerald-600' },
+            none: { bar: '#94a3b8', value: 'text-slate-600 dark:text-slate-300', swatch: 'bg-slate-200 border border-slate-400 dark:bg-slate-600 dark:border-slate-400' },
+            total: { bar: '#3b82f6', value: 'text-slate-900 dark:text-white', swatch: 'bg-blue-500' }
+        };
+        function repHighlightsHtml(d) {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const tone = (t) => REP_TONES[t] || REP_TONES.total;
+            const cards = (d.highlights || []).map(function (h) {
+                return '<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 shadow-sm" style="border-left: 5px solid ' + tone(h.tone).bar + '">'
+                    + '<div class="text-3xl font-bold leading-tight ' + tone(h.tone).value + '">' + esc(h.value) + '</div>'
+                    + '<div class="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-0.5">' + esc(h.label) + '</div></div>';
+            }).join('');
+            const legend = (d.legend || []).map(function (l) {
+                return '<span class="inline-flex items-center gap-2"><span class="inline-block w-5 h-5 rounded shrink-0 ' + tone(l.tone).swatch + '"></span>' + esc(l.text) + '</span>';
+            }).join('');
+            const notes = [d.highlightsNote ? '<span><i class="fas fa-calendar-day mr-1.5"></i>' + esc(d.highlightsNote) + '</span>' : '',
+                d.hint ? '<span><i class="fas fa-hand-pointer mr-1.5"></i>' + esc(d.hint) + '</span>' : ''].join('');
+            return '<div class="grid grid-cols-2 lg:grid-cols-' + Math.min(4, (d.highlights || []).length || 1) + ' gap-3">' + cards + '</div>'
+                + (legend || notes ? '<div class="mt-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 space-y-2">'
+                    + (legend ? '<div class="flex flex-wrap gap-x-6 gap-y-2 text-base font-medium text-slate-800 dark:text-slate-100">' + legend + '</div>' : '')
+                    + (notes ? '<div class="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600 dark:text-slate-300">' + notes + '</div>' : '')
+                    + '</div>' : '');
+        }
+
         function paintReportTable() {
             const d = currentReportData;
             const titleEl = document.getElementById('rep-title');
@@ -4378,8 +4411,15 @@
             const emptyEl = document.getElementById('rep-empty');
             if (!d || !thead || !tbody || !tfoot) return;
             titleEl.textContent = d.title;
-            // SISDEL: la indicacion de uso (hint) solo va en pantalla; el resumen tambien va al PDF, Excel y WhatsApp
-            summaryEl.textContent = [d.summary, d.hint].filter(Boolean).join(' · ');
+            // SISDEL: la indicacion de uso (hint) solo va en pantalla; el resumen tambien va al PDF, Excel y WhatsApp.
+            // Un reporte con cifras grandes (highlights) las muestra arriba de la tabla con su leyenda, en vez de la linea chica.
+            const highlightsEl = document.getElementById('rep-highlights');
+            const hasHighlights = !!(d.highlights && d.highlights.length && highlightsEl);
+            summaryEl.textContent = hasHighlights ? '' : [d.summary, d.hint].filter(Boolean).join(' · ');
+            if (highlightsEl) {
+                highlightsEl.innerHTML = hasHighlights ? repHighlightsHtml(d) : '';
+                highlightsEl.classList.toggle('hidden', !hasHighlights);
+            }
             // SISDEL: aviso del reporte (p. ej. que en el periodo solo hay cuotas y cargos) y por que la tabla sale vacia
             const noticeEl = document.getElementById('rep-notice');
             const noticeText = document.getElementById('rep-notice-text');
@@ -5148,7 +5188,22 @@
             return {
                 title: 'Tabla general',
                 summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total con mora',
-                hint: 'rojo: debe · verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') + ' · amarillo: aún no vence · gris: sin cuota · tocá un residente para ver su estado de cuenta',
+                // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); el
+                // resumen de arriba sigue yendo al PDF, Excel, impresion y WhatsApp
+                highlights: [
+                    { tone: 'owed', value: String(map.late), label: map.late === 1 ? 'residente en mora' : 'residentes en mora' },
+                    { tone: 'pending', value: String(map.pending), label: 'con cuota por vencer' },
+                    { tone: 'paid', value: String(map.upToDate), label: 'al día' },
+                    { tone: 'total', value: formatMoney(sum('totalOwed')), label: 'total con mora' }
+                ],
+                highlightsNote: 'Al ' + today + ' · ordenado de mayor a menor total con mora',
+                legend: [
+                    { tone: 'owed', text: 'Rojo: debe (ya venció)' },
+                    { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') },
+                    { tone: 'pending', text: 'Amarillo: debe, aún no vence' },
+                    { tone: 'none', text: 'Gris: sin cuota' }
+                ],
+                hint: 'Toque un residente para ver su estado de cuenta',
                 emptyText: 'No hay residentes.',
                 headers: ['Residente'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total con mora']),
                 rows: rows,

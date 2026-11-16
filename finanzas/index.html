@@ -647,7 +647,7 @@
                                 <li><button type="button" onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="En qué se gasta el dinero del condominio en el período que elija."><span>Gastos por período y categoría</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('month-balance')" id="rep-tab-month-balance" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año."><span>Ingresos, egresos y saldo por mes</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Mapa de pagos por residente (años y meses)</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
@@ -3666,7 +3666,7 @@
             'expense-cat': 'Gastos por período y categoría',
             'month-balance': 'Ingresos, egresos y saldo por mes',
             morosos: 'Morosos y meses adeudados',
-            'pay-map': 'Mapa de pagos por residente',
+            'pay-map': 'Tabla general',
             'account-statement': 'Estado de cuenta general'
         };
 
@@ -4417,7 +4417,7 @@
             };
         }
 
-        // ─── SISDEL: Reporte 6: Mapa de pagos por residente ──────────────
+        // ─── SISDEL: Reporte 6: Tabla general (mapa de pagos por residente) ─
         // Una fila por residente y una columna por cada ano anterior y cada mes del ano en curso: rojo lo que debe (ya
         // vencido), verde lo pagado, amarillo lo que aun no vence y gris si no tuvo cuota. Arriba los que mas meses llevan
         // en mora; al final los que estan al dia. Los pagos cubren primero lo mas antiguo (como el reporte de Morosos).
@@ -4467,7 +4467,7 @@
             const totalLateMonths = map.rows.reduce(function (sum, x) { return sum + x.lateMonths; }, 0);
             const totalLate = map.rows.reduce(function (sum, x) { return sum + x.lateTotal; }, 0);
             return {
-                title: 'Mapa de pagos por residente',
+                title: 'Tabla general',
                 summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today,
                 hint: 'rojo: debe · verde: pagado · amarillo: aún no vence · gris: sin cuota · tocá un residente para ver su estado de cuenta',
                 emptyText: 'No hay residentes.',

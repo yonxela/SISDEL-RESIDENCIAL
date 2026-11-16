@@ -126,7 +126,7 @@ equal('una celda con HTML llega al Excel como texto limpio', R.exportModel(html,
 equal('sin totales no hay cifras de resumen', R.exportModel(html, {}).kpis, []);
 equal('el aviso del reporte va al Excel y a WhatsApp junto al resumen', R.exportModel({ ...report, notice: 'No hay pagos ni gastos registrados en este período.' }, { at }).subtitle, '2026-01-01 → 2026-03-31 · saldo = ingresos menos egresos · No hay pagos ni gastos registrados en este período.');
 
-console.log('\nMapa de pagos por residente');
+console.log('\nTabla general (mapa de pagos por residente)');
 const mfee = (id, resiId, period, amount) => ({ id, type: 'charge', kind: 'fee', period, resiId, amount, date: `${period}-01T15:00:00.000Z` });
 const mpay = (id, resiId, date, amount) => ({ id, type: 'income', resiId, amount, date });
 // Vence el ultimo dia del mes mas 5 dias (como La Perla)
@@ -166,9 +166,9 @@ equal('con muchos anos, los mas viejos se juntan en una columna', old.columns.sl
 equal('y lo de esos anos se ve ahi', old.rows[0].cells.older.status, 'owed');
 equal('un residente sin movimientos sale al dia y en gris', R.paymentMap([{ id: 'z' }], [], { today: '2026-11-15', dueOf: due }).rows[0].cells['2026-11'].status, 'none');
 
-console.log('\nMapa de pagos en Excel y WhatsApp');
+console.log('\nTabla general en Excel y WhatsApp');
 const mapReport = {
-    title: 'Mapa de pagos por residente', summary: '1 en mora', headers: ['Residente', 'Oct 2026', 'Nov 2026', 'Meses en mora', 'En mora desde', 'Total en mora'],
+    title: 'Tabla general', summary: '1 en mora', headers: ['Residente', 'Oct 2026', 'Nov 2026', 'Meses en mora', 'En mora desde', 'Total en mora'],
     rows: [['A001 · Uno', 'Q300.00', 'Q300.00', '1', 'Oct 2026', 'Q300.00'], ['A002 · Dos', 'Pagado', '—', '0', '—', 'Q0.00']],
     cellStatus: [[null, 'owed', 'pending'], [null, 'paid', 'none']],
     totals: ['TOTAL EN MORA', 'Q300.00', '', '1', '', 'Q300.00'], numericCols: [3, 5],

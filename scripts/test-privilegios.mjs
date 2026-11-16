@@ -333,6 +333,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const oikosList = [...oikosCatalog.matchAll(/id="rep-tab-([a-z-]+)"/g)].map((m) => m[1]);
     equal('la lista de Reportes de OIKOS es la misma del panel Reportes', oikosList, ids);
     yes('el reporte financiero de la lista abre su ventana', /onclick="openReportModal\(\)" id="rep-tab-resumen"/.test(oikos));
+    yes('la barra de Contabilidad ya no tiene el boton "Reporte" (el reporte financiero se abre desde Reportes) y conserva PDF, Cargo, Ingreso y Egreso', !/id="lbl-btn-report"/.test(oikos) && !/button onclick="openReportModal\(\)"/.test(oikos) && ['exportToPDF()', "openModal('modal-bulk-charge')", "openModal('modal-income')", "openModal('modal-expense')"].every((a) => oikos.includes(`onclick="${a}"`)) && !/#view-accounting button\[onclick="openReportModal\(\)"\]/.test(read('finanzas-bloqueo.js')));
     // Cada reporte ofrece Imprimir, PDF, Excel, WhatsApp y su grafica de barras
     const repDetail = oikos.slice(oikos.indexOf('id="rep-detail"'), oikos.indexOf('id="rep-table-wrap"'));
     yes('la pantalla de Reportes trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleReportChart()', 'printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].every((f) => repDetail.includes(`onclick="${f}"`)));

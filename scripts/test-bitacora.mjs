@@ -110,7 +110,7 @@ console.log('\nConexiones');
     const index = read('functions/src/bitacora/index.js');
     const main = read('functions/index.js');
     const rules = read('firestore.rules');
-    equal('colecciones con rastro', Object.keys(B.AUDITED).sort(), ['finanzas_config', 'finanzas_movimientos', 'finanzas_residentes', 'usuarios', 'vehiculos']);
+    equal('colecciones con rastro', Object.keys(B.AUDITED).sort(), ['finanzas_bancos', 'finanzas_bancos_movs', 'finanzas_config', 'finanzas_movimientos', 'finanzas_residentes', 'usuarios', 'vehiculos']);
     yes('cada una tiene su disparador publicado', ['auditUsers', 'auditVehicles', 'auditFinanceResidents', 'auditFinanceMovements', 'auditFinanceSettings'].every((name) => new RegExp(`\\b${name}\\b`).test(main) && new RegExp(`${name}: audit\\(`).test(index)));
     yes('quien hizo el cambio sale del evento del servidor, no de un dato del navegador', /onDocumentWrittenWithAuthContext/.test(index) && /authType: event\.authType, authId: event\.authId/.test(index));
     yes('la hora es la del servidor', /at: FieldValue\.serverTimestamp\(\)/.test(index));

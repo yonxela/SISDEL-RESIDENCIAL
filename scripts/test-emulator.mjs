@@ -393,6 +393,62 @@ async function run() {
     await denied('admin de otro condominio no escribe', () => setDoc(finRef('finanzas_movimientos', 'ajeno')(luciaFin), { id: 'ajeno', type: 'income', amount: 1 }));
     await allowed('admin de otro condominio usa el suyo', () => setDoc(doc(luciaFin.db, `condominios/${B}/finanzas_config/oikos_settings`), { currency: 'GTQ' }));
 
+    // ───────── Bancos: cuentas, movimientos hechos a mano y cuenta favorita ─────────
+    console.log('\nBancos');
+    const nowIso = () => new Date().toISOString();
+    const bankAcc = (id, extra) => ({ id, bankName: 'Banco Industrial', accountNumber: '123-456', accountType: 'monetaria', currency: 'GTQ', openingBalance: 1500, openedAt: nowIso(), active: true, created_at: nowIso(), updated_at: nowIso(), created_by: 'u-admin', ...(extra || {}) });
+    const bankMov = (id, extra) => ({ id, accountId: 'banco-1', direction: 'in', amount: 250, type: 'deposito', concept: 'Deposito de caja', date: nowIso(), created_at: nowIso(), updated_at: nowIso(), created_by: 'u-admin', ...(extra || {}) });
+    // El id del administrador en su sesion (las reglas piden que la cuenta y el movimiento queden a su nombre)
+    const adminUid = admin.auth.currentUser.uid;
+    const accA = (id, extra) => bankAcc(id, { created_by: adminUid, ...(extra || {}) });
+    const movA = (id, extra) => bankMov(id, { created_by: adminUid, ...(extra || {}) });
+    await allowed('admin abre una cuenta bancaria (la fecha de apertura es la de ahora)', () => setDoc(finRef('finanzas_bancos', 'banco-1')(admin), accA('banco-1')));
+    await denied('nadie abre una cuenta con fecha de apertura de antes (meteria pagos viejos)', () => setDoc(finRef('finanzas_bancos', 'banco-viejo')(admin), accA('banco-viejo', { openedAt: new Date(Date.now() - 86400000).toISOString() })));
+    await denied('una cuenta queda a nombre de quien la abre', () => setDoc(finRef('finanzas_bancos', 'banco-otro')(admin), accA('banco-otro', { created_by: 'u-otro' })));
+    await denied('una cuenta sin banco es rechazada', () => setDoc(finRef('finanzas_bancos', 'banco-sin')(admin), accA('banco-sin', { bankName: '' })));
+    await denied('una cuenta no trae campos de mas (p. ej. un saldo guardado)', () => setDoc(finRef('finanzas_bancos', 'banco-saldo')(admin), accA('banco-saldo', { balance: 99999 })));
+    await allowed('admin abre una segunda cuenta', () => setDoc(finRef('finanzas_bancos', 'banco-2')(admin), accA('banco-2', { bankName: 'Banrural', accountNumber: '999' })));
+    await allowed('admin cambia el nombre de la cuenta', () => updateDoc(finRef('finanzas_bancos', 'banco-1')(admin), { accountName: 'Cuotas', updated_at: nowIso() }));
+    await denied('el saldo de apertura no se cambia', () => updateDoc(finRef('finanzas_bancos', 'banco-1')(admin), { openingBalance: 999999, updated_at: nowIso() }));
+    await denied('la fecha de apertura no se cambia', () => updateDoc(finRef('finanzas_bancos', 'banco-1')(admin), { openedAt: '2020-01-01T00:00:00.000Z', updated_at: nowIso() }));
+    await denied('una cuenta no se borra', () => deleteDoc(finRef('finanzas_bancos', 'banco-2')(admin)));
+    await allowed('auditor lee las cuentas', () => getDocs(collection(auditor.db, `condominios/${A}/finanzas_bancos`)));
+    await denied('auditor no abre cuentas', () => setDoc(finRef('finanzas_bancos', 'banco-aud')(auditor), bankAcc('banco-aud')));
+    await denied('guardia no lee los bancos', () => getDocs(collection(guard.db, `condominios/${A}/finanzas_bancos`)));
+    await denied('admin de otro condominio no lee los bancos', () => getDocs(collection(luciaFin.db, `condominios/${A}/finanzas_bancos`)));
+    await allowed('admin registra un deposito', () => setDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin), movA('mov-1')));
+    await denied('un movimiento de monto cero es rechazado', () => setDoc(finRef('finanzas_bancos_movs', 'mov-cero')(admin), movA('mov-cero', { amount: 0 })));
+    await denied('un movimiento de una cuenta que no existe es rechazado', () => setDoc(finRef('finanzas_bancos_movs', 'mov-sin')(admin), movA('mov-sin', { accountId: 'no-existe' })));
+    await denied('un movimiento no nace anulado ni con campos de mas', () => setDoc(finRef('finanzas_bancos_movs', 'mov-raro')(admin), movA('mov-raro', { deleted: true })));
+    await denied('un movimiento no se edita', () => updateDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin), { amount: 9999, updated_at: nowIso() }));
+    await denied('anular pide el motivo', () => updateDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin), { deleted: true, deleted_at: nowIso(), deleted_by: adminUid, updated_at: nowIso() }));
+    await allowed('admin anula un movimiento con su motivo', () => updateDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin), { deleted: true, deleted_at: nowIso(), deleted_reason: 'Duplicado', deleted_by: adminUid, deleted_by_name: 'Admin', updated_at: nowIso() }));
+    await denied('una anulacion no se devuelve', () => updateDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin), { deleted: false, updated_at: nowIso() }));
+    await denied('un movimiento no se borra', () => deleteDoc(finRef('finanzas_bancos_movs', 'mov-1')(admin)));
+    await denied('auditor no registra movimientos', () => setDoc(finRef('finanzas_bancos_movs', 'mov-aud')(auditor), bankMov('mov-aud')));
+    await denied('la cuenta favorita no se escribe desde el navegador', () => setDoc(finRef('finanzas_config', 'bancos')(admin), { favorites: [{ accountId: 'banco-2', from: nowIso() }] }));
+    const setFavorite = (c, data) => httpsCallable(c.functions, 'setFavoriteBank')(data);
+    await denied('auditor no cambia la cuenta favorita', () => setFavorite(auditor, { accountId: 'banco-2', code: 'VS104' }));
+    await denied('admin con un codigo equivocado no cambia la favorita', () => setFavorite(admin, { accountId: 'banco-2', code: 'ZZ999' }));
+    await denied('admin con el codigo de otra persona no cambia la favorita', () => setFavorite(admin, { accountId: 'banco-2', code: 'VA101' }));
+    const favResult = await setFavorite(admin, { accountId: 'banco-2', code: 'vf100' });
+    equal('admin con su codigo cambia la favorita: queda la primera (desde su apertura) y la nueva (desde ahora)', favResult.data.favorites.map((f) => [f.accountId, f.by === 'apertura' ? 'apertura' : (f.by === adminUid ? 'admin' : f.by)]), [['banco-1', 'apertura'], ['banco-2', 'admin']]);
+    const refusedWith = async (name, fn, code) => {
+        try { await fn(); record(name, false, '-> se esperaba rechazado y fue permitido'); }
+        catch (e) { record(name, String(e.code || '').includes(code), `-> error inesperado: ${e.code || e.message}`); }
+    };
+    await refusedWith('la misma cuenta no se vuelve a hacer favorita', () => setFavorite(admin, { accountId: 'banco-2', code: 'VF100' }), 'failed-precondition');
+    // Su sesion es de su condominio: la cuenta de otro condominio para el no existe
+    await refusedWith('el admin de otro condominio no cambia la favorita de este', () => setFavorite(luciaFin, { accountId: 'banco-1', code: 'LL200' }), 'not-found');
+    await allowed('auditor lee el historial de la favorita', () => getDoc(finRef('finanzas_config', 'bancos')(auditor)));
+    await waitFor('la bitacora anota la cuenta abierta y la anulacion', async () => {
+        const snap = await getDocs(collection(admin.db, `condominios/${A}/bitacora`));
+        const entries = snap.docs.map((d) => d.data());
+        return entries.some((e) => e.collection === 'finanzas_bancos' && e.docId === 'banco-1' && e.action === 'crear')
+            && entries.some((e) => e.collection === 'finanzas_bancos_movs' && e.docId === 'mov-1' && e.action === 'anular')
+            && entries.some((e) => e.collection === 'finanzas_config' && e.docId === 'bancos');
+    });
+
     // ───────── Mora automatica: el Sistema Financiero decide el estado de pago ─────────
     console.log('\nMora automatica');
     const condoA = () => getDoc(doc(admin.db, `condominios/${A}`)).then((d) => d.data());

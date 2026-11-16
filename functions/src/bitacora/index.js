@@ -76,5 +76,7 @@ module.exports = {
     auditFinanceResidents: audit('finanzas_residentes'),
     auditFinanceMovements: audit('finanzas_movimientos'),
     auditFinanceSettings: audit('finanzas_config'),
+    auditBankAccounts: audit('finanzas_bancos'),
+    auditBankMovements: audit('finanzas_bancos_movs'),
     record, AUDITED
 };

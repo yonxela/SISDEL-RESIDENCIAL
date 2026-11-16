@@ -98,11 +98,12 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115g"></script>
-    <script src="sisdel-core.js?v=20261115g"></script>
+    <script src="privilegios.js?v=20261116a"></script>
+    <script src="sisdel-core.js?v=20261116a"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261115n"></script>
-    <script src="finanzas-bloqueo.js?v=20261115n"></script>
+    <script src="finanzas-sync.js?v=20261116a"></script>
+    <script src="finanzas-bloqueo.js?v=20261116a"></script>
+    <script src="finanzas-bancos.js?v=20261116a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
@@ -222,6 +223,17 @@
                     event.stopPropagation();
                     leave(() => { window.location.href = home; });
                 }, true);
+            }
+
+            // Bancos (finanzas-bancos.js): cuentas, movimientos a mano y cuenta favorita, en tiempo real. OIKOS los lee desde su
+            // iframe (window.parent.sisdelBancos). Solo si el usuario puede verlos; las reglas protegen cada escritura.
+            window.sisdelBancos = null;
+            if (SISDEL.can('finanzas.bancos_ver') && typeof SisdelFinanzasBancos !== 'undefined') {
+                try {
+                    window.sisdelBancos = SisdelFinanzasBancos.start(condoId, { userId: session.userId, userName: session.userName, role: session.role });
+                } catch (error) {
+                    console.error('Sistema Financiero: no se pudieron abrir los bancos', error);
+                }
             }
 
             const banner = document.getElementById('remoteBanner');

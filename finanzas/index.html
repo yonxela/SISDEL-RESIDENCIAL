@@ -22,6 +22,8 @@
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
     <script src="./sisdel-reportes.js?v=20261115d"></script>
+    <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
+    <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
@@ -455,6 +457,8 @@
                 <a href="#" onclick="navigate('dashboard')" id="nav-dashboard" class="nav-item flex items-center space-x-3 px-3 py-2.5 bg-blue-600/10 text-blue-400 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full" id="indicator-dashboard"></div><i class="fas fa-chart-pie w-5 text-center"></i><span class="font-medium" id="lbl-nav-dash">Dashboard</span></a>
                 <a href="#" onclick="navigate('residents')" id="nav-residents" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-residents"></div><i class="fas fa-users w-5 text-center"></i><span class="font-medium" id="lbl-nav-res">Residentes</span></a>
                 <a href="#" onclick="navigate('accounting')" id="nav-accounting" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-accounting"></div><i class="fas fa-wallet w-5 text-center"></i><span class="font-medium" id="lbl-nav-acc">Contabilidad</span></a>
+                <!-- SISDEL: Bancos (finanzas-bancos.js + finanzas/sisdel-bancos.js); se muestra solo si el usuario puede verlos -->
+                <a href="#" onclick="navigate('banks')" id="nav-banks" class="nav-item hidden flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-banks"></div><i class="fas fa-university w-5 text-center"></i><span class="font-medium">Bancos</span></a>
                 <a href="#" onclick="navigate('reports')" id="nav-reports" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-reports"></div><i class="fas fa-chart-line w-5 text-center"></i><span class="font-medium" id="lbl-nav-rep">Reportes</span></a>
                 <a href="#" onclick="navigate('settings')" id="nav-settings" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-settings"></div><i class="fas fa-cog w-5 text-center"></i><span class="font-medium" id="lbl-nav-set">Configuración</span></a>
             </nav>
@@ -485,6 +489,8 @@
                         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6"><p class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase" id="lbl-card-inc">Total Ingresos</p><h3 class="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-2" id="dash-income">$0.00</h3></div>
                         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6"><p class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase" id="lbl-card-exp">Total Gastos</p><h3 class="text-3xl font-bold text-rose-600 dark:text-rose-400 mt-2" id="dash-expenses">$0.00</h3></div>
                     </div>
+                    <!-- SISDEL: saldo en bancos (se calcula: apertura + ingresos - egresos de cada cuenta) -->
+                    <div id="dash-bank" class="hidden cursor-pointer" onclick="navigate('banks')"></div>
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
                         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4" id="lbl-chart-title">Tendencia (Últimos 3 Meses)</h3>
                         <div class="h-64 relative w-full"><canvas id="trendChart"></canvas></div>
@@ -634,6 +640,64 @@
                         </div>
                         <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700"><h4 class="font-semibold text-rose-600 mb-4" id="lbl-set-data">Gestión de Datos</h4><div class="flex space-x-4"><button onclick="exportCSV()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-medium transition" id="btn-export">Exportar CSV</button></div></div>
                         <div class="mt-8 flex justify-end"><button onclick="saveSettings()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow-md" id="btn-save-cfg">Guardar Cambios</button></div>
+                    </div>
+                </div>
+                <!-- SISDEL: VISTA BANCOS. Las cuentas y sus movimientos a mano viven en Firestore (finanzas-bancos.js); los pagos y gastos de
+                     OIKOS no se copian: se leen y entran solos a la cuenta favorita (finanzas/sisdel-bancos.js). El saldo siempre se calcula. -->
+                <div id="view-banks" class="space-y-6 hidden-section fade-in">
+                    <div id="bank-list-pane" class="space-y-6">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <p class="text-sm text-slate-500 dark:text-slate-400 max-w-2xl">Cuentas bancarias del condominio. Los pagos y gastos que se registran entran solos a la cuenta favorita <i class="fas fa-star text-amber-400"></i>; los demás movimientos se registran a mano.</p>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="openBankTransfer()" id="btn-bank-transfer" class="px-4 py-2 rounded-xl text-sm font-semibold border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-exchange-alt mr-2"></i>Transferir entre cuentas</button>
+                                <button type="button" onclick="openBankFavorite()" id="btn-bank-favorite" class="hidden px-4 py-2 rounded-xl text-sm font-semibold border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition"><i class="fas fa-star mr-2"></i>Cambiar favorita</button>
+                                <button type="button" onclick="openBankAccountForm()" id="btn-bank-new" class="px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition"><i class="fas fa-plus mr-2"></i>Abrir cuenta</button>
+                            </div>
+                        </div>
+                        <div id="bank-status" class="hidden text-sm px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-300"></div>
+                        <div id="bank-total"></div>
+                        <div id="bank-cards" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+                    </div>
+                    <div id="bank-detail-pane" class="hidden space-y-6">
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 space-y-4">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <div class="flex items-start gap-3">
+                                    <button type="button" onclick="showBankList()" class="px-3 py-2 rounded-lg text-sm font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 transition"><i class="fas fa-arrow-left mr-1.5"></i>Volver a las cuentas</button>
+                                    <div><h3 id="bank-detail-title" class="text-lg font-bold dark:text-white"></h3><p id="bank-detail-sub" class="text-xs text-slate-500 dark:text-slate-400"></p></div>
+                                </div>
+                                <div class="text-right"><p class="text-xs uppercase font-semibold text-slate-500 dark:text-slate-400">Saldo actual</p><p id="bank-detail-balance" class="text-2xl font-black font-mono"></p></div>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="openBankMovement()" id="btn-bank-move" class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition"><i class="fas fa-plus mr-1.5"></i>Registrar movimiento</button>
+                                <button type="button" onclick="openBankAccountForm(bankCurrentId)" id="btn-bank-edit" class="px-4 py-2 rounded-lg text-sm font-semibold border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-edit mr-1.5"></i>Editar cuenta</button>
+                            </div>
+                            <div class="flex flex-wrap items-end gap-3 border-t border-slate-100 dark:border-slate-700 pt-4">
+                                <div><label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Desde</label><input type="date" id="bank-from" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm"></div>
+                                <div><label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Hasta</label><input type="date" id="bank-to" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm"></div>
+                                <div class="relative flex-1 min-w-[12rem] max-w-xs"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="bank-search" autocomplete="off" oninput="renderBankDetail()" class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm" placeholder="Buscar concepto o referencia..."></div>
+                                <button type="button" onclick="renderBankDetail()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-sync-alt mr-1.5"></i>Actualizar</button>
+                                <div class="ml-auto flex gap-2 flex-wrap">
+                                    <button type="button" onclick="toggleBankChart()" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-chart-bar mr-1.5"></i><span id="bank-chart-label">Ver gráfica</span></button>
+                                    <button type="button" onclick="bankExport('print')" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-1.5"></i>Imprimir</button>
+                                    <button type="button" onclick="bankExport('pdf')" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-file-pdf mr-1.5"></i>PDF</button>
+                                    <button type="button" onclick="bankExport('excel')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-file-excel mr-1.5"></i>Excel</button>
+                                    <button type="button" onclick="bankExport('whatsapp')" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition"><i class="fab fa-whatsapp mr-1.5"></i>WhatsApp</button>
+                                </div>
+                            </div>
+                            <div id="bank-summary" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+                        </div>
+                        <div id="bank-chart-wrap" class="hidden bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
+                            <h4 class="text-base font-semibold dark:text-white mb-3">Ingresos y egresos por mes</h4>
+                            <div class="h-72 relative w-full"><canvas id="bank-chart"></canvas></div>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-50 dark:bg-slate-700/50 text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-300"><tr><th class="px-4 py-3 text-left">Fecha</th><th class="px-4 py-3 text-left">Tipo</th><th class="px-4 py-3 text-left">Concepto</th><th class="px-4 py-3 text-left">Referencia</th><th class="px-4 py-3 text-right">Ingresos</th><th class="px-4 py-3 text-right">Egresos</th><th class="px-4 py-3 text-right">Saldo</th><th class="px-2 py-3"></th></tr></thead>
+                                    <tbody id="bank-rows" class="divide-y divide-slate-200 dark:divide-slate-600 text-slate-700 dark:text-slate-200"></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- VIEW 5: REPORTES -->
@@ -796,6 +860,92 @@
             </details>
             <div class="overflow-y-auto flex-1 pr-2 space-y-3 min-h-[120px]" id="reminders-list"></div>
             <div class="mt-6 border-t border-slate-100 dark:border-slate-700 pt-4 flex justify-end"><button type="button" onclick="closeModal('modal-reminders')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 dark:text-white text-slate-700 rounded-lg font-medium transition" id="btn-rem-close">Cerrar</button></div>
+        </div>
+    </div>
+    <!-- SISDEL: ventanas de Bancos -->
+    <div id="modal-bank-account" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg p-8 max-h-[90vh] overflow-y-auto border-t-4 border-blue-500">
+            <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white" id="bank-account-title"><i class="fas fa-university text-blue-500 mr-2"></i>Abrir cuenta bancaria</h3><button type="button" onclick="closeModal('modal-bank-account')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <form onsubmit="saveBankAccount(event)" class="space-y-3">
+                <input type="hidden" id="bank-acc-id">
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-bank">Banco *</label><input id="bank-acc-bank" list="bank-names" required maxlength="80" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500" placeholder="Ej. Banco Industrial"><datalist id="bank-names"><option value="Banco Industrial"><option value="Banrural"><option value="BAM"><option value="G&amp;T Continental"><option value="BAC Credomatic"><option value="Bantrab"><option value="Banco Promerica"><option value="Banco Internacional"><option value="Ficohsa"><option value="Banco de América Central"></datalist></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-number">Número de cuenta</label><input id="bank-acc-number" maxlength="40" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-name">Nombre o alias</label><input id="bank-acc-name" maxlength="80" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500" placeholder="Ej. Cuotas de mantenimiento"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-type">Tipo</label><select id="bank-acc-type" onchange="document.getElementById('bank-acc-custom-wrap').classList.toggle('hidden', this.value !== 'otro')" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-currency">Moneda</label><select id="bank-acc-currency" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"><option value="GTQ">Quetzales (Q)</option><option value="USD">Dólares (US$)</option><option value="MXN">Pesos mexicanos</option><option value="EUR">Euros</option></select></div>
+                </div>
+                <div id="bank-acc-custom-wrap" class="hidden"><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-custom">Nombre del tipo</label><input id="bank-acc-custom" maxlength="40" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                <div id="bank-acc-opening-wrap"><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-opening">Saldo de apertura (el que tiene hoy en el banco)</label><input id="bank-acc-opening" type="number" step="0.01" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500" value="0"></div>
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-acc-notes">Observaciones</label><input id="bank-acc-notes" maxlength="300" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                <label id="bank-acc-active-wrap" class="hidden flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"><input type="checkbox" id="bank-acc-active"> Cuenta activa (una cuenta desactivada no recibe movimientos)</label>
+                <p id="bank-acc-help" class="text-xs text-slate-500 dark:text-slate-400"></p>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal('modal-bank-account')" class="px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white">Cancelar</button><button type="submit" id="bank-acc-save" class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white">Guardar</button></div>
+            </form>
+        </div>
+    </div>
+    <div id="modal-bank-move" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg p-8 max-h-[90vh] overflow-y-auto border-t-4 border-emerald-500">
+            <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white"><i class="fas fa-money-check-alt text-emerald-500 mr-2"></i>Movimiento bancario</h3><button type="button" onclick="closeModal('modal-bank-move')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <form onsubmit="saveBankMovement(event)" class="space-y-3">
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-account">Cuenta</label><select id="bank-move-account" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-type">Tipo</label><select id="bank-move-type" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-date">Fecha</label><input id="bank-move-date" type="date" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-amount">Monto</label><input id="bank-move-amount" type="number" step="0.01" min="0.01" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-ref">Referencia (boleta, cheque)</label><input id="bank-move-ref" maxlength="60" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                </div>
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-move-concept">Concepto</label><input id="bank-move-concept" required maxlength="200" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Los pagos y gastos de OIKOS no se registran aquí: entran solos a la cuenta favorita.</p>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal('modal-bank-move')" class="px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white">Cancelar</button><button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white">Registrar</button></div>
+            </form>
+        </div>
+    </div>
+    <div id="modal-bank-transfer" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg p-8 max-h-[90vh] overflow-y-auto border-t-4 border-indigo-500">
+            <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white"><i class="fas fa-exchange-alt text-indigo-500 mr-2"></i>Transferir entre cuentas</h3><button type="button" onclick="closeModal('modal-bank-transfer')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <form onsubmit="saveBankTransfer(event)" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-from">Sale de</label><select id="bank-tr-from" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-to">Entra a</label><select id="bank-tr-to" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-amount">Monto</label><input id="bank-tr-amount" type="number" step="0.01" min="0.01" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-date">Fecha</label><input id="bank-tr-date" type="date" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-ref">Referencia</label><input id="bank-tr-ref" maxlength="60" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                    <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-tr-concept">Concepto</label><input id="bank-tr-concept" maxlength="200" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500" placeholder="Transferencia entre cuentas"></div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal('modal-bank-transfer')" class="px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white">Cancelar</button><button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white">Transferir</button></div>
+            </form>
+        </div>
+    </div>
+    <div id="modal-bank-favorite" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-amber-400">
+            <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white"><i class="fas fa-star text-amber-400 mr-2"></i>Cambiar la cuenta favorita</h3><button type="button" onclick="closeModal('modal-bank-favorite')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <form onsubmit="saveBankFavorite(event)" class="space-y-3">
+                <p class="text-sm text-slate-600 dark:text-slate-300">Desde ahora, los pagos y gastos que se registren entran a la cuenta que elija. Lo anterior se queda en la cuenta donde entró. Solo el administrador puede hacerlo, con su código de acceso.</p>
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-fav-account">Nueva cuenta favorita</label><select id="bank-fav-account" required class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></select></div>
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-fav-code">Su código de acceso de administrador</label><input id="bank-fav-code" type="password" autocomplete="off" required maxlength="64" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal('modal-bank-favorite')" class="px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white">Cancelar</button><button type="submit" id="bank-fav-save" class="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white">Cambiar favorita</button></div>
+            </form>
+        </div>
+    </div>
+    <div id="modal-bank-annul" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-rose-500">
+            <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white"><i class="fas fa-ban text-rose-500 mr-2"></i>Anular movimiento</h3><button type="button" onclick="closeModal('modal-bank-annul')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <form onsubmit="saveBankAnnul(event)" class="space-y-3">
+                <input type="hidden" id="bank-annul-id">
+                <p id="bank-annul-info" class="text-sm text-slate-600 dark:text-slate-300"></p>
+                <div><label class="block text-xs font-bold uppercase text-slate-500 dark:text-slate-400 mb-1" for="bank-annul-reason">Motivo</label><input id="bank-annul-reason" required maxlength="200" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500"></div>
+                <p class="text-xs text-slate-500 dark:text-slate-400">El movimiento no se borra: queda anulado con su motivo, quién y cuándo.</p>
+                <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal('modal-bank-annul')" class="px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white">Cancelar</button><button type="submit" class="px-4 py-2 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white">Anular</button></div>
+            </form>
         </div>
     </div>
     <div id="modal-report" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
@@ -2181,7 +2331,7 @@
 
         // ========== NAVIGATION ==========
         function navigate(v) {
-            ['dashboard', 'residents', 'accounting', 'reports', 'settings'].forEach(x => {
+            ['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'].forEach(x => {
                 document.getElementById(`view-${x}`).classList.add('hidden-section');
                 document.getElementById(`indicator-${x}`).classList.add('hidden', 'opacity-0');
                 document.getElementById(`nav-${x}`).className = 'nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group';
@@ -2190,14 +2340,385 @@
             document.getElementById(`indicator-${v}`).classList.remove('hidden', 'opacity-0');
             document.getElementById(`nav-${v}`).className = 'nav-item flex items-center space-x-3 px-3 py-2.5 bg-blue-600/10 text-blue-400 rounded-lg transition relative group';
             const s = Store.get('settings');
-            const titles = { dashboard: 'Dashboard', residents: 'Residentes', accounting: 'Contabilidad', reports: 'Reportes', settings: 'Configuración' };
+            // SISDEL: el menu Bancos solo aparece si hay bancos (SISDEL con el privilegio de verlos)
+            if (!sisdelBanks()) document.getElementById('nav-banks').classList.add('hidden');
+            const titles = { dashboard: 'Dashboard', residents: 'Residentes', accounting: 'Contabilidad', banks: 'Bancos', reports: 'Reportes', settings: 'Configuración' };
             document.getElementById('page-title').innerText = titles[v];
             currentView = v;
-            if (v === 'dashboard') renderDashboard();
+            if (v === 'dashboard') { renderDashboard(); renderBankDashboard(); }
+            if (v === 'banks') initBanks();
             if (v === 'residents') renderResidents();
             if (v === 'accounting') renderAccounting();
             if (v === 'reports') initReports();
             if (v === 'settings') renderSettings();
+        }
+
+        // ========== SISDEL: BANCOS ==========
+        // Datos: window.parent.sisdelBancos (finanzas-bancos.js, en finanzas.html). Calculos: SisdelBancos (finanzas/sisdel-bancos.js).
+        // Los pagos y gastos de OIKOS no se copian: se leen de Store y entran a la cuenta favorita si se registraron despues de
+        // abrirla. El saldo siempre se calcula. Nada se borra: un movimiento a mano se anula con su motivo.
+        function sisdelBanks() {
+            try { return window.parent && window.parent !== window && window.parent.sisdelBancos && window.parent.sisdelBancos.available ? window.parent.sisdelBancos : null; } catch (e) { return null; }
+        }
+        // Con var y function (no let/const): OIKOS abre el tablero al arrancar, antes de llegar a estas lineas, y la tarjeta
+        // de bancos ya las usa (con let, el script se detendria ahi)
+        var bankCurrentId = null;
+        var bankChartVisible = false;
+        var bankChart = null;
+        var bankUnsubscribe = null;
+        function bankEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function bankMoney(amount, currency) {
+            const sym = currSymbols[currency] || (currency ? currency + ' ' : (currSymbols[(Store.get('settings') || {}).currency] || ''));
+            const value = parseFloat(amount) || 0;
+            return `${value < 0 ? '-' : ''}${sym}${Math.abs(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
+        }
+        function bankData() {
+            const api = sisdelBanks();
+            const st = api ? api.state : { accounts: [], movements: [], favorites: [] };
+            return { api, accounts: SisdelBancos.byOpening(st.accounts), favorites: st.favorites, manual: st.movements, txs: Store.get('transactions') || [], ready: !!(api && api.state.ready), error: api ? api.state.error : null };
+        }
+        function bankResidentName(id) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(id));
+            return r ? [r.unit, r.name].filter(Boolean).join(' - ') : '';
+        }
+        function bankDayInputToIso(day) {
+            const [y, m, d] = String(day || '').split('-').map(Number);
+            return y ? new Date(y, (m || 1) - 1, d || 1, 12, 0, 0).toISOString() : new Date().toISOString();
+        }
+        // Se suscribe una sola vez a los cambios de bancos (otro equipo, el servidor): vuelve a pintar lo que se ve
+        function ensureBankSubscription() {
+            const api = sisdelBanks();
+            if (!api || bankUnsubscribe) return;
+            // Se marca antes: subscribe avisa de inmediato y ese aviso vuelve a pasar por aqui
+            bankUnsubscribe = function () {};
+            bankUnsubscribe = api.subscribe(() => refreshBanks());
+        }
+        function refreshBanks() {
+            if (!sisdelBanks()) return;
+            if (currentView === 'banks') { if (bankCurrentId) renderBankDetail(); else renderBankList(); }
+            if (currentView === 'dashboard') renderBankDashboard();
+        }
+        function initBanks() {
+            ensureBankSubscription();
+            const today = new Date();
+            const from = document.getElementById('bank-from');
+            const to = document.getElementById('bank-to');
+            if (from && !from.value) from.value = `${today.getFullYear()}-01-01`;
+            if (to && !to.value) to.value = localDayKey(today);
+            showBankList();
+        }
+        function showBankList() {
+            bankCurrentId = null;
+            document.getElementById('bank-list-pane').classList.remove('hidden');
+            document.getElementById('bank-detail-pane').classList.add('hidden');
+            renderBankList();
+        }
+        function renderBankList() {
+            const d = bankData();
+            const status = document.getElementById('bank-status');
+            const favBtn = document.getElementById('btn-bank-favorite');
+            if (favBtn) favBtn.classList.toggle('hidden', !(d.api && d.api.isAdmin && d.accounts.filter(a => a.active !== false).length > 1));
+            const statusText = d.error || (!d.ready ? 'Cargando las cuentas...' : '');
+            status.textContent = statusText;
+            status.classList.toggle('hidden', !statusText);
+            const cards = document.getElementById('bank-cards');
+            const totalEl = document.getElementById('bank-total');
+            if (!d.accounts.length) {
+                totalEl.innerHTML = '';
+                cards.innerHTML = d.ready ? '<div class="md:col-span-2 xl:col-span-3 text-center py-12 text-slate-500 dark:text-slate-400"><i class="fas fa-university text-4xl opacity-40 mb-3 block"></i>Todavía no hay cuentas. La primera que abra será la favorita: desde ese momento los pagos y gastos que se registren entran solos a ella.</div>' : '';
+                return;
+            }
+            const balances = SisdelBancos.balances(d.accounts, d.favorites, d.txs, d.manual);
+            const favorite = SisdelBancos.currentFavorite(d.accounts, d.favorites);
+            const byCurrency = new Map();
+            d.accounts.forEach(a => { if (a.active === false) return; byCurrency.set(a.currency, (byCurrency.get(a.currency) || 0) + (balances.get(a.id) || 0)); });
+            totalEl.innerHTML = `<div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 flex flex-wrap items-center justify-between gap-3"><p class="text-sm font-semibold uppercase text-slate-500 dark:text-slate-400">Saldo total en bancos (cuentas activas)</p><p class="text-2xl font-black font-mono text-slate-900 dark:text-white">${[...byCurrency.entries()].map(([c, v]) => bankEsc(bankMoney(v, c))).join(' · ') || '—'}</p></div>`;
+            cards.innerHTML = d.accounts.map(a => {
+                const fav = a.id === favorite;
+                const bal = balances.get(a.id) || 0;
+                return `<button type="button" onclick="openBankAccount(this.dataset.id)" data-id="${bankEsc(a.id)}" class="text-left bg-white dark:bg-slate-800 rounded-2xl shadow-sm border ${fav ? 'border-amber-400 dark:border-amber-500' : 'border-slate-100 dark:border-slate-700'} p-5 hover:shadow-md transition ${a.active === false ? 'opacity-60' : ''}">
+                    <div class="flex items-start justify-between gap-2"><div class="min-w-0"><p class="font-bold text-slate-900 dark:text-white truncate">${bankEsc(a.bankName)}</p><p class="text-xs text-slate-500 dark:text-slate-400 truncate">${bankEsc([a.accountName, a.accountNumber].filter(Boolean).join(' · '))}</p></div>${fav ? '<span class="shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><i class="fas fa-star mr-1"></i>Favorita</span>' : ''}${a.active === false ? '<span class="shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Inactiva</span>' : ''}</div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">${bankEsc(SisdelBancos.accountTypeLabel(a.accountType, a.accountTypeCustom))} · ${bankEsc(a.currency)}</p>
+                    <p class="text-2xl font-black font-mono mt-3 ${bal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">${bankEsc(bankMoney(bal, a.currency))}</p>
+                </button>`;
+            }).join('');
+        }
+        function openBankAccount(id) {
+            bankCurrentId = id;
+            bankChartVisible = false;
+            document.getElementById('bank-chart-wrap').classList.add('hidden');
+            document.getElementById('bank-chart-label').textContent = 'Ver gráfica';
+            const search = document.getElementById('bank-search');
+            if (search) search.value = '';
+            document.getElementById('bank-list-pane').classList.add('hidden');
+            document.getElementById('bank-detail-pane').classList.remove('hidden');
+            renderBankDetail();
+        }
+        // El libro de la cuenta abierta, con el rango y la busqueda de la pantalla
+        function bankLedgerNow() {
+            const d = bankData();
+            const account = d.accounts.find(a => a.id === bankCurrentId);
+            if (!account) return null;
+            const from = document.getElementById('bank-from').value || '';
+            const to = document.getElementById('bank-to').value || '';
+            const book = SisdelBancos.ledger(account, { accounts: d.accounts, favorites: d.favorites, txs: d.txs, manual: d.manual }, { from, to, dayKey: localDayKey, residentName: bankResidentName });
+            const text = (document.getElementById('bank-search')?.value || '').trim();
+            const rows = text ? SisdelBusqueda.filter(book.rows, text, r => [r.concept, r.reference, r.typeLabel]) : book.rows;
+            return { d, account, book, rows, from, to, favorite: SisdelBancos.currentFavorite(d.accounts, d.favorites) === account.id };
+        }
+        function renderBankDetail() {
+            const now = bankLedgerNow();
+            if (!now) { showBankList(); return; }
+            const { account, book, rows } = now;
+            const cur = account.currency;
+            document.getElementById('bank-detail-title').innerHTML = `${bankEsc(account.bankName)}${now.favorite ? ' <span class="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 align-middle"><i class="fas fa-star mr-1"></i>Favorita</span>' : ''}${account.active === false ? ' <span class="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 align-middle">Inactiva</span>' : ''}`;
+            document.getElementById('bank-detail-sub').textContent = [account.accountName, account.accountNumber ? 'Cuenta ' + account.accountNumber : '', SisdelBancos.accountTypeLabel(account.accountType, account.accountTypeCustom), cur, 'abierta el ' + new Date(account.openedAt).toLocaleDateString('es-GT')].filter(Boolean).join(' · ');
+            const balEl = document.getElementById('bank-detail-balance');
+            balEl.textContent = bankMoney(book.balance, cur);
+            balEl.className = 'text-2xl font-black font-mono ' + (book.balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400');
+            const box = (label, value, cls) => `<div class="p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40"><p class="text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">${label}</p><p class="text-lg font-bold font-mono ${cls}">${bankEsc(bankMoney(value, cur))}</p></div>`;
+            document.getElementById('bank-summary').innerHTML = box('Saldo anterior', book.previous, 'text-slate-800 dark:text-white') + box('Ingresos', book.totalIn, 'text-emerald-600 dark:text-emerald-400') + box('Egresos', book.totalOut, 'text-rose-600 dark:text-rose-400') + box('Saldo al cierre', book.closing, 'text-indigo-600 dark:text-indigo-300');
+            const canAnnul = !!sisdelBanks();
+            const tbody = document.getElementById('bank-rows');
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-10 text-center text-slate-500 dark:text-slate-400">${(document.getElementById('bank-search')?.value || '').trim() ? 'Ningún movimiento coincide con la búsqueda.' : 'No hay movimientos en este período. Los pagos y gastos que se registren después de abrir la cuenta aparecerán aquí si es la favorita.'}</td></tr>`;
+            } else {
+                tbody.innerHTML = rows.map(r => {
+                    const auto = r.source === 'oikos';
+                    const tag = auto ? `<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${r.in ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'}">Automático</span> ` : '';
+                    const action = auto
+                        ? `<button type="button" onclick="openTxDetail(this.dataset.id)" data-id="${bankEsc(r.id)}" class="text-slate-400 hover:text-blue-600 px-1" title="Ver el detalle del movimiento"><i class="fas fa-eye"></i></button>`
+                        : (canAnnul ? `<button type="button" onclick="openBankAnnul(this.dataset.id)" data-id="${bankEsc(r.id)}" class="text-slate-400 hover:text-rose-600 px-1" title="Anular"><i class="fas fa-ban"></i></button>` : '');
+                    return `<tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30"><td class="px-4 py-2.5 whitespace-nowrap">${bankEsc(new Date(r.date).toLocaleDateString('es-GT'))}</td><td class="px-4 py-2.5 whitespace-nowrap">${tag}${bankEsc(r.typeLabel)}</td><td class="px-4 py-2.5">${bankEsc(r.concept)}</td><td class="px-4 py-2.5 font-mono text-xs">${bankEsc(r.reference || '')}</td><td class="px-4 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400">${r.in ? bankEsc(bankMoney(r.in, cur)) : ''}</td><td class="px-4 py-2.5 text-right font-mono text-rose-600 dark:text-rose-400">${r.out ? bankEsc(bankMoney(r.out, cur)) : ''}</td><td class="px-4 py-2.5 text-right font-mono font-semibold ${r.balance < 0 ? 'text-rose-600 dark:text-rose-400' : ''}">${bankEsc(bankMoney(r.balance, cur))}</td><td class="px-2 py-2.5 text-center">${action}</td></tr>`;
+                }).join('');
+            }
+            if (bankChartVisible) paintBankChart(now);
+        }
+        function toggleBankChart() {
+            bankChartVisible = !bankChartVisible;
+            document.getElementById('bank-chart-wrap').classList.toggle('hidden', !bankChartVisible);
+            document.getElementById('bank-chart-label').textContent = bankChartVisible ? 'Ocultar gráfica' : 'Ver gráfica';
+            if (bankChartVisible) paintBankChart(bankLedgerNow());
+        }
+        function paintBankChart(now) {
+            if (!now || typeof Chart === 'undefined') return;
+            const months = new Map();
+            now.rows.forEach(r => { const k = r.day.slice(0, 7); const m = months.get(k) || { in: 0, out: 0 }; m.in += r.in; m.out += r.out; months.set(k, m); });
+            const keys = [...months.keys()].sort();
+            const names = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            if (bankChart) { try { bankChart.destroy(); } catch (e) {} }
+            const isDark = document.documentElement.classList.contains('dark');
+            const tick = isDark ? '#cbd5e1' : '#475569';
+            const grid = isDark ? 'rgba(148,163,184,0.18)' : 'rgba(15,23,42,0.08)';
+            bankChart = new Chart(document.getElementById('bank-chart'), {
+                type: 'bar',
+                data: { labels: keys.map(k => names[Number(k.slice(5, 7)) - 1] + ' ' + k.slice(0, 4)), datasets: [
+                    { label: 'Ingresos', data: keys.map(k => Math.round(months.get(k).in * 100) / 100), backgroundColor: 'rgba(16,185,129,0.7)', borderColor: '#059669', borderWidth: 1.5, borderRadius: 4 },
+                    { label: 'Egresos', data: keys.map(k => Math.round(months.get(k).out * 100) / 100), backgroundColor: 'rgba(244,63,94,0.7)', borderColor: '#E11D48', borderWidth: 1.5, borderRadius: 4 }
+                ] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick } } }, scales: { x: { ticks: { color: tick }, grid: { color: grid } }, y: { beginAtZero: true, ticks: { color: tick }, grid: { color: grid } } } }
+            });
+        }
+        // Imprimir, PDF, Excel y WhatsApp del libro de la cuenta: los mismos de los reportes (se les pasa este libro)
+        function bankReportData() {
+            const now = bankLedgerNow();
+            if (!now) return null;
+            const { account, book, rows } = now;
+            const cur = account.currency;
+            return {
+                title: 'Banco: ' + [account.bankName, account.accountNumber].filter(Boolean).join(' ') ,
+                summary: [now.from && now.to ? now.from + ' → ' + now.to : '', 'saldo anterior ' + bankMoney(book.previous, cur), 'saldo al cierre ' + bankMoney(book.closing, cur)].filter(Boolean).join(' · '),
+                headers: ['Fecha', 'Tipo', 'Concepto', 'Referencia', 'Ingresos', 'Egresos', 'Saldo'],
+                rows: rows.map(r => [new Date(r.date).toLocaleDateString('es-GT'), (r.source === 'oikos' ? 'Automático · ' : '') + r.typeLabel, bankEsc(r.concept), bankEsc(r.reference || ''), r.in ? bankMoney(r.in, cur) : '', r.out ? bankMoney(r.out, cur) : '', bankMoney(r.balance, cur)]),
+                totals: ['TOTAL', '', '', '', bankMoney(book.totalIn, cur), bankMoney(book.totalOut, cur), bankMoney(book.closing, cur)],
+                numericCols: [4, 5, 6]
+            };
+        }
+        function bankExport(kind) {
+            const data = bankReportData();
+            if (!data) return;
+            const saved = currentReportData;
+            currentReportData = data;
+            try {
+                if (kind === 'print') printCurrentReport();
+                else if (kind === 'pdf') downloadCurrentReportPDF();
+                else if (kind === 'excel') exportCurrentReportExcel();
+                else if (kind === 'whatsapp') shareCurrentReportWhatsApp();
+            } finally {
+                currentReportData = saved;
+            }
+        }
+        // Tarjeta del Dashboard: saldo total en bancos y la cuenta favorita
+        function renderBankDashboard() {
+            const el = document.getElementById('dash-bank');
+            if (!el) return;
+            const d = bankData();
+            // Suscrito siempre que haya bancos: al abrir OIKOS las cuentas todavia no llegaron y la tarjeta aparece cuando llegan
+            if (d.api) ensureBankSubscription();
+            if (!d.api || !d.accounts.length) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+            const balances = SisdelBancos.balances(d.accounts, d.favorites, d.txs, d.manual);
+            const favorite = d.accounts.find(a => a.id === SisdelBancos.currentFavorite(d.accounts, d.favorites));
+            const byCurrency = new Map();
+            d.accounts.forEach(a => { if (a.active === false) return; byCurrency.set(a.currency, (byCurrency.get(a.currency) || 0) + (balances.get(a.id) || 0)); });
+            el.classList.remove('hidden');
+            el.innerHTML = `<div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 flex flex-wrap items-center justify-between gap-3 hover:shadow-md transition"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-300"><i class="fas fa-university"></i></div><div><p class="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase">Saldo en bancos</p><p class="text-xs text-slate-500 dark:text-slate-400">${d.accounts.filter(a => a.active !== false).length} cuenta(s)${favorite ? ' · favorita: ' + bankEsc(favorite.bankName) : ''}</p></div></div><p class="text-2xl font-black font-mono text-slate-900 dark:text-white">${[...byCurrency.entries()].map(([c, v]) => bankEsc(bankMoney(v, c))).join(' · ')}</p></div>`;
+        }
+        // ── Ventanas ──
+        function bankAccountOptions(select, accounts, selected) {
+            select.innerHTML = accounts.map(a => `<option value="${bankEsc(a.id)}" ${a.id === selected ? 'selected' : ''}>${bankEsc(a.bankName + (a.accountNumber ? ' · ' + a.accountNumber : '') + (a.accountName ? ' · ' + a.accountName : ''))}</option>`).join('');
+        }
+        function openBankAccountForm(id) {
+            const d = bankData();
+            const account = id ? d.accounts.find(a => a.id === id) : null;
+            document.getElementById('bank-acc-type').innerHTML = SisdelBancos.ACCOUNT_TYPES.map(t => `<option value="${t.id}">${t.label}</option>`).join('');
+            document.getElementById('bank-acc-id').value = account ? account.id : '';
+            document.getElementById('bank-account-title').innerHTML = `<i class="fas fa-university text-blue-500 mr-2"></i>${account ? 'Editar cuenta bancaria' : 'Abrir cuenta bancaria'}`;
+            document.getElementById('bank-acc-bank').value = account ? account.bankName : '';
+            document.getElementById('bank-acc-number').value = account ? (account.accountNumber || '') : '';
+            document.getElementById('bank-acc-name').value = account ? (account.accountName || '') : '';
+            document.getElementById('bank-acc-type').value = account ? account.accountType : 'monetaria';
+            document.getElementById('bank-acc-custom').value = account ? (account.accountTypeCustom || '') : '';
+            document.getElementById('bank-acc-custom-wrap').classList.toggle('hidden', !account || account.accountType !== 'otro');
+            const curSel = document.getElementById('bank-acc-currency');
+            curSel.value = account ? account.currency : ((Store.get('settings') || {}).currency === 'USD' ? 'USD' : ((Store.get('settings') || {}).currency || 'GTQ'));
+            if (!curSel.value) curSel.value = 'GTQ';
+            document.getElementById('bank-acc-opening').value = account ? account.openingBalance : 0;
+            document.getElementById('bank-acc-opening').disabled = !!account;
+            document.getElementById('bank-acc-notes').value = account ? (account.notes || '') : '';
+            document.getElementById('bank-acc-active-wrap').classList.toggle('hidden', !account);
+            document.getElementById('bank-acc-active').checked = !account || account.active !== false;
+            document.getElementById('bank-acc-help').textContent = account
+                ? 'El saldo de apertura y la fecha en que se abrió no se cambian.'
+                : (d.accounts.length ? 'Los pagos y gastos siguen entrando a la cuenta favorita. Esta cuenta solo tendrá lo que se registre a mano (o lo que entre si el administrador la hace favorita).' : 'Es la primera cuenta: será la favorita. Desde que la abra, los pagos y gastos que se registren entran solos a ella.');
+            openModal('modal-bank-account');
+        }
+        async function saveBankAccount(event) {
+            event.preventDefault();
+            const api = sisdelBanks();
+            if (!api) return;
+            const id = document.getElementById('bank-acc-id').value;
+            const data = {
+                bankName: document.getElementById('bank-acc-bank').value, accountNumber: document.getElementById('bank-acc-number').value,
+                accountName: document.getElementById('bank-acc-name').value, accountType: document.getElementById('bank-acc-type').value,
+                accountTypeCustom: document.getElementById('bank-acc-custom').value, currency: document.getElementById('bank-acc-currency').value,
+                notes: document.getElementById('bank-acc-notes').value
+            };
+            const button = document.getElementById('bank-acc-save');
+            button.disabled = true;
+            try {
+                if (id) await api.updateAccount(id, { ...data, active: document.getElementById('bank-acc-active').checked });
+                else await api.createAccount({ ...data, openingBalance: document.getElementById('bank-acc-opening').value });
+                closeModal('modal-bank-account');
+                showToast(id ? 'Cuenta actualizada.' : 'Cuenta abierta.');
+            } catch (error) {
+                alert(bankErrorText(error));
+            } finally {
+                button.disabled = false;
+            }
+        }
+        function bankErrorText(error) {
+            const msg = String((error && error.message) || error || '');
+            if (/permission|insufficient/i.test(msg)) return 'Su usuario no tiene el privilegio para hacer esto.';
+            return msg || 'No se pudo guardar. Revise su conexión e intente de nuevo.';
+        }
+        function openBankMovement() {
+            const d = bankData();
+            const active = d.accounts.filter(a => a.active !== false);
+            if (!active.length) return alert('Primero abra una cuenta activa.');
+            bankAccountOptions(document.getElementById('bank-move-account'), active, bankCurrentId);
+            document.getElementById('bank-move-type').innerHTML = SisdelBancos.MOVEMENT_TYPES.filter(t => !t.transfer).map(t => `<option value="${t.id}">${t.label} (${t.direction === 'in' ? 'entra' : 'sale'})</option>`).join('');
+            document.getElementById('bank-move-date').value = localDayKey(new Date());
+            document.getElementById('bank-move-amount').value = '';
+            document.getElementById('bank-move-ref').value = '';
+            document.getElementById('bank-move-concept').value = '';
+            openModal('modal-bank-move');
+        }
+        async function saveBankMovement(event) {
+            event.preventDefault();
+            const api = sisdelBanks();
+            if (!api) return;
+            const type = document.getElementById('bank-move-type').value;
+            try {
+                await api.addMovement({
+                    accountId: document.getElementById('bank-move-account').value, type, direction: SisdelBancos.directionOf(type),
+                    amount: document.getElementById('bank-move-amount').value, date: bankDayInputToIso(document.getElementById('bank-move-date').value),
+                    reference: document.getElementById('bank-move-ref').value, concept: document.getElementById('bank-move-concept').value
+                });
+                closeModal('modal-bank-move');
+                showToast('Movimiento registrado.');
+            } catch (error) { alert(bankErrorText(error)); }
+        }
+        function openBankTransfer() {
+            const d = bankData();
+            const active = d.accounts.filter(a => a.active !== false);
+            if (active.length < 2) return alert('Para transferir necesita al menos dos cuentas activas.');
+            bankAccountOptions(document.getElementById('bank-tr-from'), active, bankCurrentId || active[0].id);
+            bankAccountOptions(document.getElementById('bank-tr-to'), active, (active.find(a => a.id !== (bankCurrentId || active[0].id)) || {}).id);
+            document.getElementById('bank-tr-date').value = localDayKey(new Date());
+            ['bank-tr-amount', 'bank-tr-ref', 'bank-tr-concept'].forEach(i => { document.getElementById(i).value = ''; });
+            openModal('modal-bank-transfer');
+        }
+        async function saveBankTransfer(event) {
+            event.preventDefault();
+            const api = sisdelBanks();
+            if (!api) return;
+            try {
+                await api.addTransfer({
+                    fromId: document.getElementById('bank-tr-from').value, toId: document.getElementById('bank-tr-to').value,
+                    amount: document.getElementById('bank-tr-amount').value, date: bankDayInputToIso(document.getElementById('bank-tr-date').value),
+                    reference: document.getElementById('bank-tr-ref').value, concept: document.getElementById('bank-tr-concept').value
+                });
+                closeModal('modal-bank-transfer');
+                showToast('Transferencia registrada en las dos cuentas.');
+            } catch (error) { alert(bankErrorText(error)); }
+        }
+        function openBankFavorite() {
+            const d = bankData();
+            if (!d.api || !d.api.isAdmin) return alert('Solo el administrador puede cambiar la cuenta favorita.');
+            const favorite = SisdelBancos.currentFavorite(d.accounts, d.favorites);
+            const options = d.accounts.filter(a => a.active !== false && a.id !== favorite);
+            if (!options.length) return alert('No hay otra cuenta activa para hacer favorita.');
+            bankAccountOptions(document.getElementById('bank-fav-account'), options, options[0].id);
+            document.getElementById('bank-fav-code').value = '';
+            openModal('modal-bank-favorite');
+        }
+        async function saveBankFavorite(event) {
+            event.preventDefault();
+            const api = sisdelBanks();
+            if (!api) return;
+            const button = document.getElementById('bank-fav-save');
+            button.disabled = true;
+            try {
+                await api.setFavorite(document.getElementById('bank-fav-account').value, document.getElementById('bank-fav-code').value);
+                document.getElementById('bank-fav-code').value = '';
+                closeModal('modal-bank-favorite');
+                showToast('Cuenta favorita cambiada: desde ahora los pagos y gastos entran a ella.');
+            } catch (error) {
+                // El mensaje del servidor, sin el numero tecnico que agrega Firebase al final ("[403]")
+                alert(String((error && error.message) || 'No se pudo cambiar la cuenta favorita.').replace(/\s*\[\d+\]\s*$/, ''));
+            } finally {
+                button.disabled = false;
+            }
+        }
+        function openBankAnnul(id) {
+            const d = bankData();
+            const m = d.manual.find(x => x.id === id);
+            if (!m) return;
+            const account = d.accounts.find(a => a.id === m.accountId);
+            document.getElementById('bank-annul-id').value = id;
+            document.getElementById('bank-annul-info').textContent = `${SisdelBancos.movementTypeLabel(m.type)} de ${bankMoney(m.amount, account ? account.currency : '')}: ${m.concept}${m.transferId ? ' (se anula en las dos cuentas de la transferencia)' : ''}`;
+            document.getElementById('bank-annul-reason').value = '';
+            openModal('modal-bank-annul');
+        }
+        async function saveBankAnnul(event) {
+            event.preventDefault();
+            const api = sisdelBanks();
+            if (!api) return;
+            try {
+                await api.annulMovement(document.getElementById('bank-annul-id').value, document.getElementById('bank-annul-reason').value);
+                closeModal('modal-bank-annul');
+                showToast('Movimiento anulado.');
+            } catch (error) { alert(bankErrorText(error)); }
         }
 
         // ========== FORMATTERS ==========
@@ -5461,6 +5982,8 @@
                     if (typeof renderDashboard === 'function') renderDashboard();
                     if (typeof renderResidents === 'function') renderResidents();
                     if (typeof renderAccounting === 'function') renderAccounting();
+                    // SISDEL: los pagos y gastos cambian tambien los bancos (entran solos a la cuenta favorita)
+                    if (typeof refreshBanks === 'function') refreshBanks();
                 } catch (err) { /* ignore */ }
             });
         })();

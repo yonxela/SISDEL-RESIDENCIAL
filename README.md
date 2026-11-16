@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-146 privilegios: 31 paraguas y 115 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+150 privilegios: 31 paraguas y 119 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Usuarios y vecinos
 
@@ -161,6 +161,10 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.reportes_libro` | Estado de cuenta general. El libro cronológico de pagos y egresos con saldo acumulado. | los de su paraguas | Pantalla |
 | `finanzas.reportes_resumen` | Reporte financiero mensual o por período. Ingresos netos, gastos y balance, con su resumen para WhatsApp. | los de su paraguas | Pantalla |
 | `finanzas.reportes_exportar` | Exportar e imprimir **(sensible)**. Descargar o imprimir reportes, estados de cuenta y listas en PDF o Excel: saca datos del sistema. | los de su paraguas | Pantalla |
+| `finanzas.bancos_ver` | Ver bancos. Las cuentas bancarias con su saldo y sus movimientos. Los pagos y gastos que se registran entran solos a la cuenta favorita. | los de su paraguas | Pantalla |
+| `finanzas.bancos_cuentas` | Abrir y editar cuentas bancarias **(sensible)**. Abrir una cuenta (banco, número, tipo, moneda y saldo de apertura) y cambiar sus datos. La cuenta favorita solo la cambia el administrador con su código. | los de su paraguas | Reglas |
+| `finanzas.bancos_movimientos` | Registrar movimientos bancarios. Depósitos, retiros, transferencias entre cuentas, cheques, comisiones, intereses y ajustes. | los de su paraguas | Reglas |
+| `finanzas.bancos_anular` | Anular movimientos bancarios **(sensible)**. Anular un movimiento registrado a mano (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
 | `finanzas.config_ver` | Ver la configuración. La pantalla de configuración con la cuota, el cobro y los conceptos. | los de su paraguas | Pantalla |
 | `finanzas.config_general` | Cambiar nombre, idioma, moneda y tema. Estos datos son comunes a todos los usuarios del condominio. | los de su paraguas | Reglas |
 | `finanzas.config_cuota` | Cambiar la cuota y el cobro **(sensible)**. Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora. | los de su paraguas | Reglas |
@@ -289,7 +293,7 @@ El mes es el de la cuota, no el día en que se registra: la cuota de octubre cob
 
 Principio: toda la información vive en el servidor (Firestore), nada se borra y todo cambio deja rastro.
 
-**Rastro (bitácora).** Cada alta, cambio o eliminación de `usuarios`, `vehiculos`, `finanzas_residentes`, `finanzas_movimientos` y `finanzas_config` queda anotada por el servidor en `condominios/{c}/bitacora`: quién lo hizo, cuándo (hora del servidor), qué documento y el valor de antes y de después de cada campo. Lo eliminado queda con su contenido completo; anular y devolver una anulación quedan como `anular` y `restaurar`. Nadie puede escribirla, cambiarla ni borrarla desde una pantalla. La leen el master, quien asigna privilegios y quien puede ver a la vez usuarios, vehículos y finanzas (el auditor). Todavía no tiene pantalla: se consulta con
+**Rastro (bitácora).** Cada alta, cambio o eliminación de `usuarios`, `vehiculos`, `finanzas_residentes`, `finanzas_movimientos`, `finanzas_config`, `finanzas_bancos` y `finanzas_bancos_movs` queda anotada por el servidor en `condominios/{c}/bitacora`: quién lo hizo, cuándo (hora del servidor), qué documento y el valor de antes y de después de cada campo. Lo eliminado queda con su contenido completo; anular y devolver una anulación quedan como `anular` y `restaurar`. Nadie puede escribirla, cambiarla ni borrarla desde una pantalla. La leen el master, quien asigna privilegios y quien puede ver a la vez usuarios, vehículos y finanzas (el auditor). Todavía no tiene pantalla: se consulta con
 
 ```bash
 cd scripts && GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node ver-bitacora.mjs --condo=<id> --target=prod
@@ -353,6 +357,9 @@ condominios/{condoId}
     finanzas_residentes/{userId}    datos financieros del vecino (DPI, NIT, direccion, agua del lote, mismo dueno, lote, notas, finiquito)
     finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero (`server_at`: sello que pone el servidor en cada cambio)
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
+    finanzas_config/bancos          historial de la cuenta favorita de Bancos (solo lo escribe el servidor: setFavoriteBank)
+    finanzas_bancos/{id}            cuentas bancarias (banco, numero, tipo, moneda, saldo y fecha de apertura; el saldo no se guarda)
+    finanzas_bancos_movs/{id}       movimientos bancarios hechos a mano (depositos, retiros, transferencias, cheques, comisiones...; se anulan, no se borran)
     bitacora/{id}                   rastro de cada cambio a usuarios, vehiculos y Sistema Financiero: quien, cuando y el valor de antes y de despues (solo la escribe el servidor)
     rondas_config/general           configuracion de RONDIN (boton de panico de vecinos)
     rondas_personal/{userId}        expediente del guardia (DPI, sangre, supervisor)

@@ -160,6 +160,11 @@
                 { key: 'finanzas.reportes_resumen', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte financiero mensual o por período', description: 'Ingresos netos, gastos y balance, con su resumen para WhatsApp.', requires: ['finanzas.contabilidad_ver'], enforce: 'pantalla' },
                 { key: 'finanzas.reportes_exportar', sub: 'Reportes', parent: 'finanzas.usar', label: 'Exportar e imprimir', description: 'Descargar o imprimir reportes, estados de cuenta y listas en PDF o Excel: saca datos del sistema.', requires: ['finanzas.ver'], sensitive: true, enforce: 'pantalla' },
 
+                { key: 'finanzas.bancos_ver', sub: 'Bancos', parent: 'finanzas.usar', label: 'Ver bancos', description: 'Las cuentas bancarias con su saldo y sus movimientos. Los pagos y gastos que se registran entran solos a la cuenta favorita.', requires: ['finanzas.ver'], enforce: 'pantalla' },
+                { key: 'finanzas.bancos_cuentas', sub: 'Bancos', parent: 'finanzas.usar', label: 'Abrir y editar cuentas bancarias', description: 'Abrir una cuenta (banco, número, tipo, moneda y saldo de apertura) y cambiar sus datos. La cuenta favorita solo la cambia el administrador con su código.', requires: ['finanzas.bancos_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.bancos_movimientos', sub: 'Bancos', parent: 'finanzas.usar', label: 'Registrar movimientos bancarios', description: 'Depósitos, retiros, transferencias entre cuentas, cheques, comisiones, intereses y ajustes.', requires: ['finanzas.bancos_ver'], enforce: 'reglas' },
+                { key: 'finanzas.bancos_anular', sub: 'Bancos', parent: 'finanzas.usar', label: 'Anular movimientos bancarios', description: 'Anular un movimiento registrado a mano (queda con su motivo; nunca se borra).', requires: ['finanzas.bancos_ver'], sensitive: true, enforce: 'reglas' },
+
                 { key: 'finanzas.config_ver', sub: 'Configuración', parent: 'finanzas.usar', label: 'Ver la configuración', description: 'La pantalla de configuración con la cuota, el cobro y los conceptos.', requires: ['finanzas.ver'], enforce: 'pantalla' },
                 { key: 'finanzas.config_general', sub: 'Configuración', parent: 'finanzas.usar', label: 'Cambiar nombre, idioma, moneda y tema', description: 'Estos datos son comunes a todos los usuarios del condominio.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
                 { key: 'finanzas.config_cuota', sub: 'Configuración', parent: 'finanzas.usar', label: 'Cambiar la cuota y el cobro', description: 'Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora.', requires: ['finanzas.config_ver'], sensitive: true, enforce: 'reglas' },
@@ -354,7 +359,7 @@
             claves: [
                 'usuarios.ver', 'mensajes.recibir', 'finanzas.ver', 'finanzas.usar', 'finanzas.tablero_ver', 'finanzas.residentes_ver', 'finanzas.residentes_datos',
                 'finanzas.residentes_estado', 'finanzas.contabilidad_ver', 'finanzas.comprobantes', 'finanzas.reportes_ingresos', 'finanzas.reportes_morosos',
-                'finanzas.reportes_gastos', 'finanzas.reportes_libro', 'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.config_ver'
+                'finanzas.reportes_gastos', 'finanzas.reportes_libro', 'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.bancos_ver', 'finanzas.config_ver'
             ]
         },
         {
@@ -371,7 +376,7 @@
                 ...tree('auditoria.ver'), 'auditoria.exportar', 'auditoria.exportar_accesos', 'auditoria.exportar_visitas',
                 'finanzas.ver', 'finanzas.usar', 'finanzas.tablero_ver', 'finanzas.residentes_ver', 'finanzas.residentes_estado', 'finanzas.contabilidad_ver',
                 'finanzas.comprobantes', 'finanzas.reportes_ingresos', 'finanzas.reportes_morosos', 'finanzas.reportes_gastos', 'finanzas.reportes_libro',
-                'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.config_ver'
+                'finanzas.reportes_resumen', 'finanzas.reportes_exportar', 'finanzas.bancos_ver', 'finanzas.config_ver'
             ]
         },
         {

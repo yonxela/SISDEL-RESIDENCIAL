@@ -40,10 +40,11 @@
         dashboard: ['tablero_ver'],
         residents: ['residentes_ver'],
         accounting: ['contabilidad_ver'],
+        banks: ['bancos_ver'],
         reports: REPORT_KEYS,
         settings: ['config_ver']
     };
-    const VIEW_ORDER = ['dashboard', 'residents', 'accounting', 'reports', 'settings'];
+    const VIEW_ORDER = ['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'];
 
     const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'pay-map': 'reportes_morosos' };
     const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'account-statement'];
@@ -66,6 +67,13 @@
         [/^(openReminders|renderRemindersList|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages)\(/, ['residentes_contactar']],
         // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
         [/^saveReminderMessages\(/, ['config_general']],
+        // Bancos: abrir y editar cuentas, registrar movimientos y transferencias, anular. La cuenta favorita la decide el
+        // servidor (solo el administrador, con su codigo); aqui basta con poder abrir cuentas para ver el boton.
+        [/^(openBankAccountForm|saveBankAccount)\(/, ['bancos_cuentas']],
+        [/^(openBankMovement|saveBankMovement|openBankTransfer|saveBankTransfer)\(/, ['bancos_movimientos']],
+        [/^(openBankAnnul|saveBankAnnul)\(/, ['bancos_anular']],
+        [/^(openBankFavorite|saveBankFavorite)\(/, ['bancos_cuentas']],
+        [/^bankExport\(/, ['reportes_exportar']],
         [/^fixDuplicateFees\(/, ['cuotas_corregir']],
         [/^(openModal\('modal-bulk-charge'\)|applyBulkCharge\()/, ['cargos_crear']],
         [/^(openModal\('modal-income'\)|handleTransactionSubmit\(\s*event\s*,\s*'income'\s*\))/, ['pagos_registrar']],
@@ -93,6 +101,7 @@
         [VIEWS.dashboard, ['#nav-dashboard', '#view-dashboard']],
         [VIEWS.residents, ['#nav-residents', '#view-residents']],
         [VIEWS.accounting, ['#nav-accounting', '#view-accounting']],
+        [VIEWS.banks, ['#nav-banks', '#view-banks']],
         [VIEWS.reports, ['#nav-reports', '#view-reports']],
         [VIEWS.settings, ['#nav-settings', '#view-settings']],
         [['deshacer'], ['#btn-undo-header', '#btn-redo-header']],
@@ -139,7 +148,12 @@
         ]],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
         [CONFIG_WRITE_KEYS, ['#btn-save-cfg']],
-        [['config_general'], ['#rem-msg-save']]
+        [['config_general'], ['#rem-msg-save']],
+        [['bancos_ver'], ['#dash-bank']],
+        [['bancos_cuentas'], ['#btn-bank-new', '#btn-bank-edit', '#btn-bank-favorite', '#modal-bank-account', '#modal-bank-favorite']],
+        [['bancos_movimientos'], ['#btn-bank-move', '#btn-bank-transfer', '#modal-bank-move', '#modal-bank-transfer']],
+        [['bancos_anular'], ['#bank-rows button[onclick^="openBankAnnul("]', '#modal-bank-annul']],
+        [['reportes_exportar'], ['#view-banks button[onclick^="bankExport("]']]
     ];
 
     // Lo que no se oculta pero tampoco debe tocarse (el nombre del residente abre su estado de cuenta, etc.)

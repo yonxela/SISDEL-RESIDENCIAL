@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 146 privilegios: 31 paraguas y 115 acciones', [P.KEYS.length, roots.length, kids.length], [146, 31, 115]);
+equal('hay 150 privilegios: 31 paraguas y 119 acciones', [P.KEYS.length, roots.length, kids.length], [150, 31, 119]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -377,6 +377,12 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('los recordatorios van en orden alfabetico y con la busqueda inteligente', /localeCompare\(String\(b\.name \|\| ''\), 'es'/.test(remCode) && /SisdelBusqueda\.filter\(res, text, residentSearchFields\)/.test(remCode) && oikos.includes('id="rem-search"'));
     yes('el mensaje de los recordatorios se personaliza y se guarda en la configuracion del condominio', ['rem-msg-mora', 'rem-msg-pending', 'rem-msg-save'].every((id) => oikos.includes(`id="${id}"`)) && /s\.reminderMessages = \{ mora:/.test(oikos) && oikos.includes('(nombre|casa|saldo|mora|condominio)'));
     yes('los recordatorios escapan nombre, casa y telefono y no meten el telefono en el onclick', !/\$\{r\.name\}/.test(remCode) && /onclick="sendReminder\(this\.dataset\.id\)" data-id="\$\{esc\(r\.id\)\}"/.test(remCode) && !/contactSingleWhatsApp\('\$\{r\.contact\}'/.test(oikos));
+    // Bancos: pantalla, datos en finanzas.html y bloqueo por privilegios
+    yes('OIKOS tiene la pantalla Bancos con su menu (oculto sin bancos) y carga sus calculos', oikos.includes('id="view-banks"') && /id="nav-banks" class="nav-item hidden/.test(oikos) && /<script src="\.\/sisdel-bancos\.js\?v=\w+"><\/script>/.test(oikos) && /\['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'\]/.test(oikos));
+    yes('finanzas.html arranca los bancos solo con el privilegio de verlos', /<script src="finanzas-bancos\.js\?v=\w+"><\/script>/.test(fin) && /SISDEL\.can\('finanzas\.bancos_ver'\) && typeof SisdelFinanzasBancos !== 'undefined'/.test(fin));
+    yes('los pagos y gastos no se copian al banco: se leen (ningun set de movimientos de OIKOS en bancos)', !/finanzas_movimientos/.test(read('finanzas-bancos.js')));
+    yes('la cuenta favorita solo la cambia el servidor (funcion con el codigo del administrador)', /httpsCallable\('setFavoriteBank'\)/.test(read('finanzas-bancos.js')) && /setFavoriteBank/.test(read('functions/index.js')));
+    yes('las reglas protegen cuentas y movimientos de bancos y nadie los borra', /match \/finanzas_bancos\/\{accountId\}[\s\S]*?allow delete: if false;/.test(read('firestore.rules')) && /match \/finanzas_bancos_movs\/\{movId\}[\s\S]*?allow delete: if false;/.test(read('firestore.rules')) && /nearNow\(request\.resource\.data\.openedAt\)/.test(read('firestore.rules')));
     yes('OIKOS carga los calculos de reportes y el modulo de Excel y WhatsApp de SISDEL', /<script src="\.\/sisdel-reportes\.js\?v=\w+"><\/script>/.test(oikos) && /<script src="\.\.\/reportes-export\.js\?v=\w+"><\/script>/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));

@@ -124,6 +124,9 @@ service cloud.firestore {
     function pFinanzasPagosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.pagos_anular'); }
     function pFinanzasEgresosRegistrar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_registrar'); }
     function pFinanzasEgresosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_anular'); }
+    function pFinanzasBancosCuentas(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_cuentas'); }
+    function pFinanzasBancosMovimientos(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_movimientos'); }
+    function pFinanzasBancosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_anular'); }
     function pFinanzasConfigGeneral(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_general'); }
     function pFinanzasConfigCuota(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_cuota'); }
     function pFinanzasConfigConceptos(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_conceptos'); }
@@ -686,6 +689,54 @@ service cloud.firestore {
         allow create: if pFinanzasUsar(condoId) && docId == 'oikos_settings'
           && (!('name' in request.resource.data) || request.resource.data.name == officialName());
         allow update: if pFinanzasUsar(condoId) && docId == 'oikos_settings' && settingsRights();
+        allow delete: if false;
+      }
+
+      // ── Bancos del Sistema Financiero (finanzas-bancos.js, finanzas/sisdel-bancos.js) ──
+      // El saldo de una cuenta no se guarda: se calcula (apertura + ingresos - egresos). Los pagos y gastos de OIKOS que se
+      // registran despues de abrir la cuenta entran solos a la cuenta favorita; por eso la fecha de apertura es la de ahora y
+      // no se cambia, igual que el saldo de apertura. Una cuenta no se borra (se desactiva). La favorita la decide solo el
+      // servidor (finanzas_config/bancos, funcion setFavoriteBank con el codigo del administrador): aqui no se escribe.
+      function nearNow(value) {
+        return value is string && timestamp.value(value) > request.time - duration.value(10, 'm')
+          && timestamp.value(value) < request.time + duration.value(10, 'm');
+      }
+      function shortText(d, field, max) { return d.get(field, '') is string && d.get(field, '').size() <= max; }
+      function bankAccountOk(d) {
+        return d.id is string && d.bankName is string && d.bankName.size() > 0 && d.bankName.size() <= 80
+          && d.accountNumber is string && d.accountNumber.size() <= 40 && shortText(d, 'accountName', 80)
+          && d.accountType is string && d.accountType.size() <= 30 && shortText(d, 'accountTypeCustom', 40)
+          && d.currency is string && d.currency.size() <= 5 && shortText(d, 'notes', 300)
+          && d.openingBalance is number && d.openedAt is string && d.active is bool;
+      }
+      match /finanzas_bancos/{accountId} {
+        allow read: if canReadFinance();
+        allow create: if pFinanzasBancosCuentas(condoId) && request.resource.data.id == accountId && bankAccountOk(request.resource.data)
+          && request.resource.data.keys().hasOnly(['id', 'bankName', 'accountName', 'accountNumber', 'accountType', 'accountTypeCustom', 'currency',
+                                                    'openingBalance', 'openedAt', 'active', 'notes', 'created_at', 'updated_at', 'created_by', 'created_by_name'])
+          && nearNow(request.resource.data.openedAt) && request.resource.data.get('created_by', '') == request.auth.uid;
+        allow update: if pFinanzasBancosCuentas(condoId) && bankAccountOk(request.resource.data)
+          && finChanged().hasOnly(['bankName', 'accountName', 'accountNumber', 'accountType', 'accountTypeCustom', 'currency', 'active', 'notes', 'updated_at']);
+        allow delete: if false;
+      }
+      // Movimientos hechos a mano (depositos, retiros, transferencias, cheques, comisiones, intereses, ajustes). Los pagos y
+      // gastos de OIKOS no se copian aqui. Nunca se borran ni se editan: se anulan con su motivo.
+      function bankMovementOk(d) {
+        return d.id is string && d.accountId is string && exists(/databases/$(database)/documents/condominios/$(condoId)/finanzas_bancos/$(d.accountId))
+          && d.direction in ['in', 'out'] && d.amount is number && d.amount > 0 && d.amount < 1000000000
+          && d.type is string && d.type.size() <= 30 && d.concept is string && d.concept.size() > 0 && d.concept.size() <= 200
+          && d.date is string && d.date.size() <= 30 && shortText(d, 'reference', 60) && shortText(d, 'transferId', 60);
+      }
+      match /finanzas_bancos_movs/{movId} {
+        allow read: if canReadFinance();
+        allow create: if pFinanzasBancosMovimientos(condoId) && request.resource.data.id == movId && bankMovementOk(request.resource.data)
+          && request.resource.data.keys().hasOnly(['id', 'accountId', 'direction', 'amount', 'type', 'concept', 'reference', 'date', 'transferId',
+                                                    'created_at', 'updated_at', 'created_by', 'created_by_name'])
+          && request.resource.data.get('created_by', '') == request.auth.uid;
+        allow update: if pFinanzasBancosAnular(condoId) && resource.data.get('deleted', false) != true && request.resource.data.get('deleted', false) == true
+          && request.resource.data.get('deleted_reason', '') is string && request.resource.data.get('deleted_reason', '').size() > 0
+          && request.resource.data.get('deleted_reason', '').size() <= 200 && request.resource.data.get('deleted_by', '') == request.auth.uid
+          && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'deleted_by', 'deleted_by_name', 'updated_at']);
         allow delete: if false;
       }
     }

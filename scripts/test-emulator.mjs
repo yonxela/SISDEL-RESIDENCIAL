@@ -1493,6 +1493,36 @@ async function run() {
     await rejectedWith('bloqueado, ni la clave correcta elimina', () => deleteCondo({ condominioId: B, masterCode: seed.masterCode, confirmName: 'Residencial Los Olivos' }), 'resource-exhausted');
     equal('el condominio sigue despues del bloqueo', (await getDocs(collection(master.db, 'condominios'))).size, 2);
 
+    // ───────── Nombre del condominio ─────────
+    // Solo el programador lo cambia, con la clave master (renameCondominio); las reglas no dejan cambiarlo directo
+    console.log('\nNombre del condominio');
+    const renameCondoCall = (c, data) => httpsCallable(c.functions, 'renameCondominio')(data);
+    const condoDocA = async () => (await getDoc(doc(master.db, `condominios/${A}`))).data();
+    const originalNameA = (await condoDocA()).name;
+    const oikosSettingsA = (c) => doc(c.db, `condominios/${A}/finanzas_config/oikos_settings`);
+    await denied('ni el master cambia el nombre directo desde el navegador', () => updateDoc(doc(master.db, `condominios/${A}`), { name: 'Nombre Directo' }));
+    await denied('ni las marcas del cambio de nombre', () => updateDoc(doc(master.db, `condominios/${A}`), { previousName: 'x' }));
+    await allowed('el master sigue cambiando lo demas del condominio', () => updateDoc(doc(master.db, `condominios/${A}`), { hasQR: true }));
+    await rejectedWith('el admin no cambia el nombre ni con la clave master', () => renameCondoCall(admin, { condominioId: A, newName: 'Nombre del Admin', masterCode: seed.masterCode }), 'permission-denied');
+    await rejectedWith('el master sin la clave master no cambia el nombre', () => renameCondoCall(master, { condominioId: A, newName: 'Nombre Sin Clave' }), 'permission-denied');
+    await rejectedWith('ni con una clave incorrecta', () => renameCondoCall(master, { condominioId: A, newName: 'Nombre Clave Mala', masterCode: 'ZZZZZZ' }), 'permission-denied');
+    await rejectedWith('un nombre de menos de 3 letras se rechaza', () => renameCondoCall(master, { condominioId: A, newName: ' AB ', masterCode: seed.masterCode }), 'invalid-argument');
+    await rejectedWith('un condominio que no existe se avisa al cambiar el nombre', () => renameCondoCall(master, { condominioId: 'no-existe', newName: 'Nombre Valido', masterCode: seed.masterCode }), 'not-found');
+    equal('con los intentos rechazados el nombre no cambio', (await condoDocA()).name, originalNameA);
+    await denied('OIKOS no guarda un nombre distinto al del condominio', () => setDoc(oikosSettingsA(admin), { name: 'Nombre Inventado' }, { merge: true }));
+    await allowed('OIKOS si guarda el nombre oficial (lo escribe al abrir)', () => setDoc(oikosSettingsA(admin), { name: originalNameA }, { merge: true }));
+    await allowed('el master cambia el nombre con su clave', async () => {
+        const result = await renameCondoCall(master, { condominioId: A, newName: '  Residencial   Prueba Renombrada ', masterCode: seed.masterCode });
+        if (!result.data.changed || result.data.name !== 'Residencial Prueba Renombrada') throw new Error(JSON.stringify(result.data));
+    });
+    const renamed = await condoDocA();
+    equal('el nombre nuevo queda en el condominio (sin espacios de mas) y guarda el de antes', [renamed.name, renamed.previousName, typeof renamed.renamedAt], ['Residencial Prueba Renombrada', originalNameA, 'string']);
+    equal('y en la configuracion del Sistema Financiero', (await getDoc(oikosSettingsA(admin))).data().name, 'Residencial Prueba Renombrada');
+    await denied('OIKOS ya no puede volver a poner el nombre viejo', () => setDoc(oikosSettingsA(admin), { name: originalNameA }, { merge: true }));
+    equal('el mismo nombre no cambia nada', (await renameCondoCall(master, { condominioId: A, newName: 'Residencial Prueba Renombrada', masterCode: seed.masterCode })).data.changed, false);
+    await allowed('y vuelve al nombre de antes', () => renameCondoCall(master, { condominioId: A, newName: originalNameA, masterCode: seed.masterCode }));
+    equal('el condominio tiene otra vez su nombre', (await condoDocA()).name, originalNameA);
+
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');
     let blocked = null;

@@ -649,6 +649,18 @@ await core.SISDEL.setUserAccess('u1', { privilegios: {} });
 equal('sin diferencias se borra el campo (vuelve a los del rol)', core.updates[1].changes.privilegios, '__borrar__');
 equal('si no se indica el cargo no se toca', 'cargo' in core.updates[1].changes, false);
 
+console.log('\nNombre del condominio (solo el programador, con la clave master)');
+{
+    const masterHtml = read('master.html');
+    const oikosHtml = read('finanzas/index.html');
+    const rules = read('firestore.rules');
+    yes('el panel master cambia el nombre con la clave master (ventana con su X)', /id="modalRenameCondo"/.test(masterHtml) && /id="renameCondoCode"[^>]*type="password"|type="password"[^>]*id="renameCondoCode"/.test(masterHtml) && /id="btnCloseRenameCondo"/.test(masterHtml) && /SISDEL\.renameCondominio\(/.test(masterHtml));
+    yes('el nucleo llama a la funcion del servidor', /httpsCallable\('renameCondominio'\)/.test(read('sisdel-core.js')));
+    yes('las reglas no dejan cambiar el nombre directo', /allow update: if isMaster\(\) && !request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['name'/.test(rules) && /request\.resource\.data\.name == officialName\(\)/.test(rules));
+    yes('en OIKOS el nombre es de solo lectura y no se guarda desde el campo', /id="cfg-name" readonly/.test(oikosHtml) && /name: oldS\.name,/.test(oikosHtml) && !/name: document\.getElementById\('cfg-name'\)\.value/.test(oikosHtml));
+    yes('el Sistema Financiero abre con el nombre vigente del condominio', /SISDEL\.getCondominio\(condoId\)/.test(read('finanzas.html')) && /msname: condoName/.test(read('finanzas.html')));
+}
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

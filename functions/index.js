@@ -14,7 +14,7 @@ setGlobalOptions({
 });
 
 const { login, verifyAccessCode } = require('./src/auth');
-const { deleteCondominio } = require('./src/condominios');
+const { deleteCondominio, renameCondominio } = require('./src/condominios');
 const { anprWebhook } = require('./src/anpr/webhook');
 const { onFinanceMovement, onFinanceSettings, dailyFinance } = require('./src/finanzas');
 const { onPanicCreated, dailyRondas } = require('./src/rondas');
@@ -22,7 +22,7 @@ const { onPanicCreated, dailyRondas } = require('./src/rondas');
 const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings } = require('./src/bitacora');
 
 module.exports = {
-    login, verifyAccessCode, deleteCondominio, anprWebhook,
+    login, verifyAccessCode, deleteCondominio, renameCondominio, anprWebhook,
     onFinanceMovement, onFinanceSettings, dailyFinance,
     onPanicCreated, dailyRondas,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings

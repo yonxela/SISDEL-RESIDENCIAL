@@ -257,7 +257,10 @@ service cloud.firestore {
     // ── Condominios ──
     match /condominios/{condoId} {
       allow read: if isMaster() || isMember(condoId);
-      allow write: if isMaster();
+      // El nombre solo lo cambia el servidor (renameCondominio, con la clave master del programador): ni el master lo
+      // cambia directo desde el navegador
+      allow create, delete: if isMaster();
+      allow update: if isMaster() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name', 'previousName', 'renamedAt']);
 
       // El usuario dueño del documento ya no existira al aplicarse la escritura (borrado en cascada al eliminarlo)
       function ownerGone(ownerId) {
@@ -666,8 +669,11 @@ service cloud.firestore {
 
       // Configuracion: cuota y cobro, datos generales y conceptos son privilegios distintos; los contadores que cambia
       // operar (recibos, meses cobrados) los puede escribir quien use el Sistema Financiero
+      // El nombre del residencial en OIKOS es siempre el del condominio (solo lo cambia renameCondominio en el servidor)
+      function officialName() { return get(/databases/$(database)/documents/condominios/$(condoId)).data.get('name', ''); }
       function settingsRights() {
-        return (!finChanged().hasAny(['fee', 'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'chargeDay', 'graceDays', 'feeMode']) || pFinanzasConfigCuota(condoId))
+        return (!finChanged().hasAny(['name']) || request.resource.data.name == officialName())
+          && (!finChanged().hasAny(['fee', 'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'chargeDay', 'graceDays', 'feeMode']) || pFinanzasConfigCuota(condoId))
           && (!finChanged().hasAny(['currency', 'lang', 'name', 'theme']) || pFinanzasConfigGeneral(condoId))
           && (!finChanged().hasAny(['customIncomeConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasCargosCrear(condoId))
           && (!finChanged().hasAny(['customExpenseConcepts']) || pFinanzasConfigConceptos(condoId) || pFinanzasEgresosRegistrar(condoId))
@@ -677,7 +683,8 @@ service cloud.firestore {
       }
       match /finanzas_config/{docId} {
         allow read: if canReadFinance();
-        allow create: if pFinanzasUsar(condoId) && docId == 'oikos_settings';
+        allow create: if pFinanzasUsar(condoId) && docId == 'oikos_settings'
+          && (!('name' in request.resource.data) || request.resource.data.name == officialName());
         allow update: if pFinanzasUsar(condoId) && docId == 'oikos_settings' && settingsRights();
         allow delete: if false;
       }

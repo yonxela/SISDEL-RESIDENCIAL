@@ -193,6 +193,33 @@
         </div>
     </div>
 
+    <!-- Modal Cambiar nombre del condominio: solo con la clave master del programador (el servidor la verifica) -->
+    <div class="modal-overlay" id="modalRenameCondo" style="display:none;">
+        <div class="modal" style="max-width:480px;">
+            <div class="modal-header">
+                <h3>Cambiar nombre del condominio</h3>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseRenameCondo" type="button">&times;</button>
+            </div>
+            <form id="renameCondoForm" style="padding:1.5rem;" autocomplete="off">
+                <p class="text-sm" style="line-height:1.5; margin:0 0 1rem;">Nombre actual: <strong id="renameCondoCurrent"></strong></p>
+                <p class="text-xs text-muted" style="line-height:1.5; margin:0 0 1rem;">El nombre nuevo aparece en todos los paneles, en el Sistema Financiero (reportes y recibos) y en RONDIN. Quienes ya tienen la sesión abierta lo ven al volver a entrar.</p>
+                <div class="form-group">
+                    <label for="renameCondoName">Nombre nuevo</label>
+                    <input type="text" class="form-input" id="renameCondoName" autocomplete="off" spellcheck="false" maxlength="80">
+                </div>
+                <div class="form-group">
+                    <label for="renameCondoCode">Clave master de programador</label>
+                    <input type="password" class="form-input" id="renameCondoCode" autocomplete="off" maxlength="40">
+                </div>
+                <p id="renameCondoError" class="text-sm" style="color:var(--danger); min-height:1.2rem; margin:0 0 0.75rem;" role="alert"></p>
+                <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+                    <button type="button" class="btn btn-ghost" id="btnCancelRenameCondo">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="btnConfirmRenameCondo" disabled>Cambiar nombre</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal Nuevo Condominio -->
     <div class="modal-overlay" id="modalNewCondo" style="display:none;">
         <div class="modal" style="max-width:450px;">
@@ -271,8 +298,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261115f"></script>
-    <script src="sisdel-core.js?v=20261115f"></script>
+    <script src="privilegios.js?v=20261115g"></script>
+    <script src="sisdel-core.js?v=20261115g"></script>
     <script src="privilegios-ui.js?v=20261115a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -477,6 +504,10 @@
                         </div>
                     </details>
 
+                    <button class="btn btn-ghost" style="width:100%; margin-bottom:0.75rem;" onclick="openRenameCondo('${condoId}')" title="Solo con la clave master de programador">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Cambiar nombre
+                    </button>
                     <button class="btn btn-primary" style="width:100%; margin-bottom:0.75rem;" onclick="goToCondoUsers('${condoId}')"
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -530,6 +561,60 @@
                 document.getElementById('modalCondoDetail').style.display = 'none';
                 await renderCondos(); await renderStats();
             };
+
+            // Cambiar el nombre de un condominio: solo con la clave master (el servidor la verifica en renameCondominio;
+            // las reglas no dejan cambiar el nombre directo, ni siquiera con sesion master)
+            let renameTarget = null;
+            let renameBusy = false;
+            const renameModal = document.getElementById('modalRenameCondo');
+            const renameClean = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+            function refreshRenameButton() {
+                const name = renameClean(document.getElementById('renameCondoName').value);
+                const okName = !!renameTarget && name.length >= 3 && name.length <= 80 && name !== renameTarget.name;
+                document.getElementById('btnConfirmRenameCondo').disabled = renameBusy || !(okName && document.getElementById('renameCondoCode').value.trim());
+            }
+            function closeRenameCondo() {
+                if (renameBusy) return;
+                renameModal.style.display = 'none';
+                renameTarget = null;
+                document.getElementById('renameCondoCode').value = '';
+            }
+            window.openRenameCondo = async function (condoId) {
+                const condo = await SISDEL.getCondominio(condoId);
+                if (!condo) { SISDEL.showToast('No se encontró el condominio', 'danger'); return; }
+                renameTarget = { id: condoId, name: condo.name || '' };
+                document.getElementById('renameCondoCurrent').textContent = renameTarget.name;
+                document.getElementById('renameCondoName').value = renameTarget.name;
+                document.getElementById('renameCondoCode').value = '';
+                document.getElementById('renameCondoError').textContent = '';
+                refreshRenameButton();
+                renameModal.style.display = 'flex';
+                document.getElementById('renameCondoName').focus();
+            };
+            ['renameCondoName', 'renameCondoCode'].forEach((fieldId) => document.getElementById(fieldId).addEventListener('input', refreshRenameButton));
+            document.getElementById('btnCloseRenameCondo').addEventListener('click', closeRenameCondo);
+            document.getElementById('btnCancelRenameCondo').addEventListener('click', closeRenameCondo);
+            document.getElementById('renameCondoForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!renameTarget || renameBusy) return;
+                renameBusy = true;
+                refreshRenameButton();
+                const errorBox = document.getElementById('renameCondoError');
+                errorBox.textContent = '';
+                const result = await SISDEL.renameCondominio(renameTarget.id, renameClean(document.getElementById('renameCondoName').value), document.getElementById('renameCondoCode').value);
+                renameBusy = false;
+                if (!result.ok) {
+                    errorBox.textContent = result.error;
+                    document.getElementById('renameCondoCode').value = '';
+                    refreshRenameButton();
+                    return;
+                }
+                const condoId = renameTarget.id;
+                closeRenameCondo();
+                SISDEL.showToast(result.changed ? 'Nombre cambiado a ' + result.name : 'El nombre ya era ese', 'success');
+                await renderCondos(); await populateSelectors();
+                if (document.getElementById('modalCondoDetail').style.display === 'flex') await viewCondoDetails(condoId);
+            });
 
             // Eliminar un condominio (boton Eliminar de la lista o de los detalles): ventana con lo que se borra, el nombre
             // del condominio y la clave master. El servidor vuelve a verificar las dos cosas (deleteCondominio).

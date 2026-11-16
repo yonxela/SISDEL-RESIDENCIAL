@@ -273,6 +273,19 @@ const SISDEL = (() => {
         }
     }
 
+    // Cambia el nombre de un condominio. Solo el programador: el servidor vuelve a pedir la clave master aunque ya haya sesion
+    // master (las reglas no dejan cambiar el nombre directo). Devuelve { ok: true, name, changed } o { ok: false, error }.
+    async function renameCondominio(id, newName, masterCode) {
+        try {
+            await authReady();
+            const result = await services().functions.httpsCallable('renameCondominio')({ condominioId: id, newName, masterCode });
+            return { ok: true, ...(result.data || {}) };
+        } catch (error) {
+            console.error('renameCondominio', error && error.code);
+            return { ok: false, error: String((error && error.message) || 'No se pudo cambiar el nombre').replace(/\s*\[\d{3}\]\s*$/, '') };
+        }
+    }
+
     // ══════════════════════════════════
     //  Codigos de acceso (coleccion aparte: guardias y vecinos no pueden leerlos)
     // ══════════════════════════════════
@@ -1203,7 +1216,7 @@ const SISDEL = (() => {
     // Public API
     return {
         ROLES, PAYMENT_STATUS, VISIT_STATUS,
-        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, toggleCondoSetting,
+        getCondominios, getCondominio, createCondominio, updateCondominio, deactivateCondominio, activateCondominio, deleteCondominio, renameCondominio, toggleCondoSetting,
         PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,

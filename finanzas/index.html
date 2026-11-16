@@ -543,7 +543,7 @@
                     <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 max-w-2xl">
                         <h3 class="text-xl font-bold mb-6 dark:text-white" id="lbl-set-title">Configuración Global</h3>
                         <div class="space-y-5">
-                            <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-name">Nombre del Residencial</label><input type="text" id="cfg-name" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                            <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-name">Nombre del Residencial</label><input type="text" id="cfg-name" readonly tabindex="-1" class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-lg outline-none cursor-not-allowed"><p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1" id="cfg-name-help"><i class="fas fa-lock mr-1"></i>El nombre del condominio solo lo cambia el programador con la clave master (Panel Master).</p></div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-lang">Idioma</label><select id="cfg-lang" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"><option value="es">Español</option><option value="en">English</option></select></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-curr">Moneda</label><select id="cfg-curr" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"><option value="MXN">$ (MXN)</option><option value="USD">$ (USD)</option><option value="GTQ">Q (GTQ)</option><option value="EUR">€ (EUR)</option></select></div>
@@ -5059,7 +5059,7 @@
             // contador de recibos, etc.) y se sobreescriben solo los editables.
             const s = {
                 ...oldS,
-                name: document.getElementById('cfg-name').value,
+                name: oldS.name,   // SISDEL: el nombre no se cambia aqui (solo el programador, con la clave master, en el Panel Master)
                 lang: document.getElementById('cfg-lang').value,
                 currency: document.getElementById('cfg-curr').value,
                 fee: feeTotal,   // SISDEL: la suma del desglose; 0 = no hay cuota configurada y no se cobra nada

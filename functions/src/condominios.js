@@ -47,4 +47,53 @@ const deleteCondominio = onCall({ timeoutSeconds: 300 }, async (request) => {
     return { success: true, ...result };
 });
 
-module.exports = { deleteCondominio };
+// Cambiar el nombre de un condominio: solo el programador, con la clave master aunque ya haya sesion master (las reglas no
+// dejan cambiar `name` desde el navegador). Se copia tambien a la configuracion del Sistema Financiero, que lo usa en sus
+// reportes y recibos (y queda en la bitacora); el cambio queda ademas en el registro del servidor con el nombre de antes.
+const RENAME_LIMIT = { max: 5, windowMs: 15 * 60 * 1000 };
+const NAME_MIN = 3;
+const NAME_MAX = 80;
+const cleanName = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+const renameCondominio = onCall(async (request) => {
+    if (request.auth?.token?.role !== ROLES.MASTER) {
+        throw new HttpsError('permission-denied', 'Solo el programador puede cambiar el nombre de un condominio');
+    }
+    const condominioId = String(request.data?.condominioId || '').trim();
+    if (!condominioId || condominioId.includes('/')) {
+        throw new HttpsError('invalid-argument', 'Condominio inválido');
+    }
+    const newName = cleanName(request.data?.newName);
+    if (newName.length < NAME_MIN || newName.length > NAME_MAX) {
+        throw new HttpsError('invalid-argument', `El nombre debe tener entre ${NAME_MIN} y ${NAME_MAX} caracteres`);
+    }
+
+    const uid = request.auth.uid;
+    if (await rateLimit.isBlocked('renombrar', uid, RENAME_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiados intentos. Espere 15 minutos e intente de nuevo.');
+    }
+    const masterCode = normalizeCode(request.data?.masterCode);
+    if (!masterCode || !(await isMasterCode(masterCode))) {
+        await rateLimit.hit('renombrar', uid, RENAME_LIMIT);
+        logger.warn('cambiar nombre de condominio: clave master incorrecta', { condominioId });
+        throw new HttpsError('permission-denied', 'La clave master no es correcta');
+    }
+
+    const condoRef = db.doc(`condominios/${condominioId}`);
+    const condoSnap = await condoRef.get();
+    if (!condoSnap.exists) throw new HttpsError('not-found', 'El condominio no existe');
+    await rateLimit.reset('renombrar', uid);
+    const oldName = condoSnap.data().name || '';
+    if (newName === oldName) return { success: true, name: newName, changed: false };
+
+    const settingsRef = condoRef.collection('finanzas_config').doc('oikos_settings');
+    const settingsSnap = await settingsRef.get();
+    const batch = db.batch();
+    batch.update(condoRef, { name: newName, previousName: oldName, renamedAt: new Date().toISOString() });
+    if (settingsSnap.exists) batch.set(settingsRef, { name: newName, updated_at: new Date().toISOString() }, { merge: true });
+    await batch.commit();
+    logger.warn('condominio renombrado', { condominioId, antes: oldName, despues: newName });
+    return { success: true, name: newName, changed: true };
+});
+
+module.exports = { deleteCondominio, renameCondominio };

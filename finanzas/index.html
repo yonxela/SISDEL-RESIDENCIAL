@@ -842,12 +842,12 @@
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-[55rem] p-8 flex flex-col max-h-[90vh]">
             <div class="flex justify-between items-start mb-2"><h3 class="text-xl font-bold dark:text-white" id="title-modal-rem">Envío de Recordatorios</h3><button type="button" onclick="closeModal('modal-reminders')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" id="subtitle-modal-rem">Elija el mensaje: el que esté seleccionado es el que se envía.</p>
-            <!-- SISDEL: que mensaje se envia: por morosidad (morosos / en plazo) o un aviso general (mensajes varios) -->
+            <!-- SISDEL: que mensaje se envia: por morosidad (solo a los morosos) o un aviso general (mensajes varios) -->
             <div class="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Mensaje que se envía">
-                <button type="button" onclick="setReminderMode('mora')" id="rem-mode-mora" role="radio" class="rem-mode px-4 py-3 rounded-xl border-2 text-left transition"><span class="block font-bold text-sm"><i class="fas fa-exclamation-triangle mr-1.5"></i>Mensaje por morosidad</span><span class="block text-xs opacity-80 mt-0.5">A quien debe: un texto a los morosos y otro a quien aún está en plazo.</span></button>
+                <button type="button" onclick="setReminderMode('mora')" id="rem-mode-mora" role="radio" class="rem-mode px-4 py-3 rounded-xl border-2 text-left transition"><span class="block font-bold text-sm"><i class="fas fa-exclamation-triangle mr-1.5"></i>Mensaje por morosidad</span><span class="block text-xs opacity-80 mt-0.5">El aviso de mora, solo a los morosos.</span></button>
                 <button type="button" onclick="setReminderMode('varios')" id="rem-mode-varios" role="radio" class="rem-mode px-4 py-3 rounded-xl border-2 text-left transition"><span class="block font-bold text-sm"><i class="fas fa-bullhorn mr-1.5"></i>Mensajes varios</span><span class="block text-xs opacity-80 mt-0.5">Un aviso general: convocatorias, cortes de agua, eventos...</span></button>
             </div>
-            <div class="flex space-x-2 mb-3 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg">
+            <div id="rem-tabs" class="flex space-x-2 mb-3 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg">
                 <button onclick="renderRemindersList('all')" id="tab-rem-all" class="flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition hidden">Todos los residentes</button>
                 <button onclick="renderRemindersList('mora')" id="tab-rem-mora" class="flex-1 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition">Solo Morosos</button>
                 <button onclick="renderRemindersList('todos')" id="tab-rem-todos" class="flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Todos los pendientes</button>
@@ -861,7 +861,6 @@
                 <div class="px-4 pb-4 space-y-3">
                     <p class="text-xs text-slate-500 dark:text-slate-400">Puede usar <b>{nombre}</b>, <b>{casa}</b>, <b>{saldo}</b> (lo que debe en total, con la mora), <b>{cuotas}</b> (cuotas y cargos pendientes), <b>{mora}</b> y <b>{condominio}</b>: se reemplazan por los datos de cada residente.</p>
                     <div id="rem-msg-mora-wrap"><label for="rem-msg-mora" class="block text-xs font-bold uppercase text-rose-600 dark:text-rose-400 mb-1">A los morosos</label><textarea id="rem-msg-mora" rows="4" maxlength="1000" oninput="renderReminderPreview()" class="w-full px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea></div>
-                    <div id="rem-msg-pending-wrap"><label for="rem-msg-pending" class="block text-xs font-bold uppercase text-amber-600 dark:text-amber-400 mb-1">A quien debe pero aún está en plazo</label><textarea id="rem-msg-pending" rows="3" maxlength="1000" oninput="renderReminderPreview()" class="w-full px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea></div>
                     <div id="rem-msg-general-wrap" class="hidden"><label for="rem-msg-general" class="block text-xs font-bold uppercase text-blue-600 dark:text-blue-400 mb-1">Aviso a los residentes</label><textarea id="rem-msg-general" rows="5" maxlength="1000" oninput="renderReminderPreview()" class="w-full px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea></div>
                     <!-- Vista previa: como le llega al primer residente de la lista -->
                     <div id="rem-preview-wrap" class="hidden rounded-lg border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2">
@@ -3897,26 +3896,26 @@
         }
 
         // SISDEL: Envio de recordatorios por WhatsApp. Lista en orden alfabetico, busqueda inteligente (la de Residentes) y
-        // dos clases de mensaje (pedido del usuario, 2026-11-16): "Mensaje por morosidad" (un texto a los morosos y otro a
-        // quien aun esta en plazo) y "Mensajes varios" (un aviso general a los residentes). El que este seleccionado es el
-        // que se envia. Los tres textos se editan en la ventana (vale para lo que se envie ahi) y "Guardar para todos" los
-        // deja en la configuracion del condominio (settings.reminderMessages: mora, pending y general; en la nube, con
-        // rastro en la bitacora; pide finanzas.config_general). {saldo} es lo que debe en total con la mora, {cuotas} las
+        // dos clases de mensaje (pedido del usuario, 2026-11-16): "Mensaje por morosidad" (el aviso de mora, solo a los
+        // morosos) y "Mensajes varios" (un aviso general a los residentes; con el filtro de pendientes llega tambien a quien
+        // debe pero aun esta en plazo). El texto a quien esta en plazo se quito el mismo dia (pedido del usuario): el que
+        // estaba guardado se conserva en la nube (nada se borra) pero ya no se usa. El que este seleccionado es el que se
+        // envia. Los textos se editan en la ventana (vale para lo que se envie ahi) y "Guardar para todos" los deja en la
+        // configuracion del condominio (settings.reminderMessages: mora y general; en la nube, con rastro en la bitacora;
+        // pide finanzas.config_general). {saldo} es lo que debe en total con la mora, {cuotas} las
         // cuotas y cargos pendientes y {mora} la mora a hoy: lo mismo que los reportes y Residentes (sisdelOwedOf).
         const SISDEL_REMINDER_PLACEHOLDER = '[Escriba aquí el aviso]';
         const SISDEL_REMINDER_DEFAULTS = {
             mora: '⚠️ *Aviso de Mora* - {condominio}\nEstimado(a) {nombre} ({casa}): su período de gracia ha expirado. Saldo pendiente: {saldo}.\nPor favor regularice su pago.',
-            pending: '{condominio}: Recordatorio para {nombre} ({casa}). Su saldo pendiente es {saldo}.\nAún está a tiempo de cancelar sin recargos.',
             general: '📢 *Aviso de la Administración* - {condominio}\nEstimado(a) {nombre} ({casa}):\n' + SISDEL_REMINDER_PLACEHOLDER
         };
         function reminderMessagesSaved() {
             const saved = (Store.get('settings') || {}).reminderMessages || {};
             const pick = (k) => (typeof saved[k] === 'string' && saved[k].trim() ? saved[k] : SISDEL_REMINDER_DEFAULTS[k]);
-            return { mora: pick('mora'), pending: pick('pending'), general: pick('general') };
+            return { mora: pick('mora'), general: pick('general') };
         }
         function fillReminderMessages(messages) {
             document.getElementById('rem-msg-mora').value = messages.mora;
-            document.getElementById('rem-msg-pending').value = messages.pending;
             document.getElementById('rem-msg-general').value = messages.general;
             renderReminderPreview();
         }
@@ -3926,11 +3925,12 @@
         }
         function saveReminderMessages() {
             const mora = document.getElementById('rem-msg-mora').value.trim();
-            const pending = document.getElementById('rem-msg-pending').value.trim();
             const general = document.getElementById('rem-msg-general').value.trim();
-            if (!mora || !pending) return alert('Escriba los dos mensajes por morosidad antes de guardarlos.');
+            if (!mora) return alert('Escriba el mensaje por morosidad antes de guardarlo.');
             const s = Store.get('settings');
-            s.reminderMessages = { mora: mora.slice(0, 1000), pending: pending.slice(0, 1000), general: (general || SISDEL_REMINDER_DEFAULTS.general).slice(0, 1000) };
+            // Lo que ya estaba guardado (p. ej. el texto viejo a quien esta en plazo) se conserva: nada se borra
+            const prev = s.reminderMessages && typeof s.reminderMessages === 'object' ? s.reminderMessages : {};
+            s.reminderMessages = { ...prev, mora: mora.slice(0, 1000), general: (general || SISDEL_REMINDER_DEFAULTS.general).slice(0, 1000) };
             Store.set('settings', s);
             showToast('Mensajes guardados para todos los usuarios del condominio.');
         }
@@ -3950,7 +3950,7 @@
             const saved = reminderMessagesSaved();
             const pick = (id, fallback) => { const v = document.getElementById(id).value; return v.trim() ? v : fallback; };
             if (currentRemMode === 'varios') return pick('rem-msg-general', saved.general);
-            return checkIsMoroso(r) ? pick('rem-msg-mora', saved.mora) : pick('rem-msg-pending', saved.pending);
+            return pick('rem-msg-mora', saved.mora);
         }
         function sendReminder(residentId) {
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
@@ -3988,11 +3988,12 @@
                 if (b) { b.className = selected ? on : off; b.setAttribute('aria-checked', String(selected)); }
             });
             document.getElementById('rem-msg-mora-wrap').classList.toggle('hidden', varios);
-            document.getElementById('rem-msg-pending-wrap').classList.toggle('hidden', varios);
             document.getElementById('rem-msg-general-wrap').classList.toggle('hidden', !varios);
             document.getElementById('rem-msg-title').textContent = varios ? 'Texto de los mensajes varios' : 'Texto del mensaje por morosidad';
-            // Con mensajes varios se puede escribir a todos los residentes, no solo a los que deben
+            // El mensaje por morosidad va solo a los morosos; con mensajes varios se elige: todos, morosos o pendientes
             document.getElementById('tab-rem-all').classList.toggle('hidden', !varios);
+            document.getElementById('tab-rem-todos').classList.toggle('hidden', !varios);
+            document.getElementById('rem-tabs').classList.toggle('hidden', !varios);
         }
         function renderReminderPreview() {
             const wrap = document.getElementById('rem-preview-wrap');
@@ -4012,7 +4013,7 @@
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
         }
         function renderRemindersList(filterMode) {
-            currentRemFilter = ['all', 'mora', 'todos'].includes(filterMode) ? filterMode : 'mora';
+            currentRemFilter = currentRemMode === 'varios' && ['all', 'mora', 'todos'].includes(filterMode) ? filterMode : 'mora';
             const tabOn = 'flex-1 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition';
             const tabOff = 'flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition';
             [['tab-rem-all', 'all'], ['tab-rem-mora', 'mora'], ['tab-rem-todos', 'todos']].forEach(([id, key]) => {
@@ -4031,6 +4032,7 @@
             const countEl = document.getElementById('rem-count');
             if (countEl) countEl.textContent = text.trim() ? `${res.length} de ${total} residente(s)` : `${total} residente(s)`;
             remPreviewResident = res[0] || null;
+            if (countEl && currentRemMode !== 'varios') countEl.textContent += ' en mora';
             renderReminderPreview();
             const container = document.getElementById('reminders-list');
             if (res.length === 0) {

@@ -63,7 +63,9 @@
         [/^(openFiniquito|reactivateResident|handleFiniquitoSubmit)\(/, ['residentes_finiquitar']],
         [/^deleteResident\(/, ['residentes_eliminar']],
         [/^openEstadoCuenta\(/, ['residentes_estado']],
-        [/^(openReminders|renderRemindersList|contactWhatsApp|contactSingleWhatsApp)\(/, ['residentes_contactar']],
+        [/^(openReminders|renderRemindersList|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages)\(/, ['residentes_contactar']],
+        // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
+        [/^saveReminderMessages\(/, ['config_general']],
         [/^fixDuplicateFees\(/, ['cuotas_corregir']],
         [/^(openModal\('modal-bulk-charge'\)|applyBulkCharge\()/, ['cargos_crear']],
         [/^(openModal\('modal-income'\)|handleTransactionSubmit\(\s*event\s*,\s*'income'\s*\))/, ['pagos_registrar']],
@@ -136,7 +138,8 @@
             '#btn-export', 'button[onclick="exportCSV()"]'
         ]],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
-        [CONFIG_WRITE_KEYS, ['#btn-save-cfg']]
+        [CONFIG_WRITE_KEYS, ['#btn-save-cfg']],
+        [['config_general'], ['#rem-msg-save']]
     ];
 
     // Lo que no se oculta pero tampoco debe tocarse (el nombre del residente abre su estado de cuenta, etc.)

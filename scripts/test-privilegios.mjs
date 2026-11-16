@@ -370,6 +370,11 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     });
     equal('cada ventana de las paginas de SISDEL tiene la X de cerrar', sinX, []);
     yes('las ventanas de RONDIN muestran la X de cerrar (menos los avisos cortos)', /Swal\.fire = function sisdelFire/.test(read('rondin/js/sisdel-api.js')) && /showCloseButton: true/.test(read('rondin/js/sisdel-api.js')) && /!first\.toast/.test(read('rondin/js/sisdel-api.js')));
+    // Envio de recordatorios: orden alfabetico, busqueda inteligente, mensaje personalizable y nombres escapados
+    const remCode = oikos.slice(oikos.indexOf('function renderRemindersList'), oikos.indexOf('// ========== RESIDENT STATUS REPORTS'));
+    yes('los recordatorios van en orden alfabetico y con la busqueda inteligente', /localeCompare\(String\(b\.name \|\| ''\), 'es'/.test(remCode) && /SisdelBusqueda\.filter\(res, text, residentSearchFields\)/.test(remCode) && oikos.includes('id="rem-search"'));
+    yes('el mensaje de los recordatorios se personaliza y se guarda en la configuracion del condominio', ['rem-msg-mora', 'rem-msg-pending', 'rem-msg-save'].every((id) => oikos.includes(`id="${id}"`)) && /s\.reminderMessages = \{ mora:/.test(oikos) && oikos.includes('(nombre|casa|saldo|mora|condominio)'));
+    yes('los recordatorios escapan nombre, casa y telefono y no meten el telefono en el onclick', !/\$\{r\.name\}/.test(remCode) && /onclick="sendReminder\(this\.dataset\.id\)" data-id="\$\{esc\(r\.id\)\}"/.test(remCode) && !/contactSingleWhatsApp\('\$\{r\.contact\}'/.test(oikos));
     yes('OIKOS carga los calculos de reportes y el modulo de Excel y WhatsApp de SISDEL', /<script src="\.\/sisdel-reportes\.js\?v=\w+"><\/script>/.test(oikos) && /<script src="\.\.\/reportes-export\.js\?v=\w+"><\/script>/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));

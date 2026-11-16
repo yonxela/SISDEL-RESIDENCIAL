@@ -2886,19 +2886,18 @@
             const ms = sisdelMoraOf(r.id, r.balance);
             return { ms, shown: ms ? ms.total : r.balance };
         }
-        // SISDEL: lo que debe un residente a hoy, con las mismas cifras en todos los reportes, la Tabla general y Residentes:
-        //   pending = cuotas y cargos sin pagar (el libro: cargos menos pagos; los pagos cubren primero cuotas y cargos),
-        //   mora    = la mora por dia a hoy que falta pagar (sisdel-mora.js; si los pagos pasan de las cuotas, lo que sobra la cubre),
-        //   total   = pending + mora, que es el saldo con mora de Residentes (residentShownBalance) cuando debe.
-        // Siempre cuadra (se suma en centavos). Sin regla de mora por dia, mora = 0 y total = lo que debe del libro.
+        // SISDEL: lo que debe un residente a hoy, con las mismas cifras en todos los reportes, la Tabla general, Residentes y
+        // el Estado de cuenta (la misma regla que accountDebt de finanzas/sisdel-reportes.js):
+        //   total   = el saldo con mora de Residentes (residentShownBalance) cuando debe: el libro menos la mora por dia,
+        //   mora    = la mora que se debe hoy (sisdel-mora.js ms.mora: sin la que ya se pago), nunca mas que el total,
+        //   pending = cuotas y cargos pendientes = total menos esa mora.
+        // Siempre cuadra (en centavos). Sin regla de mora por dia, mora = 0 y total = lo que debe del libro.
         function sisdelOwedOf(r) {
             const c = (v) => Math.round((parseFloat(v) || 0) * 100);
-            const ledger = c(r.balance);
-            const ms = sisdelMoraOf(r.id);
-            const accrued = ms ? Math.max(0, c(ms.moraDaily)) : 0;
-            const pending = Math.max(0, -ledger);
-            const mora = Math.max(0, accrued - Math.max(0, ledger));
-            return { pending: pending / 100, mora: mora / 100, total: (pending + mora) / 100 };
+            const ms = sisdelMoraOf(r.id, r.balance);
+            const owed = Math.max(0, -c(ms ? ms.total : r.balance));
+            const mora = ms ? Math.min(owed, Math.max(0, c(ms.mora))) : 0;
+            return { pending: (owed - mora) / 100, mora: mora / 100, total: owed / 100 };
         }
         // Lo que deben entre todos (residentes no eliminados, tambien los finiquitados que deben): { count, pending, mora, total }
         function sisdelOwedTotals(residents) {
@@ -4910,7 +4909,7 @@
                     name: (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'),
                     residentId: r.id, late: x.late, upcoming: x.upcoming, mora: x.owed.mora, pending: x.owed.pending, amount: x.owed.total
                 };
-                if (!(r.balance < -0.005)) { rows.push(Object.assign(base, { months: 'Solo mora', count: 0 })); return; }
+                if (!(x.owed.pending > 0)) { rows.push(Object.assign(base, { months: 'Solo mora', count: 0 })); return; }
                 const mine = byResident.get(String(r.id)) || [];
                 let remaining = mine.filter(function (t) { return t.type === 'income'; }).reduce(function (sum, t) { return sum + (parseFloat(t.amount) || 0); }, 0);
                 const charges = mine.filter(function (t) { return t.type === 'charge'; }).map(function (t) {

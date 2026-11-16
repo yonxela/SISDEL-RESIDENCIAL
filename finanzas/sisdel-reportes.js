@@ -293,6 +293,65 @@
         };
     }
 
+    // ── Estado de cuenta de un residente: lo que debe hoy ──
+    // accountDebt: tres cifras que SIEMPRE suman: cuotas y cargos pendientes + mora = total que debe.
+    // `ms` es el estado de mora a hoy con el saldo del libro (sisdelMoraOf(id, r.balance) de OIKOS): `total` es el
+    // libro menos la mora por dia (negativo = debe: el MISMO saldo con mora de la lista de Residentes y de la Tabla
+    // general), `mora` la mora que se debe hoy (por dia y fija, ya descontado lo pagado de ella) y `overdueCapital`
+    // lo de las cuotas que ya vencio. Lo pendiente es el total menos la mora: asi suma aunque el residente haya pagado
+    // parte de la mora o haya movimientos fechados despues de hoy. De lo pendiente, `overdue` ya vencio y `upcoming`
+    // todavia no (una cuota del mes en curso no es mora). Sin saldo en contra todo es cero y `credit` es el saldo a favor.
+    function accountDebt(ms) {
+        if (!ms) return null;
+        const balance = cents(ms.total);
+        const owed = Math.max(0, -balance);
+        const mora = Math.min(owed, Math.max(0, cents(ms.mora)));
+        const pending = owed - mora;
+        const overdue = Math.min(pending, Math.max(0, cents(ms.overdueCapital)));
+        return {
+            pending: fromCents(pending), overdue: fromCents(overdue), upcoming: fromCents(pending - overdue),
+            mora: fromCents(mora), total: fromCents(owed), credit: fromCents(Math.max(0, balance))
+        };
+    }
+
+    // pendingRows: las cuotas y cargos que faltan pagar, cada uno con su vencimiento y su mora. Sale de los items del
+    // estado de mora (SisdelMora.stateOf(...).items): solo los que deben capital o mora, del mas antiguo al mas nuevo.
+    //   opts.label(item) -> el texto de la fila (el mes de la cuota o el concepto del cargo)
+    //   opts.total       -> lo que debe en total (accountDebt.total): el estado de mora solo ve lo fechado hasta hoy y el
+    //                       libro lo ve todo; si las filas no suman eso, una fila de ajuste cierra la diferencia (para que
+    //                       la tabla y el total que debe nunca se contradigan)
+    //   opts.adjustLabel -> el texto de esa fila de ajuste
+    // Devuelve { rows: [{ id, kind, label, capital, dueDate, overdue, mora, total }], capital, mora, total }
+    function pendingRows(state, opts) {
+        const options = opts || {};
+        const label = typeof options.label === 'function' ? options.label : (item) => String(item.period || '');
+        const rows = [];
+        let capital = 0;
+        let mora = 0;
+        ((state && state.items) || []).forEach((item) => {
+            const c = Math.max(0, cents(item.capital));
+            const m = Math.max(0, cents(item.mora));
+            if (c <= 0 && m <= 0) return;
+            capital += c;
+            mora += m;
+            rows.push({
+                id: item.id, kind: item.kind, label: label(item), capital: fromCents(c), dueDate: item.dueDate || null,
+                overdue: !!item.overdue, mora: fromCents(m), total: fromCents(c + m)
+            });
+        });
+        if (options.total !== undefined && options.total !== null) {
+            const diff = cents(options.total) - (capital + mora);
+            if (diff !== 0) {
+                rows.push({
+                    id: null, kind: 'ajuste', label: options.adjustLabel || 'Otros movimientos', capital: fromCents(diff), dueDate: null,
+                    overdue: false, mora: 0, total: fromCents(diff)
+                });
+                capital += diff;
+            }
+        }
+        return { rows, capital: fromCents(capital), mora: fromCents(mora), total: fromCents(capital + mora) };
+    }
+
     // Texto de una celda que puede traer HTML (p. ej. el boton del No. de documento)
     function plain(value) {
         if (value === null || value === undefined) return '';
@@ -378,5 +437,5 @@
         };
     }
 
-    return { MAX_MONTHS, monthBalance, periodSummary, paymentMap, periodLabel, plain, moneyValue, slug, exportModel };
+    return { MAX_MONTHS, monthBalance, periodSummary, paymentMap, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel };
 });

@@ -203,6 +203,68 @@ equal('el .xlsx con colores se abre y cada celda guarda su estilo', mapRow ? [ma
 const mapWa = R.exportModel(mapReport, { at });
 equal('WhatsApp usa la version corta: residente, meses, desde y total', [mapWa.tables[0].headers, mapWa.tables[0].rows[0], mapWa.kpis], [['Residente', 'Meses en mora', 'En mora desde', 'Total en mora'], ['A001 · Uno', '1', 'Oct 2026', 'Q300.00'], [{ label: 'Total meses en mora', value: '1' }, { label: 'Total en mora', value: 'Q300.00' }]]);
 
+console.log('\nEstado de cuenta: lo que debe el residente');
+{
+    const Mora = require('../finanzas/sisdel-mora.js');
+    const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const at12 = (day) => `${day}T18:00:00.000Z`;
+    const feeTx = (period, amount = 300) => ({ id: 'fee_r1_' + period, type: 'charge', kind: 'fee', period, amount, resiId: 'r1', date: at12(`${period}-05`) });
+    const settings = { fee: 300, moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] };
+    // Lo mismo que hace OIKOS (sisdelMoraOf): el estado a hoy con el saldo del libro (todo lo registrado, tambien lo fechado despues)
+    const standing = (txs, today) => {
+        const state = Mora.stateOf('r1', txs, settings, today);
+        const ledger = round2(txs.reduce((sum, t) => sum + (t.type === 'income' ? 1 : -1) * t.amount, 0));
+        return Object.assign({}, state, { total: round2(ledger - state.moraDaily), ledger });
+    };
+    const sum3 = (d) => round2(d.pending + d.mora);
+
+    // Octubre vencida (300, con 16 dias de mora: 16 x 0.3) y noviembre que aun no vence
+    const base = [feeTx('2026-10'), feeTx('2026-11')];
+    const ms = standing(base, '2026-11-16');
+    const debt = R.accountDebt(ms);
+    equal('cuotas pendientes + mora = total que debe, con lo vencido y lo que aun no vence', debt, { pending: 600, overdue: 300, upcoming: 300, mora: 4.8, total: 604.8, credit: 0 });
+    equal('la suma de las tres cifras es exacta', sum3(debt), debt.total);
+    equal('el total que debe es el saldo con mora de la lista de Residentes (libro menos la mora por dia)', debt.total, round2(-ms.total));
+    const list = R.pendingRows(ms, { label: (item) => R.periodLabel(item.period), total: debt.total });
+    equal('la tabla trae una fila por cuota pendiente, con su vencimiento y su mora', list.rows.map((r) => [r.label, r.capital, r.dueDate, r.overdue, r.mora, r.total]), [['Oct 2026', 300, '2026-11-05', true, 4.8, 304.8], ['Nov 2026', 300, '2026-12-05', false, 0, 300]]);
+    equal('el total de la tabla es el total que debe (sin fila de ajuste)', [list.capital, list.mora, list.total, list.rows.some((r) => r.kind === 'ajuste')], [600, 4.8, 604.8, false]);
+
+    // Muchos anos sin pagar (como C070): siempre suma y la tabla cuadra con el total
+    const years = [];
+    for (let y = 2008; y <= 2026; y++) for (let m = 1; m <= 12; m++) { if (y === 2026 && m > 11) break; years.push(feeTx(`${y}-${String(m).padStart(2, '0')}`)); }
+    const big = standing(years, '2026-11-16');
+    const bigDebt = R.accountDebt(big);
+    const bigList = R.pendingRows(big, { total: bigDebt.total });
+    equal('con 227 cuotas sin pagar: pendiente = lo cargado, y pendiente + mora = total', [bigDebt.pending, sum3(bigDebt) === bigDebt.total, bigDebt.upcoming], [227 * 300, true, 300]);
+    equal('con 227 cuotas sin pagar la tabla tiene 227 filas y suma el total que debe', [bigList.rows.length, bigList.total === bigDebt.total, round2(bigList.rows.reduce((s, r) => s + r.total, 0)) === bigDebt.total], [227, true, true]);
+    equal('lo vencido + lo que no vence es lo pendiente', round2(bigDebt.overdue + bigDebt.upcoming), bigDebt.pending);
+
+    // Pago que cubre las cuotas y parte de la mora: lo pendiente nunca sale negativo y todo suma
+    const partial = standing([feeTx('2026-01'), feeTx('2026-02'), { id: 'p1', type: 'income', amount: 700, resiId: 'r1', date: at12('2026-11-16') }], '2026-11-16');
+    const partialDebt = R.accountDebt(partial);
+    equal('con parte de la mora pagada: no debe cuotas, solo mora, y suma', [partialDebt.pending, partialDebt.overdue, partialDebt.mora === partialDebt.total, partialDebt.total > 0, sum3(partialDebt) === partialDebt.total], [0, 0, true, true, true]);
+
+    // Un cargo fechado despues de hoy no esta en el estado de mora pero si en el libro: una fila de ajuste cierra la diferencia
+    const future = standing([feeTx('2026-10'), { id: 'f1', type: 'charge', kind: 'extra', amount: 120, resiId: 'r1', date: at12('2026-12-20'), concept: 'Cargo futuro' }], '2026-11-16');
+    const futureDebt = R.accountDebt(future);
+    const futureList = R.pendingRows(future, { total: futureDebt.total, adjustLabel: 'Fechados despues de hoy' });
+    const adjust = futureList.rows.find((r) => r.kind === 'ajuste');
+    equal('un cargo fechado despues de hoy cuenta en el total y la tabla lo muestra como ajuste', [futureDebt.pending, futureDebt.total, adjust && adjust.label, adjust && adjust.capital, futureList.total], [420, 424.8, 'Fechados despues de hoy', 120, 424.8]);
+
+    // El mismo total que la regla de la lista de Residentes y de los reportes (sisdelOwedOf de OIKOS, en centavos):
+    // pendiente = max(0, -libro); mora = max(0, mora por dia - max(0, libro)); total = pendiente + mora
+    const owedOf = (m) => { const pend = Math.max(0, -Math.round(m.ledger * 100)); const mor = Math.max(0, Math.round(m.moraDaily * 100) - Math.max(0, Math.round(m.ledger * 100))); return (pend + mor) / 100; };
+    const futureTx = { id: 'f2', type: 'charge', kind: 'extra', amount: 120, resiId: 'r1', date: at12('2026-12-20'), concept: 'Cargo futuro' };
+    const scenarios = [ms, big, partial, future, standing([feeTx('2026-10'), { id: 'p2', type: 'income', amount: 1000, resiId: 'r1', date: at12('2026-10-10') }], '2026-11-16'), standing([feeTx('2026-10'), futureTx], '2026-11-16')];
+    equal('el total que debe es el de la regla de Residentes y los reportes en todos los casos (rara vez cambia solo como se parte)', scenarios.map((m) => R.accountDebt(m).total), scenarios.map(owedOf));
+
+    // Sin deuda: todo en cero y el saldo a favor aparte
+    const credit = standing([feeTx('2026-10'), { id: 'p2', type: 'income', amount: 1000, resiId: 'r1', date: at12('2026-10-10') }], '2026-11-16');
+    equal('con saldo a favor no debe nada y se informa el saldo a favor', R.accountDebt(credit), { pending: 0, overdue: 0, upcoming: 0, mora: 0, total: 0, credit: 700 });
+    equal('un residente sin movimientos no tiene filas', R.pendingRows(standing([], '2026-11-16'), { total: 0 }).rows, []);
+    equal('sin regla de mora no hay cifras (la pantalla usa el saldo de siempre)', [R.accountDebt(null), R.accountDebt(undefined)], [null, null]);
+}
+
 console.log('\nCopia en el navegador');
 const sandbox = { self: {} };
 vm.createContext(sandbox);

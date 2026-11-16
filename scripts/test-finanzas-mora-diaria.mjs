@@ -183,7 +183,7 @@ const oikos = read('finanzas/index.html');
 const recalc = read('functions/src/finanzas/recalc.js');
 yes('OIKOS carga el modulo despues de las cuotas', /<script src="\.\/sisdel-mora\.js\?v=\w+"><\/script>/.test(oikos) && oikos.indexOf('<script src="./sisdel-cuotas.js') < oikos.indexOf('<script src="./sisdel-mora.js'));
 yes('el saldo de cada residente es el del libro mas la mora del dia', /const ms = sisdelMoraOf\(r\.id, r\.balance\);\s*return \{ ms, shown: ms \? ms\.total : r\.balance \};/.test(oikos) && /const shownBalance = balanceOf\.get\(r\.id\)\.shown;/.test(oikos) && /\(parseFloat\(ledgerBalance\) \|\| 0\) - \(ms\.moraDaily \|\| 0\)/.test(oikos));
-yes('el estado de cuenta, el PDF y la impresion usan el mismo total con mora', (oikos.match(/formatMoney\(Math\.max\(0, -ms\.total\)\)/g) || []).length === 3 && !/-ms\.balance/.test(oikos));
+yes('el estado de cuenta, el PDF, la impresion, el Excel y WhatsApp salen del mismo calculo (ecDebt: accountDebt del saldo con mora)', (oikos.match(/ecDebt\(\)/g) || []).length >= 5 && /const debt = SisdelReportesOikos\.accountDebt\(ms\);/.test(oikos) && !/-ms\.balance/.test(oikos) && !/Total con mora \$\{formatMoney/.test(oikos));
 yes('el estado de cuenta muestra capital vencido, mora y total a pagar', ['ec-mora-box', 'ec-overdue', 'ec-mora', 'ec-total-due'].every((id) => oikos.includes(`id="${id}"`)));
 yes('el PDF y la impresion del estado de cuenta llevan la mora', (oikos.match(/sisdelMoraRuleText\(\)/g) || []).length >= 3);
 yes('sin reglas de mora no se calcula nada (OIKOS como siempre)', /if \(typeof SisdelMora === 'undefined' \|\| !SisdelMora\.enabled\(s\)\) return null;/.test(oikos));

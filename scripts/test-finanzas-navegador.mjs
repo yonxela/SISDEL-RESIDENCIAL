@@ -133,6 +133,52 @@ async function run() {
         equal('repetirla no duplica nada', await oikos(`(() => { openFeeRun(); return feeRunTargets().pending.length; })()`), 0);
         await oikos(`closeModal('modal-fee-run')`);
 
+        console.log('\nEstado de cuenta: lo que debe el residente');
+        // Un vecino con 227 cuotas sin pagar desde 2008 (como C070 de La Perla) y la mora por dia: la pantalla, la impresion,
+        // el PDF, el Excel y WhatsApp dicen lo mismo y las tres cifras suman. El estado de mora se arma con el modulo de verdad
+        // (a un dia fijo) y se le entrega a la pantalla; lo demas es el codigo de OIKOS tal cual.
+        const feesCount = await oikos(`(() => {
+            const txs = [];
+            for (let y = 2008; y <= 2026; y++) for (let m = 1; m <= 12; m++) { if (y === 2026 && m > 11) break; const p = y + '-' + String(m).padStart(2, '0'); txs.push({ id: 'fee_x_' + p, type: 'charge', kind: 'fee', period: p, amount: 300, resiId: 'u-ana', date: p + '-05T18:00:00.000Z' }); }
+            const state = SisdelMora.stateOf('u-ana', txs, { fee: 300, moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] }, '2026-11-16');
+            const ledger = -300 * txs.length;
+            window.__real = { ecMora, sisdelMoraRuleText, open: window.open, jsPdfSave: window.jspdf && window.jspdf.jsPDF.API.save };
+            ecMora = () => Object.assign({}, state, { total: Math.round((ledger - state.moraDaily) * 100) / 100 });
+            sisdelMoraRuleText = () => '3 % al mes por día sobre cada cuota vencida';
+            openEstadoCuenta('u-ana');
+            return txs.length;
+        })()`);
+        const money = (text) => Number(String(text).replace(/[^0-9.-]/g, ''));
+        const cents = (n) => Math.round(n * 100) / 100;
+        const [pending, overdue, upcoming, mora, due] = (await oikos(`['ec-pending', 'ec-overdue', 'ec-upcoming', 'ec-mora', 'ec-total-due'].map(id => document.getElementById(id).textContent)`)).map(money);
+        equal('pantalla: cuotas y cargos pendientes + mora = total que debe', cents(pending + mora), due);
+        equal('pantalla: lo pendiente es lo cargado (227 cuotas de Q300) y lo vencido + lo que no vence es lo pendiente', [feesCount, pending, cents(overdue + upcoming), upcoming], [227, 227 * 300, pending, 300]);
+        equal('pantalla: la caja se ve y el saldo simple avisa que no incluye la mora', await oikos(`[!document.getElementById('ec-mora-box').classList.contains('hidden'), document.getElementById('ec-balance-label').textContent]`), [true, 'Saldo sin mora']);
+        const listed = await oikos(`[...document.querySelectorAll('#ec-pending-body tr')].map(tr => tr.children[0].textContent)`);
+        equal('pantalla: la tabla lista las 227 cuotas, de la mas antigua a la mas nueva', [listed.length, listed[0], listed[226]], [227, 'Ene 2008', 'Nov 2026']);
+        const foot = (await oikos(`[...document.querySelectorAll('#ec-pending-foot td')].map(td => td.textContent)`)).map(money);
+        equal('pantalla: el total de la tabla es el total que debe (pendiente, mora y total)', [foot[1], foot[3], foot[4]], [pending, mora, due]);
+        equal('pantalla: las filas que aun no vencen se distinguen', await oikos(`[...document.querySelectorAll('#ec-pending-body tr')].pop().children[2].textContent.includes('aún no vence')`), true);
+
+        const printed = await oikos(`(() => { let html = ''; window.open = () => ({ document: { write(h) { html = h; }, close() {} }, print() {} }); printEstadoCuenta(); return html; })()`);
+        record('impresion: trae primero el total que debe, la tabla de cuotas pendientes y su total', /= Total que debe/.test(printed) && printed.includes('Cuotas pendientes y su mora') && printed.includes(`Q${due.toLocaleString('en-US', { minimumFractionDigits: 2 })}`) && (printed.match(/<tbody>/g) || []).length === 2, printed.slice(0, 80));
+        equal('impresion: una fila por cuota pendiente mas las del periodo', (printed.match(/<tr/g) || []).length >= 227 + 1, true);
+        equal('impresion: ningun monto ni saldo puede partirse en dos lineas (todos con nowrap)', (printed.match(/<td style="[^"]*text-align:right[^"]*"/g) || []).filter((cell) => !cell.includes('white-space:nowrap')).length, 0);
+
+        const waUrl = await oikos(`(() => { let url = ''; window.open = (u) => { url = u; return null; }; shareEstadoCuentaWhatsApp(); return url; })()`);
+        const waText = decodeURIComponent(String(waUrl).split('text=')[1] || '');
+        record('WhatsApp: el total que debe, la mora, el conteo de cuotas y los pendientes', /TOTAL QUE DEBE: \*Q[\d,.]+\*/.test(waText) && /Mora a hoy: \*Q[\d,.]+\*/.test(waText) && /Cuotas pendientes: \*227 \(desde Ene 2008\)\*/.test(waText) && waText.length <= 3400, waText.slice(0, 200));
+
+        const model = await oikos(`ecReportModel(false)`);
+        const lastRow = model.tables[0].rows[model.tables[0].rows.length - 1];
+        equal('Excel: la primera hoja son las cuotas pendientes y su ultima fila es el total, con numeros', [model.tables[0].title, model.tables[0].rows.length, lastRow[0], lastRow[1], lastRow[3], lastRow[4]], ['Cuotas pendientes y su mora', 228, 'TOTAL', pending, mora, due]);
+        equal('Excel: las cifras de arriba son las mismas y van primero', model.kpis.slice(0, 5).map((k) => k.label).concat([model.kpis.find((k) => k.label === 'TOTAL QUE DEBE').value]), ['Cuotas y cargos pendientes', 'De ellas, vencidas', 'De ellas, por vencer', 'Mora a hoy', 'TOTAL QUE DEBE', due]);
+
+        const pdf = await oikos(`(() => { const api = window.jspdf.jsPDF.API; let out = { pages: 0, name: '' }; api.save = function (n) { out = { pages: this.getNumberOfPages(), name: n }; return this; }; downloadEstadoCuentaPDF(); return out; })()`);
+        record('PDF: se genera sin errores, con varias paginas por las 227 cuotas', pdf.pages >= 4 && /^Estado_Cuenta_/.test(pdf.name), JSON.stringify(pdf));
+        // Devuelve todo como estaba
+        await oikos(`(() => { ecMora = __real.ecMora; sisdelMoraRuleText = __real.sisdelMoraRuleText; window.open = __real.open; if (__real.jsPdfSave) window.jspdf.jsPDF.API.save = __real.jsPdfSave; closeModal('modal-estado-cuenta'); })()`);
+
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);
         await page.evaluate(`document.getElementById('btnReload').click()`);

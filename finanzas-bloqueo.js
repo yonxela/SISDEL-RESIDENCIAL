@@ -90,7 +90,9 @@
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
         [/^openResidentStatusReport\(/, ['reportes_morosos']],
         [/^(openReportModal|shareReportWhatsApp|setReportMode)\(/, ['reportes_resumen']],
-        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportCSV)\(/, ['reportes_exportar']],
+        [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportEstadoCuentaExcel|exportCSV)\(/, ['reportes_exportar']],
+        // Enviar el estado de cuenta por WhatsApp: lo puede quien exporta o quien contacta a los residentes
+        [/^shareEstadoCuentaWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
@@ -143,9 +145,10 @@
             '#view-reports button[onclick="exportCurrentReportExcel()"]', '#view-reports button[onclick="shareCurrentReportWhatsApp()"]',
             '#modal-report button[onclick="downloadReportPDF()"]', '#modal-report button[onclick="exportReportExcel()"]', '#modal-report button[onclick="printReport()"]',
             '#modal-res-status button[onclick="exportResStatusPDF()"]', '#modal-res-status button[onclick="exportResStatusExcel()"]',
-            '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]',
+            '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]', '#modal-estado-cuenta button[onclick="exportEstadoCuentaExcel()"]',
             '#btn-export', 'button[onclick="exportCSV()"]'
         ]],
+        [['reportes_exportar', 'residentes_contactar'], ['#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]']],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
         [CONFIG_WRITE_KEYS, ['#btn-save-cfg']],
         [['config_general'], ['#rem-msg-save']],

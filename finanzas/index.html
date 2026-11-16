@@ -1304,9 +1304,13 @@
                     <tbody id="ec-table-body" class="text-slate-700 dark:text-slate-200 divide-y divide-slate-100 dark:divide-slate-700"></tbody>
                 </table>
             </div>
-            <div class="flex justify-between items-center pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div class="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <p class="text-xs text-slate-400"><i class="fas fa-info-circle mr-1"></i>Generado el <span id="ec-gen-date"></span></p>
-                <div class="flex space-x-2">
+                <!-- SISDEL: las cuatro salidas del estado de cuenta, como los demas reportes: WhatsApp al residente (con su telefono),
+                     Excel de verdad (.xlsx), imprimir y PDF. Ver shareEstadoCuentaWhatsApp y exportEstadoCuentaExcel -->
+                <div class="flex flex-wrap justify-end gap-2 ml-auto">
+                    <button onclick="shareEstadoCuentaWhatsApp()" title="Abre WhatsApp con el resumen y los últimos movimientos; al teléfono del residente si lo tiene" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition shadow-md"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
+                    <button onclick="exportEstadoCuentaExcel()" class="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg font-semibold text-sm transition"><i class="fas fa-file-excel mr-2"></i>Exportar a Excel</button>
                     <button onclick="printEstadoCuenta()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-2"></i>Imprimir</button>
                     <button onclick="downloadEstadoCuentaPDF()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition shadow-md"><i class="fas fa-file-pdf mr-2"></i>Descargar PDF</button>
                 </div>
@@ -6546,6 +6550,8 @@
             const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
+            // SISDEL: la fuente del PDF es Latin-1: los signos fuera de ella se cambian (latin1 de reportes-export.js)
+            const L = (v) => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(v) : String(v == null ? '' : v));
             const from = document.getElementById('ec-date-from').value;
             const to = document.getElementById('ec-date-to').value;
             const { jsPDF } = window.jspdf;
@@ -6555,12 +6561,12 @@
             doc.setTextColor(255, 255, 255); doc.setFontSize(18); doc.setFont('helvetica', 'bold');
             doc.text('ESTADO DE CUENTA', 14, 13);
             doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-            doc.text(s.name || 'OIKOS', 14, 21);
+            doc.text(L(s.name || 'OIKOS'), 14, 21);
             doc.setFontSize(9);
             doc.text('Generado: ' + new Date().toLocaleString('es-MX'), 210 - 14 - doc.getTextWidth('Generado: ' + new Date().toLocaleString('es-MX')), 21);
             // Resident info
             doc.setTextColor(30, 30, 50); doc.setFontSize(13); doc.setFont('helvetica', 'bold');
-            doc.text(r.unit + ' - ' + r.name, 14, 40);
+            doc.text(L(r.unit + ' - ' + r.name), 14, 40);
             doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139);
             doc.text('Período: ' + from + ' al ' + to, 14, 47);
             // Summary boxes
@@ -6572,7 +6578,7 @@
             doc.setFontSize(8); doc.setTextColor(225, 29, 72); doc.text('CARGOS', 79, 58); doc.setFontSize(12); doc.text(formatMoney(totChg), 79, 66);
             doc.setFontSize(8); doc.setTextColor(79, 70, 229); doc.text('SALDO', 142, 58); doc.setFontSize(12); doc.text(formatMoney(balance), 142, 66);
             // SISDEL: mora por dia a hoy y total a pagar
-            const ms = sisdelMoraOf(r.id, r.balance !== undefined ? r.balance : sisdelLedgerBalance(r.id));
+            const ms = ecMora();
             let tableY = 76;
             if (ms) {
                 doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(180, 83, 9);
@@ -6584,7 +6590,7 @@
             // Table
             const openingBody = Math.abs(opening) >= 0.005 ? [[from, 'Saldo anterior', '', '', formatMoney(opening)]] : [];
             if (rows.length > 0 || openingBody.length > 0) {
-                const body = openingBody.concat(rows.map(row => [new Date(row.date).toLocaleDateString('es-MX'), row.concept, row.tipo, (row.tipo === 'Pago' ? '+' : '-') + formatMoney(row.monto), formatMoney(row.runBal)]));
+                const body = openingBody.concat(rows.map(row => [new Date(row.date).toLocaleDateString('es-MX'), L(row.concept), row.tipo, (row.tipo === 'Pago' ? '+' : '-') + formatMoney(row.monto), formatMoney(row.runBal)]));
                 doc.autoTable({ startY: tableY, head: [['Fecha', 'Concepto', 'Tipo', 'Monto', 'Saldo']], body, theme: 'striped', headStyles: { fillColor: [79, 70, 229], fontSize: 9 }, bodyStyles: { fontSize: 8 }, columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } } });
             } else {
                 doc.setFontSize(11); doc.setTextColor(150, 150, 170); doc.text('No hay movimientos en este período.', 14, 82);
@@ -6593,23 +6599,93 @@
             showToast('PDF de Estado de Cuenta generado.');
         }
 
+        // ─── SISDEL: Estado de Cuenta en Excel y por WhatsApp ────────────────────────────────────────────────
+        // Usan el modulo comun de los reportes (reportes-export.js) y los mismos datos que la pantalla, el PDF y la
+        // impresion (getEcData: solo movimientos vivos, con el saldo anterior al rango y la mora a hoy).
+        // La mora sale igual en las cuatro salidas: la de la pantalla (saldo del libro de movimientos)
+        function ecMora() { return sisdelMoraOf(ecResidentId, sisdelLedgerBalance(ecResidentId)); }
+        // forText = true: para el mensaje de WhatsApp (montos con formato y solo los ultimos movimientos);
+        // false: para el Excel (montos como numeros, con signo, y todos los movimientos)
+        function ecReportModel(forText) {
+            const { r, rows, totInc, totChg, opening, balance } = getEcData();
+            if (!r) return null;
+            const s = Store.get('settings') || {};
+            const from = document.getElementById('ec-date-from').value;
+            const to = document.getElementById('ec-date-to').value;
+            const ms = ecMora();
+            const money = (n) => forText ? formatMoney(n) : Math.round((Number(n) || 0) * 100) / 100;
+            const hasOpening = Math.abs(opening) >= 0.005;
+            const kpis = [];
+            if (hasOpening) kpis.push({ label: 'Saldo anterior', value: money(opening) });
+            kpis.push({ label: 'Pagos', value: money(totInc) }, { label: 'Cargos', value: money(totChg) }, { label: 'Saldo', value: money(balance) });
+            if (ms) kpis.push({ label: 'Cuotas vencidas', value: money(ms.overdueCapital) }, { label: 'Mora a hoy', value: money(ms.mora) }, { label: 'Total con mora', value: money(Math.max(0, -ms.total)) });
+            const day = (iso) => new Date(iso).toLocaleDateString('es-MX');
+            const signed = (row) => (row.tipo === 'Pago' ? 1 : -1) * row.monto;
+            const shown = forText ? rows.slice(-8) : rows;
+            const body = shown.map(row => [day(row.date), row.concept || '', row.tipo, money(signed(row)), money(row.runBal)]);
+            if (!forText && hasOpening) body.unshift(['', 'Saldo anterior al ' + from, '', '', money(opening)]);
+            const fileName = 'Estado_Cuenta_' + String(r.unit || '').trim().replace(/[^\w-]+/g, '_') + '_' + String(r.name || '').trim().replace(/[^\wÀ-ÿ-]+/g, '_');
+            return {
+                title: 'Estado de cuenta',
+                subtitle: (r.unit || '') + ' - ' + (r.name || '') + ' · Período: ' + from + ' al ' + to,
+                condoName: s.name || '',
+                at: new Date(),
+                kpis,
+                tables: [{
+                    title: forText && rows.length > shown.length ? 'Últimos ' + shown.length + ' movimientos' : 'Movimientos',
+                    headers: ['Fecha', 'Concepto', 'Tipo', 'Monto', 'Saldo'],
+                    rows: body,
+                    numeric: [3, 4]
+                }],
+                fileName
+            };
+        }
+        function exportEstadoCuentaExcel() {
+            if (typeof SisdelReportExport === 'undefined') return alert('El módulo de exportación no cargó. Recargue la página e intente de nuevo.');
+            const model = ecReportModel(false);
+            if (!model) return;
+            const blob = new Blob([SisdelReportExport.buildXlsx(model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = model.fileName + '.xlsx';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('Excel del estado de cuenta exportado.');
+        }
+        // WhatsApp no recibe archivos por enlace: se abre con un resumen en texto (pagos, cargos, saldo, mora y los
+        // ultimos movimientos). Si el residente tiene telefono, el mensaje va dirigido a el; si no, se elige el contacto
+        function shareEstadoCuentaWhatsApp() {
+            if (typeof SisdelReportExport === 'undefined') return alert('El módulo de exportación no cargó. Recargue la página e intente de nuevo.');
+            const model = ecReportModel(true);
+            if (!model) return;
+            const r = Store.get('residents').find(x => x.id === ecResidentId);
+            const phone = String((r && r.contact) || '').replace(/\D/g, '');
+            const first = String((r && r.name) || '').trim().split(/\s+/)[0] || '';
+            let text = SisdelReportExport.whatsappText(model);
+            if (phone) text = 'Hola' + (first ? ' ' + first : '') + ', le compartimos su estado de cuenta.\n\n' + text;
+            const url = phone ? 'https://wa.me/' + phone + '?text=' + encodeURIComponent(text) : SisdelReportExport.whatsappUrl(text);
+            window.open(url, '_blank', 'noopener,noreferrer');
+            if (!phone) showToast('El residente no tiene teléfono registrado: elija el contacto en WhatsApp.');
+        }
+
         function printEstadoCuenta() {
             const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
+            // SISDEL: el nombre, la casa y los conceptos los escriben los usuarios: se escapan antes de escribirlos en la ventana
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const from = document.getElementById('ec-date-from').value;
             const to = document.getElementById('ec-date-to').value;
             const openingHtml = Math.abs(opening) >= 0.005 ? `<tr><td colspan="4" style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b">Saldo anterior al ${from}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:right;font-family:monospace">${formatMoney(opening)}</td></tr>` : '';
-            const rowsHtml = openingHtml + rows.map(row => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(row.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${row.concept}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${row.tipo === 'Pago' ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${row.tipo}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${row.tipo === 'Pago' ? '#059669' : '#e11d48'}">${row.tipo === 'Pago' ? '+' : '-'}${formatMoney(row.monto)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:11px;color:${row.runBal >= 0 ? '#059669' : '#e11d48'}">${formatMoney(row.runBal)}</td></tr>`).join('');
-            const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${r.name}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}@media print{body{padding:15px}}</style></head><body>
-                <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${s.name || 'OIKOS'}</p></div>
-                <div style="margin-bottom:16px"><h2 style="margin:0;font-size:18px">${r.unit} - ${r.name}</h2><p style="color:#64748b;font-size:13px;margin:4px 0">Período: ${from} al ${to}</p></div>
+            const rowsHtml = openingHtml + rows.map(row => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${new Date(row.date).toLocaleDateString('es-MX')}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:500">${esc(row.concept)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px"><span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;${row.tipo === 'Pago' ? 'background:#dcfce7;color:#166534' : 'background:#ffe4e6;color:#9f1239'}">${row.tipo}</span></td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${row.tipo === 'Pago' ? '#059669' : '#e11d48'}">${row.tipo === 'Pago' ? '+' : '-'}${formatMoney(row.monto)}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-family:monospace;font-size:11px;color:${row.runBal >= 0 ? '#059669' : '#e11d48'}">${formatMoney(row.runBal)}</td></tr>`).join('');
+            const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${esc(r.name)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}@media print{body{padding:15px}}</style></head><body>
+                <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${esc(s.name || 'OIKOS')}</p></div>
+                <div style="margin-bottom:16px"><h2 style="margin:0;font-size:18px">${esc(r.unit)} - ${esc(r.name)}</h2><p style="color:#64748b;font-size:13px;margin:4px 0">Período: ${from} al ${to}</p></div>
                 <div style="display:flex;gap:12px;margin-bottom:20px">
                     <div style="flex:1;background:#ecfdf5;border:1px solid #a7f3d0;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#059669;margin:0">PAGOS</p><p style="font-size:18px;font-weight:700;color:#166534;margin:4px 0 0">${formatMoney(totInc)}</p></div>
                     <div style="flex:1;background:#fff1f2;border:1px solid #fecdd3;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#e11d48;margin:0">CARGOS</p><p style="font-size:18px;font-weight:700;color:#9f1239;margin:4px 0 0">${formatMoney(totChg)}</p></div>
                     <div style="flex:1;background:#eef2ff;border:1px solid #c7d2fe;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#4f46e5;margin:0">SALDO</p><p style="font-size:18px;font-weight:700;color:${balance >= 0 ? '#166534' : '#9f1239'};margin:4px 0 0">${formatMoney(balance)}</p></div>
                 </div>
-                ${(() => { const ms = sisdelMoraOf(r.id, r.balance !== undefined ? r.balance : sisdelLedgerBalance(r.id)); return ms ? `<div style="background:#fffbeb;border:1px solid #fde68a;padding:10px 12px;border-radius:10px;margin:-8px 0 20px;font-size:13px;color:#92400e"><b>Cuotas vencidas ${formatMoney(ms.overdueCapital)} · Mora a hoy ${formatMoney(ms.mora)} · Total con mora ${formatMoney(Math.max(0, -ms.total))}</b><br><span style="font-size:11px;color:#64748b">Mora: ${sisdelMoraRuleText()}.</span></div>` : ''; })()}
+                ${(() => { const ms = ecMora(); return ms ? `<div style="background:#fffbeb;border:1px solid #fde68a;padding:10px 12px;border-radius:10px;margin:-8px 0 20px;font-size:13px;color:#92400e"><b>Cuotas vencidas ${formatMoney(ms.overdueCapital)} · Mora a hoy ${formatMoney(ms.mora)} · Total con mora ${formatMoney(Math.max(0, -ms.total))}</b><br><span style="font-size:11px;color:#64748b">Mora: ${sisdelMoraRuleText()}.</span></div>` : ''; })()}
                 <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5f9"><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Concepto</th><th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b">Tipo</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Monto</th><th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:#64748b">Saldo</th></tr></thead><tbody>${rowsHtml}</tbody></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;

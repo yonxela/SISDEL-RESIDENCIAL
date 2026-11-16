@@ -124,6 +124,13 @@ equal('con config_cuota el desglose no se bloquea', (() => {
     const css = B.cssFor(only('config_ver', 'config_cuota'));
     return ['maintenance', 'water', 'garbage', 'electricity', 'other'].some((k) => css.includes(`#cfg-fee-${k}`));
 })(), false);
+equal('Estado de cuenta: el Excel exige exportar; WhatsApp lo puede quien exporta o quien contacta', [blocked('exportEstadoCuentaExcel()', only('reportes_exportar')), blocked('exportEstadoCuentaExcel()', only('residentes_estado')), blocked('exportEstadoCuentaExcel()', only('residentes_contactar')), blocked('shareEstadoCuentaWhatsApp()', only('reportes_exportar')), blocked('shareEstadoCuentaWhatsApp()', only('residentes_contactar')), blocked('shareEstadoCuentaWhatsApp()', only('residentes_estado'))], [false, true, true, false, false, true]);
+equal('Estado de cuenta: sin esos privilegios se ocultan sus botones; con contactar solo queda WhatsApp', (() => {
+    const wa = '#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]';
+    const xl = '#modal-estado-cuenta button[onclick="exportEstadoCuentaExcel()"]';
+    const css = (...names) => B.cssFor(only('residentes_estado', ...names));
+    return [css().includes(wa), css().includes(xl), css('residentes_contactar').includes(wa), css('residentes_contactar').includes(xl), css('reportes_exportar').includes(wa), css('reportes_exportar').includes(xl)];
+})(), [true, true, false, true, false, false]);
 equal('la navegacion y el buscador del formulario del residente solo los ve quien puede editar residentes', [B.cssFor(only('residentes_crear')).includes('#res-nav'), B.cssFor(only('residentes_crear')).includes('#res-jump-wrap'), B.cssFor(only('residentes_editar')).includes('#res-nav'), B.cssFor(only('residentes_editar')).includes('#res-jump-wrap')], [true, true, false, false]);
 equal('el precio del agua (paja completa y media paja) tambien queda bloqueado sin config_cuota y libre con ella', [B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-half'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-half')], [true, true, false, false]);
 equal('los campos del precio del agua se deshabilitan igual que el desglose', B.DISABLE.config_cuota.includes('#cfg-water-full') && B.DISABLE.config_cuota.includes('#cfg-water-half'), true);

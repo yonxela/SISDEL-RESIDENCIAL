@@ -156,6 +156,18 @@ export function createDb(server, deviceId) {
                 update: (ref, data) => writes.push({ op: 'update', path: ref.path, data }),
                 commit: () => commit(writes)
             };
+        },
+        // Transaccion: lee el estado del servidor en el momento de la lectura y escribe todo junto al final
+        runTransaction: async (fn) => {
+            const writes = [];
+            const tx = {
+                get: async (ref) => { const d = server.docs.get(ref.path); return docSnap(ref.id, d === undefined ? undefined : JSON.stringify(d)); },
+                set: (ref, data, opts) => { writes.push({ op: 'set', path: ref.path, data, merge: !!(opts && opts.merge) }); return tx; },
+                update: (ref, data) => { writes.push({ op: 'update', path: ref.path, data }); return tx; }
+            };
+            const result = await fn(tx);
+            if (writes.length) await commit(writes);
+            return result;
         }
     };
     return { db, fs };

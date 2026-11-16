@@ -56,6 +56,8 @@ const SisdelFinanzas = (() => {
     const RETRY_MS = 10000;
     const FIRST_LOAD_TIMEOUT_MS = 20000;
     const BATCH_SIZE = 400;
+    // Registros minimos de vecinos sin ficha por transaccion (cada uno se lee y, si falta, se escribe)
+    const EXTRAS_TX_SIZE = 100;
     const CODE_ATTEMPTS = 12;
     // Movimientos por pagina al bajar de la nube (el emulador de Firestore no entrega mas de 10 000 seguidos)
     const PAGE_SIZE = 3000;
@@ -879,8 +881,17 @@ const SisdelFinanzas = (() => {
             markPending();
             updateStatus();
             try {
-                // merge: si otro equipo acaba de guardar el residente con sus datos, no se pisan
-                await commitInChunks(extras.map((e) => (b) => b.set(ref.extras().doc(e.id), e, { merge: true })));
+                // Solo se crea si la ficha TODAVIA no existe, y se comprueba en la misma transaccion: con un set (aunque
+                // fuera con merge) se pisaria el "cobrar desde" de una ficha que otro equipo o una carga por script
+                // acaba de crear. Paso en La Perla (2026-11-15): 77 lotes quedaron cobrandose desde el mes de la carga.
+                for (let i = 0; i < extras.length; i += EXTRAS_TX_SIZE) {
+                    const chunk = extras.slice(i, i + EXTRAS_TX_SIZE);
+                    await db.runTransaction(async (tx) => {
+                        const refs = chunk.map((e) => ref.extras().doc(e.id));
+                        const snaps = await Promise.all(refs.map((r) => tx.get(r)));
+                        snaps.forEach((snap, k) => { if (!snap.exists) tx.set(refs[k], chunk[k]); });
+                    });
+                }
                 failures.extras = null;
             } catch (error) {
                 console.error('Sistema Financiero: no se pudieron preparar los vecinos', error);

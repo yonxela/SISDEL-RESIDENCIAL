@@ -5,7 +5,7 @@
 // Cada caso salio de la revision independiente del 2026-11-13: antes de corregirlo dejaba un pago anulado o
 // resucitado, o una copia del equipo incompleta marcada como completa.
 // Uso: node test-finanzas-carreras.mjs (tambien corre con npm test).
-import { createServer, open, seed, oikosSet, oikosGet, txDoc, live, sleep, deviceCache, D, CONDO, memoryStorage } from './firestore-falso.mjs';
+import { createServer, open, seed, iso, oikosSet, oikosGet, txDoc, live, sleep, deviceCache, D, CONDO, memoryStorage } from './firestore-falso.mjs';
 
 let passed = 0;
 const failures = [];
@@ -205,6 +205,27 @@ console.log('\nLo de siempre sigue igual');
     const doc = txDoc(server, 'm-0007');
     equal('anular y devolver: la nube queda sin anular y con el rastro', [doc.deleted, doc.deleted_reason, typeof doc.restored_at, 'server_at' in (server.log[server.log.length - 1].data)], [false, 'error', 'string', false]);
     yes('las fotos de deshacer (listas guardadas) no se modificaron', before.find((t) => t.id === 'm-0007').deleted === true);
+    a.close();
+}
+
+console.log('\nRegistro minimo de un vecino nuevo y una carga que crea su ficha a la vez');
+{
+    // La Perla (2026-11-15): un Sistema Financiero abierto vio vecinos recien creados por la carga, todavia sin ficha, y
+    // les escribio "cobrar desde = este mes" con merge, un segundo despues de que la carga creara su ficha: pisaba el
+    // mes correcto (2027-01 -> 2026-11) y el cobro automatico les cobro un mes que ya tenian cubierto.
+    const server = createServer(); seed(server, 3);
+    const base = `condominios/${CONDO}`;
+    const a = await open(server);
+    // La carga crea dos vecinos con su ficha; el equipo abierto recibe primero el aviso de los usuarios (todavia no el
+    // de las fichas) y pide el registro minimo de cada uno. v3 es un vecino nuevo de verdad, sin ficha.
+    server.seed(`${base}/usuarios/v2`, { id: 'v2', name: 'Beto', role: 'vecino', casa: 'L2', phone: '', createdAt: iso(0), updatedAt: iso(0) });
+    server.seed(`${base}/finanzas_residentes/v2`, { id: 'v2', feeFrom: '2027-01', waterUnits: 0.5, updated_at: iso(1) });
+    server.seed(`${base}/usuarios/v3`, { id: 'v3', name: 'Carla', role: 'vecino', casa: 'L3', phone: '', createdAt: iso(0), updatedAt: iso(0) });
+    server.notify(null);
+    await sleep(40); await a.sync.waitIdle(); await sleep(20);
+    const ficha = (id) => server.docs.get(`${base}/finanzas_residentes/${id}`) || null;
+    equal('la ficha que la carga acaba de crear conserva su "cobrar desde" y sus datos', [ficha('v2') && ficha('v2').feeFrom, ficha('v2') && ficha('v2').waterUnits], ['2027-01', 0.5]);
+    equal('el vecino sin ficha recibe su registro minimo (se cobra desde este mes)', !!(ficha('v3') && /^\d{4}-\d{2}$/.test(ficha('v3').feeFrom)), true);
     a.close();
 }
 

@@ -84,6 +84,7 @@ async function recalcCondo(condoId, now = new Date(), options = {}) {
     let changes = 0;
     // Vecinos sin datos financieros: se cobran desde este mes (igual que finanzas-sync.js)
     const residents = [];
+    const missingFichas = [];
     const users = new Map();
     usersSnap.docs.forEach((doc) => {
         const user = { ...doc.data(), id: doc.id };
@@ -91,8 +92,7 @@ async function recalcCondo(condoId, now = new Date(), options = {}) {
         let extra = extras.get(doc.id);
         if (!extra) {
             extra = { id: doc.id, feeFrom: currentPeriod, updated_at: nowIso };
-            const data = extra;
-            writes.push((b) => b.set(condoRef.collection('finanzas_residentes').doc(doc.id), data, { merge: true }));
+            missingFichas.push(extra);
         }
         // Quitado del Sistema Financiero en OIKOS: no se le cobra ni cuenta como moroso (la garita lo deja pasar)
         if (extra.deleted) {
@@ -116,6 +116,12 @@ async function recalcCondo(condoId, now = new Date(), options = {}) {
         writes.push((b) => b.update(condoRef.collection('usuarios').doc(r.id), update));
     });
 
+    // El registro minimo se CREA solo si la ficha no existe (create falla si ya existe): con set y merge se pisaba el
+    // "cobrar desde" de una ficha que una carga o un equipo acababa de crear (La Perla, 2026-11-15)
+    await Promise.all(missingFichas.map((data) => condoRef.collection('finanzas_residentes').doc(data.id).create(data).catch((error) => {
+        if (error.code === 6 || /already exists/i.test(String(error.message))) return;
+        throw error;
+    })));
     await commitInChunks(writes);
     return { condoId, active: true, fees: fees.length, changes, ...(options.sweep ? { stamped } : {}) };
 }

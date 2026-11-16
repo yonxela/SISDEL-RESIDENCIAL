@@ -350,6 +350,26 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Residentes: en un condominio grande la lista abre con los que mas deben; los demas se buscan
     yes('la lista de residentes (tabla y anterior/siguiente del formulario) muestra los 50 con mas deuda sin busqueda y busca entre todos', /const RES_LIST_LIMIT = 50;/.test(oikos) && /if \(res\.length <= RES_LIST_LIMIT\) return \{ list: res/.test(oikos) && /function visibleResidents\(\) \{ return residentsView\(\)\.list; \}/.test(oikos) && /const view = residentsView\(\);/.test(oikos) && /\.sort\(\(a, b\) => \(b\.owed - a\.owed\) \|\| \(a\.i - b\.i\)\)/.test(oikos) && oikos.includes('id="res-list-note"'));
     yes('la linea entre residentes es mas marcada', oikos.includes('id="residents-table-body" class="text-sm text-slate-700 dark:text-slate-200 divide-y divide-slate-200 dark:divide-slate-600"'));
+    // Todas las ventanas tienen la X de cerrar arriba a la derecha (pedido del usuario)
+    const oikosModals = [...oikos.matchAll(/<div id="(modal-[\w-]+)"/g)].map((m) => m[1]);
+    const oikosSinX = oikosModals.filter((id) => {
+        const start = oikos.indexOf(`<div id="${id}"`);
+        const next = oikos.indexOf('<div id="modal-', start + 10);
+        const chunk = oikos.slice(start, next < 0 ? undefined : next);
+        return !/fa-times sisdel-x-(lg|md)/.test(chunk);
+    });
+    equal('cada ventana de OIKOS tiene la X de cerrar', [oikosModals.length > 10, oikosSinX], [true, []]);
+    const sinX = [];
+    ['admin.html', 'master.html', 'garita.html', 'vecino.html', 'auditor.html', 'index.html', 'finanzas.html'].forEach((file) => {
+        const html = read(file);
+        const starts = [...html.matchAll(/<div[^>]*class="[^"]*modal-overlay[^"]*"[^>]*>/g)].map((m) => m.index);
+        starts.forEach((start, i) => {
+            const chunk = html.slice(start, starts[i + 1]);
+            if (!/modal-close/.test(chunk)) sinX.push(`${file}#${(/id="([^"]+)"/.exec(chunk) || [])[1]}`);
+        });
+    });
+    equal('cada ventana de las paginas de SISDEL tiene la X de cerrar', sinX, []);
+    yes('las ventanas de RONDIN muestran la X de cerrar (menos los avisos cortos)', /Swal\.fire = function sisdelFire/.test(read('rondin/js/sisdel-api.js')) && /showCloseButton: true/.test(read('rondin/js/sisdel-api.js')) && /!first\.toast/.test(read('rondin/js/sisdel-api.js')));
     yes('OIKOS carga los calculos de reportes y el modulo de Excel y WhatsApp de SISDEL', /<script src="\.\/sisdel-reportes\.js\?v=\w+"><\/script>/.test(oikos) && /<script src="\.\.\/reportes-export\.js\?v=\w+"><\/script>/.test(oikos));
     yes('finanzas.html abre el reporte pedido en la direccion (#reportes/...) solo la primera vez', /function openReportFromHash\(win\)/.test(fin) && ids.every((i) => fin.includes(i)) && /openReportFromHash\(mounted\.contentWindow\)/.test(fin) && /deepLinkDone/.test(fin));
     yes('el reporte financiero pide su privilegio aun por direccion', /SISDEL\.can\('finanzas\.reportes_resumen'\)/.test(fin));
@@ -413,7 +433,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         yes(`${file}: las ${closers.length} X de cerrar usan la clase modal-close`, closers.length > 0 && closers.every((tag) => /class="[^"]*\bmodal-close\b/.test(tag)));
     }
     const oikosX = [...read('finanzas/index.html').matchAll(/onclick="closeModal\('[a-z-]+'\)"[^>]*>\s*<i class="fas fa-times[^"]*"><\/i>/g)].map((m) => m[0]);
-    yes('las X de las ventanas de OIKOS (ya estaban arriba a la derecha) tambien son un 30 % mas grandes', oikosX.length === 7 && oikosX.some((tag) => tag.includes("closeModal('modal-resident')")) && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
+    yes('las X de las ventanas de OIKOS (una por ventana, arriba a la derecha) son un 30 % mas grandes', oikosX.length === (read('finanzas/index.html').match(/<div id="modal-[\w-]+"/g) || []).length && oikosX.some((tag) => tag.includes("closeModal('modal-resident')")) && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

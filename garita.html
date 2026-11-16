@@ -134,6 +134,8 @@
     <!-- Modal Resultados -->
     <div class="modal-overlay" id="modalResult" style="display:none;">
         <div class="modal" id="resultCard" style="max-width:400px; text-align:center; padding:2rem;">
+            <!-- La X de cerrar, como en las demas ventanas (hace lo mismo que "Cerrar") -->
+            <button class="btn btn-ghost btn-icon modal-close" id="btnXResult" type="button" aria-label="Cerrar" title="Cerrar" style="position:absolute; top:0.75rem; right:0.75rem;">&times;</button>
             <div id="resultIcon" style="font-size:4rem; margin-bottom:1rem;"></div>
             <h2 id="resultTitle" style="margin-bottom:1rem;"></h2>
             <div id="resultInfo" class="card"
@@ -548,6 +550,7 @@
                 }
             });
 
+            document.getElementById('btnXResult').addEventListener('click', () => document.getElementById('btnCloseResult').click());
             document.getElementById('btnCloseResult').addEventListener('click', () => {
                 document.getElementById('modalResult').style.display = 'none';
             });

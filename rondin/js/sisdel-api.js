@@ -24,6 +24,20 @@
    ═══════════════════════════════════════════════════════════════ */
 
 (function () {
+    // Todas las ventanas (formularios) de RONDIN con la X de cerrar arriba a la derecha, como el resto del sistema.
+    // Los avisos cortos (toast) quedan sin ella. Se aplica una sola vez a Swal.fire (sweetalert2 carga antes que este
+    // archivo); una ventana que ya decide showCloseButton se respeta.
+    if (typeof Swal !== 'undefined' && typeof Swal.fire === 'function' && !Swal.sisdelCloseButton) {
+        const fire = Swal.fire;
+        Swal.fire = function sisdelFire(first, ...rest) {
+            if (first && typeof first === 'object' && !Array.isArray(first) && !first.toast && first.showCloseButton === undefined) {
+                first = Object.assign({ showCloseButton: true, closeButtonAriaLabel: 'Cerrar' }, first);
+            }
+            return fire.call(this, first, ...rest);
+        };
+        Swal.sisdelCloseButton = true;
+    }
+
     const TZ = 'America/Guatemala';
     const SIREN_MS = 60000;
     const ROLE_OUT = { admin: 'DIRECTOR_GENERAL', policia: 'GUARDIA', supervisor: 'SUPERVISOR', auditor: 'AUDITOR', vecino: 'NEIGHBOR', master: 'SUPER_ADMIN' };

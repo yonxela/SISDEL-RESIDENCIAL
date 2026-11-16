@@ -269,6 +269,8 @@
     <!-- Modal para QR -->
     <div class="modal-overlay" id="modalQR" style="display:none;">
         <div class="modal" style="max-width:320px; text-align:center;">
+            <!-- La X de cerrar, como en las demas ventanas (hace lo mismo que "Cerrar") -->
+            <button class="btn btn-ghost btn-icon modal-close" id="btnXQR" type="button" aria-label="Cerrar" title="Cerrar" style="position:absolute; top:0.75rem; right:0.75rem;">&times;</button>
             <h3 id="modalQRTitle" style="margin-bottom:0.5rem;">Pase Digital</h3>
             <p id="qrType" class="text-xs text-muted" style="margin-bottom:1rem;"></p>
             <div id="qrcode"
@@ -769,6 +771,7 @@
             };
 
             document.getElementById('btnCloseQR').addEventListener('click', () => document.getElementById('modalQR').style.display = 'none');
+            document.getElementById('btnXQR').addEventListener('click', () => document.getElementById('btnCloseQR').click());
 
             // --- Image Generation Helper ---
             async function generatePassImage() {

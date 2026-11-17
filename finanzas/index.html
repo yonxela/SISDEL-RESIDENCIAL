@@ -4207,7 +4207,7 @@
             if (!bridge) return;
             const picked = remSelectedSendable().length;
             const n = picked || reminderSendable(remShownList).length;
-            const running = !!(remCampaign && remCampaign.status === 'running');
+            const running = !!(remCampaign && (remCampaign.status === 'running' || remCampaign.status === 'paused'));
             const btn = document.getElementById('rem-send-all');
             document.getElementById('rem-send-all-label').textContent = picked ? `Enviar a los seleccionados (${picked})` : n ? `Enviar a todos (${n})` : 'Enviar a todos';
             const countLabel = document.getElementById('rem-pick-count');
@@ -4217,7 +4217,7 @@
             btn.disabled = !n || running;
             btn.classList.toggle('opacity-50', btn.disabled);
             btn.classList.toggle('cursor-not-allowed', btn.disabled);
-            btn.title = running ? 'Ya hay un envío en curso' : '';
+            btn.title = running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
         }
         function paintReminderProgress() {
             const wrap = document.getElementById('rem-bulk-progress');
@@ -4228,21 +4228,24 @@
             const total = c.total || 0;
             const done = (c.sent || 0) + (c.failed || 0) + (c.skipped || 0);
             const pct = total ? Math.round((done * 100) / total) : 0;
-            const titles = { running: 'Enviando recordatorios...', done: 'Envío terminado', canceled: 'Envío cancelado', error: 'Envío detenido' };
+            const titles = { running: 'Enviando recordatorios...', paused: 'Envío en pausa', done: 'Envío terminado', canceled: 'Envío cancelado', error: 'Envío detenido' };
             document.getElementById('rem-bulk-title').textContent = titles[c.status] || 'Envío';
             document.getElementById('rem-bulk-pct').textContent = pct + ' %';
             const bar = document.getElementById('rem-bulk-bar');
             bar.style.width = pct + '%';
-            bar.className = 'h-full transition-all ' + (c.status === 'error' ? 'bg-rose-500' : c.status === 'canceled' ? 'bg-slate-400' : 'bg-emerald-500');
+            bar.className = 'h-full transition-all ' + (c.status === 'error' ? 'bg-rose-500' : c.status === 'canceled' ? 'bg-slate-400' : c.status === 'paused' ? 'bg-amber-500' : 'bg-emerald-500');
             const when = c.createdAt ? new Date(c.createdAt).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const parts = [`${c.sent || 0} enviados`, `${c.failed || 0} fallidos`, `${c.skipped || 0} sin teléfono`, `faltan ${c.pending || 0}`];
             if (c.status === 'running' && c.pending) parts.push(`unos ${Math.max(1, Math.ceil((c.pending * REM_PAUSE_SECONDS) / 60))} min`);
+            if (c.status === 'paused') parts.push('en pausa' + (c.pausedAt ? ' desde ' + new Date(c.pausedAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '') + ': pulse Continuar para seguir');
             document.getElementById('rem-bulk-detail').textContent = parts.join(' · ') + (c.errorMessage ? ' — ' + c.errorMessage : '') + (when ? ` · iniciado ${when}${c.createdBy && c.createdBy.name ? ' por ' + c.createdBy.name : ''}` : '');
             const btnCls = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition';
             const buttons = [];
-            if (c.status === 'running') buttons.push(`<button type="button" onclick="controlRemCampaign('cancel')" class="${btnCls} bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800">Cancelar envío</button>`);
-            if ((c.status === 'error' || c.status === 'canceled') && (c.pending || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('resume')" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white">Reanudar</button>`);
-            if (c.status !== 'running' && (c.failed || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('retry')" class="${btnCls} bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Reintentar fallidos (${c.failed})</button>`);
+            // Pausar detiene el envio y se puede Continuar; Cancelar es definitivo (los que faltan ya no se envian)
+            if (c.status === 'running') buttons.push(`<button type="button" onclick="controlRemCampaign('pause')" class="${btnCls} bg-amber-500 hover:bg-amber-600 text-white"><i class="fas fa-pause mr-1"></i>Pausar</button>`);
+            if ((c.status === 'paused' || c.status === 'error') && (c.pending || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('resume')" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-play mr-1"></i>Continuar</button>`);
+            if (c.status === 'running' || c.status === 'paused' || c.status === 'error') buttons.push(`<button type="button" onclick="controlRemCampaign('cancel')" class="${btnCls} bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800">Cancelar envío</button>`);
+            if (c.status !== 'running' && c.status !== 'canceled' && (c.failed || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('retry')" class="${btnCls} bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Reintentar fallidos (${c.failed})</button>`);
             document.getElementById('rem-bulk-buttons').innerHTML = buttons.join('');
         }
         function startReminderWatch() {
@@ -4306,7 +4309,7 @@
         async function controlRemCampaign(action) {
             const bridge = remBridge();
             if (!bridge || !remCampaign) return;
-            if (action === 'cancel' && !confirm('¿Cancelar el envío? Lo que ya salió no se puede recoger; los que faltan no se enviarán.')) return;
+            if (action === 'cancel' && !confirm('¿Cancelar el envío? Lo que ya salió no se puede recoger; los que faltan ya no se enviarán y no se podrá continuar.\n\nSi solo quiere detenerlo un momento, use Pausar.')) return;
             const result = await bridge.control({ campaignId: remCampaign.id, action });
             if (!result.ok) alert(result.error);
         }

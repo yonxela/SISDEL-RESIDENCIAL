@@ -222,7 +222,22 @@ async function run() {
         equal('sin elegir a nadie el envio es a todos los de la lista', (await page.evaluate(`window.__sent`)).map((d) => d.items.length), [2, shown]);
         await oikos(`(() => { remTogglePick(Store.get('residents')[0].id, true); setReminderMode('mora'); })()`);
         equal('cambiar de mensaje (morosidad <-> varios) empieza la seleccion de cero', await oikos(`remSelected.size`), 0);
-        // Con una pantalla chica (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
+        // Botones del progreso segun el estado del envio: Pausar (en curso), Continuar (en pausa o detenido), Cancelar (definitivo)
+        const panel = (status, extra = {}) => oikos(`(() => {
+            remCampaign = Object.assign({ id: 'x', status: ${JSON.stringify(status)}, total: 10, sent: 3, failed: 0, skipped: 0, pending: 7, createdAt: new Date().toISOString() }, ${JSON.stringify(extra)});
+            paintReminderProgress(); paintReminderBulk();
+            const send = document.getElementById('rem-send-all');
+            return [document.getElementById('rem-bulk-title').textContent, [...document.querySelectorAll('#rem-bulk-buttons button')].map(b => b.textContent.trim()), send.disabled];
+        })()`);
+        equal('en curso: Pausar y Cancelar envio, y no se puede empezar otro', await panel('running'), ['Enviando recordatorios...', ['Pausar', 'Cancelar envío'], true]);
+        equal('en pausa: Continuar y Cancelar envio, y tampoco se empieza otro', await panel('paused', { pausedAt: new Date().toISOString() }), ['Envío en pausa', ['Continuar', 'Cancelar envío'], true]);
+        equal('detenido por un error: Continuar y Cancelar envio', await panel('error', { errorMessage: 'WhatsApp no responde' }), ['Envío detenido', ['Continuar', 'Cancelar envío'], false]);
+        equal('cancelado: ningun boton (cancelar es definitivo)', (await panel('canceled'))[1], []);
+        equal('terminado: ningun boton', (await panel('done', { pending: 0, sent: 10 }))[1], []);
+        await oikos(`(() => { remCampaign = Object.assign({}, remCampaign, { status: 'paused', pausedAt: new Date().toISOString() }); paintReminderProgress(); })()`);
+        equal('el texto del avance en pausa dice que se pulse Continuar', await oikos(`/en pausa desde .*pulse Continuar/.test(document.getElementById('rem-bulk-detail').textContent)`), true);
+        await oikos(`(() => { remCampaign = null; paintReminderProgress(); paintReminderBulk(); })()`);
+        // Con poca pantalla (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
         await oikos(`openReminders()`);
         const scrolling = await oikos(`(() => {
             const card = document.querySelector('#modal-reminders > div');

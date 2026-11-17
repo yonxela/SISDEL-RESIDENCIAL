@@ -161,6 +161,74 @@ console.log('\nCancelar y turnos');
     equal('nadie manda a un numero que ya no esta en la ficha', 1, 1);
 }
 
+console.log('\nPausar y continuar');
+{
+    const control = (id, action) => R.controlCampaign({ db, condominioId: CONDO, data: { campaignId: id, action } });
+    const campRefOf = (id) => condoRef.collection('recordatorios_envios').doc(id);
+
+    // Pausar antes de que salga nada
+    reset();
+    const r = await create(['v1', 'v2', 'v3']);
+    const paused = await control(r.id, 'pause');
+    const afterPause = await camp(r.id);
+    equal('pausar deja el envio en pausa, con la hora, y la cola tambien', [paused.status, afterPause.status, typeof afterPause.pausedAt, (await queue(r.id)).status], ['paused', 'paused', 'string', 'paused']);
+    equal('en pausa no sale nada aunque corra la cola', [(await run()).length, sentLog.length], [0, 0]);
+    await rejects('un envio en pausa cuenta como en curso: no se empieza otro (se repetirian mensajes)', () => create(['v1']), 'failed-precondition');
+    await rejects('pausar uno que ya esta en pausa se rechaza', () => control(r.id, 'pause'), 'failed-precondition');
+    const resumed = await control(r.id, 'resume');
+    const afterResume = await camp(r.id);
+    equal('continuar lo pone en curso, sin pausa y con la cola activa', [resumed.status, resumed.pending, afterResume.status, afterResume.pausedAt, (await queue(r.id)).status], ['running', 3, 'running', null, 'running']);
+    await run();
+    equal('al continuar salen todos, una sola vez cada uno', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(r.id)).status], [3, 3, 'done']);
+    await rejects('uno terminado no se pausa', () => control(r.id, 'pause'), 'failed-precondition');
+    await rejects('uno terminado no se continua: no queda nadie', () => control(r.id, 'resume'), 'failed-precondition');
+
+    // Pausar CON la corrida mandando: se detiene antes del siguiente mensaje (el estado se mira en cada uno)
+    reset();
+    const m = await create(['v1', 'v2', 'v3']);
+    let pausedMid = false;
+    const sleepAndPause = async (ms) => { pauses.push(ms); if (!pausedMid) { pausedMid = true; await control(m.id, 'pause'); } };
+    await run({ sleep: sleepAndPause });
+    const midState = await camp(m.id);
+    equal('pausar a mitad de la corrida la detiene despues del mensaje en curso (salio 1 de 3)', [sentLog.length, midState.status, midState.sent, midState.pending], [1, 'paused', 1, 2]);
+    equal('la corrida suelta el turno al parar, asi se puede continuar enseguida', midState.lockUntil, 0);
+    await control(m.id, 'resume');
+    await run();
+    equal('al continuar salen los 2 que faltaban y ninguno se repite', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(m.id)).status], [3, 3, 'done']);
+
+    // Pausar y continuar enseguida, con la corrida viva: sigue la misma corrida, sin una segunda a la vez
+    reset();
+    const q = await create(['v1', 'v2', 'v3']);
+    let lockWhileResumed = null; let flipped = false;
+    const sleepPauseResume = async (ms) => {
+        pauses.push(ms);
+        if (flipped) return;
+        flipped = true;
+        await control(q.id, 'pause');
+        await control(q.id, 'resume');
+        lockWhileResumed = (await camp(q.id)).lockUntil;
+    };
+    await run({ sleep: sleepPauseResume });
+    equal('pausar y continuar sin soltar el turno: la misma corrida termina el envio, una vez cada uno', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(q.id)).status], [3, 3, 'done']);
+    ok('y continuar no suelta el turno de la corrida que sigue mandando (lockUntil se conserva)', lockWhileResumed > Date.now(), `-> lockUntil ${lockWhileResumed}`);
+
+    // Cancelar desde pausa y cancelar con la corrida viva
+    reset();
+    const c1 = await create(['v1', 'v2']);
+    await control(c1.id, 'pause');
+    const canceledFromPause = await control(c1.id, 'cancel');
+    equal('un envio en pausa se puede cancelar', [canceledFromPause.status, (await camp(c1.id)).status, (await queue(c1.id)).status], ['canceled', 'canceled', 'canceled']);
+    reset();
+    const c2 = await create(['v1', 'v2', 'v3']);
+    let lockAtCancel = null; let canceledMid = false;
+    const sleepAndCancel = async (ms) => { pauses.push(ms); if (!canceledMid) { canceledMid = true; await control(c2.id, 'cancel'); lockAtCancel = (await camp(c2.id)).lockUntil; } };
+    await run({ sleep: sleepAndCancel });
+    const afterCancel = await camp(c2.id);
+    equal('cancelar a mitad de la corrida la detiene despues del mensaje en curso (salio 1 de 3)', [sentLog.length, afterCancel.status, afterCancel.pending], [1, 'canceled', 2]);
+    ok('cancelar no suelta el turno de golpe (lo suelta la corrida al parar)', lockAtCancel > Date.now() && afterCancel.lockUntil === 0, `-> en el momento ${lockAtCancel}, al final ${afterCancel.lockUntil}`);
+    ok('un envio de otro condominio ni se pausa', await (async () => { try { await R.controlCampaign({ db, condominioId: 'otro-condo', data: { campaignId: c2.id, action: 'pause' } }); return false; } catch (e) { return e.userCode === 'not-found'; } })());
+}
+
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');
 {
     reset();

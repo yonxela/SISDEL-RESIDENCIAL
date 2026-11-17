@@ -1658,6 +1658,12 @@ async function run() {
     await denied('ni el master escribe un envio directo', () => updateDoc(doc(master.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`), { sent: 99 }));
     await denied('ni sus destinatarios', () => updateDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}/destinatarios/${remVecinoId}`), { status: 'sent' }));
     await denied('la cola de envios no se toca desde el navegador', () => getDocs(collection(admin.db, 'colas_envios')));
+    await denied('el vecino no pausa un envio', () => remControl(ana, { campaignId: remResult.data.id, action: 'pause' }));
+    equal('el administrador pausa el envio', (await remControl(admin, { campaignId: remResult.data.id, action: 'pause' })).data.status, 'paused');
+    equal('y se ve en pausa, con la hora', (await getDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`))).data().status, 'paused');
+    await rejectedWith('con un envio en pausa tampoco se inicia otro', () => remStart(admin, { mode: 'varios', items: remItems }), 'failed-precondition');
+    await denied('el vecino no continua un envio', () => remControl(ana, { campaignId: remResult.data.id, action: 'resume' }));
+    equal('el administrador continua el envio', (await remControl(admin, { campaignId: remResult.data.id, action: 'resume' })).data.status, 'running');
     await denied('el vecino no cancela un envio', () => remControl(ana, { campaignId: remResult.data.id, action: 'cancel' }));
     equal('el administrador cancela el envio', (await remControl(admin, { campaignId: remResult.data.id, action: 'cancel' })).data.status, 'canceled');
     equal('y queda cancelado', (await getDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`))).data().status, 'canceled');

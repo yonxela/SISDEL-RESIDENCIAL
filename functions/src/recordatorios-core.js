@@ -8,7 +8,8 @@
 //  2. processQueue (cada minuto, ver recordatorios.js): manda de a poco, con una pausa de 6 a 10 segundos entre mensajes
 //     (WhatsApp bloquea los numeros que mandan cientos seguidos). Cada mensaje queda como enviado o fallido; despues de
 //     5 fallos seguidos se detiene y avisa.
-//  3. controlCampaign: cancelar, reanudar o reintentar los fallidos.
+//  3. controlCampaign: pausar, continuar, cancelar o reintentar los fallidos. Pausar detiene el envio (en cuanto sale el
+//     mensaje en curso) y se puede continuar despues; cancelar es definitivo para quien usa OIKOS.
 // Los documentos de un envio los escribe solo el servidor; OIKOS los lee para mostrar el avance (reglas de Firestore).
 // Aqui no se importa firebase: la base y el proveedor entran por parametro (se prueba con scripts/test-recordatorios.mjs).
 const { normalizePhone } = require('./rondas/avisos');
@@ -42,8 +43,9 @@ async function recount(campRef) {
     return { pending, sent, failed, skipped };
 }
 
+// Un envio en pausa cuenta como en curso: si no, se podria empezar otro a todos y repetir mensajes
 async function hasRunning(db, condominioId, exceptId) {
-    const snap = await campaignsOf(db, condominioId).where('status', '==', 'running').limit(3).get();
+    const snap = await campaignsOf(db, condominioId).where('status', 'in', ['running', 'paused']).limit(5).get();
     return snap.docs.some((d) => d.id !== exceptId);
 }
 
@@ -73,7 +75,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         if (text.length > MAX_TEXT) throw fail('invalid-argument', `Un mensaje pasa de ${MAX_TEXT} caracteres.`);
         if (!texts.has(id)) texts.set(id, text);
     }
-    if (await hasRunning(db, condominioId)) throw fail('failed-precondition', 'Ya hay un envío en curso. Espere a que termine o cancélelo.');
+    if (await hasRunning(db, condominioId)) throw fail('failed-precondition', 'Ya hay un envío en curso o en pausa. Espere a que termine, o continúelo o cancélelo.');
 
     // Los telefonos salen de la ficha del vecino (nunca del cliente)
     const condoRef = db.collection('condominios').doc(condominioId);
@@ -160,16 +162,15 @@ async function processCampaign(ctx) {
         return { campaignId, status: 'error' };
     }
 
-    let sent = 0; let failed = 0; let streak = 0; let tick = 0; let finished = false; let stoppedBy = null;
+    let sent = 0; let failed = 0; let streak = 0; let finished = false; let stoppedBy = null;
     outer: for (;;) {
         const page = await campRef.collection('destinatarios').where('status', '==', 'pending').limit(20).get();
         if (page.empty) { finished = true; break; }
         for (const doc of page.docs) {
             if (nowMs() - started >= budgetMs) { stoppedBy = 'tiempo'; break outer; }
-            if (tick++ % 5 === 0) {
-                const current = await campRef.get();
-                if (!current.exists || current.data().status !== 'running') { stoppedBy = 'estado'; break outer; }
-            }
+            // El estado se mira antes de CADA mensaje: pausar o cancelar detiene el envio en cuanto sale el que esta en curso
+            const current = await campRef.get();
+            if (!current.exists || current.data().status !== 'running') { stoppedBy = 'estado'; break outer; }
             const user = await condoRef.collection('usuarios').doc(doc.id).get();
             const phone = user.exists && user.data().active !== false ? normalizePhone(user.data().phone) : '';
             if (!phone) {
@@ -221,7 +222,9 @@ async function processQueue({ db, whatsapp, sleep = realSleep, pause = randomPau
     return results;
 }
 
-// ───────── 3. Cancelar, reanudar, reintentar ─────────
+// ───────── 3. Pausar, continuar, cancelar, reintentar ─────────
+// Ni pausar ni cancelar tocan lockUntil: lo suelta la corrida que esta mandando cuando ve el cambio (si se soltara aqui,
+// un "continuar" enseguida dejaria que otra corrida mande a la vez que la anterior y se repetirian mensajes).
 async function controlCampaign({ db, condominioId, data, now = () => new Date() }) {
     const campaignId = String((data && data.campaignId) || '').trim();
     if (!campaignId || campaignId.includes('/')) throw fail('invalid-argument', 'Envío inválido.');
@@ -233,9 +236,15 @@ async function controlCampaign({ db, condominioId, data, now = () => new Date() 
     const action = data && data.action;
     const iso = now().toISOString();
 
+    if (action === 'pause') {
+        if (camp.status !== 'running') throw fail('failed-precondition', 'Ese envío no está en curso.');
+        await campRef.update({ status: 'paused', pausedAt: iso });
+        await queueRef.set({ condominioId, campaignId, status: 'paused' }, { merge: true });
+        return { status: 'paused' };
+    }
     if (action === 'cancel') {
-        if (camp.status !== 'running' && camp.status !== 'error') throw fail('failed-precondition', 'Ese envío ya no está en curso.');
-        await campRef.update({ status: 'canceled', canceledAt: iso, lockUntil: 0 });
+        if (camp.status !== 'running' && camp.status !== 'paused' && camp.status !== 'error') throw fail('failed-precondition', 'Ese envío ya no está en curso.');
+        await campRef.update({ status: 'canceled', canceledAt: iso });
         await queueRef.set({ condominioId, campaignId, status: 'canceled' }, { merge: true });
         return { status: 'canceled' };
     }
@@ -252,7 +261,7 @@ async function controlCampaign({ db, condominioId, data, now = () => new Date() 
         }
         const counts = await recount(campRef);
         if (!counts.pending) throw fail('failed-precondition', 'No queda nadie por enviar.');
-        await campRef.update({ status: 'running', lockUntil: 0, errorMessage: null, finishedAt: null });
+        await campRef.update({ status: 'running', errorMessage: null, finishedAt: null, pausedAt: null, resumedAt: iso });
         await queueRef.set({ condominioId, campaignId, status: 'running', createdAt: iso }, { merge: true });
         return { status: 'running', pending: counts.pending };
     }

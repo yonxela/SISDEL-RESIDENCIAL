@@ -754,6 +754,12 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     // El servidor sigue sin confiar en la seleccion: solo recibe ids de residente y texto, y toma el telefono de la ficha
     // La ventana se desplaza entera (pedido del usuario, 2026-11-16): con el envio en marcha lo de abajo quedaba fuera de la pantalla
     yes('la ventana de Recordatorios se desplaza entera y la lista tiene su altura (los botones Pausar / Cancelar y la lista se alcanzan)', /id="modal-reminders"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)?<div class="[^"]*max-h-\[90vh\][^"]*overflow-y-auto[^"]*">/.test(oikos) && /class="overflow-y-auto shrink-0[^"]*max-h-\[60vh\][^"]*" id="reminders-list"/.test(oikos));
+    // Pausar y Continuar (pedido del usuario, 2026-11-17)
+    yes('el panel de progreso tiene Pausar (en curso), Continuar (en pausa o detenido) y Cancelar, y cancelar es definitivo', /controlRemCampaign\('pause'\)[\s\S]{0,260}Pausar/.test(oikos) && /\(c\.status === 'paused' \|\| c\.status === 'error'\) && \(c\.pending \|\| 0\) > 0\) buttons\.push\([^\n]*controlRemCampaign\('resume'\)[^\n]*Continuar/.test(oikos) && !/c\.status === 'canceled'\) && \(c\.pending/.test(oikos) && /no se podrá continuar/.test(oikos));
+    yes('un envio en pausa tambien bloquea el boton de enviar a todos', /remCampaign\.status === 'running' \|\| remCampaign\.status === 'paused'/.test(oikos));
+    const core = read('functions/src/recordatorios-core.js');
+    yes('el servidor pausa y revisa el estado antes de CADA mensaje (no cada 5)', /action === 'pause'/.test(core) && /where\('status', 'in', \['running', 'paused'\]\)/.test(core) && !/tick\+\+ % 5/.test(core));
+    yes('pausar, cancelar y continuar no tocan el turno (lockUntil) de la corrida que esta mandando', !/status: 'canceled', canceledAt: iso, lockUntil/.test(core) && !/status: 'running', lockUntil: 0, errorMessage/.test(core));
     yes('la seleccion no manda telefonos al servidor (solo residentId y text)', /items = list\.map\(r => \(\{ residentId: String\(r\.id\), text: reminderText\(reminderTemplateFor\(r\), r\) \}\)\)/.test(oikos));
 }
 

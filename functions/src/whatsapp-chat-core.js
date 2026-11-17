@@ -10,6 +10,12 @@
 //   - Cada telefono se busca entre los usuarios de todos los condominios (normalizePhone, el mismo de los recordatorios):
 //     el chat se guarda en condominios/{c}/whatsapp_chats/{telefono} con sus mensajes en wa_mensajes. Un telefono que no
 //     es de nadie queda en whatsapp_sin_asignar (solo el master lo lee). Nada se borra.
+//   - Con el WhatsApp OFICIAL de Meta (Cloud API) el aviso llega al mismo lugar con otro formato (parseMeta): mensajes que
+//     entran y palomitas (sent, delivered, read, failed); Meta firma cada aviso con la clave de la aplicacion (lo verifica
+//     whatsapp-chat.js). Cada chat recuerda por que canal escribio el residente (channel: 'meta' o 'ultramsg') y se le
+//     contesta por ese. Por Meta un mensaje libre solo se puede mandar hasta 24 horas despues del ultimo mensaje del
+//     residente (WINDOW_MS); despues, solo con plantilla aprobada (Recordatorios). Las palomitas de mensajes que no estan en
+//     ningun chat (p. ej. los recordatorios con plantilla) quedan en whatsapp_estados/{id} para quien los quiera seguir.
 //   - Contestar: OIKOS manda el texto y el chat (o el residente); el servidor toma el telefono del chat o de la ficha del
 //     residente, nunca uno que mande el navegador: asi nadie usa el numero del condominio para escribir a cualquiera.
 //     El mensaje se guarda "en cola" antes de enviarlo y, cuando UltraMsg avisa que salio, se le pone su id de WhatsApp
@@ -20,6 +26,8 @@ const MAX_TEXT = 4096;
 const INDEX_TTL_MS = 5 * 60 * 1000;
 const MATCH_WINDOW_MS = 30 * 60 * 1000;   // un mensaje enviado desde SISDEL se reconoce en el aviso hasta 30 min despues
 const HISTORY_LIMIT = 60;
+const WINDOW_MS = 24 * 60 * 60 * 1000;   // Meta: mensaje libre solo hasta 24 h despues del ultimo mensaje del residente
+const META_ACK = { sent: 'server', delivered: 'device', read: 'read', failed: 'failed' };
 // Orden de las palomitas: nunca se baja (un aviso viejo que llega tarde no quita el "leido")
 const ACK_RANK = { failed: -1, '': 0, pending: 0, server: 1, device: 2, read: 3, played: 4 };
 const ACKS = new Set(['pending', 'server', 'device', 'read', 'played', 'failed']);
@@ -41,6 +49,8 @@ function normAck(value) {
     return '';
 }
 const ackRank = (a) => (a in ACK_RANK ? ACK_RANK[a] : 0);
+// Una palomita nueva vale si sube; "fallo" vale sobre en cola o enviado (no sobre entregado o leido, ni sobre otro fallo)
+const ackImproves = (prev, next) => (next === 'failed' ? prev !== 'failed' && ackRank(prev) < ACK_RANK.device : ackRank(next) > ackRank(prev));
 const safeUrl = (u) => (/^https:\/\/[^\s"'<>]+$/i.test(String(u || '')) ? String(u).slice(0, 2000) : '');
 
 // Telefono de un id de WhatsApp ('50255551234@c.us'). Grupos (@g.us), difusiones y estados no son chats de un residente.
@@ -74,15 +84,63 @@ function parseWebhook(body, nowIso) {
     const phone = phoneOfJid(fromMe ? d.to : d.from);
     const id = text(d.id, 300);
     const instanceId = String(b.instanceId || '');
-    if (type === 'message_ack') return { kind: 'ack', instanceId, id, phone, fromMe, ack: normAck(d.ack) };
+    if (type === 'message_ack') return { kind: 'ack', channel: 'ultramsg', instanceId, id, phone, fromMe, ack: normAck(d.ack) };
     if (type !== 'message_received' && type !== 'message_create') return { kind: 'ignore', instanceId, type };
     return {
-        kind: 'message', instanceId, id, phone, fromMe,
+        kind: 'message', channel: 'ultramsg', instanceId, id, phone, fromMe,
         type: text(d.type || 'chat', 30), body: text(d.body, MAX_TEXT), media: safeUrl(d.media), fileName: text(d.filename || d.fileName, 200),
         pushname: text(d.pushname, 100), at: isoOf(d.time != null ? d.time : d.timestamp, nowIso), ack: normAck(d.ack) || (fromMe ? 'server' : ''),
         referenceId: text(b.referenceId || d.referenceId, 100)
     };
 }
+
+// Un aviso de Meta (Cloud API) -> lista de eventos (un aviso puede traer varios mensajes y palomitas).
+// { object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'messages', value: { contacts, messages, statuses } }] }] }
+// Los archivos de Meta no traen enlace (se piden con la clave): se guarda su id y el texto que los acompana.
+function parseMeta(body, nowIso) {
+    const events = [];
+    const entries = body && Array.isArray(body.entry) ? body.entry : [];
+    entries.forEach((entry) => (Array.isArray(entry && entry.changes) ? entry.changes : []).forEach((change) => {
+        if (!change || change.field !== 'messages') return;
+        const v = change.value || {};
+        const names = new Map((Array.isArray(v.contacts) ? v.contacts : []).map((c) => [String(c && c.wa_id || ''), String(c && c.profile && c.profile.name || '')]));
+        (Array.isArray(v.messages) ? v.messages : []).forEach((m) => {
+            if (!m || !m.id) return;
+            const t = String(m.type || 'text');
+            let type = t;
+            let msgBody = '';
+            let mediaId = '';
+            let fileName = '';
+            if (t === 'text') { type = 'chat'; msgBody = m.text && m.text.body; }
+            else if (['image', 'video', 'audio', 'document', 'sticker'].includes(t)) {
+                const o = m[t] || {};
+                msgBody = o.caption || '';
+                mediaId = o.id || '';
+                fileName = o.filename || '';
+                if (t === 'audio' && o.voice) type = 'ptt';
+            } else if (t === 'button') { type = 'chat'; msgBody = m.button && m.button.text; }
+            else if (t === 'interactive') { type = 'chat'; const i = m.interactive || {}; msgBody = (i.button_reply && i.button_reply.title) || (i.list_reply && i.list_reply.title) || ''; }
+            else if (t === 'location') { const l = m.location || {}; msgBody = [l.name, l.address].filter(Boolean).join(' · ') || `${l.latitude}, ${l.longitude}`; }
+            else if (t === 'reaction') { msgBody = (m.reaction && m.reaction.emoji) || ''; }
+            else if (t === 'contacts') type = 'vcard';
+            events.push({
+                kind: 'message', channel: 'meta', id: text(m.id, 300), phone: normalizePhone(m.from), fromMe: false, type: text(type, 30),
+                body: text(msgBody, MAX_TEXT), media: '', mediaId: text(mediaId, 200), fileName: text(fileName, 200),
+                pushname: text(names.get(String(m.from)) || '', 100), at: isoOf(m.timestamp, nowIso), ack: '', referenceId: ''
+            });
+        });
+        (Array.isArray(v.statuses) ? v.statuses : []).forEach((st) => {
+            if (!st || !st.id || !META_ACK[st.status]) return;
+            const e = Array.isArray(st.errors) && st.errors[0] ? st.errors[0] : null;
+            events.push({
+                kind: 'ack', channel: 'meta', id: text(st.id, 300), phone: normalizePhone(st.recipient_id), fromMe: true, ack: META_ACK[st.status],
+                at: isoOf(st.timestamp, nowIso), error: e ? text(e.title || e.message || `error ${e.code}`, 200) : ''
+            });
+        });
+    }));
+    return events;
+}
+const isMeta = (body) => !!(body && body.object === 'whatsapp_business_account');
 
 // ── Telefonos de todos los usuarios: telefono -> [{ condoId, userId, name, unit, role }] ──
 async function buildPhoneIndex(db) {
@@ -159,8 +217,9 @@ async function saveMessage({ db, chatRef, people, ev, nowIso, source = 'whatsapp
             ? { waId: ev.id || prev.waId || null, ack, placeholder: false, updatedAt: nowIso }
             : {
                 waId: ev.id || null, fromMe: !!ev.fromMe, type: ev.type || 'chat', body: ev.body || '', media: ev.media || '', fileName: ev.fileName || '',
-                at: ev.at || nowIso, receivedAt: nowIso, ack, source, pushname: ev.pushname || '', updatedAt: nowIso
+                at: ev.at || nowIso, receivedAt: nowIso, ack, source, pushname: ev.pushname || '', channel: ev.channel || '', updatedAt: nowIso
             };
+        if (!prev && ev.mediaId) msg.mediaId = ev.mediaId;
         // Un aviso de palomita que llego antes que el mensaje dejo un "borrador": se completa con lo que trae el mensaje
         if (prev && prev.placeholder) Object.assign(msg, { fromMe: !!ev.fromMe, type: ev.type || 'chat', body: ev.body || '', media: ev.media || '', fileName: ev.fileName || '', at: ev.at || prev.at, source });
         tx.set(ref, msg, { merge: true });
@@ -182,14 +241,15 @@ async function saveMessage({ db, chatRef, people, ev, nowIso, source = 'whatsapp
         if (newer && source !== 'historial') Object.assign(chatData, { lastAt: at, lastMessage: lastOf(full) });
         else if (!old.lastAt && source === 'historial') Object.assign(chatData, { lastAt: at, lastMessage: lastOf(full) });
         else if (old.lastMessage && full.waId && old.lastMessage.id === full.waId) chatData.lastMessage = { ...old.lastMessage, ack: full.ack };
-        if (inbound) Object.assign(chatData, { unread: (old.unread || 0) + 1, lastInboundAt: at, lastPushname: ev.pushname || old.lastPushname || '' });
+        // El residente escribio: cuenta como no leido y su canal es por donde se le contesta (por Meta, hasta 24 h despues)
+        if (inbound) Object.assign(chatData, { unread: (old.unread || 0) + 1, lastInboundAt: at, lastPushname: ev.pushname || old.lastPushname || '', ...(ev.channel ? { channel: ev.channel } : {}) });
         tx.set(chatRef, chatData, { merge: true });
         return { id: ref.id, duplicate: !!(prev && !prev.placeholder) };
     });
 }
 
 // ── Palomitas: se sube el estado del mensaje (nunca se baja). Si el mensaje aun no esta, queda un borrador. ──
-async function saveAck({ db, chatRef, people, ev, nowIso }) {
+async function saveAck({ db, chatRef, people, ev, nowIso, allowPlaceholder = true }) {
     const docId = docIdOf(ev.id);
     if (!docId || !ev.ack) return { updated: false };
     const msgs = chatRef.collection('wa_mensajes');
@@ -202,9 +262,10 @@ async function saveAck({ db, chatRef, people, ev, nowIso }) {
             if (!byWa.empty) { ref = byWa.docs[0].ref; snap = byWa.docs[0]; }
         }
         const prev = snap.exists ? snap.data() : null;
-        if (prev && ackRank(prev.ack) >= ackRank(ev.ack)) return { updated: false };
+        if (!prev && !allowPlaceholder) return { updated: false, missing: true };
+        if (prev && !ackImproves(prev.ack, ev.ack)) return { updated: false };
         tx.set(ref, prev
-            ? { ack: ev.ack, ackAt: nowIso, updatedAt: nowIso }
+            ? { ack: ev.ack, ackAt: nowIso, updatedAt: nowIso, ...(ev.ack === 'failed' && ev.error ? { error: ev.error } : {}) }
             : { waId: ev.id, fromMe: !!ev.fromMe, type: 'chat', body: '', at: nowIso, receivedAt: nowIso, ack: ev.ack, ackAt: nowIso, placeholder: true, source: 'whatsapp', updatedAt: nowIso }, { merge: true });
         if (!chat.exists) tx.set(chatRef, { phone: ev.phone, ...people, createdAt: nowIso, unread: 0, updatedAt: nowIso }, { merge: true });
         else if (chat.data().lastMessage && chat.data().lastMessage.id === ev.id) tx.set(chatRef, { lastMessage: { ...chat.data().lastMessage, ack: ev.ack }, updatedAt: nowIso }, { merge: true });
@@ -215,7 +276,17 @@ async function saveAck({ db, chatRef, people, ev, nowIso }) {
 // ── Un aviso del webhook: lo guarda en el chat de cada condominio donde vive ese telefono ──
 async function handleWebhook({ db, body, now = () => new Date() }) {
     const nowIso = now().toISOString();
-    const ev = parseWebhook(body, nowIso);
+    const events = isMeta(body) ? parseMeta(body, nowIso) : [parseWebhook(body, nowIso)];
+    let handled = 0;
+    const condos = [];
+    for (const ev of events) {
+        const r = await handleEvent({ db, ev, nowIso, now });
+        handled += r.handled;
+        condos.push(...(r.condos || []));
+    }
+    return { handled, kind: events.length === 1 ? events[0].kind : 'varios', condos, events: events.length };
+}
+async function handleEvent({ db, ev, nowIso, now }) {
     if (ev.kind === 'ignore' || !ev.phone) return { handled: 0, kind: ev.kind, reason: ev.phone ? ev.type : 'sin telefono' };
     const matches = await matchesFor(db, ev.phone, now().getTime());
     const byCondo = new Map();
@@ -223,9 +294,26 @@ async function handleWebhook({ db, body, now = () => new Date() }) {
     const targets = byCondo.size
         ? Array.from(byCondo.entries()).map(([condoId, list]) => ({ chatRef: db.doc(`condominios/${condoId}/whatsapp_chats/${ev.phone}`), people: chatPeople(list), condoId }))
         : [{ chatRef: db.doc(`whatsapp_sin_asignar/${ev.phone}`), people: { residentIds: [], names: [], units: [], roles: [] }, condoId: null }];
+    let found = false;
     for (const t of targets) {
-        if (ev.kind === 'ack') await saveAck({ db, chatRef: t.chatRef, people: t.people, ev, nowIso });
-        else await saveMessage({ db, chatRef: t.chatRef, people: t.people, ev, nowIso });
+        if (ev.kind === 'ack') {
+            // Por Meta no llega el mensaje que sale (solo sus palomitas): no se deja borrador
+            const r = await saveAck({ db, chatRef: t.chatRef, people: t.people, ev, nowIso, allowPlaceholder: ev.channel !== 'meta' });
+            if (!r.missing) found = true;
+        } else {
+            await saveMessage({ db, chatRef: t.chatRef, people: t.people, ev, nowIso });
+            found = true;
+        }
+    }
+    // Palomita de un mensaje que no esta en ningun chat (p. ej. un recordatorio con plantilla): queda aparte, para seguirlo
+    if (!found && ev.kind === 'ack') {
+        const ref = db.doc(`whatsapp_estados/${docIdOf(ev.id)}`);
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (snap.exists && !ackImproves(snap.data().ack, ev.ack)) return;
+            tx.set(ref, { waId: ev.id, ack: ev.ack, channel: ev.channel || '', phoneTail: ev.phone.slice(-4), at: ev.at || nowIso, error: ev.error || '', updatedAt: nowIso }, { merge: true });
+        });
+        return { handled: 0, kind: 'ack', condos: [], estado: true };
     }
     return { handled: targets.length, kind: ev.kind, condos: targets.map((t) => t.condoId) };
 }
@@ -246,6 +334,8 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
         phone = normalizePhone(user.data().phone);
         if (!phone) throw fail('failed-precondition', 'Este residente no tiene un teléfono válido registrado.');
         resident = { condoId: condominioId, userId: user.id, name: String(user.data().name || ''), unit: String(user.data().casa || ''), role: String(user.data().role || '') };
+        const chat = await condoRef.collection('whatsapp_chats').doc(phone).get();
+        if (chat.exists) chatData = chat.data() || {};
     } else {
         phone = normalizePhone(data && data.chatId);
         if (!phone) throw fail('invalid-argument', 'Chat inválido.');
@@ -260,30 +350,44 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
         : { residentIds: (chatData && chatData.residentIds) || [], names: (chatData && chatData.names) || [], units: (chatData && chatData.units) || [], roles: (chatData && chatData.roles) || [] };
 
     const config = await whatsapp.loadConfig();
-    if (!config || !whatsapp.canChat(config)) throw fail('failed-precondition', 'El WhatsApp del condominio no está conectado para chatear (hace falta UltraMsg).');
+    if (!config || !whatsapp.canChat(config)) throw fail('failed-precondition', 'El WhatsApp del condominio no está conectado para chatear.');
+    // Se contesta por el canal por el que escribio el residente; un chat nuevo, por el canal del condominio
+    const channel = (chatData && chatData.channel) || whatsapp.defaultChannel(config);
+    if (whatsapp.needsWindow(channel)) {
+        const last = Date.parse((chatData && chatData.lastInboundAt) || '');
+        if (!Number.isFinite(last) || now().getTime() - last > WINDOW_MS) {
+            throw fail('failed-precondition', 'Con el WhatsApp oficial solo se le puede escribir libremente a un residente hasta 24 horas después de su último mensaje. Para escribirle ahora use un aviso con plantilla (Recordatorios); cuando él responda, se le contesta aquí.');
+        }
+    }
 
     const nowIso = now().toISOString();
     const chatRef = condoRef.collection('whatsapp_chats').doc(phone);
     const ref = chatRef.collection('wa_mensajes').doc();
     const msg = {
         waId: null, ref: ref.id, matchKey: matchKeyOf(phone, body), fromMe: true, type: 'chat', body, media: '', fileName: '',
-        at: nowIso, receivedAt: nowIso, ack: 'pending', source: 'sisdel', sentBy: caller.id, sentByName: caller.name || '', updatedAt: nowIso
+        at: nowIso, receivedAt: nowIso, ack: 'pending', source: 'sisdel', sentBy: caller.id, sentByName: caller.name || '', channel, updatedAt: nowIso
     };
     await db.runTransaction(async (tx) => {
         const chat = await tx.get(chatRef);
         tx.set(ref, msg);
-        tx.set(chatRef, { phone, ...people, ...(chat.exists ? {} : { createdAt: nowIso, unread: 0 }), lastAt: nowIso, lastMessage: lastOf(msg), updatedAt: nowIso }, { merge: true });
+        tx.set(chatRef, { phone, ...people, ...(chat.exists ? {} : { createdAt: nowIso, unread: 0, channel }), lastAt: nowIso, lastMessage: lastOf(msg), updatedAt: nowIso }, { merge: true });
     });
     let result = null;
-    try { result = await whatsapp.sendChat(config, phone, body, ref.id); } catch (e) { result = { ok: false, error: e && e.message ? e.message : 'error' }; }
+    try { result = await whatsapp.sendChat(config, phone, body, ref.id, channel); } catch (e) { result = { ok: false, error: e && e.message ? e.message : 'error' }; }
     if (!result || !result.ok) {
         const error = text((result && result.error) || 'WhatsApp no lo aceptó', 200);
         await ref.set({ ack: 'failed', error, updatedAt: now().toISOString() }, { merge: true });
         await chatRef.set({ lastMessage: { ...lastOf(msg), ack: 'failed' } }, { merge: true });
         return { ok: false, id: ref.id, chatId: phone, error };
     }
-    await ref.set({ providerId: text(result.id, 100), updatedAt: now().toISOString() }, { merge: true });
-    return { ok: true, id: ref.id, chatId: phone };
+    // Meta devuelve el id de WhatsApp al aceptar el mensaje: sus palomitas lo buscan por ese id
+    if (channel === 'meta' && result.id) {
+        await ref.set({ waId: text(result.id, 300), providerId: text(result.id, 300), updatedAt: now().toISOString() }, { merge: true });
+        await chatRef.set({ lastMessage: { ...lastOf(msg), id: text(result.id, 300) } }, { merge: true });
+    } else {
+        await ref.set({ providerId: text(result.id, 100), updatedAt: now().toISOString() }, { merge: true });
+    }
+    return { ok: true, id: ref.id, chatId: phone, channel };
 }
 
 // ── Marcar un chat como leido ──
@@ -307,6 +411,8 @@ async function loadHistory({ db, whatsapp, condominioId, data, now = () => new D
     if (!chat.exists) throw fail('not-found', 'Ese chat no es de este condominio.');
     const config = await whatsapp.loadConfig();
     if (!config || !whatsapp.canChat(config) || typeof whatsapp.chatHistory !== 'function') return { ok: false, saved: 0, reason: 'sin-proveedor' };
+    // Meta no guarda los mensajes de antes: solo hay lo que llego por el aviso
+    if ((chat.data().channel || whatsapp.defaultChannel(config)) === 'meta') return { ok: false, saved: 0, reason: 'meta' };
     let rows = [];
     try { rows = await whatsapp.chatHistory(config, phone, HISTORY_LIMIT); } catch (e) { return { ok: false, saved: 0, reason: 'sin-respuesta' }; }
     const nowIso = now().toISOString();
@@ -323,7 +429,7 @@ async function loadHistory({ db, whatsapp, condominioId, data, now = () => new D
 }
 
 module.exports = {
-    MAX_TEXT, ACK_RANK, fail, normAck, phoneOfJid, docIdOf, matchKeyOf, parseWebhook, buildPhoneIndex, phoneIndex, chatPeople,
+    MAX_TEXT, ACK_RANK, WINDOW_MS, fail, normAck, phoneOfJid, docIdOf, matchKeyOf, parseWebhook, parseMeta, isMeta, buildPhoneIndex, phoneIndex, chatPeople,
     saveMessage, saveAck, handleWebhook, sendMessage, markRead, loadHistory,
     _resetIndex: () => { cached = { at: 0, index: null }; }
 };

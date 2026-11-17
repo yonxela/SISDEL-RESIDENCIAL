@@ -8,17 +8,30 @@ const { db } = require('./firebase');
 const privilegios = require('./privilegios');
 const rateLimit = require('./rateLimit');
 const { sha256, safeEqual } = require('./util');
+const crypto = require('crypto');
 const base = require('./rondas/whatsapp');
+const meta = require('./rondas/meta-estado');
 const core = require('./whatsapp-chat-core');
 
 const KEY = 'finanzas.whatsapp_chat';
 const SEND_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
 const HISTORY_LIMIT = { max: 40, windowMs: 10 * 60 * 1000 };
 
-// ── El WhatsApp del chat: UltraMsg (Meta no sirve para chatear asi: pide plantillas fuera de las 24 horas) ──
-const canChat = (config) => !!config && (config.provider === 'simulado' || !!(config.ultramsgInstance && config.ultramsgToken));
-async function sendChat(config, phone, body, referenceId) {
-    if (config.provider === 'simulado') return { ok: true, id: `SIM-${referenceId}` };
+// ── El WhatsApp del chat: UltraMsg (un WhatsApp conectado por QR) o el OFICIAL de Meta (Cloud API) ──
+// Cada chat se contesta por el canal por el que escribio el residente; uno nuevo, por el del condominio (Meta si esta activo).
+// Por Meta un mensaje libre solo vale hasta 24 horas despues del ultimo mensaje del residente (lo controla el core).
+const hasUltra = (config) => !!(config && config.ultramsgInstance && config.ultramsgToken);
+const canChat = (config) => !!config && (config.provider === 'simulado' || hasUltra(config) || meta.usesMeta(config));
+const defaultChannel = (config) => (config && config.provider === 'simulado' ? (config.chatChannel || 'ultramsg') : (meta.usesMeta(config) ? 'meta' : 'ultramsg'));
+const needsWindow = (channel) => channel === 'meta';
+async function sendChat(config, phone, body, referenceId, channel) {
+    if (config.provider === 'simulado') return { ok: true, id: channel === 'meta' ? `wamid.SIM-${referenceId}` : `SIM-${referenceId}` };
+    if (channel === 'meta') {
+        if (!meta.usesMeta(config)) return { ok: false, error: 'El WhatsApp oficial (Meta) no está activo' };
+        const r = await meta.sendText(config, phone, body);
+        return r.ok ? { ok: true, id: String(r.id || '') } : { ok: false, error: `Meta (${r.code}): ${r.error}` };
+    }
+    if (!hasUltra(config)) return { ok: false, error: 'UltraMsg no está configurado' };
     try {
         const res = await fetch(`https://api.ultramsg.com/${encodeURIComponent(config.ultramsgInstance)}/messages/chat`, {
             method: 'POST',
@@ -41,7 +54,7 @@ async function chatHistory(config, phone, limit) {
     const data = await res.json();
     return Array.isArray(data) ? data : (Array.isArray(data.messages) ? data.messages : []);
 }
-const whatsapp = { loadConfig: base.loadConfig, canChat, sendChat, chatHistory };
+const whatsapp = { loadConfig: base.loadConfig, canChat, defaultChannel, needsWindow, sendChat, chatHistory };
 
 // ── Quien llama: un usuario activo del condominio con el chat de WhatsApp ──
 async function authorize(request) {
@@ -91,21 +104,50 @@ const loadChatHistory = wrap('loadChatHistory', async (request) => {
     return core.loadHistory({ db, whatsapp, condominioId, data: request.data || {} });
 });
 
-// ── El aviso de UltraMsg: clave secreta en ?token= (se compara su huella) y la instancia debe ser la del condominio ──
+// ── El aviso: de UltraMsg (clave secreta en ?token=, se compara su huella, y la instancia debe ser la del condominio) o de
+// Meta (verificacion con hub.verify_token al configurarlo, y cada aviso firmado con la clave de la aplicacion: X-Hub-Signature-256)
 const digits = (v) => String(v || '').replace(/\D/g, '');
+function metaSignatureOk(config, req) {
+    const secret = config && config.metaAppSecret;
+    const header = String(req.get('X-Hub-Signature-256') || '');
+    if (!secret || !header.startsWith('sha256=') || !req.rawBody) return false;
+    const expected = 'sha256=' + crypto.createHmac('sha256', String(secret)).update(req.rawBody).digest('hex');
+    return safeEqual(header, expected);
+}
 const whatsappWebhook = onRequest(
     { cors: false, invoker: 'public', memory: '256MiB', timeoutSeconds: 60 },
     async (req, res) => {
         try {
-            if (req.method !== 'POST') { res.status(405).send('Metodo no permitido'); return; }
             const config = await base.loadConfig();
+            // Meta comprueba la direccion con un GET y una clave que se le dio (whatsapp-webhook.mjs --meta)
+            if (req.method === 'GET' && req.query['hub.mode'] === 'subscribe') {
+                const given = String(req.query['hub.verify_token'] || '');
+                if (config && config.metaVerifyTokenHash && given && safeEqual(sha256(given), config.metaVerifyTokenHash)) {
+                    res.status(200).send(String(req.query['hub.challenge'] || ''));
+                } else {
+                    logger.warn('whatsapp-chat: verificacion de Meta con clave invalida');
+                    res.status(403).send('Clave invalida');
+                }
+                return;
+            }
+            if (req.method !== 'POST') { res.status(405).send('Metodo no permitido'); return; }
+            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            if (core.isMeta(body)) {
+                if (!metaSignatureOk(config, req)) {
+                    logger.warn('whatsapp-chat: aviso de Meta sin firma valida');
+                    res.status(403).send('Firma invalida');
+                    return;
+                }
+                const result = await core.handleWebhook({ db, body });
+                res.status(200).json({ ok: true, handled: result.handled });
+                return;
+            }
             const token = String(req.query.token || req.get('X-Webhook-Token') || '');
             if (!config || !config.webhookTokenHash || !token || !safeEqual(sha256(token), config.webhookTokenHash)) {
                 logger.warn('whatsapp-chat: aviso con clave invalida');
                 res.status(403).send('Clave invalida');
                 return;
             }
-            const body = req.body && typeof req.body === 'object' ? req.body : {};
             if (config.ultramsgInstance && body.instanceId && digits(body.instanceId) !== digits(config.ultramsgInstance)) {
                 logger.warn('whatsapp-chat: aviso de otra instancia');
                 res.status(403).send('Instancia distinta');

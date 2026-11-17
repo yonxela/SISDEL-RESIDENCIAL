@@ -261,6 +261,12 @@ service cloud.firestore {
       }
     }
 
+    // ── Palomitas de WhatsApp de mensajes que no estan en ningun chat (p. ej. recordatorios con plantilla): solo el master ──
+    match /whatsapp_estados/{waId} {
+      allow read: if isMaster();
+      allow write: if false;
+    }
+
     // ── Lecturas de camara sin condominio valido ──
     match /camera_logs_huerfanos/{logId} {
       allow read, delete: if isMaster();

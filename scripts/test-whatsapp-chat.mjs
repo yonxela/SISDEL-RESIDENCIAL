@@ -30,11 +30,12 @@ const sec = Math.floor(Date.now() / 1000);
 const jid = (p) => `${p}@c.us`;
 const ME = '50243093379';
 // Telefonos inventados: Ana en A; Beto en A con dos lotes (el mismo telefono); Carla en A y tambien en B
-const ANA = '50244440101', BETO = '50244440202', CARLA = '50244440303', NADIE = '50244449999', SIN = 'sin-telefono';
+const ANA = '50244440101', BETO = '50244440202', CARLA = '50244440303', DORA = '50244440404', NADIE = '50244449999', SIN = 'sin-telefono';
 
 async function cleanup() {
     for (const id of [A, B]) await db.recursiveDelete(db.doc(`condominios/${id}`));
     for (const p of [NADIE]) await db.recursiveDelete(db.doc(`whatsapp_sin_asignar/${p}`));
+    for (const w of ['wamid.desconocido', 'wamid.ajeno']) await db.doc(`whatsapp_estados/${w}`).delete();
 }
 await cleanup();
 const user = (condo, id, name, casa, phone, role = 'vecino') => db.doc(`condominios/${condo}/usuarios/${id}`).set({ id, name, casa, phone, role, active: true, createdAt: now });
@@ -45,6 +46,8 @@ await user(A, 'beto1', 'Beto Ejemplo', 'C002', '+502 4444 0202');
 await user(A, 'beto2', 'Beto Ejemplo', 'C003', '44440202');
 await user(A, 'carla', 'Carla Demo', 'C004', '44440303');
 await user(A, 'sinfono', 'Sin Telefono', 'C005', '');
+await user(A, 'dora', 'Dora Oficial', 'C006', '44440404');
+await user(A, 'eva', 'Eva Sin Chat', 'C007', '44440505');
 await user(A, 'adm-chat', 'Administradora', '', '', 'admin');
 await user(B, 'carla-b', 'Carla en B', 'L-9', '+50244440303');
 C._resetIndex();
@@ -89,6 +92,8 @@ let failNext = false;
 const fakeWa = {
     loadConfig: async () => ({ provider: 'simulado' }),
     canChat: (cfg) => !!cfg,
+    defaultChannel: () => 'ultramsg',
+    needsWindow: (channel) => channel === 'meta',
     sendChat: async (cfg, phone, body, ref) => { sent.push({ phone, body, ref }); if (failNext) { failNext = false; return { ok: false, error: 'rechazado' }; } return { ok: true, id: `Q-${sent.length}` }; },
     chatHistory: async () => [
         { id: 'h-1', from: jid(ANA), to: jid(ME), body: 'Mensaje viejo', fromMe: false, type: 'chat', time: sec - 86400 },
@@ -149,6 +154,47 @@ equal('traer los mensajes de antes agrega solo los que faltan, sin no leidos ni 
 r = await C.loadHistory({ db, whatsapp: fakeWa, condominioId: A, data: { chatId: ANA } });
 equal('traerlos otra vez no duplica', r.saved, 0);
 
+console.log('\nWhatsApp oficial (Meta)');
+const metaBody = (messages = [], statuses = [], contacts = []) => ({ object: 'whatsapp_business_account', entry: [{ id: 'WABA', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: 'PNID' }, contacts, messages, statuses } }] }] });
+const mText = (from, id, body, ts = sec) => ({ from, id, timestamp: String(ts), type: 'text', text: { body } });
+const mStatus = (to, id, status, errors) => ({ id, recipient_id: to, status, timestamp: String(sec), ...(errors ? { errors } : {}) });
+let evs = C.parseMeta(metaBody([mText(DORA, 'wamid.in1', 'Hola, soy Dora'), { from: DORA, id: 'wamid.img', timestamp: String(sec), type: 'image', image: { id: 'MEDIA1', caption: 'mi recibo' } }, { from: DORA, id: 'wamid.voz', timestamp: String(sec), type: 'audio', audio: { id: 'MEDIA2', voice: true } }, { from: DORA, id: 'wamid.btn', timestamp: String(sec), type: 'button', button: { text: 'Ya pague' } }], [mStatus(DORA, 'wamid.x', 'delivered'), mStatus(DORA, 'wamid.y', 'failed', [{ code: 131047, title: 'Re-engagement message' }]), mStatus(DORA, 'wamid.z', 'deleted')], [{ wa_id: DORA, profile: { name: 'Dora WA' } }]), now);
+equal('un aviso de Meta trae varios mensajes y palomitas (las que no conoce se ignoran)', evs.map((e) => [e.kind, e.channel, e.type || e.ack]), [['message', 'meta', 'chat'], ['message', 'meta', 'image'], ['message', 'meta', 'ptt'], ['message', 'meta', 'chat'], ['ack', 'meta', 'device'], ['ack', 'meta', 'failed']]);
+equal('el texto, el nombre en WhatsApp, la foto con su texto, la respuesta de un boton y el motivo de un fallo', [evs[0].body, evs[0].pushname, evs[1].body, evs[1].mediaId, evs[3].body, evs[5].error], ['Hola, soy Dora', 'Dora WA', 'mi recibo', 'MEDIA1', 'Ya pague', 'Re-engagement message']);
+equal('otro aviso que no es de mensajes no trae nada', C.parseMeta({ object: 'whatsapp_business_account', entry: [{ changes: [{ field: 'account_update', value: {} }] }] }, now), []);
+r = await C.handleWebhook({ db, body: metaBody([mText(DORA, 'wamid.in1', 'Hola, soy Dora')], [], [{ wa_id: DORA, profile: { name: 'Dora WA' } }]) });
+chat = (await chatA(DORA).get()).data();
+equal('un mensaje que entra por Meta abre el chat con su canal y la hora para contestar', [r.condos, chat.channel, chat.unread, chat.lastPushname, !!chat.lastInboundAt], [[A], 'meta', 1, 'Dora WA', true]);
+const metaSent = [];
+const metaWa = {
+    ...fakeWa, defaultChannel: () => 'meta',
+    sendChat: async (cfg, phone, body, ref, channel) => { metaSent.push({ phone, body, channel }); return { ok: true, id: `wamid.out${metaSent.length}` }; }
+};
+r = await C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: DORA, text: 'Hola Dora, recibido' } });
+mine = (await msgsA(DORA).doc(r.id).get()).data();
+equal('se le contesta por Meta dentro de las 24 horas y queda con el id de WhatsApp desde ya', [r.ok, r.channel, metaSent[0].channel, mine.waId, mine.channel, (await chatA(DORA).get()).data().lastMessage.id], [true, 'meta', 'meta', 'wamid.out1', 'meta', 'wamid.out1']);
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, 'wamid.out1', 'sent')]) });
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, 'wamid.out1', 'delivered')]) });
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, 'wamid.out1', 'read')]) });
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, 'wamid.out1', 'failed', [{ code: 1, title: 'tarde' }])]) });
+equal('las palomitas de Meta (enviado, entregado, leido) suben y un fallo tardio no baja un leido', [(await msgsA(DORA).doc(r.id).get()).data().ack, (await chatA(DORA).get()).data().lastMessage.ack], ['read', 'read']);
+r = await C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: DORA, text: 'Este no llega' } });
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, `wamid.out${metaSent.length}`, 'sent')]) });
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, `wamid.out${metaSent.length}`, 'failed', [{ code: 131026, title: 'Message undeliverable' }])]) });
+mine = (await msgsA(DORA).doc(r.id).get()).data();
+equal('un fallo de Meta sobre un enviado lo marca como no entregado, con su motivo', [mine.ack, mine.error], ['failed', 'Message undeliverable']);
+await C.handleWebhook({ db, body: metaBody([], [mStatus(DORA, 'wamid.desconocido', 'delivered')]) });
+const estado = (await db.doc('whatsapp_estados/wamid.desconocido').get()).data();
+equal('la palomita de un mensaje que no esta en ningun chat (un recordatorio con plantilla) queda aparte, sin borrador en el chat', [estado.ack, estado.phoneTail, (await msgsA(DORA).doc('wamid.desconocido').get()).exists], ['device', '0404', false]);
+await C.handleWebhook({ db, body: metaBody([], [mStatus(NADIE, 'wamid.ajeno', 'read')]) });
+equal('tambien la de un numero que no es de nadie', (await db.doc('whatsapp_estados/wamid.ajeno').get()).data().ack, 'read');
+await chatA(DORA).set({ lastInboundAt: new Date(Date.now() - 25 * 3600 * 1000).toISOString() }, { merge: true });
+await rejects('pasadas 24 horas del ultimo mensaje del residente no se le escribe libremente por Meta', () => C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: DORA, text: 'Hola' } }), 'failed-precondition');
+await rejects('ni se empieza un chat nuevo por Meta (eso va con plantilla)', () => C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { residentId: 'eva', text: 'Hola Eva' } }), 'failed-precondition');
+r = await C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: ANA, text: 'Por UltraMsg' } });
+equal('un chat que empezo por UltraMsg se contesta por UltraMsg (sin la regla de las 24 horas)', [r.ok, r.channel, metaSent[metaSent.length - 1].channel], [true, 'ultramsg', 'ultramsg']);
+equal('Meta no guarda los mensajes de antes', (await C.loadHistory({ db, whatsapp: metaWa, condominioId: A, data: { chatId: DORA } })).reason, 'meta');
+
 console.log('\nEl aviso por internet (funcion whatsappWebhook del emulador)');
 const URL_FN = 'http://127.0.0.1:5001/sisdel-datacenter/us-central1/whatsappWebhook';
 const token = crypto.randomBytes(12).toString('hex');
@@ -162,6 +208,25 @@ res = await post(token, inbound(ANA, 'web-1', 'Por internet'));
 equal('con la clave, el mensaje llega al chat', [res.status, (await msgsA(ANA).doc('web-1').get()).exists], [200, true]);
 res = await fetch(`${URL_FN}?token=${encodeURIComponent(token)}`);
 equal('solo acepta avisos POST', res.status, 405);
+// Meta: verificacion de la direccion (GET con la clave de verificacion) y avisos firmados con la clave de la aplicacion
+const verifyKey = crypto.randomBytes(9).toString('hex');
+const appSecret = crypto.randomBytes(16).toString('hex');
+await cfgRef.set({ metaVerifyTokenHash: crypto.createHash('sha256').update(verifyKey, 'utf8').digest('hex'), metaAppSecret: appSecret }, { merge: true });
+const verifyUrl = (k) => `${URL_FN}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(k)}&hub.challenge=4242`;
+res = await fetch(verifyUrl(verifyKey));
+equal('Meta verifica la direccion con la clave correcta (responde el desafio)', [res.status, await res.text()], [200, '4242']);
+res = await fetch(verifyUrl('otra'));
+equal('con otra clave, no', res.status, 403);
+const metaPost = (bodyObj, secret) => {
+    const raw = JSON.stringify(bodyObj);
+    const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+    return fetch(URL_FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': sig }, body: raw });
+};
+res = await metaPost(metaBody([mText(DORA, 'wamid.web1', 'Por Meta')]), 'clave-falsa');
+equal('un aviso de Meta sin la firma correcta se rechaza y no se guarda', [res.status, (await msgsA(DORA).doc('wamid.web1').get()).exists], [403, false]);
+res = await metaPost(metaBody([mText(DORA, 'wamid.web1', 'Por Meta')]), appSecret);
+equal('firmado con la clave de la aplicacion, llega al chat', [res.status, (await msgsA(DORA).doc('wamid.web1').get()).exists], [200, true]);
+await cfgRef.set({ metaVerifyTokenHash: cfgBefore.metaVerifyTokenHash || null, metaAppSecret: cfgBefore.metaAppSecret || null }, { merge: true });
 await cfgRef.set({ webhookTokenHash: cfgBefore.webhookTokenHash || null }, { merge: true });
 
 await cleanup();

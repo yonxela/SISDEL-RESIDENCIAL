@@ -2585,7 +2585,28 @@
             const read = ack === 'read' || ack === 'played';
             return '<i class="fas fa-check-double ' + (read ? 'text-sky-500' : 'text-slate-400') + '" title="' + (read ? (ack === 'played' ? 'Escuchado' : 'Leído') : 'Entregado') + '"></i>';
         }
-        var CHAT_TYPES = { image: 'Imagen', sticker: 'Sticker', ptt: 'Nota de voz', audio: 'Audio', video: 'Video', document: 'Documento', location: 'Ubicación', vcard: 'Contacto', revoked: 'Mensaje eliminado' };
+        var CHAT_TYPES = { image: 'Imagen', sticker: 'Sticker', ptt: 'Nota de voz', audio: 'Audio', video: 'Video', document: 'Documento', location: 'Ubicación', vcard: 'Contacto', revoked: 'Mensaje eliminado', reaction: 'Reacción' };
+        // WhatsApp oficial (Meta): un mensaje libre solo vale hasta 24 horas despues del ultimo mensaje del residente (el
+        // servidor tambien lo exige). Devuelve { meta, allowed, until, text } para el encabezado y la caja de escribir.
+        var CHAT_WINDOW_MS = 24 * 60 * 60 * 1000;
+        function chatWindowOf(c) {
+            if (!c || c.channel !== 'meta') return { meta: false, allowed: true, text: c && c.channel === 'ultramsg' ? 'WhatsApp (UltraMsg)' : '' };
+            const last = Date.parse(c.lastInboundAt || '');
+            const until = Number.isFinite(last) ? last + CHAT_WINDOW_MS : 0;
+            if (until > Date.now()) return { meta: true, allowed: true, until, text: 'WhatsApp oficial · puede contestar hasta ' + new Date(until).toLocaleString('es-GT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) };
+            return { meta: true, allowed: false, text: 'WhatsApp oficial · pasaron más de 24 horas desde el último mensaje del residente: solo se le puede escribir con un aviso con plantilla (Recordatorios). Cuando responda, se le contesta aquí.' };
+        }
+        function updateChatComposer() {
+            const input = document.getElementById('chat-input');
+            const btn = document.getElementById('chat-send');
+            const note = document.getElementById('chat-window-note');
+            if (!input || !btn) return;
+            const w = chatCurrentId ? chatWindowOf(chatOf(chatCurrentId)) : { allowed: true, text: '' };
+            input.disabled = !w.allowed;
+            btn.disabled = !w.allowed || chatSending;
+            input.placeholder = w.allowed ? 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)' : 'Fuera de las 24 horas del WhatsApp oficial';
+            if (note) { note.textContent = w.text || ''; note.className = 'px-4 py-1.5 text-[11px] ' + (w.allowed ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20') + (w.text ? '' : ' hidden'); }
+        }
         function chatTypeLabel(type) { return CHAT_TYPES[type] || 'Mensaje'; }
         function ensureChatsSubscription() {
             const api = sisdelChatsApi();
@@ -2675,7 +2696,7 @@
                 scheduleChatRead();
                 // La primera vez que se abre un chat con pocos mensajes se traen los de antes (los guarda UltraMsg)
                 const c = chatOf(opened);
-                if (c && !c.historyLoadedAt && !chatHistoryAsked[opened] && chatMessages.length < 10) {
+                if (c && c.channel !== 'meta' && !c.historyLoadedAt && !chatHistoryAsked[opened] && chatMessages.length < 10) {
                     chatHistoryAsked[opened] = true;
                     api.loadHistory(opened).catch(function () { /* sin historial: sigue con lo que hay */ });
                 }
@@ -2742,15 +2763,16 @@
             head.innerHTML = '<div class="min-w-0"><p class="font-bold text-slate-800 dark:text-white truncate">' + chatEsc(title) + '</p><p class="text-xs text-slate-500 dark:text-slate-400 truncate">' + (units ? '<b>' + chatEsc(units) + '</b> · ' : '') + chatEsc(phone) + pushname + (c && !(c.residentIds || []).length ? ' · <span class="text-amber-600">no está en la lista de residentes</span>' : '') + '</p></div>'
                 + '<div class="flex gap-2 shrink-0">'
                 + (ids.length === 1 ? '<button type="button" onclick="openEstadoCuenta(this.dataset.id)" data-id="' + chatEsc(ids[0]) + '" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300"><i class="fas fa-file-invoice-dollar mr-1"></i>Estado de cuenta</button>' : '')
-                + (c ? '<button type="button" onclick="loadChatHistoryNow()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200" title="Trae los últimos mensajes que guarda WhatsApp"><i class="fas fa-history mr-1"></i>Mensajes anteriores</button>' : '')
+                + (c && c.channel !== 'meta' ? '<button type="button" onclick="loadChatHistoryNow()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200" title="Trae los últimos mensajes que guarda WhatsApp"><i class="fas fa-history mr-1"></i>Mensajes anteriores</button>' : '')
                 + '</div>';
+            updateChatComposer();
         }
         function loadChatHistoryNow() {
             const api = sisdelChatsApi();
             if (!api || !chatCurrentId) return;
             showToast('Trayendo los mensajes anteriores...');
             api.loadHistory(chatCurrentId).then(function (r) {
-                showToast(r && r.ok ? (r.saved ? r.saved + ' mensaje(s) anteriores agregados.' : 'No había mensajes anteriores que agregar.') : 'WhatsApp no entregó los mensajes anteriores.');
+                showToast(r && r.ok ? (r.saved ? r.saved + ' mensaje(s) anteriores agregados.' : 'No había mensajes anteriores que agregar.') : (r && r.reason === 'meta' ? 'El WhatsApp oficial no guarda los mensajes de antes: solo se ven los que llegaron desde que se activó el chat.' : 'WhatsApp no entregó los mensajes anteriores.'));
             }).catch(function (e) { alert((e && e.message) || 'No se pudo.'); });
         }
         function renderChatPane() {
@@ -2762,6 +2784,7 @@
             }
             pane.innerHTML = '<div id="chat-head" class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3"></div>'
                 + '<div id="chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-1.5 bg-slate-50 dark:bg-slate-900/40"></div>'
+                + '<p id="chat-window-note" class="hidden"></p>'
                 + '<div class="border-t border-slate-100 dark:border-slate-700 p-3 flex gap-2 items-end">'
                 + '<textarea id="chat-input" rows="2" maxlength="4096" onkeydown="chatInputKey(event)" class="flex-1 resize-none px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)"></textarea>'
                 + '<button type="button" onclick="sendChatFromInput()" id="chat-send" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition" title="Enviar"><i class="fas fa-paper-plane"></i></button>'
@@ -2823,8 +2846,7 @@
                 alert((e && e.message) || 'No se pudo enviar el mensaje.');
             }).finally(function () {
                 chatSending = false;
-                const b = document.getElementById('chat-send');
-                if (b) b.disabled = false;
+                updateChatComposer();
                 const i = document.getElementById('chat-input');
                 if (i) i.focus();
             });

@@ -383,6 +383,7 @@ codigos/{codigo}            índice único código -> usuario
 mensajes_globales/{msgId}   mensajes del master para todos
 camera_logs_huerfanos/      lecturas de cámara sin condominio válido
 whatsapp_sin_asignar/       mensajes de WhatsApp de números que no son de ningún usuario (solo el master los lee)
+whatsapp_estados/           palomitas de WhatsApp de mensajes que no están en ningún chat (p. ej. recordatorios con plantilla); solo el master
 _privado/                   solo servidor (huella del código master, límites de intentos)
 ```
 

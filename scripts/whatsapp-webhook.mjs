@@ -5,7 +5,12 @@
 //   GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node whatsapp-webhook.mjs --target=prod --ver       (como esta, sin claves)
 //   GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node whatsapp-webhook.mjs --target=prod --activar   (clave nueva y aviso)
 //   GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node whatsapp-webhook.mjs --target=prod --quitar    (apaga el aviso)
+//   GOOGLE_CLOUD_QUOTA_PROJECT=sisdel-datacenter node whatsapp-webhook.mjs --target=prod --meta      (aviso del WhatsApp oficial)
 // --url=https://otro.dominio cambia la direccion base (por defecto https://garita.app).
+// --meta: pide la "Clave secreta de la aplicacion" de Meta (App Secret: Meta for Developers > su aplicacion > Configuracion
+// de la aplicacion > Basica) para comprobar la firma de cada aviso, crea la clave de verificacion y muestra lo que hay que
+// pegar en Meta (WhatsApp > Configuracion > Webhook: URL de devolucion de llamada y token de verificacion; y suscribirse al
+// campo "messages"). La clave de verificacion se muestra una sola vez y del lado del servidor solo queda su huella.
 // Del lado del servidor solo se guarda la huella de la clave (_privado/whatsapp.webhookTokenHash); la clave misma queda
 // solo en la direccion que se le da a UltraMsg. Activar de nuevo cambia la clave (la anterior deja de servir).
 import crypto from 'node:crypto';
@@ -20,12 +25,13 @@ const BASE = String(args.url || 'https://garita.app').replace(/\/+$/, '');
 const sha256 = (text) => crypto.createHash('sha256').update(String(text), 'utf8').digest('hex');
 const maskUrl = (u) => String(u || '').replace(/token=[^&]+/i, 'token=****');
 
-function ask(question) {
+function ask(question, hidden = false) {
     return new Promise((resolve) => {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
         let answered = false;
+        if (hidden) rl._writeToOutput = (t) => { if (t.startsWith(question)) process.stdout.write(question); };
         rl.on('close', () => { if (!answered) { console.log('\nCancelado: no se cambio nada.'); process.exit(1); } });
-        rl.question(question, (answer) => { answered = true; rl.close(); resolve(answer.trim()); });
+        rl.question(question, (answer) => { answered = true; rl.close(); if (hidden) process.stdout.write('\n'); resolve(answer.trim()); });
     });
 }
 
@@ -52,7 +58,8 @@ async function setUltraSettings(values) {
 const on = (v) => v === true || v === 'true' || v === 1 || v === '1';
 
 console.log(`Destino: ${target === 'prod' ? 'PRODUCCION' : 'emulador'}`);
-console.log(`  Clave del aviso en el servidor: ${config.webhookTokenHash ? `si (activada ${config.webhookActivatedAt || ''})` : 'no'}`);
+console.log(`  Clave del aviso de UltraMsg en el servidor: ${config.webhookTokenHash ? `si (activada ${config.webhookActivatedAt || ''})` : 'no'}`);
+console.log(`  Aviso del WhatsApp oficial (Meta): clave de la aplicacion ${config.metaAppSecret ? 'cargada' : 'no'}, verificacion ${config.metaVerifyTokenHash ? `creada (${config.metaWebhookAt || ''})` : 'no'}, canal ${config.channel === 'meta' ? 'Meta activo' : 'Meta no activo'}`);
 let current = null;
 if (ultra) {
     try {
@@ -66,7 +73,22 @@ if (ultra) {
     console.log(`  UltraMsg: ${config.provider === 'simulado' ? 'simulado (emulador)' : 'sin configurar (cargue las claves con set-whatsapp.mjs)'}`);
 }
 
-if (args.activar) {
+if (args.meta) {
+    if (target === 'prod' && (await ask('\nEsto guarda la clave de la aplicacion de Meta y crea una clave de verificacion nueva. Escriba META para seguir: ')) !== 'META') {
+        console.log('Cancelado: no se cambio nada.');
+        process.exit(1);
+    }
+    const secret = target === 'prod' ? await ask('Clave secreta de la aplicacion de Meta (App Secret; no se muestra): ', true) : (args.secret || 'secreto-emulador');
+    if (!/^[A-Za-z0-9]{16,128}$/.test(secret)) { console.log('Esa no parece una clave de aplicacion de Meta (letras y numeros). No se cambio nada.'); process.exit(1); }
+    const verify = crypto.randomBytes(18).toString('base64url');
+    const now = new Date().toISOString();
+    await ref.set({ metaAppSecret: secret, metaVerifyTokenHash: sha256(verify), metaWebhookAt: now, updatedAt: now }, { merge: true });
+    console.log('\nListo en el servidor. Ahora en Meta for Developers > su aplicacion > WhatsApp > Configuracion > Webhook > Editar:');
+    console.log(`  URL de devolucion de llamada: ${BASE}/api/whatsapp`);
+    console.log(`  Token de verificacion (se muestra solo esta vez, no lo comparta): ${verify}`);
+    console.log('Pulse "Verificar y guardar" y despues, en "Campos del webhook", suscribase a "messages".');
+    console.log('Desde ese momento los mensajes que entren al numero oficial y sus palomitas llegan a OIKOS > Chats WhatsApp.');
+} else if (args.activar) {
     if (target === 'prod' && !ultra) { console.log('Primero cargue las claves de UltraMsg con set-whatsapp.mjs.'); process.exit(1); }
     const mine = current && current.webhook_url && String(current.webhook_url).startsWith(`${BASE}/api/whatsapp`);
     if (current && current.webhook_url && !mine) console.log(`\nATENCION: UltraMsg ya avisa a otra direccion (${maskUrl(current.webhook_url)}); se reemplaza.`);

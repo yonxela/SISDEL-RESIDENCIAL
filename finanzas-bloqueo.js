@@ -64,7 +64,7 @@
         [/^(openFiniquito|reactivateResident|handleFiniquitoSubmit)\(/, ['residentes_finiquitar']],
         [/^deleteResident\(/, ['residentes_eliminar']],
         [/^openEstadoCuenta\(/, ['residentes_estado']],
-        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
+        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
         // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
         [/^saveReminderMessages\(/, ['config_general']],
         // Bancos: abrir y editar cuentas, registrar movimientos y transferencias, anular. La cuenta favorita la decide el

@@ -879,16 +879,17 @@
                 <button type="button" onclick="setReminderMode('mora')" id="rem-mode-mora" role="radio" class="rem-mode px-4 py-3 rounded-xl border-2 text-left transition"><span class="block font-bold text-sm"><i class="fas fa-exclamation-triangle mr-1.5"></i>Mensaje por morosidad</span><span class="block text-xs opacity-80 mt-0.5">El aviso de mora, solo a los morosos.</span></button>
                 <button type="button" onclick="setReminderMode('varios')" id="rem-mode-varios" role="radio" class="rem-mode px-4 py-3 rounded-xl border-2 text-left transition"><span class="block font-bold text-sm"><i class="fas fa-bullhorn mr-1.5"></i>Mensajes varios</span><span class="block text-xs opacity-80 mt-0.5">Un aviso general: convocatorias, cortes de agua, eventos...</span></button>
             </div>
-            <div id="rem-tabs" class="flex space-x-2 mb-3 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg">
-                <button onclick="renderRemindersList('all')" id="tab-rem-all" class="flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition hidden">Todos los residentes</button>
-                <button onclick="renderRemindersList('mora')" id="tab-rem-mora" class="flex-1 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition">Solo Morosos</button>
-                <button onclick="renderRemindersList('todos')" id="tab-rem-todos" class="flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Todos los pendientes</button>
+            <!-- SISDEL: A QUIENES se envia, todo en una barra: todos, morosos, pendientes, por fase, solo casas, solo lotes o por seleccion -->
+            <div id="rem-tabs" class="flex flex-wrap gap-1 mb-2 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-lg" role="tablist" aria-label="A quiénes se envía">
+                <button onclick="renderRemindersList('all')" id="tab-rem-all" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition hidden">Todos los residentes</button>
+                <button onclick="renderRemindersList('mora')" id="tab-rem-mora" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition">Solo Morosos</button>
+                <button onclick="renderRemindersList('todos')" id="tab-rem-todos" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Todos los pendientes</button>
+                <button onclick="renderRemindersList('fase')" id="tab-rem-fase" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por fase</button>
+                <button onclick="renderRemindersList('casas')" id="tab-rem-casas" title="Se considera con casa al lote que paga agua (se anota en la ficha del residente, pestaña Cuota y agua)" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo casas</button>
+                <button onclick="renderRemindersList('lotes')" id="tab-rem-lotes" title="Lotes sin casa: los que no pagan agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo lotes</button>
+                <button onclick="renderRemindersList('seleccion')" id="tab-rem-seleccion" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por selección</button>
             </div>
-            <!-- SISDEL: a quienes se envia: por fase y por tipo de propietario (con casa o solo lote). Valen para "Enviar a todos", "Seleccionar los de la lista" y la prueba -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                <label class="block"><span class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Fase</span><select id="rem-fase" onchange="renderRemindersList(currentRemFilter)" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition"><option value="">Todas las fases</option></select></label>
-                <label class="block"><span class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Propietarios</span><select id="rem-tipo" onchange="renderRemindersList(currentRemFilter)" title="Se considera con casa al lote que paga agua (se anota en la ficha del residente, pestaña Cuota y agua)" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition"><option value="">Con casa y solo lote</option></select></label>
-            </div>
+            <div id="rem-fase-chips" class="hidden flex flex-wrap gap-1.5 mb-2"></div>
             <!-- SISDEL: busqueda inteligente (sisdel-busqueda.js), la misma de Residentes -->
             <div class="relative mb-2"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="rem-search" autocomplete="off" oninput="renderRemindersList(currentRemFilter)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar por nombre, casa, teléfono..."></div>
             <p id="rem-count" class="text-xs text-slate-500 dark:text-slate-400 mb-3"></p>
@@ -903,8 +904,8 @@
                     <button type="button" id="rem-send-test" onclick="sendReminderTest()" class="px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-vial mr-1.5"></i>Enviar prueba</button>
                     <span class="text-xs text-slate-600 dark:text-slate-300">Sale del WhatsApp del condominio, un mensaje cada ~8 segundos.</span>
                 </div>
-                <!-- SISDEL: elegir a quienes se envia (por ejemplo 20 para una prueba): casillas en cada fila, con el buscador -->
-                <div class="flex flex-wrap items-center gap-2 mt-3">
+                <!-- SISDEL: "Por seleccion": casillas en cada fila, con el buscador; solo se ve con esa opcion de la barra -->
+                <div id="rem-pick-bar" class="hidden flex flex-wrap items-center gap-2 mt-3">
                     <button type="button" onclick="remPickAll()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-check-double mr-1"></i>Seleccionar los de la lista</button>
                     <button type="button" id="rem-clear-picks" onclick="remClearPicks()" class="hidden px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-xmark mr-1"></i>Quitar selección</button>
                     <label class="flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none"><input type="checkbox" id="rem-only-selected" onchange="remToggleOnlySelected(this.checked)" class="w-4 h-4 accent-emerald-600"> Ver solo los seleccionados</label>
@@ -4017,9 +4018,13 @@
             const o = sisdelOwedOf(r);
             return { owed: o.total, mora: o.mora, cuotas: o.pending };
         }
-        // ───────── A quienes se envia: por fase y por tipo de propietario ─────────
+        // ───────── A quienes se envia: la barra de opciones ─────────
+        // Todos los residentes | Solo morosos | Todos los pendientes | Por fase | Solo casas | Solo lotes | Por seleccion.
         // "Con casa" = el lote paga agua (waterUnits > 0: el agua se cobra solo a los lotes con casa); "solo lote" = sin agua.
+        // Con el mensaje por morosidad todo se limita a los morosos. Se envia SIEMPRE a la lista que se ve en esa opcion;
+        // con "Por seleccion", solo a los marcados (nunca "a todos si no marco a nadie").
         var REM_NO_FASE = '__none__';
+        var remFaseSel = '';
         function remPassFilters(r, fase, tipo) {
             const f = String(r.fase || '').trim();
             if (fase === REM_NO_FASE ? f : (fase && f !== fase)) return false;
@@ -4028,39 +4033,72 @@
             if (tipo === 'lote' && hasHouse) return false;
             return true;
         }
-        // Las opciones de los dos selectores con su cuenta (cada uno cuenta con el otro ya aplicado); se conserva lo elegido
-        function paintRemFilters(base) {
-            const faseEl = document.getElementById('rem-fase');
-            const tipoEl = document.getElementById('rem-tipo');
-            if (!faseEl || !tipoEl) return;
-            const esc = (v) => SisdelBusqueda.escapeHtml(v);
-            const keepFase = faseEl.value;
-            const keepTipo = tipoEl.value;
-            const fases = [...new Set((Store.get('residents') || []).map(r => String(r.fase || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
-            const countFase = (fase) => base.filter(r => remPassFilters(r, fase, keepTipo)).length;
-            const countTipo = (tipo) => base.filter(r => remPassFilters(r, keepFase, tipo)).length;
-            const faseOptions = [`<option value="">Todas las fases (${countFase('')})</option>`].concat(fases.map(f => `<option value="${esc(f)}">Fase ${esc(f)} (${countFase(f)})</option>`));
-            if (fases.length && (Store.get('residents') || []).some(r => !String(r.fase || '').trim())) faseOptions.push(`<option value="${REM_NO_FASE}">Sin fase (${countFase(REM_NO_FASE)})</option>`);
-            faseEl.innerHTML = faseOptions.join('');
-            faseEl.value = Array.from(faseEl.options).some(o => o.value === keepFase) ? keepFase : '';
-            faseEl.disabled = !fases.length;
-            faseEl.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente';
-            tipoEl.innerHTML = [
-                `<option value="">Con casa y solo lote (${countTipo('')})</option>`,
-                `<option value="casa">Solo propietarios con casa (${countTipo('casa')})</option>`,
-                `<option value="lote">Solo propietarios con lote, sin casa (${countTipo('lote')})</option>`
-            ].join('');
-            tipoEl.value = keepTipo;
+        function remScopes() { return currentRemMode === 'varios' ? ['all', 'mora', 'todos', 'fase', 'casas', 'lotes', 'seleccion'] : ['mora', 'fase', 'casas', 'lotes', 'seleccion']; }
+        // Los residentes de la lista segun el tipo de aviso y la opcion de la barra, sin el buscador
+        function remBaseList(scope) {
+            const all = Store.get('residents') || [];
+            if (currentRemMode !== 'varios' || scope === 'mora') return all.filter(r => checkIsMoroso(r));
+            if (scope === 'todos') return all.filter(r => reminderOwedOf(r).owed > 0.005);
+            return all.filter(r => isResidentActive(r));
         }
-        // Lo que se filtro, en palabras (para la cuenta y la confirmacion de enviar); vacio si no hay filtro
+        function remInScope(r, scope) {
+            if (scope === 'fase') return remPassFilters(r, remFaseSel, '');
+            if (scope === 'casas') return remPassFilters(r, '', 'casa');
+            if (scope === 'lotes') return remPassFilters(r, '', 'lote');
+            return true;
+        }
+        function setRemFase(fase) { remFaseSel = String(fase || ''); renderRemindersList('fase'); }
+        // Las fases (con cuantos hay de cada una) y las cuentas de "Solo casas" y "Solo lotes"
+        function paintRemScopeBar(base) {
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            const chips = document.getElementById('rem-fase-chips');
+            if (chips) {
+                const show = currentRemFilter === 'fase';
+                chips.classList.toggle('hidden', !show);
+                if (show) {
+                    const residents = Store.get('residents') || [];
+                    const fases = [...new Set(residents.map(r => String(r.fase || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
+                    const items = fases.map(f => [f, 'Fase ' + f]);
+                    if (fases.length && residents.some(r => !String(r.fase || '').trim())) items.push([REM_NO_FASE, 'Sin fase']);
+                    if (!items.some(([k]) => k === remFaseSel)) remFaseSel = items.length ? items[0][0] : '';
+                    const on = 'px-3 py-1.5 rounded-lg text-xs font-semibold border bg-blue-600 text-white border-blue-600';
+                    const off = 'px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600';
+                    chips.innerHTML = items.length
+                        ? items.map(([k, label]) => `<button type="button" data-fase="${esc(k)}" onclick="setRemFase(this.dataset.fase)" class="${k === remFaseSel ? on : off}">${esc(label)} (${base.filter(r => remPassFilters(r, k, '')).length})</button>`).join('')
+                        : '<span class="text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente.</span>';
+                }
+            }
+            const label = (id, text) => { const b = document.getElementById(id); if (b) b.textContent = text; };
+            label('tab-rem-casas', `Solo casas (${base.filter(r => remInScope(r, 'casas')).length})`);
+            label('tab-rem-lotes', `Solo lotes (${base.filter(r => remInScope(r, 'lotes')).length})`);
+        }
+        // Lo que se filtro, en palabras (la cuenta de la ventana); vacio si no hay filtro
         function remFilterText() {
-            const fase = (document.getElementById('rem-fase') || {}).value || '';
-            const tipo = (document.getElementById('rem-tipo') || {}).value || '';
-            const parts = [];
-            if (fase) parts.push(fase === REM_NO_FASE ? 'sin fase' : 'fase ' + fase);
-            if (tipo === 'casa') parts.push('solo propietarios con casa');
-            if (tipo === 'lote') parts.push('solo propietarios con lote, sin casa');
-            return parts.join(', ');
+            if (currentRemFilter === 'fase') return remFaseSel === REM_NO_FASE ? 'sin fase' : remFaseSel ? 'fase ' + remFaseSel : '';
+            if (currentRemFilter === 'casas') return 'solo propietarios con casa';
+            if (currentRemFilter === 'lotes') return 'solo propietarios con lote, sin casa';
+            return '';
+        }
+        // "a TODOS los 714 residentes de la lista", "a los 20 residentes de la fase 2"...: la confirmacion de enviar
+        function remScopeWho(n) {
+            const onlyMora = currentRemMode !== 'varios' && currentRemFilter !== 'mora' ? ' (solo morosos)' : '';
+            if (currentRemFilter === 'fase') return remFaseSel === REM_NO_FASE ? `a los ${n} residentes sin fase${onlyMora}` : `a los ${n} residentes de la fase ${remFaseSel}${onlyMora}`;
+            if (currentRemFilter === 'casas') return `a los ${n} propietarios con casa${onlyMora}`;
+            if (currentRemFilter === 'lotes') return `a los ${n} propietarios con lote, sin casa${onlyMora}`;
+            if (currentRemFilter === 'mora' || currentRemMode !== 'varios') return `a los ${n} residentes morosos`;
+            if (currentRemFilter === 'todos') return `a los ${n} residentes con saldo pendiente`;
+            return `a TODOS los ${n} residentes de la lista`;
+        }
+        // El texto del boton de enviar segun la opcion de la barra
+        function remSendLabel(n) {
+            const num = n ? ` (${n})` : '';
+            if (currentRemFilter === 'seleccion') return `Enviar a los seleccionados${num}`;
+            if (currentRemFilter === 'fase') return remFaseSel === REM_NO_FASE ? `Enviar a los sin fase${num}` : remFaseSel ? `Enviar a la fase ${remFaseSel}${num}` : `Enviar${num}`;
+            if (currentRemFilter === 'casas') return `Enviar a las casas${num}`;
+            if (currentRemFilter === 'lotes') return `Enviar a los lotes${num}`;
+            if (currentRemFilter === 'mora' || currentRemMode !== 'varios') return `Enviar a los morosos${num}`;
+            if (currentRemFilter === 'todos') return `Enviar a los pendientes${num}`;
+            return `Enviar a todos${num}`;
         }
         // Los datos de un residente para el aviso: los {nombre}, {casa}, {saldo}... de los textos y los huecos de una plantilla de Meta
         function reminderVars(r) {
@@ -4180,10 +4218,11 @@
             document.getElementById('rem-msg-general-wrap').classList.toggle('hidden', !varios);
             document.getElementById('rem-msg-title').textContent = varios ? 'Texto de los mensajes varios' : 'Texto del mensaje por morosidad';
             paintRemMeta();
-            // El mensaje por morosidad va solo a los morosos; con mensajes varios se elige: todos, morosos o pendientes
+            // El mensaje por morosidad va solo a los morosos (la barra los refina: fase, casas, lotes o seleccion); con mensajes varios
+            // tambien se puede elegir a todos los residentes o a los pendientes
             document.getElementById('tab-rem-all').classList.toggle('hidden', !varios);
             document.getElementById('tab-rem-todos').classList.toggle('hidden', !varios);
-            document.getElementById('rem-tabs').classList.toggle('hidden', !varios);
+            document.getElementById('tab-rem-mora').textContent = varios ? 'Solo Morosos' : 'Todos los morosos';
         }
         function renderReminderPreview() {
             const wrap = document.getElementById('rem-preview-wrap');
@@ -4211,8 +4250,7 @@
             const only = document.getElementById('rem-only-selected');
             if (only) only.checked = false;
             fillReminderMessages(reminderMessagesSaved());
-            const faseSelect = document.getElementById('rem-fase'); if (faseSelect) faseSelect.value = '';
-            const tipoSelect = document.getElementById('rem-tipo'); if (tipoSelect) tipoSelect.value = '';
+            remFaseSel = '';
             openModal('modal-reminders');
             paintReminderMode();
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
@@ -4220,24 +4258,24 @@
             checkRemConnection();
         }
         function renderRemindersList(filterMode) {
-            currentRemFilter = currentRemMode === 'varios' && ['all', 'mora', 'todos'].includes(filterMode) ? filterMode : 'mora';
-            const tabOn = 'flex-1 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition';
-            const tabOff = 'flex-1 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition';
-            [['tab-rem-all', 'all'], ['tab-rem-mora', 'mora'], ['tab-rem-todos', 'todos']].forEach(([id, key]) => {
+            currentRemFilter = remScopes().includes(filterMode) ? filterMode : (currentRemMode === 'varios' ? 'all' : 'mora');
+            // "Ver solo los marcados" es de "Por seleccion": al salir de ahi se apaga
+            if (currentRemFilter !== 'seleccion' && remOnlySelected) { remOnlySelected = false; const only = document.getElementById('rem-only-selected'); if (only) only.checked = false; }
+            const tabOn = 'flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition';
+            const tabOff = 'flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition';
+            [['tab-rem-all', 'all'], ['tab-rem-mora', 'mora'], ['tab-rem-todos', 'todos'], ['tab-rem-fase', 'fase'], ['tab-rem-casas', 'casas'], ['tab-rem-lotes', 'lotes'], ['tab-rem-seleccion', 'seleccion']].forEach(([id, key]) => {
                 const b = document.getElementById(id);
                 if (!b) return;
                 const hidden = b.classList.contains('hidden');
                 b.className = (key === currentRemFilter ? tabOn : tabOff) + (hidden ? ' hidden' : '');
             });
             const text = document.getElementById('rem-search')?.value || '';
-            // Todos los residentes vigentes, los morosos o todos los que deben algo (con la mora del dia), por nombre
+            // Segun el tipo de aviso y la opcion de la barra: todos los vigentes, los morosos, los que deben algo (con la mora del dia),
+            // una fase, solo casas, solo lotes o los marcados; por nombre
             remAllResidents = Store.get('residents');
-            let res = remAllResidents.filter(r => (currentRemFilter === 'all' ? isResidentActive(r) : currentRemFilter === 'mora' ? checkIsMoroso(r) : reminderOwedOf(r).owed > 0.005));
-            // SISDEL: por fase y por tipo de propietario (con casa / solo lote); las opciones traen cuantos hay de cada uno
-            paintRemFilters(res);
-            const faseSel = (document.getElementById('rem-fase') || {}).value || '';
-            const tipoSel = (document.getElementById('rem-tipo') || {}).value || '';
-            res = res.filter(r => remPassFilters(r, faseSel, tipoSel));
+            const base = remBaseList(currentRemFilter);
+            paintRemScopeBar(base);
+            let res = base.filter(r => remInScope(r, currentRemFilter));
             // SISDEL: "Ver solo los seleccionados" muestra a quienes se eligieron, sea cual sea la lista en la que estaban
             if (remOnlySelected) res = remAllResidents.filter(r => remSelected.has(String(r.id)));
             const total = res.length;
@@ -4251,7 +4289,7 @@
             paintReminderBulk();
             if (countEl && currentRemMode !== 'varios' && !remOnlySelected) countEl.textContent += ' en mora';
             if (countEl && remFilterText() && !remOnlySelected) countEl.textContent += ' · ' + remFilterText();
-            if (countEl && remSelected.size) countEl.textContent += ` · ${remSelected.size} seleccionado(s)`;
+            if (countEl && currentRemFilter === 'seleccion' && remSelected.size) countEl.textContent += ` · ${remSelected.size} seleccionado(s)`;
             renderReminderPreview();
             const container = document.getElementById('reminders-list');
             if (res.length === 0) {
@@ -4274,8 +4312,8 @@
                     ? `<p class="text-rose-600 dark:text-rose-400 font-semibold text-sm mt-1">Debe: ${formatMoney(o.owed)}${detail} ${tag}</p>`
                     : `<p class="text-emerald-600 dark:text-emerald-400 font-semibold text-sm mt-1">Sin saldo pendiente ${tag}</p>`;
                 const hasPhone = !!String(r.contact || '').replace(/[^0-9]/g, '');
-                const picked = remSelected.has(String(r.id));
-                const pick = remBridge() && hasPhone
+                const picked = currentRemFilter === 'seleccion' && remSelected.has(String(r.id));
+                const pick = remBridge() && hasPhone && currentRemFilter === 'seleccion'
                     ? `<input type="checkbox" class="rem-pick shrink-0 w-5 h-5 accent-emerald-600 cursor-pointer" data-id="${esc(r.id)}" ${picked ? 'checked' : ''} onchange="remTogglePick(this.dataset.id, this.checked)" title="Seleccionar para el envío" aria-label="Seleccionar a ${esc(r.name || '')}">`
                     : '';
                 const button = hasPhone
@@ -4378,20 +4416,24 @@
             const bridge = remBridge();
             box.classList.toggle('hidden', !bridge);
             if (!bridge) return;
-            const picked = remSelectedSendable().length;
-            const n = picked || reminderSendable(remShownList).length;
+            const sel = currentRemFilter === 'seleccion';
+            const n = sel ? remSelectedSendable().length : reminderSendable(remShownList).length;
             const running = !!(remCampaign && (remCampaign.status === 'running' || remCampaign.status === 'paused'));
             const btn = document.getElementById('rem-send-all');
-            document.getElementById('rem-send-all-label').textContent = picked ? `Enviar a los seleccionados (${picked})` : n ? `Enviar a todos (${n})` : 'Enviar a todos';
+            document.getElementById('rem-send-all-label').textContent = remSendLabel(n);
             const countLabel = document.getElementById('rem-pick-count');
-            if (countLabel) countLabel.textContent = remSelected.size ? `${remSelected.size} seleccionado(s)` : 'Sin selección: se envía a todos los de la lista';
+            if (countLabel) countLabel.textContent = remSelected.size ? `${remSelected.size} seleccionado(s)` : 'Marque a quienes recibirán el mensaje';
             const clear = document.getElementById('rem-clear-picks');
             if (clear) clear.classList.toggle('hidden', !remSelected.size);
+            const pickBar = document.getElementById('rem-pick-bar');
+            if (pickBar) pickBar.classList.toggle('hidden', !sel);
+            const selTab = document.getElementById('tab-rem-seleccion');
+            if (selTab) selTab.textContent = remSelected.size ? `Por selección (${remSelected.size})` : 'Por selección';
             const down = !!(remConn && remConn.connected === false);
             btn.disabled = !n || running || down;
             btn.classList.toggle('opacity-50', btn.disabled);
             btn.classList.toggle('cursor-not-allowed', btn.disabled);
-            btn.title = down ? 'WhatsApp está desconectado: no se puede enviar' : running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
+            btn.title = down ? 'WhatsApp está desconectado: no se puede enviar' : (!n && sel) ? 'Marque al menos un residente con teléfono' : running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
             const testBtn = document.getElementById('rem-send-test');
             if (testBtn) { testBtn.disabled = down; testBtn.classList.toggle('opacity-50', down); testBtn.classList.toggle('cursor-not-allowed', down); }
         }
@@ -4584,17 +4626,17 @@
             if (!bridge) return;
             await checkRemConnection();
             if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
-            // Con residentes elegidos (casillas) se envia SOLO a ellos; sin elegir, a todos los de la lista
-            const picked = remSelectedSendable();
-            const list = picked.length ? picked : reminderSendable(remShownList);
-            if (!list.length) return alert('No hay residentes con teléfono en esta lista.');
+            // A la lista que se ve en la opcion de la barra; con "Por seleccion", SOLO a los marcados (sin marcar a nadie no se envia)
+            const sel = currentRemFilter === 'seleccion';
+            const list = sel ? remSelectedSendable() : reminderSendable(remShownList);
+            if (!list.length) return alert(sel ? 'Marque al menos un residente con teléfono.' : 'No hay residentes con teléfono en esta lista.');
             if (!reminderTemplateReady(list[0])) return;
             const items = list.map(remItemFor);
             const minutes = Math.max(1, Math.ceil((items.length * REM_PAUSE_SECONDS) / 60));
             const first = list[0];
             const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
             const names = list.slice(0, 5).map(r => (r.unit ? r.unit + ' ' : '') + (r.name || '')).join('\n');
-            const who = picked.length ? `SOLO a los ${items.length} residentes que seleccionó:\n${names}${list.length > 5 ? '\n... y ' + (list.length - 5) + ' más' : ''}` : `a TODOS los ${items.length} residentes de la lista${remFilterText() ? ' (' + remFilterText() + ')' : ''}`;
+            const who = sel ? `SOLO a los ${items.length} residentes que seleccionó:\n${names}${list.length > 5 ? '\n... y ' + (list.length - 5) + ' más' : ''}` : remScopeWho(items.length);
             const ok = confirm(`Se enviarán ${items.length} mensajes de WhatsApp ${who}\n\nDesde el número del condominio, de a poco (uno cada ~${REM_PAUSE_SECONDS} segundos): unos ${minutes} minutos. Puede cerrar esta ventana, el envío sigue.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`);
             if (!ok) return;
             const btn = document.getElementById('rem-send-all');

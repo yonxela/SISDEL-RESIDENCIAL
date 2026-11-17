@@ -412,6 +412,36 @@ async function run() {
         await oikos(`(() => { Store.get = window.__origGet; window.confirm = window.__realConfirm; closeModal('modal-reminders'); try { localStorage.removeItem('sisdel_rem_modo'); } catch (e) {} })()`);
         await page.evaluate(`(() => { window.sisdelWhatsApp = window.__realWa; })()`);
 
+        console.log('\nPagos: una boleta no se repite y se ve el saldo del residente');
+        await oikos(`(() => { window.__real = { alert: window.alert, confirm: window.confirm }; window.__alerts = []; window.__confirms = []; window.__confirmAnswer = true; window.alert = (m) => { window.__alerts.push(String(m)); }; window.confirm = (m) => { window.__confirms.push(String(m)); return window.__confirmAnswer; }; navigate('accounting'); openModal('modal-income'); })()`);
+        equal('al abrir el ingreso no hay saldo ni aviso de boleta y Registrar esta encendido', await oikos(`[document.getElementById('inc-balance-box').classList.contains('hidden'), document.getElementById('inc-doc-msg').classList.contains('hidden'), document.getElementById('btn-inc-reg').disabled]`), [true, true, false]);
+        const bal = await oikos(`(() => { document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); const r = Store.get('residents').find((x) => x.id === 'u-ana'); const o = sisdelOwedOf(r); return [!document.getElementById('inc-balance-box').classList.contains('hidden'), document.getElementById('inc-bal-label').textContent, document.getElementById('inc-bal-total').textContent === formatMoney(o.total), o.total > 0]; })()`);
+        equal('al elegir al residente se ve lo que debe (el mismo total que en Residentes y los reportes)', bal, [true, 'Debe', true, true]);
+        equal('al escribir el monto dice como quedaria', await oikos(`(() => { document.getElementById('inc-amount').value = '100'; renderIncomeBalance(); const r = Store.get('residents').find((x) => x.id === 'u-ana'); const left = Math.round((residentShownBalance(r).shown + 100) * 100) / 100; const t = document.getElementById('inc-bal-after'); return [!t.classList.contains('hidden'), t.textContent === (left < -0.004 ? 'Con este pago quedaría debiendo ' + formatMoney(-left) : left > 0.004 ? 'Con este pago queda un saldo a favor de ' + formatMoney(left) : 'Con este pago queda al día')]; })()`), [true, true]);
+        equal('Poner el total llena el monto con todo lo que debe y la nota dice que queda al dia', await oikos(`(() => { document.getElementById('inc-bal-fill').click(); const r = Store.get('residents').find((x) => x.id === 'u-ana'); return [document.getElementById('inc-amount').value === sisdelOwedOf(r).total.toFixed(2), document.getElementById('inc-bal-after').textContent]; })()`), [true, 'Con este pago queda al día']);
+        equal('la boleta se compara sin importar mayusculas, espacios, guiones ni ceros a la izquierda', await oikos(`[normDocNum('B-123'), normDocNum('b 123'), normDocNum('0123'), normDocNum('00'), normDocNum('')]`), ['B123', 'B123', '123', '0', '']);
+        // Un pago con su boleta
+        const payWith = (resident, doc, amount) => `(() => { openModal('modal-income'); document.getElementById('inc-resident').value = '${resident}'; updateIncomeConcepts(); document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Pago de prueba'; document.getElementById('inc-amount').value = '${amount}'; document.getElementById('inc-receipt-num').value = '${doc}'; checkIncomeDoc(); handleTransactionSubmit({ preventDefault() {} }, 'income'); })()`;
+        const paymentsNow = () => oikos(`Store.get('transactions').filter((t) => t.type === 'income').length`);
+        const p0 = await paymentsNow();
+        await oikos(payWith('u-maria', 'BOL-77', 40));
+        equal('una boleta nueva se registra', [await paymentsNow(), await oikos(`Store.get('transactions').some((t) => t.type === 'income' && t.docNum === 'BOL-77' && t.amount === 40)`)], [p0 + 1, true]);
+        const dupShown = await oikos(`(() => { openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); document.getElementById('inc-receipt-num').value = ' bol 77 '; checkIncomeDoc(); const m = document.getElementById('inc-doc-msg'); return [!m.classList.contains('hidden'), m.textContent, document.getElementById('btn-inc-reg').disabled]; })()`);
+        record('la misma boleta (escrita distinto) avisa quien la tiene y apaga Registrar', dupShown[0] && dupShown[1].includes('Esta boleta ya está registrada') && dupShown[1].includes('Q40.00') && dupShown[2] === true, JSON.stringify(dupShown));
+        await oikos(`(() => { window.__alerts.length = 0; document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Otro pago'; document.getElementById('inc-amount').value = '15'; handleTransactionSubmit({ preventDefault() {} }, 'income'); })()`);
+        equal('al guardar con una boleta repetida no se crea nada y avisa', [await paymentsNow(), (await oikos(`window.__alerts`)).some((m) => m.includes('Esta boleta ya está registrada'))], [p0 + 1, true]);
+        equal('la boleta de un pago anulado se puede registrar otra vez', await oikos(`findDuplicateDoc('TRF-0001') === null`), true);
+        await oikos(payWith('u-ana', 'BOL-78', 25));
+        equal('otra boleta del mismo residente se registra y el boton Registrar queda apagado hasta abrir el formulario', [await paymentsNow(), await oikos(`document.getElementById('btn-inc-reg').disabled`)], [p0 + 2, true]);
+        // Un doble clic (mismo residente y monto, sin boleta) pide confirmar
+        await oikos(`(() => { window.__confirms.length = 0; window.__confirmAnswer = false; document.getElementById('inc-receipt-num').value = ''; handleTransactionSubmit({ preventDefault() {} }, 'income'); })()`);
+        equal('un pago igual de hace un momento pide confirmar y, si se dice que no, no se registra', [await paymentsNow(), (await oikos(`window.__confirms`)).length === 1 && (await oikos(`window.__confirms[0]`)).includes('Ya se registró un pago de Q25.00')], [p0 + 2, true]);
+        await oikos(`(() => { window.__confirmAnswer = true; handleTransactionSubmit({ preventDefault() {} }, 'income'); })()`);
+        equal('si se confirma, se registra', await paymentsNow(), p0 + 3);
+        equal('al abrir el formulario otra vez el boton Registrar vuelve a estar encendido y no hay saldo ni aviso', await oikos(`(() => { openModal('modal-income'); return [document.getElementById('btn-inc-reg').disabled, document.getElementById('inc-balance-box').classList.contains('hidden'), document.getElementById('inc-doc-msg').classList.contains('hidden')]; })()`), [false, true, true]);
+        await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);
+        await idle();
+
         console.log('\nLote o casa');
         const finRef = (id) => condoRef.collection('finanzas_residentes').doc(id);
         // El formulario de un residente nuevo pide el tipo; el de uno que ya existia sin tipo se puede editar sin elegirlo

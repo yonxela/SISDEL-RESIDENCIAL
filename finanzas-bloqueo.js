@@ -120,7 +120,7 @@
             // Pestana Propietario del formulario de residente (nombre del dueno, NIT, direccion, DPI, observaciones)
             '#res-tab-owner', '#form-resident [data-res-pane="owner"]'
         ]],
-        [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta']],
+        [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta', '#inc-balance-box']],
         [['residentes_crear'], ['#view-residents button[onclick="openModal(\'modal-resident\')"]']],
         [['residentes_editar'], ['#residents-table-body button[onclick^="editResident("]', '#res-nav', '#res-jump-wrap', '#res-bulk-type-btn', '#modal-bulk-type', '#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases']],
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],

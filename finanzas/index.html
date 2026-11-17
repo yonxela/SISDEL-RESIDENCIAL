@@ -1308,12 +1308,23 @@
             <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white" id="title-modal-inc"><i class="fas fa-arrow-down text-emerald-500 mr-2"></i>Ingreso</h3><button type="button" onclick="closeModal('modal-income')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
             <form onsubmit="handleTransactionSubmit(event, 'income')"><div class="space-y-4">
                 <select id="inc-resident" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required onchange="updateIncomeConcepts()"></select>
+                <!-- SISDEL: el saldo del residente a la vista al hacer el pago: lo que debe hoy (cuotas y cargos + mora), o al dia / a favor,
+                     y como quedaria con el monto que se escribe -->
+                <div id="inc-balance-box" class="hidden rounded-xl border p-3" aria-live="polite">
+                    <div class="flex items-start justify-between gap-3">
+                        <div><p class="text-[11px] font-bold uppercase tracking-wide" id="inc-bal-label">Debe</p><p class="text-2xl font-extrabold leading-tight whitespace-nowrap" id="inc-bal-total">Q0.00</p></div>
+                        <button type="button" id="inc-bal-fill" onclick="fillIncomeWithTotal()" class="hidden shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/80 dark:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-300 dark:border-slate-500 hover:bg-white dark:hover:bg-slate-600 transition" title="Poner en el monto todo lo que debe">Poner el total</button>
+                    </div>
+                    <p class="mt-1 text-[11px] opacity-80" id="inc-bal-detail"></p>
+                    <p class="hidden mt-1 text-xs font-bold" id="inc-bal-after"></p>
+                </div>
                 <select id="inc-concept-type" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-medium cursor-pointer" onchange="handleIncomeConceptChange()"><option value="fee" id="inc-opt-fee">Cuota del Mes</option><option value="custom">Personalizar...</option></select>
                 <input type="text" id="inc-concept-custom" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg hidden" placeholder="Concepto">
-                <input type="number" step="0.01" min="0.01" id="inc-amount" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
+                <input type="number" step="0.01" min="0.01" id="inc-amount" oninput="renderIncomeBalance()" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required placeholder="Monto">
                 <div class="border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2"><i class="fas fa-file-alt mr-1"></i>Documento de Pago</label>
-                    <input type="text" id="inc-receipt-num" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg mb-3" placeholder="No. de Documento (Opcional)" autocomplete="off">
+                    <input type="text" id="inc-receipt-num" oninput="checkIncomeDoc()" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg mb-3" placeholder="No. de Documento (Opcional)" autocomplete="off">
+                    <p id="inc-doc-msg" class="hidden -mt-1 mb-3 text-xs font-bold text-rose-600 dark:text-rose-400" role="alert"></p>
                     <div class="flex items-center space-x-3">
                         <label class="flex-1 cursor-pointer flex items-center justify-center px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 border-2 border-dashed border-slate-300 dark:border-slate-500 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 transition">
                             <i class="fas fa-camera mr-2"></i>Subir Documento
@@ -5453,6 +5464,13 @@
             // SISDEL: el monto debe ser mayor que cero (un pago negativo seria un cargo escondido) y el pago lleva residente
             if (!(amt > 0)) { alert('El monto debe ser mayor que cero.'); return; }
             if (type === 'income' && !document.getElementById('inc-resident').value) { alert('Seleccione un residente.'); return; }
+            if (type === 'income') {
+                // SISDEL: una boleta no se registra dos veces (se mira antes de numerar el recibo o de guardar nada)
+                const dup = checkIncomeDoc();
+                if (dup) { alert(duplicateDocText(dup)); const el = document.getElementById('inc-receipt-num'); if (el) el.focus(); return; }
+                const same = findRecentSamePayment(document.getElementById('inc-resident').value, amt);
+                if (same && !confirm(`Ya se registró un pago de ${formatMoney(amt)} para este residente hace ${same.minutes} minuto(s) (Ref. ${same.tx.receiptNum || 's/n'}).\n\n¿Registrar otro igual?`)) return;
+            }
             const txs = Store.get('transactions');
             let conceptVal = '';
             if (type === 'income') {
@@ -5501,6 +5519,7 @@
                 if (idx > -1) { res[idx].balance += amt; Store.set('residents', res); }
             }
             txs.push(tx); Store.set('transactions', txs);
+            if (type === 'income') { const regBtn = document.getElementById('btn-inc-reg'); if (regBtn) regBtn.disabled = true; }
             closeModal(`modal-${type}`); renderAccounting();
             showToast('Registrado - Ref: ' + tx.receiptNum);
             // Tras guardar, abrimos el modal con opciones de Imprimir/Descargar
@@ -7505,9 +7524,100 @@
             const a = document.createElement('a'); a.href = url; a.download = 'oikos_report.csv'; a.click();
         }
 
+        // ========== SISDEL: PAGOS SIN BOLETAS REPETIDAS Y CON EL SALDO A LA VISTA ==========
+        // Una boleta (el "No. de Documento" de un pago) solo se registra una vez: al escribirla el formulario avisa si ya esta
+        // en otro pago y no deja guardar. Se compara sin importar mayusculas, espacios, guiones ni ceros a la izquierda
+        // ("B-123", "b 123" y "0123" son la misma). Un pago ANULADO no cuenta: su boleta se puede registrar de nuevo. Tampoco
+        // se repite un pago igual (mismo residente y monto) registrado hace pocos minutos sin avisar (un doble clic).
+        // Solo mira lo que ya esta en este equipo (OIKOS baja todos los movimientos de la nube y los de otros equipos llegan solos).
+        function normDocNum(v) {
+            let t = String(v == null ? '' : v).toUpperCase().replace(/[\s\-_./\\]+/g, '');
+            if (/^\d+$/.test(t)) t = t.replace(/^0+(?=\d)/, '');
+            return t;
+        }
+        function incomeDocIndex() {
+            const build = (list) => {
+                const map = new Map();
+                (list || []).forEach(t => { if (t && !t.deleted && t.type === 'income' && t.docNum) { const k = normDocNum(t.docNum); if (k && !map.has(k)) map.set(k, t); } });
+                return map;
+            };
+            const mem = sisdelMem();
+            return mem ? sisdelDerived(mem, 'incomeDocIndex', build) : build(Store.getRaw('transactions'));
+        }
+        function findDuplicateDoc(docNum) { const k = normDocNum(docNum); return k ? (incomeDocIndex().get(k) || null) : null; }
+        function duplicateDocText(tx) {
+            const r = (Store.getRaw('residents') || []).find(x => String(x.id) === String(tx.resiId));
+            const who = r ? `${r.unit} - ${r.name}` : 'otro residente';
+            return `Esta boleta ya está registrada: pago de ${formatMoney(tx.amount)} de ${who} el ${new Date(tx.date).toLocaleDateString('es-MX')} (Ref. ${tx.receiptNum || 's/n'}). No se puede registrar dos veces.`;
+        }
+        // Un pago igual (mismo residente y monto) de los ultimos 10 minutos: casi siempre es un doble clic
+        function findRecentSamePayment(resId, amount) {
+            const mem = sisdelMem();
+            const list = (mem ? mem.read('transactions') : Store.getRaw('transactions')) || [];
+            const cents = (v) => Math.round((parseFloat(v) || 0) * 100);
+            const now = Date.now();
+            for (let i = list.length - 1; i >= Math.max(0, list.length - 2000); i--) {
+                const t = list[i];
+                if (!t || t.deleted || t.type !== 'income' || String(t.resiId) !== String(resId) || cents(t.amount) !== cents(amount)) continue;
+                const age = now - new Date(t.date).getTime();
+                if (age >= 0 && age <= 10 * 60 * 1000) return { tx: t, minutes: Math.max(1, Math.round(age / 60000)) };
+            }
+            return null;
+        }
+        // El aviso bajo el numero de documento y el boton Registrar apagado mientras la boleta este repetida
+        function checkIncomeDoc() {
+            const input = document.getElementById('inc-receipt-num');
+            const msg = document.getElementById('inc-doc-msg');
+            const btn = document.getElementById('btn-inc-reg');
+            const dup = findDuplicateDoc(input ? input.value : '');
+            if (msg) { msg.classList.toggle('hidden', !dup); msg.textContent = dup ? duplicateDocText(dup) : ''; }
+            if (input) input.classList.toggle('border-rose-500', !!dup);
+            if (btn) { btn.disabled = !!dup; btn.classList.toggle('opacity-50', !!dup); btn.classList.toggle('cursor-not-allowed', !!dup); }
+            return dup;
+        }
+        // El saldo del residente elegido: lo que debe hoy (cuotas y cargos + mora), o al dia / saldo a favor, y como quedaria
+        function renderIncomeBalance() {
+            const box = document.getElementById('inc-balance-box');
+            if (!box) return;
+            const resId = (document.getElementById('inc-resident') || {}).value;
+            const r = resId ? (Store.get('residents') || []).find(x => String(x.id) === String(resId)) : null;
+            box.classList.toggle('hidden', !r);
+            if (!r) return;
+            const o = sisdelOwedOf(r);
+            const shown = residentShownBalance(r).shown;
+            const owes = o.total > 0.004;
+            const credit = !owes && shown > 0.004;
+            const tone = owes ? 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-900/25 dark:border-rose-800 dark:text-rose-200' : 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/25 dark:border-emerald-800 dark:text-emerald-200';
+            box.className = 'rounded-xl border p-3 ' + tone;
+            document.getElementById('inc-bal-label').textContent = owes ? 'Debe' : credit ? 'Saldo a favor' : 'Al día';
+            document.getElementById('inc-bal-total').textContent = formatMoney(owes ? o.total : credit ? shown : 0);
+            const parts = [];
+            if (owes) {
+                parts.push(`Cuotas y cargos pendientes ${formatMoney(o.pending)}${o.mora > 0.004 ? ' + mora ' + formatMoney(o.mora) : ''}`);
+            } else if (!credit) parts.push('No debe nada');
+            if (!isResidentActive(r)) parts.push('residente finiquitado');
+            document.getElementById('inc-bal-detail').textContent = parts.join(' · ');
+            document.getElementById('inc-bal-fill').classList.toggle('hidden', !owes);
+            const after = document.getElementById('inc-bal-after');
+            const amt = parseFloat((document.getElementById('inc-amount') || {}).value);
+            if (amt > 0) {
+                const left = Math.round((shown + amt) * 100) / 100;
+                after.textContent = left < -0.004 ? `Con este pago quedaría debiendo ${formatMoney(-left)}` : left > 0.004 ? `Con este pago queda un saldo a favor de ${formatMoney(left)}` : 'Con este pago queda al día';
+            }
+            after.classList.toggle('hidden', !(amt > 0));
+        }
+        function fillIncomeWithTotal() {
+            const resId = (document.getElementById('inc-resident') || {}).value;
+            const r = resId ? (Store.get('residents') || []).find(x => String(x.id) === String(resId)) : null;
+            if (!r) return;
+            const total = sisdelOwedOf(r).total;
+            if (total > 0.004) { document.getElementById('inc-amount').value = total.toFixed(2); renderIncomeBalance(); }
+        }
+
         // ========== INCOME CONCEPT HELPERS ==========
         function updateIncomeConcepts() {
-            const resId = document.getElementById('inc-resident').value; if (!resId) return;
+            const resId = document.getElementById('inc-resident').value; if (!resId) { renderIncomeBalance(); return; }
+            renderIncomeBalance();
             const s = Store.get('settings'); const txs = Store.get('transactions'); const currentYM = currentFeePeriod();
             const feeConcept = feeConceptFor(new Date().getFullYear(), new Date().getMonth());
             const hasPaidFee = txs.some(t => t.type === 'income' && t.resiId === resId && t.date && localDayKey(t.date).startsWith(currentYM) && (t.concept === feeConcept || (t.concept && (t.concept.toLowerCase().includes('cuota') || t.concept.toLowerCase().includes('fee')))));
@@ -7542,6 +7652,7 @@
                 document.getElementById('inc-concept-custom').classList.add('hidden'); document.getElementById('inc-concept-custom').value = ''; document.getElementById('inc-amount').value = '';
                 document.getElementById('inc-receipt-num').value = ''; clearReceiptImg('inc');
                 const incNotes = document.getElementById('inc-notes'); if (incNotes) incNotes.value = '';
+                renderIncomeBalance(); checkIncomeDoc();   // SISDEL: sin saldo ni aviso de boleta, y el boton Registrar encendido
             }
             if (id === 'modal-expense') {
                 // Reset del autocomplete de categoría — limpia input + cierra

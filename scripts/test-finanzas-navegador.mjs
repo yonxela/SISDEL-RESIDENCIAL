@@ -189,7 +189,7 @@ async function run() {
             Store.get = function (k) {
                 const v = window.__origGet.apply(Store, arguments);
                 if (k !== 'residents') return v;
-                const fakes = names.map((n, i) => Object.assign({}, v[0], { id: 'fake-' + i, name: n, unit: 'F-' + (i + 1), status: 'active', deleted: false }));
+                const fakes = names.map((n, i) => Object.assign({}, v[0], { id: 'fake-' + i, name: n, unit: 'F-' + (i + 1), status: 'active', deleted: false, fase: i < 3 ? '2' : i < 5 ? '3' : '', waterUnits: i % 2 === 0 ? 1 : 0 }));
                 return v.concat(fakes).map((r, i) => Object.assign({}, r, { contact: '5500' + String(1000 + i) }));
             };
             window.confirm = () => true;
@@ -222,6 +222,32 @@ async function run() {
         equal('sin elegir a nadie el envio es a todos los de la lista', (await page.evaluate(`window.__sent`)).map((d) => d.items.length), [2, shown]);
         await oikos(`(() => { remTogglePick(Store.get('residents')[0].id, true); setReminderMode('mora'); })()`);
         equal('cambiar de mensaje (morosidad <-> varios) empieza la seleccion de cero', await oikos(`remSelected.size`), 0);
+        // A quienes se envia: por fase y por tipo de propietario (con casa = el lote paga agua; solo lote = sin agua)
+        await oikos(`setReminderMode('varios'); openReminders(); document.getElementById('rem-msg-general').value = 'Aviso de prueba para {nombre}';`);
+        const setSel = (id, value) => oikos(`(() => { const s = document.getElementById(${JSON.stringify(id)}); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change')); })()`);
+        const shownNow = () => oikos(`remShownList.length`);
+        const base = await shownNow();
+        const optionTexts = (id) => oikos(`[...document.getElementById(${JSON.stringify(id)}).options].map((o) => o.textContent)`);
+        equal('el selector de fase trae cada fase con cuantos hay (y sin fase)', await optionTexts('rem-fase'), [`Todas las fases (${base})`, 'Fase 2 (3)', 'Fase 3 (2)', `Sin fase (${base - 5})`]);
+        equal('el de propietarios cuenta con casa y solo lote', await optionTexts('rem-tipo'), [`Con casa y solo lote (${base})`, 'Solo propietarios con casa (3)', `Solo propietarios con lote, sin casa (${base - 3})`]);
+        await setSel('rem-fase', '2');
+        equal('por fase: solo los de esa fase, y el boton de enviar lo dice', [await shownNow(), await oikos(`document.getElementById('rem-send-all-label').textContent`)], [3, 'Enviar a todos (3)']);
+        await setSel('rem-tipo', 'casa');
+        equal('fase 2 y solo con casa: los 2 con casa de esa fase (la cuenta del otro selector se ajusta)', [await shownNow(), (await optionTexts('rem-fase'))[1]], [2, 'Fase 2 (2)']);
+        await setSel('rem-fase', '');
+        equal('solo con casa en todas las fases', await shownNow(), 3);
+        await setSel('rem-tipo', 'lote');
+        equal('solo lote (sin casa) son los demas', await shownNow(), base - 3);
+        await setSel('rem-tipo', '');
+        await setSel('rem-fase', '__none__');
+        equal('sin fase', await shownNow(), base - 5);
+        await setSel('rem-fase', '3');
+        const asked = await oikos(`(async () => { const seen = []; const real = window.confirm; window.confirm = (m) => { seen.push(String(m)); return false; }; try { await sendRemindersToAll(); } finally { window.confirm = real; } return seen; })()`);
+        record('la confirmacion de enviar dice el filtro: cuantos y de que fase', asked.length === 1 && /2 mensajes/.test(asked[0]) && /\(fase 3\)/.test(asked[0]), JSON.stringify(asked));
+        equal('la cuenta de la ventana dice el filtro', await oikos(`document.getElementById('rem-count').textContent`), '2 residente(s) · fase 3');
+        await oikos(`openReminders()`);
+        equal('al abrir de nuevo la ventana los filtros vuelven a todos (no se envia a un grupo por descuido)', [await oikos(`document.getElementById('rem-fase').value`), await oikos(`document.getElementById('rem-tipo').value`), await shownNow()], ['', '', base]);
+        await oikos(`setReminderMode('mora')`);
         // Botones del progreso segun el estado del envio: Pausar (en curso), Continuar (en pausa o detenido), Cancelar (definitivo)
         const panel = (status, extra = {}) => oikos(`(() => {
             remCampaign = Object.assign({ id: 'x', status: ${JSON.stringify(status)}, total: 10, sent: 3, failed: 0, skipped: 0, pending: 7, createdAt: new Date().toISOString() }, ${JSON.stringify(extra)});

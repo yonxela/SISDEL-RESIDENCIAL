@@ -752,6 +752,8 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('la seleccion se limpia al enviar, al cambiar de mensaje y al abrir la ventana', (oikos.match(/remSelected\.clear\(\)/g) || []).length >= 4);
     yes('las funciones de la seleccion piden el mismo privilegio que los recordatorios', /remTogglePick\|remPickAll\|remClearPicks\|remToggleOnlySelected\)\\\(\/, \['residentes_contactar'\]/.test(bloqueo));
     // El servidor sigue sin confiar en la seleccion: solo recibe ids de residente y texto, y toma el telefono de la ficha
+    // La ventana se desplaza entera (pedido del usuario, 2026-11-16): con el envio en marcha lo de abajo quedaba fuera de la pantalla
+    yes('la ventana de Recordatorios se desplaza entera y la lista tiene su altura (los botones Pausar / Cancelar y la lista se alcanzan)', /id="modal-reminders"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)?<div class="[^"]*max-h-\[90vh\][^"]*overflow-y-auto[^"]*">/.test(oikos) && /class="overflow-y-auto shrink-0[^"]*max-h-\[60vh\][^"]*" id="reminders-list"/.test(oikos));
     yes('la seleccion no manda telefonos al servidor (solo residentId y text)', /items = list\.map\(r => \(\{ residentId: String\(r\.id\), text: reminderText\(reminderTemplateFor\(r\), r\) \}\)\)/.test(oikos));
 }
 

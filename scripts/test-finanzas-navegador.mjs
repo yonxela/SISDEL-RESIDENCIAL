@@ -222,6 +222,22 @@ async function run() {
         equal('sin elegir a nadie el envio es a todos los de la lista', (await page.evaluate(`window.__sent`)).map((d) => d.items.length), [2, shown]);
         await oikos(`(() => { remTogglePick(Store.get('residents')[0].id, true); setReminderMode('mora'); })()`);
         equal('cambiar de mensaje (morosidad <-> varios) empieza la seleccion de cero', await oikos(`remSelected.size`), 0);
+        // Con una pantalla chica (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
+        await oikos(`openReminders()`);
+        const scrolling = await oikos(`(() => {
+            const card = document.querySelector('#modal-reminders > div');
+            const list = document.getElementById('reminders-list');
+            const prev = card.style.maxHeight; card.style.maxHeight = '320px';
+            const out = { overflow: getComputedStyle(card).overflowY, listShrink: getComputedStyle(list).flexShrink, scrolls: card.scrollHeight > card.clientHeight + 10 };
+            card.scrollTop = card.scrollHeight;
+            const box = card.getBoundingClientRect(), close = document.getElementById('btn-rem-close').getBoundingClientRect();
+            out.closeReachable = close.bottom <= box.bottom + 1 && close.top >= box.top;
+            card.scrollTop = 0;
+            out.titleReachable = document.getElementById('title-modal-rem').getBoundingClientRect().top >= box.top;
+            card.style.maxHeight = prev;
+            return out;
+        })()`);
+        equal('con poca pantalla la ventana de Recordatorios se desplaza y se llega al boton Cerrar y de vuelta al titulo', scrolling, { overflow: 'auto', listShrink: '0', scrolls: true, closeReachable: true, titleReachable: true });
         // Lo deja como estaba
         await oikos(`(() => { Store.get = window.__origGet; window.confirm = window.__realConfirm; closeModal('modal-reminders'); try { localStorage.removeItem('sisdel_rem_modo'); } catch (e) {} })()`);
         await page.evaluate(`(() => { window.sisdelWhatsApp = window.__realWa; })()`);

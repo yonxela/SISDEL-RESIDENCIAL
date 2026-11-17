@@ -60,12 +60,14 @@ async function sendMetaOfficial(config, to, message, opts) {
     return false;
 }
 
-// Devuelve el canal usado o null si no salio por ninguno. Con config.channel === 'meta' sale SOLO por Meta (no cae a UltraMsg:
-// su numero puede estar bloqueado); si no, UltraMsg y, de respaldo, Meta con texto libre, como siempre.
+// Devuelve el canal usado o null si no salio por ninguno. Con config.channel === 'meta', los AVISOS con plantilla (opts.template:
+// recordatorios) salen SOLO por Meta (no caen a UltraMsg, cuyo numero puede estar bloqueado). Un mensaje libre (alertas de panico,
+// rondas/index.js) sigue como siempre, UltraMsg y de respaldo Meta: Meta solo deja mandar texto libre a quien escribio en las
+// ultimas 24 horas, y una alerta de panico no puede depender de eso.
 // opts: { template, params, errors }
 async function send(config, to, message, opts = {}) {
     if (config.provider === 'simulado') return 'SIMULADO';
-    if (meta.usesMeta(config)) return (await sendMetaOfficial(config, to, message, opts)) ? 'META' : null;
+    if (meta.usesMeta(config) && opts.template) return (await sendMetaOfficial(config, to, message, opts)) ? 'META' : null;
     if (await sendUltraMsg(config, to, message)) return 'ULTRAMSG';
     if (await sendMeta(config, to, message)) return 'META';
     return null;

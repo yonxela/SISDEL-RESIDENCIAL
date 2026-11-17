@@ -523,6 +523,7 @@
                                 <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin marcar</option>
                             </select>
                         </label>
+                        <button id="res-assign-fase-btn" onclick="openAssignFases()" class="text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 transition" title="Poner la fase de todos los lotes de cada sector (A, B, C...) de una vez"><i class="fas fa-layer-group mr-1"></i>Fases por sector</button>
                         <button id="res-bulk-type-btn" onclick="openBulkType()" class="hidden text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-white px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 transition" title="Marcar de una vez el tipo (segun el agua, o todos solo lote, o todos casa con lote) a los residentes que todavia no se han marcado"><i class="fas fa-tags mr-1"></i>Marcar tipo</button>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
@@ -929,12 +930,19 @@
                 <button onclick="renderRemindersList('all')" id="tab-rem-all" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition hidden">Todos los residentes</button>
                 <button onclick="renderRemindersList('mora')" id="tab-rem-mora" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition">Solo Morosos</button>
                 <button onclick="renderRemindersList('todos')" id="tab-rem-todos" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Todos los pendientes</button>
-                <button onclick="renderRemindersList('fase')" id="tab-rem-fase" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por fase</button>
+                <button onclick="renderRemindersList('fase')" id="tab-rem-fase" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por fase<i class="fas fa-chevron-down text-[10px] ml-1.5 opacity-60"></i></button>
                 <button onclick="renderRemindersList('casas')" id="tab-rem-casas" title="Casa con lote: la que se marcó en el formulario del residente (Tipo de propiedad) o, si no se marcó, la que paga agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo casas</button>
                 <button onclick="renderRemindersList('lotes')" id="tab-rem-lotes" title="Solo lote, sin casa: el que se marcó así en el formulario del residente o, si no se marcó, el que no paga agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo lotes</button>
                 <button onclick="renderRemindersList('seleccion')" id="tab-rem-seleccion" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por selección</button>
             </div>
-            <div id="rem-fase-chips" class="hidden flex flex-wrap gap-1.5 mb-2"></div>
+            <!-- SISDEL: Por fase: una flecha de seleccion con las fases del condominio (cada una con cuantos hay) y, si todavia no hay
+                 fases anotadas, el aviso y el boton para asignarlas por sector -->
+            <div id="rem-fase-bar" class="hidden flex flex-wrap items-center gap-2 mb-2">
+                <label for="rem-fase-select" class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Fase</label>
+                <select id="rem-fase-select" onchange="setRemFase(this.value)" class="px-3 py-2 min-w-[12rem] bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"></select>
+                <button type="button" id="rem-fase-assign" onclick="openAssignFases()" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition" title="Poner la fase de todos los lotes de cada sector (A, B, C...) de una vez"><i class="fas fa-layer-group mr-1"></i>Asignar fases por sector</button>
+                <span id="rem-fase-empty" class="hidden text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente o todas juntas con «Asignar fases por sector».</span>
+            </div>
             <!-- SISDEL: busqueda inteligente (sisdel-busqueda.js), la misma de Residentes -->
             <div class="relative mb-2"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="rem-search" autocomplete="off" oninput="renderRemindersList(currentRemFilter)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar por nombre, casa, teléfono..."></div>
             <p id="rem-count" class="text-xs text-slate-500 dark:text-slate-400 mb-3"></p>
@@ -1191,7 +1199,7 @@
                     <div class="grid grid-cols-5 gap-3">
                         <div class="col-span-2">
                             <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Fase</label>
-                            <input type="text" id="res-fase" list="res-fase-options" maxlength="40" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Ej. Fase 1" autocomplete="off">
+                            <input type="text" id="res-fase" list="res-fase-options" maxlength="40" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Ej. 1, 2 o 2A" autocomplete="off">
                             <datalist id="res-fase-options"></datalist>
                         </div>
                         <div class="col-span-3">
@@ -1430,6 +1438,23 @@
             <p id="fc-error" class="hidden mt-2 text-sm font-semibold text-rose-600 dark:text-rose-400"></p>
             <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeFeeConfirm()" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button><button type="submit" id="fc-submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-wait">Confirmar y aplicar</button></div>
             </form>
+        </div>
+    </div>
+    <!-- SISDEL: ASIGNAR FASES POR SECTOR: pone la fase de todos los lotes de cada sector (las letras con que empieza la referencia) -->
+    <div id="modal-assign-fases" class="fixed inset-0 z-[60] flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeModal('modal-assign-fases')}">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg p-8 max-h-[92vh] flex flex-col border-t-4 border-blue-500">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center"><div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mr-3"><i class="fas fa-layer-group text-blue-600"></i></div><div><h3 class="text-xl font-bold dark:text-white">Fases por sector</h3><p class="text-xs text-slate-500 dark:text-slate-400">La fase de todos los lotes de un sector, de una vez</p></div></div>
+                <button type="button" onclick="closeModal('modal-assign-fases')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 -mt-2 -mr-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
+            </div>
+            <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">El sector son las letras con que empieza la referencia del lote (A001 es del sector A, BA12 del sector BA). Escriba la fase de cada sector; los que deje en blanco no se cambian.</p>
+            <div class="overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-600 mb-3">
+                <table class="w-full text-left text-sm"><thead class="bg-slate-100 dark:bg-slate-700 text-xs uppercase text-slate-500 dark:text-slate-300"><tr><th class="py-2 px-3">Sector</th><th class="py-2 px-3 text-right">Lotes</th><th class="py-2 px-3">Fase ahora</th><th class="py-2 px-3">Fase nueva</th></tr></thead>
+                <tbody id="af-body" class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-700 dark:text-slate-200"></tbody></table>
+                <datalist id="af-fase-options"></datalist>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4"><input type="checkbox" id="af-keep" class="accent-blue-600" checked>No cambiar a los que ya tienen fase</label>
+            <div class="flex justify-end space-x-3"><button type="button" onclick="closeModal('modal-assign-fases')" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button><button type="button" id="af-apply" onclick="applyAssignFases()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition">Aplicar</button></div>
         </div>
     </div>
     <!-- SISDEL: MARCAR TIPO EN BLOQUE: marca de una vez como lote o como casa a los residentes que todavia no lo tienen -->
@@ -3405,6 +3430,58 @@
         // acentos ni mayusculas, en cualquier orden y con los mejores resultados primero. El primer campo es el nombre.
         function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi, unitTypeLabel(r)]; }
 
+        // ─── SISDEL: fases ───
+        // La fase se escribe como "2", "2A" o "Fase 2": el nombre que se muestra siempre dice "Fase" una sola vez
+        function faseLabel(f) { const t = String(f == null ? '' : f).trim(); return /^fase\b/i.test(t) ? t : 'Fase ' + t; }
+        // Las fases que existen entre los residentes (sin repetir, en orden natural: 1, 2, 2A, 3...)
+        function faseValues(residents) {
+            return [...new Set((residents || []).map(r => String(r.fase || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
+        }
+        // El sector de un lote: las letras con que empieza su referencia (A001 = A, BA12 = BA); vacio si no empieza con letras
+        function sectorOfUnit(r) { const m = String((r && r.unit) || '').trim().match(/^[A-Za-z]+/); return m ? m[0].toUpperCase() : ''; }
+        // Poner la fase de todos los lotes de cada sector de una vez (la asociacion dice que sectores van en cada fase). Se puede deshacer
+        function openAssignFases() {
+            const groups = new Map();
+            (Store.get('residents') || []).forEach(r => { const k = sectorOfUnit(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            const sectors = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true }));
+            document.getElementById('af-body').innerHTML = sectors.map(([sector, list]) => {
+                const current = faseValues(list);
+                const allSame = current.length === 1 && list.every(r => String(r.fase || '').trim() === current[0]);
+                const status = !current.length ? 'sin fase' : allSame ? faseLabel(current[0]) : current.map(faseLabel).join(', ') + (list.some(r => !String(r.fase || '').trim()) ? ' y sin fase' : '');
+                return `<tr><td class="py-2 px-3 font-mono font-bold">${esc(sector || 'Sin letras')}</td><td class="py-2 px-3 text-right">${list.length}</td><td class="py-2 px-3 text-xs text-slate-500 dark:text-slate-400">${esc(status)}</td>
+                    <td class="py-2 px-3"><input type="text" data-sector="${esc(sector)}" list="af-fase-options" maxlength="40" value="${allSame ? esc(current[0]) : ''}" placeholder="Ej. 2" autocomplete="off" aria-label="Fase del sector ${esc(sector || 'sin letras')}" class="w-28 px-3 py-1.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"></td></tr>`;
+            }).join('');
+            document.getElementById('af-fase-options').innerHTML = faseValues(Store.get('residents')).map(f => `<option value="${esc(f)}"></option>`).join('');
+            document.getElementById('af-keep').checked = true;
+            openModal('modal-assign-fases');
+        }
+        function applyAssignFases() {
+            const wanted = new Map();
+            document.querySelectorAll('#af-body input[data-sector]').forEach(input => {
+                const v = input.value.trim().replace(/\s+/g, ' ').slice(0, 40);
+                if (v) wanted.set(input.dataset.sector, v);
+            });
+            if (!wanted.size) { showToast('Escriba la fase de al menos un sector.'); return; }
+            const keep = document.getElementById('af-keep').checked;
+            const res = Store.get('residents');
+            const targets = res.filter(r => {
+                const fase = wanted.get(sectorOfUnit(r));
+                if (fase === undefined) return false;
+                if (keep && String(r.fase || '').trim()) return false;
+                return String(r.fase || '').trim() !== fase;
+            });
+            if (!targets.length) { showToast('No hay nada que cambiar con eso.'); return; }
+            History.push();
+            targets.forEach(r => { r.fase = wanted.get(sectorOfUnit(r)); });
+            Store.set('residents', res);
+            closeModal('modal-assign-fases');
+            renderResidents();
+            const rem = document.getElementById('modal-reminders');
+            if (rem && !rem.classList.contains('hidden-section')) renderRemindersList(currentRemFilter);
+            showToast(`${targets.length} residente(s) con su fase puesta por sector.`);
+        }
+
         // ─── SISDEL: lote o casa ───────────────────────────────────────────────────────────────────────────────
         // Cada residente dice si su propiedad es SOLO LOTE ('lote') o CASA CON LOTE ('casa') (unitType, en finanzas_residentes
         // con los demas datos financieros): asi se sacan por separado la lista de Residentes, los Recordatorios y los reportes de
@@ -4562,21 +4639,26 @@
         // Las fases (con cuantos hay de cada una) y las cuentas de "Solo casas" y "Solo lotes"
         function paintRemScopeBar(base) {
             const esc = (v) => SisdelBusqueda.escapeHtml(v);
-            const chips = document.getElementById('rem-fase-chips');
-            if (chips) {
+            const bar = document.getElementById('rem-fase-bar');
+            if (bar) {
                 const show = currentRemFilter === 'fase';
-                chips.classList.toggle('hidden', !show);
+                bar.classList.toggle('hidden', !show);
                 if (show) {
                     const residents = Store.get('residents') || [];
-                    const fases = [...new Set(residents.map(r => String(r.fase || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
-                    const items = fases.map(f => [f, 'Fase ' + f]);
+                    const fases = faseValues(residents);
+                    const items = fases.map(f => [f, faseLabel(f)]);
                     if (fases.length && residents.some(r => !String(r.fase || '').trim())) items.push([REM_NO_FASE, 'Sin fase']);
                     if (!items.some(([k]) => k === remFaseSel)) remFaseSel = items.length ? items[0][0] : '';
-                    const on = 'px-3 py-1.5 rounded-lg text-xs font-semibold border bg-blue-600 text-white border-blue-600';
-                    const off = 'px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600';
-                    chips.innerHTML = items.length
-                        ? items.map(([k, label]) => `<button type="button" data-fase="${esc(k)}" onclick="setRemFase(this.dataset.fase)" class="${k === remFaseSel ? on : off}">${esc(label)} (${base.filter(r => remPassFilters(r, k, '')).length})</button>`).join('')
-                        : '<span class="text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente.</span>';
+                    const select = document.getElementById('rem-fase-select');
+                    if (select) {
+                        select.innerHTML = items.length
+                            ? items.map(([k, text]) => `<option value="${esc(k)}">${esc(text)} (${base.filter(r => remPassFilters(r, k, '')).length})</option>`).join('')
+                            : '<option value="">Sin fases anotadas</option>';
+                        select.disabled = !items.length;
+                        select.value = remFaseSel;
+                    }
+                    const empty = document.getElementById('rem-fase-empty');
+                    if (empty) empty.classList.toggle('hidden', items.length > 0);
                 }
             }
             const label = (id, text) => { const b = document.getElementById(id); if (b) b.textContent = text; };
@@ -6716,7 +6798,7 @@
             const fases = Array.from(new Set(residents.map(r => String(r.fase || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
             const withoutFase = residents.some(r => !String(r.fase || '').trim());
             const keep = select.value;
-            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">Fase ' + SisdelBusqueda.escapeHtml(f) + '</option>'));
+            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">' + SisdelBusqueda.escapeHtml(faseLabel(f)) + '</option>'));
             if (fases.length && withoutFase) opts.push('<option value="' + SisdelReportesOikos.NO_FASE + '">Sin fase</option>');
             select.innerHTML = opts.join('');
             select.value = Array.from(select.options).some(o => o.value === keep) ? keep : '';

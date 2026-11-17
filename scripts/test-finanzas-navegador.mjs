@@ -232,7 +232,7 @@ async function run() {
         const shownNow = () => oikos(`remShownList.length`);
         const barTexts = () => oikos(`[...document.querySelectorAll('#rem-tabs button:not(.hidden)')].map((b) => b.textContent)`);
         const sendLabel = () => oikos(`document.getElementById('rem-send-all-label').textContent`);
-        const chipTexts = () => oikos(`[...document.querySelectorAll('#rem-fase-chips button')].map((b) => b.textContent)`);
+        const chipTexts = () => oikos(`[...document.querySelectorAll('#rem-fase-select option')].map((o) => o.textContent)`);
         const base = await shownNow();
         equal('todas las opciones estan en una sola barra y los selectores de abajo ya no existen', [await barTexts(), await oikos(`['rem-fase', 'rem-tipo'].map((id) => !!document.getElementById(id))`)], [['Todos los residentes', 'Solo Morosos', 'Todos los pendientes', 'Por fase', 'Solo casas (3)', `Solo lotes (${base - 3})`, 'Por selección'], [false, false]]);
         await oikos(`renderRemindersList('fase')`);
@@ -244,7 +244,7 @@ async function run() {
         await oikos(`setRemFase('__none__')`);
         equal('sin fase', [await shownNow(), await sendLabel()], [base - 5, `Enviar a los sin fase (${base - 5})`]);
         await oikos(`renderRemindersList('casas')`);
-        equal('Solo casas: los lotes que pagan agua, y las fases se esconden', [await shownNow(), await sendLabel(), await oikos(`document.getElementById('rem-fase-chips').classList.contains('hidden')`)], [3, 'Enviar a las casas (3)', true]);
+        equal('Solo casas: los lotes que pagan agua, y las fases se esconden', [await shownNow(), await sendLabel(), await oikos(`document.getElementById('rem-fase-bar').classList.contains('hidden')`)], [3, 'Enviar a las casas (3)', true]);
         await oikos(`renderRemindersList('lotes')`);
         equal('Solo lotes: los demas, sin casa', [await shownNow(), await sendLabel()], [base - 3, `Enviar a los lotes (${base - 3})`]);
         await oikos(`renderRemindersList('seleccion')`);
@@ -461,6 +461,21 @@ async function run() {
         equal('el texto de Morosos, Tabla general y Listado de propietarios dice casa con lote', await oikos(`(() => { repTypeFilter = 'casa'; const out = [buildMorososReport().summary, buildPayMapReport().summary, buildOwnersReport().summary].map(t => t.includes('casa con lote')); repTypeFilter = ''; return out; })()`), [true, true, true]);
         equal('el Listado de propietarios de casa con lote trae una fila', await oikos(`(() => { repTypeFilter = 'casa'; const n = buildOwnersReport().rows.length; repTypeFilter = ''; return n; })()`), 1);
         equal('el filtro de los reportes aparece en los reportes por residente y no en los de dinero', await oikos(`(() => { const out = []; ['morosos', 'pay-map', 'owners', 'income', 'month-balance'].forEach(k => { selectReport(k); out.push(document.getElementById('rep-type-wrap').style.display !== 'none'); }); return out; })()`), [true, true, true, false, false]);
+
+        console.log('\nFases: la flecha de Por fase y asignarlas por sector');
+        equal('la fase se nombra una sola vez y el sector sale de las letras de la referencia', await oikos(`[faseLabel('2'), faseLabel('Fase 3'), faseLabel('2A'), sectorOfUnit({ unit: 'A001' }), sectorOfUnit({ unit: 'ba12' }), sectorOfUnit({ unit: '024' })]`), ['Fase 2', 'Fase 3', 'Fase 2A', 'A', 'BA', '']);
+        await oikos(`(() => { setReminderMode('varios'); openReminders(); renderRemindersList('fase'); })()`);
+        equal('sin fases anotadas: la flecha esta apagada y avisa, con el boton para asignarlas por sector', await oikos(`(() => { const s = document.getElementById('rem-fase-select'); return [s.disabled, s.textContent.trim(), !document.getElementById('rem-fase-empty').classList.contains('hidden'), !document.getElementById('rem-fase-assign').classList.contains('hidden')]; })()`), [true, 'Sin fases anotadas', true, true]);
+        const sectorsShown = await oikos(`(() => { openAssignFases(); return [...document.querySelectorAll('#af-body tr')].map((tr) => [tr.children[0].textContent, tr.children[1].textContent, tr.children[2].textContent]); })()`);
+        equal('Fases por sector: cada sector con cuantos lotes tiene y su fase de ahora', sectorsShown, [['CASA', '2', 'sin fase']]);
+        await oikos(`(() => { document.querySelector('#af-body input[data-sector="CASA"]').value = '4'; applyAssignFases(); })()`);
+        equal('Aplicar pone la fase a todos los lotes del sector', await oikos(`Store.get('residents').map((r) => r.fase)`), ['4', '4']);
+        equal('se guarda en la nube (en el vecino de SISDEL)', await idle(), 'ok');
+        equal('en la nube Ana tiene la fase 4', (await condoRef.collection('usuarios').doc('u-ana').get()).get('fase'), '4');
+        equal('Por fase muestra ahora la flecha con la fase y cuantos hay', await oikos(`(() => { renderRemindersList('fase'); const s = document.getElementById('rem-fase-select'); return [s.disabled, [...s.options].map((o) => o.textContent), s.value, document.getElementById('rem-fase-empty').classList.contains('hidden')]; })()`), [false, ['Fase 4 (2)'], '4', true]);
+        equal('con "No cambiar a los que ya tienen fase" marcado no se pisa la fase que ya existe', await oikos(`(() => { openAssignFases(); document.querySelector('#af-body input[data-sector="CASA"]').value = '5'; document.getElementById('af-keep').checked = true; applyAssignFases(); const out = [...new Set(Store.get('residents').map((r) => r.fase))]; closeModal('modal-assign-fases'); return out; })()`), ['4']);
+        equal('sin esa marca si se cambia', await oikos(`(() => { openAssignFases(); document.querySelector('#af-body input[data-sector="CASA"]').value = '5'; document.getElementById('af-keep').checked = false; applyAssignFases(); return [...new Set(Store.get('residents').map((r) => r.fase))]; })()`), ['5']);
+        await oikos(`closeModal('modal-reminders')`);
 
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);

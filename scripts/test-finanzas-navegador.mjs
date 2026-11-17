@@ -179,6 +179,53 @@ async function run() {
         // Devuelve todo como estaba
         await oikos(`(() => { ecMora = __real.ecMora; sisdelMoraRuleText = __real.sisdelMoraRuleText; window.open = __real.open; if (__real.jsPdfSave) window.jspdf.jsPDF.API.save = __real.jsPdfSave; closeModal('modal-estado-cuenta'); })()`);
 
+        console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');
+        // WhatsApp de mentira (no sale nada): se ve a quien le tocaria. A los residentes de prueba se les pone un telefono solo en pantalla.
+        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), watch: () => () => {} }; })()`);
+        await oikos(`(() => {
+            window.__origGet = Store.get; window.__realConfirm = window.confirm;
+            // El condominio de prueba trae solo 2 vecinos: se agregan 6 de mentira (solo en pantalla) para poder elegir unos y dejar otros
+            const names = ['Beatriz Lopez', 'Carlos Mejia', 'Diana Ortiz', 'Esteban Perez', 'Flor Quezada', 'Gabriel Rojas'];
+            Store.get = function (k) {
+                const v = window.__origGet.apply(Store, arguments);
+                if (k !== 'residents') return v;
+                const fakes = names.map((n, i) => Object.assign({}, v[0], { id: 'fake-' + i, name: n, unit: 'F-' + (i + 1), status: 'active', deleted: false }));
+                return v.concat(fakes).map((r, i) => Object.assign({}, r, { contact: '5500' + String(1000 + i) }));
+            };
+            window.confirm = () => true;
+            openReminders(); setReminderMode('varios');
+            document.getElementById('rem-msg-general').value = 'Aviso de prueba para {nombre}';
+        })()`);
+        const rows = () => oikos(`[...document.querySelectorAll('#reminders-list .rem-pick')].length`);
+        const shown = await oikos(`remShownList.length`);
+        record('la ventana lista a los residentes y cada uno con telefono tiene su casilla', shown >= 3 && (await rows()) === shown, `lista ${shown}, casillas ${await rows()}`);
+        equal('sin elegir a nadie el boton dice a todos y la barra lo explica', await oikos(`[document.getElementById('rem-send-all-label').textContent, document.getElementById('rem-pick-count').textContent, document.getElementById('rem-clear-picks').classList.contains('hidden')]`), [`Enviar a todos (${shown})`, 'Sin selección: se envía a todos los de la lista', true]);
+        const chosen = await oikos(`(() => { const boxes = [...document.querySelectorAll('#reminders-list .rem-pick')]; boxes[0].click(); boxes[2].click(); return [boxes[0].dataset.id, boxes[2].dataset.id]; })()`);
+        equal('con dos casillas el boton dice a los seleccionados y aparece Quitar seleccion', await oikos(`[document.getElementById('rem-send-all-label').textContent, document.getElementById('rem-pick-count').textContent, document.getElementById('rem-clear-picks').classList.contains('hidden'), document.querySelectorAll('#reminders-list .rem-row.ring-2').length]`), ['Enviar a los seleccionados (2)', '2 seleccionado(s)', false, 2]);
+        // Buscar y seguir eligiendo: lo elegido no se pierde al escribir en el buscador
+        const lastName = await oikos(`String(remShownList[remShownList.length - 1].name || '').slice(0, 3)`);
+        await oikos(`(() => { const s = document.getElementById('rem-search'); s.value = ${JSON.stringify(lastName)}; s.dispatchEvent(new Event('input')); })()`);
+        equal('al buscar, la seleccion se conserva', await oikos(`[remSelected.size, document.getElementById('rem-send-all-label').textContent]`), [2, 'Enviar a los seleccionados (2)']);
+        await oikos(`(() => { const s = document.getElementById('rem-search'); s.value = ''; s.dispatchEvent(new Event('input')); })()`);
+        equal('al borrar la busqueda siguen marcados los mismos dos', await oikos(`[...document.querySelectorAll('#reminders-list .rem-pick:checked')].map(b => b.dataset.id)`), chosen);
+        await oikos(`(() => { const c = document.getElementById('rem-only-selected'); c.checked = true; c.dispatchEvent(new Event('change')); })()`);
+        equal('Ver solo los seleccionados deja unicamente esos dos', await oikos(`[...document.querySelectorAll('#reminders-list .rem-pick')].map(b => b.dataset.id).sort()`), [...chosen].sort());
+        await oikos(`(() => { const c = document.getElementById('rem-only-selected'); c.checked = false; c.dispatchEvent(new Event('change')); })()`);
+        await oikos(`sendRemindersToAll()`);
+        const sent = await page.evaluate(`window.__sent`);
+        equal('Enviar manda SOLO a los dos elegidos, con su id y su texto y nada mas (el telefono lo pone el servidor)', [sent.length, sent[0] && sent[0].items.map((i) => i.residentId).sort(), sent[0] && [...new Set(sent[0].items.flatMap((i) => Object.keys(i)))].sort(), sent[0] && sent[0].mode], [1, [...chosen].sort(), ['residentId', 'text'], 'varios']);
+        record('el texto lleva el nombre de cada uno', !!sent[0] && sent[0].items.every((i) => i.text.startsWith('Aviso de prueba para ') && !i.text.includes('{nombre}')), JSON.stringify(sent[0] && sent[0].items[0]));
+        equal('despues de enviar la seleccion queda vacia', await oikos(`[remSelected.size, document.getElementById('rem-send-all-label').textContent, document.querySelectorAll('#reminders-list .rem-pick:checked').length]`), [0, `Enviar a todos (${shown})`, 0]);
+        await oikos(`remPickAll()`);
+        equal('Seleccionar los de la lista marca a todos y Quitar seleccion los desmarca', [await oikos(`[remSelected.size, document.querySelectorAll('#reminders-list .rem-pick:checked').length]`), await oikos(`(() => { remClearPicks(); return [remSelected.size, document.querySelectorAll('#reminders-list .rem-pick:checked').length]; })()`)], [[shown, shown], [0, 0]]);
+        await oikos(`sendRemindersToAll()`);
+        equal('sin elegir a nadie el envio es a todos los de la lista', (await page.evaluate(`window.__sent`)).map((d) => d.items.length), [2, shown]);
+        await oikos(`(() => { remTogglePick(Store.get('residents')[0].id, true); setReminderMode('mora'); })()`);
+        equal('cambiar de mensaje (morosidad <-> varios) empieza la seleccion de cero', await oikos(`remSelected.size`), 0);
+        // Lo deja como estaba
+        await oikos(`(() => { Store.get = window.__origGet; window.confirm = window.__realConfirm; closeModal('modal-reminders'); try { localStorage.removeItem('sisdel_rem_modo'); } catch (e) {} })()`);
+        await page.evaluate(`(() => { window.sisdelWhatsApp = window.__realWa; })()`);
+
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);
         await page.evaluate(`document.getElementById('btnReload').click()`);

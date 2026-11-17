@@ -895,6 +895,13 @@
                     <button type="button" id="rem-send-test" onclick="sendReminderTest()" class="px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-vial mr-1.5"></i>Enviar prueba</button>
                     <span class="text-xs text-slate-600 dark:text-slate-300">Sale del WhatsApp del condominio, un mensaje cada ~8 segundos.</span>
                 </div>
+                <!-- SISDEL: elegir a quienes se envia (por ejemplo 20 para una prueba): casillas en cada fila, con el buscador -->
+                <div class="flex flex-wrap items-center gap-2 mt-3">
+                    <button type="button" onclick="remPickAll()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-check-double mr-1"></i>Seleccionar los de la lista</button>
+                    <button type="button" id="rem-clear-picks" onclick="remClearPicks()" class="hidden px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-xmark mr-1"></i>Quitar selección</button>
+                    <label class="flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none"><input type="checkbox" id="rem-only-selected" onchange="remToggleOnlySelected(this.checked)" class="w-4 h-4 accent-emerald-600"> Ver solo los seleccionados</label>
+                    <span id="rem-pick-count" class="text-xs font-bold text-emerald-700 dark:text-emerald-300"></span>
+                </div>
                 <div id="rem-bulk-progress" class="hidden mt-3">
                     <div class="flex justify-between items-baseline gap-3 mb-1"><p id="rem-bulk-title" class="text-sm font-bold text-slate-800 dark:text-slate-100"></p><p id="rem-bulk-pct" class="text-sm font-bold text-emerald-700 dark:text-emerald-300"></p></div>
                     <div class="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"><div id="rem-bulk-bar" class="h-full bg-emerald-500 transition-all" style="width:0%"></div></div>
@@ -4038,7 +4045,10 @@
         var currentRemFilter = 'mora';
         var remPreviewResident = null;
         function setReminderMode(mode) {
-            currentRemMode = mode === 'varios' ? 'varios' : 'mora';
+            const next = mode === 'varios' ? 'varios' : 'mora';
+            // La seleccion es de un mensaje: al cambiar (por morosidad <-> varios) se empieza de nuevo
+            if (next !== currentRemMode) { remSelected.clear(); remOnlySelected = false; const only = document.getElementById('rem-only-selected'); if (only) only.checked = false; }
+            currentRemMode = next;
             try { localStorage.setItem('sisdel_rem_modo', currentRemMode); } catch (e) { /* solo se pierde la preferencia */ }
             paintReminderMode();
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
@@ -4071,6 +4081,10 @@
         function openReminders() {
             const search = document.getElementById('rem-search');
             if (search) search.value = '';
+            remSelected.clear();
+            remOnlySelected = false;
+            const only = document.getElementById('rem-only-selected');
+            if (only) only.checked = false;
             fillReminderMessages(reminderMessagesSaved());
             openModal('modal-reminders');
             paintReminderMode();
@@ -4089,7 +4103,10 @@
             });
             const text = document.getElementById('rem-search')?.value || '';
             // Todos los residentes vigentes, los morosos o todos los que deben algo (con la mora del dia), por nombre
-            let res = Store.get('residents').filter(r => (currentRemFilter === 'all' ? isResidentActive(r) : currentRemFilter === 'mora' ? checkIsMoroso(r) : reminderOwedOf(r).owed > 0.005));
+            remAllResidents = Store.get('residents');
+            let res = remAllResidents.filter(r => (currentRemFilter === 'all' ? isResidentActive(r) : currentRemFilter === 'mora' ? checkIsMoroso(r) : reminderOwedOf(r).owed > 0.005));
+            // SISDEL: "Ver solo los seleccionados" muestra a quienes se eligieron, sea cual sea la lista en la que estaban
+            if (remOnlySelected) res = remAllResidents.filter(r => remSelected.has(String(r.id)));
             const total = res.length;
             res.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }));
             // Con busqueda, las coincidencias (primero las que empiezan con lo escrito en el nombre)
@@ -4099,7 +4116,8 @@
             remPreviewResident = res[0] || null;
             remShownList = res;
             paintReminderBulk();
-            if (countEl && currentRemMode !== 'varios') countEl.textContent += ' en mora';
+            if (countEl && currentRemMode !== 'varios' && !remOnlySelected) countEl.textContent += ' en mora';
+            if (countEl && remSelected.size) countEl.textContent += ` · ${remSelected.size} seleccionado(s)`;
             renderReminderPreview();
             const container = document.getElementById('reminders-list');
             if (res.length === 0) {
@@ -4122,10 +4140,14 @@
                     ? `<p class="text-rose-600 dark:text-rose-400 font-semibold text-sm mt-1">Debe: ${formatMoney(o.owed)}${detail} ${tag}</p>`
                     : `<p class="text-emerald-600 dark:text-emerald-400 font-semibold text-sm mt-1">Sin saldo pendiente ${tag}</p>`;
                 const hasPhone = !!String(r.contact || '').replace(/[^0-9]/g, '');
+                const picked = remSelected.has(String(r.id));
+                const pick = remBridge() && hasPhone
+                    ? `<input type="checkbox" class="rem-pick shrink-0 w-5 h-5 accent-emerald-600 cursor-pointer" data-id="${esc(r.id)}" ${picked ? 'checked' : ''} onchange="remTogglePick(this.dataset.id, this.checked)" title="Seleccionar para el envío" aria-label="Seleccionar a ${esc(r.name || '')}">`
+                    : '';
                 const button = hasPhone
                     ? `<button type="button" onclick="sendReminder(this.dataset.id)" data-id="${esc(r.id)}" class="shrink-0 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-lg font-medium text-sm transition"><i class="fab fa-whatsapp"></i> Enviar</button>`
                     : '<span class="shrink-0 px-3 py-2 text-xs text-slate-400" title="Registre su teléfono en Residentes">Sin teléfono</span>';
-                return `<div class="flex justify-between items-center gap-3 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600"><div class="min-w-0"><p class="font-bold text-slate-800 dark:text-slate-200">${mark(r.unit || '—')} - ${mark(r.name || '')}</p>${owedLine}${r.contact ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${mark(r.contact)}</p>` : ''}</div>${button}</div>`;
+                return `<div class="rem-row flex justify-between items-center gap-3 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600${picked ? ' ring-2 ring-emerald-500' : ''}"><div class="flex items-center gap-3 min-w-0">${pick}<div class="min-w-0"><p class="font-bold text-slate-800 dark:text-slate-200">${mark(r.unit || '—')} - ${mark(r.name || '')}</p>${owedLine}${r.contact ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${mark(r.contact)}</p>` : ''}</div></div>${button}</div>`;
             }).join('');
         }
 
@@ -4138,21 +4160,60 @@
             try { return window.parent && window.parent !== window && window.parent.sisdelWhatsApp ? window.parent.sisdelWhatsApp : null; } catch (e) { return null; }
         }
         var remShownList = [];
+        var remAllResidents = [];
+        var remSelected = new Set();   // ids de los residentes elegidos para el envio (se conservan al buscar y cambiar de lista)
+        var remOnlySelected = false;
         var remCampaign = null;
         var remUnwatch = null;
         var remLastTestPhone = (() => { try { return localStorage.getItem('sisdel_rem_prueba') || ''; } catch (e) { return ''; } })();
         const REM_PAUSE_SECONDS = 8;
         function reminderSendable(list) { return list.filter(r => String(r.contact || '').replace(/[^0-9]/g, '')); }
+        // Los elegidos con casilla que se pueden enviar (tienen telefono), en orden alfabetico
+        function remSelectedSendable() {
+            return reminderSendable(remAllResidents.filter(r => remSelected.has(String(r.id))))
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }));
+        }
+        function remTogglePick(id, on) {
+            const key = String(id);
+            if (on) remSelected.add(key); else remSelected.delete(key);
+            if (remOnlySelected) return renderRemindersList(currentRemFilter);   // el que se quita sale de la lista
+            const box = document.querySelector('.rem-pick[data-id="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]');
+            const row = box && box.closest('.rem-row');
+            if (row) { row.classList.toggle('ring-2', !!on); row.classList.toggle('ring-emerald-500', !!on); }
+            paintReminderBulk();
+            const countEl = document.getElementById('rem-count');
+            if (countEl) countEl.textContent = countEl.textContent.replace(/ · \d+ seleccionado\(s\)$/, '') + (remSelected.size ? ` · ${remSelected.size} seleccionado(s)` : '');
+        }
+        function remPickAll() {
+            reminderSendable(remShownList).forEach(r => remSelected.add(String(r.id)));
+            renderRemindersList(currentRemFilter);
+        }
+        function remClearPicks() {
+            remSelected.clear();
+            remOnlySelected = false;
+            const only = document.getElementById('rem-only-selected');
+            if (only) only.checked = false;
+            renderRemindersList(currentRemFilter);
+        }
+        function remToggleOnlySelected(on) {
+            remOnlySelected = !!on;
+            renderRemindersList(currentRemFilter);
+        }
         function paintReminderBulk() {
             const box = document.getElementById('rem-bulk');
             if (!box) return;
             const bridge = remBridge();
             box.classList.toggle('hidden', !bridge);
             if (!bridge) return;
-            const n = reminderSendable(remShownList).length;
+            const picked = remSelectedSendable().length;
+            const n = picked || reminderSendable(remShownList).length;
             const running = !!(remCampaign && remCampaign.status === 'running');
             const btn = document.getElementById('rem-send-all');
-            document.getElementById('rem-send-all-label').textContent = n ? `Enviar a todos (${n})` : 'Enviar a todos';
+            document.getElementById('rem-send-all-label').textContent = picked ? `Enviar a los seleccionados (${picked})` : n ? `Enviar a todos (${n})` : 'Enviar a todos';
+            const countLabel = document.getElementById('rem-pick-count');
+            if (countLabel) countLabel.textContent = remSelected.size ? `${remSelected.size} seleccionado(s)` : 'Sin selección: se envía a todos los de la lista';
+            const clear = document.getElementById('rem-clear-picks');
+            if (clear) clear.classList.toggle('hidden', !remSelected.size);
             btn.disabled = !n || running;
             btn.classList.toggle('opacity-50', btn.disabled);
             btn.classList.toggle('cursor-not-allowed', btn.disabled);
@@ -4202,20 +4263,30 @@
         async function sendRemindersToAll() {
             const bridge = remBridge();
             if (!bridge) return;
-            const list = reminderSendable(remShownList);
+            // Con residentes elegidos (casillas) se envia SOLO a ellos; sin elegir, a todos los de la lista
+            const picked = remSelectedSendable();
+            const list = picked.length ? picked : reminderSendable(remShownList);
             if (!list.length) return alert('No hay residentes con teléfono en esta lista.');
             if (!reminderTemplateReady(list[0])) return;
             const items = list.map(r => ({ residentId: String(r.id), text: reminderText(reminderTemplateFor(r), r) }));
             const minutes = Math.max(1, Math.ceil((items.length * REM_PAUSE_SECONDS) / 60));
             const first = list[0];
             const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
-            const ok = confirm(`Se enviarán ${items.length} mensajes de WhatsApp desde el número del condominio.\n\nSalen de a poco (uno cada ~${REM_PAUSE_SECONDS} segundos): tardará unos ${minutes} minutos. Puede cerrar esta ventana, el envío sigue.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar a todos?`);
+            const names = list.slice(0, 5).map(r => (r.unit ? r.unit + ' ' : '') + (r.name || '')).join('\n');
+            const who = picked.length ? `SOLO a los ${items.length} residentes que seleccionó:\n${names}${list.length > 5 ? '\n... y ' + (list.length - 5) + ' más' : ''}` : `a TODOS los ${items.length} residentes de la lista`;
+            const ok = confirm(`Se enviarán ${items.length} mensajes de WhatsApp ${who}\n\nDesde el número del condominio, de a poco (uno cada ~${REM_PAUSE_SECONDS} segundos): unos ${minutes} minutos. Puede cerrar esta ventana, el envío sigue.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`);
             if (!ok) return;
             const btn = document.getElementById('rem-send-all');
             btn.disabled = true;
             const result = await bridge.start({ mode: currentRemMode, items });
             if (!result.ok) { paintReminderBulk(); return alert(result.error); }
             showToast(`Envío iniciado: ${result.pending} mensajes (unos ${result.estimatedMinutes} min).` + (result.skipped ? ` ${result.skipped} sin teléfono válido.` : ''));
+            // Ya salieron: se limpia la seleccion para no repetir el envio sin querer
+            remSelected.clear();
+            remOnlySelected = false;
+            const only = document.getElementById('rem-only-selected');
+            if (only) only.checked = false;
+            renderRemindersList(currentRemFilter);
         }
         async function sendReminderTest() {
             const bridge = remBridge();

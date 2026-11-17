@@ -743,7 +743,16 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('el bloqueo de pantalla cubre las funciones nuevas', /sendRemindersToAll\|sendReminderTest\|controlRemCampaign/.test(read('finanzas-bloqueo.js')));
     yes('las ventanas que abre OIKOS (WhatsApp) escapan del sandbox del iframe: sin esto salia "Se bloqueo api.whatsapp.com"', (() => { const m = /setAttribute\('sandbox', '([^']*)'\)/.exec(read('finanzas.html')); return !!m && m[1].split(' ').includes('allow-popups-to-escape-sandbox') && !m[1].includes('allow-top-navigation'); })());
     yes('Enviar de la fila y Contactar mandan desde el servidor sin pedir telefono', /function remSendOne/.test(oikos) && /bridge\.one\(\{ residentId/.test(oikos) && /one: callServer\('sendReminderOne'\)/.test(read('finanzas.html')) && /contactWhatsApp\(this\.dataset\.id\)/.test(oikos) && /sendReminderOne\b/.test(funcs) && /match \/recordatorios_individuales\/\{msgId\}[\s\S]{0,160}allow write: if false/.test(rules));
-    yes('OIKOS avisa cuanto tarda y pide confirmar antes de enviar a todos', /Salen de a poco/.test(oikos) && /¿Enviar a todos\?/.test(oikos));
+    yes('OIKOS avisa cuanto tarda y pide confirmar antes de enviar', /de a poco \(uno cada/.test(oikos) && /¿Enviar\?`\)/.test(oikos) && /SOLO a los \$\{items\.length\} residentes que seleccion/.test(oikos));
+    // Seleccion de residentes (pedido del usuario el 2026-11-16): con casillas se envia solo a los elegidos, para una prueba de unos 20
+    const bloqueo = read('finanzas-bloqueo.js');
+    yes('cada fila de Recordatorios tiene su casilla de seleccion (solo si hay telefono y envio desde el servidor)', /class="rem-pick /.test(oikos) && /remBridge\(\) && hasPhone/.test(oikos) && /onchange="remTogglePick\(this\.dataset\.id, this\.checked\)"/.test(oikos));
+    yes('hay buscador + Seleccionar los de la lista, Quitar seleccion y Ver solo los seleccionados', /onclick="remPickAll\(\)"/.test(oikos) && /onclick="remClearPicks\(\)"/.test(oikos) && /id="rem-only-selected"/.test(oikos) && /id="rem-pick-count"/.test(oikos));
+    yes('con residentes elegidos el envio es SOLO a ellos y el boton lo dice', /const picked = remSelectedSendable\(\);\s*const list = picked\.length \? picked : reminderSendable\(remShownList\)/.test(oikos) && /Enviar a los seleccionados \(\$\{picked\}\)/.test(oikos));
+    yes('la seleccion se limpia al enviar, al cambiar de mensaje y al abrir la ventana', (oikos.match(/remSelected\.clear\(\)/g) || []).length >= 4);
+    yes('las funciones de la seleccion piden el mismo privilegio que los recordatorios', /remTogglePick\|remPickAll\|remClearPicks\|remToggleOnlySelected\)\\\(\/, \['residentes_contactar'\]/.test(bloqueo));
+    // El servidor sigue sin confiar en la seleccion: solo recibe ids de residente y texto, y toma el telefono de la ficha
+    yes('la seleccion no manda telefonos al servidor (solo residentId y text)', /items = list\.map\(r => \(\{ residentId: String\(r\.id\), text: reminderText\(reminderTemplateFor\(r\), r\) \}\)\)/.test(oikos));
 }
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

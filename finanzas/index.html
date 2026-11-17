@@ -908,6 +908,7 @@
                     <div class="flex justify-between items-baseline gap-3 mb-1"><p id="rem-bulk-title" class="text-sm font-bold text-slate-800 dark:text-slate-100"></p><p id="rem-bulk-pct" class="text-sm font-bold text-emerald-700 dark:text-emerald-300"></p></div>
                     <div class="h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"><div id="rem-bulk-bar" class="h-full bg-emerald-500 transition-all" style="width:0%"></div></div>
                     <p id="rem-bulk-detail" class="text-xs text-slate-600 dark:text-slate-300 mt-1.5"></p>
+                    <p id="rem-bulk-delivery" class="hidden text-xs mt-1.5 rounded-lg px-3 py-2 bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200"></p>
                     <div id="rem-bulk-buttons" class="flex flex-wrap gap-2 mt-2"></div>
                 </div>
             </div>
@@ -4035,8 +4036,23 @@
                 if (!/no está conectado/i.test(result.error)) alert(result.error);
                 return;
             }
-            if (result.sent) showToast(`Mensaje enviado a ${label}.`);
-            else alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
+            // "Enviado" solo decia que UltraMsg lo acepto (el 2026-11-16 los mensajes salian "enviados" y no llegaban): el servidor mira
+            // unos segundos que dice UltraMsg del mensaje y aqui se cuenta lo que paso de verdad.
+            const outcome = remOutcome(result);
+            if (outcome === 'ok') return showToast(`Mensaje enviado a ${label}: WhatsApp lo recibió${result.delivery === 'entregado' ? ' y llegó al teléfono' : ''}.`);
+            if (outcome === 'rejected') { if (confirm(`El mensaje a ${label} NO llegó: ${result.deliveryText}\n\n¿Abrir WhatsApp para enviarlo a mano?`)) return manual(); return; }
+            if (outcome === 'unconfirmed') return alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).\n\nNo lo dé por entregado: revise de nuevo en un momento o pregunte al residente.`);
+            alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
+        }
+        // Resultado de un envio suelto: ok (WhatsApp lo recibio), rejected (WhatsApp lo rechazo), unconfirmed (aceptado pero sin confirmar), failed
+        function remOutcome(result) {
+            if (!result || !result.sent) return 'failed';
+            if (result.delivery === 'entregado' || result.delivery === 'enviado') return 'ok';
+            if (result.delivery === 'rechazado') return 'rejected';
+            return 'unconfirmed';
+        }
+        function remPendingText(delivery) {
+            return delivery === 'en_cola' ? 'sigue en la cola de UltraMsg, todavía no salió' : delivery === 'pendiente' ? 'salió de UltraMsg pero WhatsApp aún no confirma la entrega' : 'no se pudo confirmar';
         }
         // Compatibilidad: la firma anterior (la usaba el boton Enviar de cada fila)
         function contactSingleWhatsApp(contact, balance, isMora, residentId) { sendReminder(residentId); }
@@ -4288,7 +4304,43 @@
             if ((c.status === 'paused' || c.status === 'error') && (c.pending || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('resume')" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-play mr-1"></i>Continuar</button>`);
             if (c.status === 'running' || c.status === 'paused' || c.status === 'error') buttons.push(`<button type="button" onclick="controlRemCampaign('cancel')" class="${btnCls} bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800">Cancelar envío</button>`);
             if (c.status !== 'running' && c.status !== 'canceled' && (c.failed || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('retry')" class="${btnCls} bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Reintentar fallidos (${c.failed})</button>`);
+            // Lo que UltraMsg dice que paso de verdad ("Comprobar entregas"): "enviados" solo cuenta lo que UltraMsg acepto
+            const del = c.delivery;
+            const delEl = document.getElementById('rem-bulk-delivery');
+            if (delEl) {
+                delEl.classList.toggle('hidden', !del);
+                if (del) {
+                    const reasons = Object.entries(del.reasons || {}).map(([k, n]) => `${remReasonShort(k)} (${n})`).join(', ');
+                    const at = del.checkedAt ? new Date(del.checkedAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '';
+                    delEl.innerHTML = `<b>Lo que llegó de verdad</b> (comprobado a las ${at}): <b class="text-emerald-600 dark:text-emerald-300">${del.entregado || 0} entregados</b> · ${del.enviado || 0} recibidos por WhatsApp · ${del.pendiente || 0} sin confirmar · ${del.en_cola || 0} en cola · <b class="text-rose-600 dark:text-rose-300">${del.rechazado || 0} rechazados</b>${reasons ? ' — ' + SisdelBusqueda.escapeHtml(reasons) : ''} · ${del.desconocido || 0} sin rastro en UltraMsg · ${del.sinEnviar || 0} sin enviar. A reenviar: <b>${del.resend || 0}</b>.`;
+                }
+            }
+            // Comprobar entregas: con el envio detenido y algo aceptado. Reenviar: solo si ya se comprobo y hay a quien
+            if (c.status !== 'running' && (c.sent || 0) > 0) buttons.push(`<button type="button" onclick="reconcileRemCampaign()" class="${btnCls} bg-sky-600 hover:bg-sky-700 text-white"><i class="fas fa-magnifying-glass-chart mr-1"></i>Comprobar entregas</button>`);
+            if ((c.status === 'done' || c.status === 'canceled' || c.status === 'error') && del && (del.resend || 0) > 0) buttons.push(`<button type="button" onclick="resendRemCampaign()" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-rotate-right mr-1"></i>Reenviar a los que no recibieron (${del.resend})</button>`);
             document.getElementById('rem-bulk-buttons').innerHTML = buttons.join('');
+        }
+        function remReasonShort(reason) {
+            return reason === 'temporary_block' ? 'bloqueo temporal de WhatsApp' : reason === 'invalid' ? 'número sin WhatsApp' : reason === 'expired' ? 'venció en la cola' : String(reason || 'sin motivo');
+        }
+        async function reconcileRemCampaign() {
+            const bridge = remBridge();
+            if (!bridge || typeof bridge.reconcile !== 'function' || !remCampaign) return;
+            const result = await bridge.reconcile({ campaignId: remCampaign.id });
+            if (!result.ok) return alert(result.error);
+            showToast(`Entregas comprobadas con UltraMsg: ${result.entregado || 0} entregados, ${result.rechazado || 0} rechazados.`);
+        }
+        async function resendRemCampaign() {
+            const bridge = remBridge();
+            if (!bridge || typeof bridge.resend !== 'function' || !remCampaign || !remCampaign.delivery) return;
+            await checkRemConnection();
+            if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
+            const d = remCampaign.delivery;
+            const risky = (d.reasons && d.reasons.temporary_block) ? '\n\nOJO: WhatsApp rechazó mensajes por bloqueo temporal. Si el bloqueo sigue, volverán a rechazarse y puede alargarse. Mejor pruebe antes con unos pocos.' : '';
+            if (!confirm(`Se mandará de nuevo SOLO a los ${d.resend} residentes a los que el mensaje no llegó (los que sí lo recibieron no se tocan), con el mismo texto que tenían.${risky}\n\n¿Reenviar?`)) return;
+            const result = await bridge.resend({ campaignId: remCampaign.id });
+            if (!result.ok) return alert(result.error);
+            showToast(`Reenvío iniciado: ${result.pending} mensajes (unos ${result.estimatedMinutes} min).`);
         }
         function startReminderWatch() {
             const bridge = remBridge();
@@ -4349,7 +4401,10 @@
             try { localStorage.setItem('sisdel_rem_prueba', phone); } catch (e) { /* solo se pierde el recuerdo */ }
             const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r) });
             if (!result.ok) return alert(result.error);
-            if (result.sent) showToast(`Prueba enviada al teléfono que termina en ${result.phoneTail}. Revise que llegó.`);
+            const outcome = remOutcome(result);
+            if (outcome === 'ok') showToast(`Prueba enviada al teléfono que termina en ${result.phoneTail}: WhatsApp la recibió. Revise que llegó.`);
+            else if (outcome === 'rejected') alert(`La prueba al teléfono que termina en ${result.phoneTail} NO llegó: ${result.deliveryText}`);
+            else if (outcome === 'unconfirmed') alert(`UltraMsg aceptó la prueba para el teléfono que termina en ${result.phoneTail}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}). Revise el teléfono en un momento.`);
             else alert('No se pudo enviar la prueba. Revise que WhatsApp esté conectado en UltraMsg.');
         }
         async function controlRemCampaign(action) {

@@ -32,13 +32,20 @@ let provider = true;
 // Estado de la conexion de WhatsApp (UltraMsg acepta los mensajes aunque su instancia este desconectada y los deja en cola)
 const CONNECTED = { connected: true, state: 'authenticated', provider: 'ultramsg' };
 let connState = CONNECTED;
+const E = require('../functions/src/rondas/ultramsg-estado.js');
+const SIMULADO = { provider: 'simulado' };
+const ULTRAMSG = { ultramsgInstance: 'instancia', ultramsgToken: 'token' };
+let cfg = SIMULADO;            // la configuracion de WhatsApp que ve el servidor
+let uRows = null;              // lo que "dice UltraMsg" de los mensajes (null = no se puede leer)
 const whatsapp = {
-    loadConfig: async () => ({ provider: 'simulado' }),
+    loadConfig: async () => cfg,
     hasProvider: () => provider,
     send: async (config, to, message) => { sentLog.push({ to, message }); return failTo.has(to) ? null : 'SIMULADO'; },
     connection: async () => connState,
     describeConnection: (conn) => `WhatsApp no está conectado (estado: ${conn.state}). Revise la instancia.`,
-    queueStats: async () => ({ queued: 7, sent: 1, unsent: 0, invalid: 0, expired: 0 })
+    queueStats: async () => ({ queued: 7, sent: 1, unsent: 0, invalid: 0, expired: 0 }),
+    // Lo que UltraMsg dice de cada mensaje: el listado es de mentira, el resto es el codigo de verdad
+    listMessages: async () => uRows, classify: E.classify, describeReason: E.describeReason, deliveryFor: E.deliveryFor, matchCampaign: E.matchCampaign
 };
 const pauses = [];
 const sleep = async (ms) => { pauses.push(ms); };
@@ -59,7 +66,7 @@ const create = (ids, extra = {}) => R.createCampaign({ db, whatsapp, condominioI
 const camp = async (id) => (await condoRef.collection('recordatorios_envios').doc(id).get()).data();
 const dest = async (id, rid) => (await condoRef.collection('recordatorios_envios').doc(id).collection('destinatarios').doc(rid).get()).data();
 const queue = async (id) => (await db.collection('colas_envios').doc(`${CONDO}__${id}`).get()).data();
-const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; connState = CONNECTED; };
+const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; connState = CONNECTED; cfg = SIMULADO; uRows = null; };
 
 await condoRef.set({ id: CONDO, name: 'Condominio de pruebas de recordatorios', active: true, createdAt: now });
 await wipe();
@@ -302,6 +309,102 @@ console.log('\nControl de conexion de WhatsApp (UltraMsg acepta y deja en cola s
     reset();
 }
 
+console.log('\nQue llego de verdad (UltraMsg acepta y despues WhatsApp puede rechazar)');
+{
+    const control = (id, action) => R.controlCampaign({ db, whatsapp, condominioId: CONDO, data: { campaignId: id, action } });
+    const nowSec = () => Math.floor(Date.now() / 1000);
+    const noWait = { waitMs: 0 };
+    const toOf = (phone) => `${phone}@c.us`;
+    const one = (verify = noWait) => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', text: 'hola' }, verify });
+
+    // Un envio a UN residente: el servidor mira lo que dice UltraMsg
+    reset();
+    cfg = ULTRAMSG;
+    uRows = [{ id: 1, to: toOf('50255551111'), status: 'unsent', ack: 'pending', failed_reason: 'temporary_block', created_at: nowSec() }];
+    const rejected = await one();
+    equal('UltraMsg lo acepto pero WhatsApp lo rechazo: se dice que NO llego y por que', [rejected.sent, rejected.delivery, rejected.deliveryReason, /bloqueó temporalmente/.test(rejected.deliveryText)], [true, 'rechazado', 'temporary_block', true]);
+    const individual = (await condoRef.collection('recordatorios_individuales').orderBy('at', 'desc').limit(1).get()).docs[0].data();
+    equal('y queda anotado en el registro del envio suelto', [individual.status, individual.delivery, individual.deliveryReason], ['sent', 'rechazado', 'temporary_block']);
+
+    uRows = [{ id: 2, to: toOf('50255551111'), status: 'sent', ack: 'device', failed_reason: '', created_at: nowSec() }];
+    equal('entregado al telefono (dos palomitas)', (await one()).delivery, 'entregado');
+    uRows = [{ id: 3, to: toOf('50255551111'), status: 'queue', ack: 'pending', failed_reason: null, created_at: nowSec() }];
+    equal('sigue en la cola de UltraMsg: ni entregado ni rechazado', (await one()).delivery, 'en_cola');
+    uRows = [];
+    equal('sin rastro en UltraMsg: desconocido', (await one()).delivery, 'desconocido');
+    uRows = null;
+    equal('si UltraMsg no responde no se sabe (null) y el envio no falla', (await one()).delivery, null);
+    // Espera: la primera mirada es enseguida y despues de a 2 s, hasta que UltraMsg diga algo definitivo
+    let looks = 0;
+    const realList = whatsapp.listMessages;
+    whatsapp.listMessages = async () => { looks++; return looks < 3 ? [{ id: 9, to: toOf('50255551111'), status: 'queue', ack: 'pending', created_at: nowSec() }] : [{ id: 9, to: toOf('50255551111'), status: 'sent', ack: 'server', created_at: nowSec() }]; };
+    const waits = [];
+    const waited = await one({ waitMs: 8000, sleep: async (ms) => { waits.push(ms); } });
+    whatsapp.listMessages = realList;
+    equal('espera de a 2 s mientras siga en cola y se detiene cuando WhatsApp lo recibe (enviado)', [waited.delivery, looks, waits], ['enviado', 3, [2000, 2000]]);
+    // La prueba
+    uRows = [{ id: 4, to: toOf('50255551111'), status: 'unsent', ack: 'pending', failed_reason: 'temporary_block', created_at: nowSec() }];
+    const testResult = await R.sendTest({ whatsapp, data: { phone: '5555-1111', text: 'hola' }, verify: noWait });
+    equal('la prueba tambien dice que no llego', [testResult.sent, testResult.delivery], [true, 'rechazado']);
+
+    // Un envio a muchos: comprobar que llego y reenviar solo a los que no recibieron
+    reset();
+    cfg = ULTRAMSG;
+    const e = await create(['v1', 'v2', 'v3']);
+    await run();
+    const sentAt = {};
+    for (const id of ['v1', 'v2', 'v3']) sentAt[id] = Math.floor(Date.parse((await dest(e.id, id)).sentAt) / 1000);
+    uRows = [
+        { id: 1, to: toOf('50255551111'), status: 'sent', ack: 'device', failed_reason: '', created_at: sentAt.v1 },
+        { id: 2, to: toOf('50255552222'), status: 'unsent', ack: 'pending', failed_reason: 'temporary_block', created_at: sentAt.v2 }
+        // v3: UltraMsg no tiene rastro (por ejemplo, se vacio la cola)
+    ];
+    await rejects('antes de comprobar no se puede reenviar (no se sabe a quien no le llego)', () => R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } }), 'failed-precondition');
+    const summary = await R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id });
+    equal('comprobar: 1 entregado, 1 rechazado, 1 sin rastro, y a 2 se les puede reenviar', [summary.entregado, summary.rechazado, summary.desconocido, summary.resend, summary.reasons], [1, 1, 1, 2, { temporary_block: 1 }]);
+    equal('cada destinatario guarda lo suyo', [(await dest(e.id, 'v1')).delivery, (await dest(e.id, 'v2')).delivery, (await dest(e.id, 'v2')).deliveryReason, (await dest(e.id, 'v3')).delivery], ['entregado', 'rechazado', 'temporary_block', 'desconocido']);
+    equal('y el envio guarda los totales', [(await camp(e.id)).delivery.resend, (await camp(e.id)).delivery.entregado, typeof (await camp(e.id)).delivery.checkedAt], [2, 1, 'string']);
+    sentLog.length = 0;
+    const again = await R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } });
+    const resendCamp = await camp(again.id);
+    equal('reenviar crea un envio nuevo SOLO con los 2 que no recibieron (el que si recibio no se toca), con el mismo modo', [again.pending, again.total, resendCamp.resendOf, resendCamp.mode], [2, 2, e.id, 'mora']);
+    equal('con el mismo texto que ya tenian', [(await dest(again.id, 'v2')).text, (await dest(again.id, 'v3')).text, (await dest(again.id, 'v1'))], ['Aviso para v2', 'Aviso para v3', undefined]);
+    await rejects('mientras el reenvio esta en curso no se empieza otro', () => R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } }), 'failed-precondition');
+    await run();
+    equal('el reenvio manda solo a esos 2', [sentLog.map((x) => x.to).sort(), (await camp(again.id)).status], [['50255552222', '50255553333'], 'done']);
+    // Todos entregados: no hay a quien reenviar
+    uRows = [
+        { id: 1, to: toOf('50255551111'), status: 'sent', ack: 'device', created_at: sentAt.v1 },
+        { id: 2, to: toOf('50255552222'), status: 'sent', ack: 'read', created_at: sentAt.v2 },
+        { id: 3, to: toOf('50255553333'), status: 'sent', ack: 'server', created_at: sentAt.v3 }
+    ];
+    const allGood = await R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id });
+    equal('si a todos les llego (o WhatsApp ya lo recibio) no hay nada que reenviar', [allGood.entregado, allGood.enviado, allGood.resend], [2, 1, 0]);
+    await rejects('y reenviar avisa que no hay a quien', () => R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } }), 'failed-precondition');
+    // Sin UltraMsg o sin lectura
+    reset();
+    await rejects('con el proveedor simulado no se puede comprobar', () => R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id }), 'failed-precondition');
+    cfg = ULTRAMSG;
+    uRows = null;
+    await rejects('si UltraMsg no responde lo dice y se puede intentar de nuevo', () => R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id }), 'unavailable');
+    await rejects('un envio inexistente se avisa', () => R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: 'nada' }), 'not-found');
+    await rejects('el envio de otro condominio no se alcanza', () => R.reconcileCampaign({ db, whatsapp, condominioId: 'otro-condo', campaignId: e.id }), 'not-found');
+    reset();
+
+    // Un solo mensaje por telefono cuando el texto es el mismo (un propietario con varios lotes)
+    await user('p1', { phone: '5577-1001' });
+    await user('p2', { phone: '5577-1001' });
+    await user('p3', { phone: '5577-1001' });
+    await user('p4', { phone: '5577-2002' });
+    const same = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: ['p1', 'p2', 'p3', 'p4'].map((id) => ({ residentId: id, text: 'Aviso general' })) } });
+    equal('el mismo texto al mismo telefono sale una sola vez (4 lotes, 2 telefonos = 2 mensajes)', [same.pending, same.skipped], [2, 2]);
+    equal('y los repetidos dicen por que', [(await dest(same.id, 'p1')).status, (await dest(same.id, 'p2')).reason, (await dest(same.id, 'p4')).status], ['pending', 'mismo mensaje al mismo teléfono (ya se le manda por otro lote)', 'pending']);
+    await control(same.id, 'cancel');
+    const different = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: ['p1', 'p2', 'p3'].map((id) => ({ residentId: id, text: `Debe Q${id}` })) } });
+    equal('si el texto cambia por lote (por ejemplo el saldo) se manda cada uno', [different.pending, different.skipped], [3, 0]);
+    await control(different.id, 'cancel');
+}
+
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');
 {
     reset();
@@ -360,6 +463,8 @@ console.log('\nLimites y sin WhatsApp');
 console.log('\nEnviar a UN residente (boton Enviar de la fila y Contactar)');
 {
     reset();
+    // Los envios sueltos de las secciones de arriba (que llego de verdad) tambien quedan anotados: aqui se cuenta desde cero
+    for (const doc of (await condoRef.collection('recordatorios_individuales').get()).docs) await doc.ref.delete();
     const one = (data, extra = {}) => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data, ...extra });
     // El telefono sale de la ficha del vecino: el que mande el cliente se ignora
     const queueBefore = (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).size;

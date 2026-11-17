@@ -181,7 +181,7 @@ async function run() {
 
         console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');
         // WhatsApp de mentira (no sale nada): se ve a quien le tocaria. A los residentes de prueba se les pone un telefono solo en pantalla.
-        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), status: async () => window.__conn, watch: () => () => {} }; window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }; })()`);
+        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), status: async () => window.__conn, reconcile: async (d) => { window.__calls.push(['reconcile', d]); return { ok: true, entregado: 3, rechazado: 7 }; }, resend: async (d) => { window.__calls.push(['resend', d]); return { ok: true, pending: 7, estimatedMinutes: 1 }; }, watch: () => () => {} }; window.__calls = []; window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }; })()`);
         await oikos(`(() => {
             window.__origGet = Store.get; window.__realConfirm = window.confirm;
             // El condominio de prueba trae solo 2 vecinos: se agregan 6 de mentira (solo en pantalla) para poder elegir unos y dejar otros
@@ -230,10 +230,38 @@ async function run() {
             return [document.getElementById('rem-bulk-title').textContent, [...document.querySelectorAll('#rem-bulk-buttons button')].map(b => b.textContent.trim()), send.disabled];
         })()`);
         equal('en curso: Pausar y Cancelar envio, y no se puede empezar otro', await panel('running'), ['Enviando recordatorios...', ['Pausar', 'Cancelar envío'], true]);
-        equal('en pausa: Continuar y Cancelar envio, y tampoco se empieza otro', await panel('paused', { pausedAt: new Date().toISOString() }), ['Envío en pausa', ['Continuar', 'Cancelar envío'], true]);
-        equal('detenido por un error: Continuar y Cancelar envio', await panel('error', { errorMessage: 'WhatsApp no responde' }), ['Envío detenido', ['Continuar', 'Cancelar envío'], false]);
-        equal('cancelado: ningun boton (cancelar es definitivo)', (await panel('canceled'))[1], []);
-        equal('terminado: ningun boton', (await panel('done', { pending: 0, sent: 10 }))[1], []);
+        equal('en pausa: Continuar y Cancelar envio, y tampoco se empieza otro', await panel('paused', { pausedAt: new Date().toISOString() }), ['Envío en pausa', ['Continuar', 'Cancelar envío', 'Comprobar entregas'], true]);
+        equal('detenido por un error: Continuar y Cancelar envio', await panel('error', { errorMessage: 'WhatsApp no responde' }), ['Envío detenido', ['Continuar', 'Cancelar envío', 'Comprobar entregas'], false]);
+        equal('cancelado: no se puede continuar (definitivo) pero si comprobar que llego', (await panel('canceled'))[1], ['Comprobar entregas']);
+        equal('terminado: comprobar entregas', (await panel('done', { pending: 0, sent: 10 }))[1], ['Comprobar entregas']);
+        // Lo que llego de verdad (UltraMsg) y reenviar solo a los que no recibieron
+        const delivery = { entregado: 3, enviado: 0, pendiente: 0, en_cola: 0, rechazado: 5, desconocido: 2, sinEnviar: 0, resend: 7, reasons: { temporary_block: 5 }, checkedAt: new Date().toISOString() };
+        const withDel = await panel('done', { pending: 0, sent: 10, delivery });
+        equal('con las entregas comprobadas aparece Reenviar a los que no recibieron con su numero', withDel[1], ['Comprobar entregas', 'Reenviar a los que no recibieron (7)']);
+        const deliveryText = await oikos(`document.getElementById('rem-bulk-delivery').textContent`);
+        record('y dice lo que llego de verdad: entregados, rechazados con su motivo y a cuantos reenviar', /3 entregados/.test(deliveryText) && /5 rechazados/.test(deliveryText) && /bloqueo temporal de WhatsApp \(5\)/.test(deliveryText) && /2 sin rastro/.test(deliveryText) && /A reenviar: 7/.test(deliveryText), deliveryText);
+        equal('con un envio en pausa no se ofrece reenviar', (await panel('paused', { pausedAt: new Date().toISOString(), delivery }))[1], ['Continuar', 'Cancelar envío', 'Comprobar entregas']);
+        await oikos(`(() => { window.confirm = () => true; })()`);
+        await page.evaluate(`window.__calls.length = 0`);
+        await panel('done', { id: 'envio-1', pending: 0, sent: 10, delivery });
+        await oikos(`(async () => { await reconcileRemCampaign(); await resendRemCampaign(); })()`);
+        equal('los botones llaman al servidor con el envio: comprobar y reenviar', await page.evaluate(`window.__calls.map((c) => [c[0], c[1].campaignId])`), [['reconcile', 'envio-1'], ['resend', 'envio-1']]);
+        // El aviso de UN residente cuenta lo que paso de verdad (no basta con que UltraMsg lo acepte)
+        const outcomes = await oikos(`[{ sent: true, delivery: 'entregado' }, { sent: true, delivery: 'enviado' }, { sent: true, delivery: 'rechazado' }, { sent: true, delivery: 'en_cola' }, { sent: true, delivery: 'pendiente' }, { sent: true, delivery: null }, { sent: false }].map(remOutcome)`);
+        equal('entregado y enviado son ok; rechazado es rechazado; en cola, pendiente y sin saber NO se dan por entregados', outcomes, ['ok', 'ok', 'rejected', 'unconfirmed', 'unconfirmed', 'unconfirmed', 'failed']);
+        const seen = await oikos(`(async () => {
+            const asked = []; const realConfirm = window.confirm; const realAlert = window.alert;
+            window.confirm = (m) => { asked.push('confirm: ' + m); return /^¿Enviar este mensaje/.test(m); }; window.alert = (m) => { asked.push('alert: ' + m); };
+            const r = { id: 'perla-A006', unit: 'A006', name: 'UNION', contact: '41001708' };
+            const bridge = window.parent.sisdelWhatsApp; const realOne = bridge.one;
+            bridge.one = async () => ({ ok: true, sent: true, delivery: 'rechazado', deliveryText: 'WhatsApp bloqueó temporalmente el número del condominio (temporary_block).' });
+            await remSendOne(r, 'hola', 'varios');
+            bridge.one = async () => ({ ok: true, sent: true, delivery: 'en_cola' });
+            await remSendOne(r, 'hola', 'varios');
+            bridge.one = realOne; window.confirm = realConfirm; window.alert = realAlert;
+            return asked;
+        })()`);
+        record('si WhatsApp lo rechazo dice que NO llego y por que; si sigue en cola no lo da por entregado', seen.length === 4 && /NO llegó: WhatsApp bloqueó temporalmente/.test(seen[1]) && /todavía no se sabe si llegó \(sigue en la cola/.test(seen[3]), JSON.stringify(seen));
         await oikos(`(() => { remCampaign = Object.assign({}, remCampaign, { status: 'paused', pausedAt: new Date().toISOString() }); paintReminderProgress(); })()`);
         equal('el texto del avance en pausa dice que se pulse Continuar', await oikos(`/en pausa desde .*pulse Continuar/.test(document.getElementById('rem-bulk-detail').textContent)`), true);
         await oikos(`(() => { remCampaign = null; paintReminderProgress(); paintReminderBulk(); })()`);

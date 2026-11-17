@@ -16,6 +16,7 @@ const CREATE_LIMIT = { max: 6, windowMs: 60 * 60 * 1000 };
 const TEST_LIMIT = { max: 8, windowMs: 10 * 60 * 1000 };
 const ONE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 const STATUS_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
+const RECONCILE_LIMIT = { max: 30, windowMs: 10 * 60 * 1000 };
 
 // Quien llama: un usuario activo del condominio con el privilegio de recordatorios
 async function authorize(request) {
@@ -82,6 +83,27 @@ const sendReminderOne = wrap('sendReminderOne', async (request) => {
     return result;
 });
 
+// Que paso de verdad con los mensajes de un envio (UltraMsg: entregado, en cola, rechazado...) y reenviar solo a los que no recibieron
+const reconcileReminderCampaign = wrap('reconcileReminderCampaign', async (request) => {
+    const { uid, condominioId } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios-entregas', uid, RECONCILE_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiadas comprobaciones seguidas. Espere unos minutos.');
+    }
+    await rateLimit.hit('recordatorios-entregas', uid, RECONCILE_LIMIT);
+    return core.reconcileCampaign({ db, whatsapp, condominioId, campaignId: (request.data || {}).campaignId });
+});
+
+const resendReminderCampaign = wrap('resendReminderCampaign', async (request) => {
+    const { uid, condominioId, caller } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios', uid, CREATE_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Ya hizo varios envíos en la última hora. Espere un poco e intente de nuevo.');
+    }
+    const result = await core.resendCampaign({ db, whatsapp, condominioId, caller, data: request.data || {} });
+    await rateLimit.hit('recordatorios', uid, CREATE_LIMIT);
+    logger.warn('recordatorios: reenvio creado', { condominioId, campaignId: result.id, desde: (request.data || {}).campaignId, pendientes: result.pending, por: uid });
+    return result;
+});
+
 // Si el WhatsApp del condominio esta conectado (y cuantos mensajes tiene UltraMsg en cola): OIKOS lo muestra al abrir Recordatorios
 const checkWhatsAppConnection = wrap('checkWhatsAppConnection', async (request) => {
     const { uid } = await authorize(request);
@@ -98,4 +120,4 @@ const processReminderQueue = onSchedule({ schedule: 'every 1 minutes', timeoutSe
     if (worked.length) logger.info('recordatorios: corrida', { envios: worked });
 });
 
-module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, checkWhatsAppConnection, processReminderQueue };
+module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, checkWhatsAppConnection, reconcileReminderCampaign, resendReminderCampaign, processReminderQueue };

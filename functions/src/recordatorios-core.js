@@ -10,6 +10,9 @@
 //     5 fallos seguidos se detiene y avisa.
 //     Antes de mandar, y cada 10 mensajes, se comprueba que el WhatsApp del condominio este conectado (UltraMsg acepta los
 //     mensajes aunque su instancia este desconectada y los deja en cola: sin esta revision decia "enviado" y no salia nada).
+//     "Enviado" = UltraMsg lo ACEPTO. Lo que llego de verdad se pregunta a UltraMsg: reconcileCampaign marca cada destinatario como
+//     entregado / enviado / pendiente / en cola / rechazado / desconocido (ver ultramsg-estado.js) y resendCampaign manda de nuevo
+//     solo a los que no recibieron. Los envios a UN residente y la prueba se verifican a los pocos segundos.
 //  3. controlCampaign: pausar, continuar, cancelar o reintentar los fallidos. Pausar detiene el envio (en cuanto sale el
 //     mensaje en curso) y se puede continuar despues; cancelar es definitivo para quien usa OIKOS.
 // Los documentos de un envio los escribe solo el servidor; OIKOS los lee para mostrar el avance (reglas de Firestore).
@@ -25,6 +28,8 @@ const RUN_BUDGET_MS = 12 * 60 * 1000;   // lo que trabaja cada corrida del minut
 const LOCK_MS = 14 * 60 * 1000;         // una sola corrida por envio; si una muere, el turno vence solo
 const FAIL_STREAK = 5;
 const BATCH = 400;
+const VERIFY_WAIT_MS = 8000;            // cuanto se espera, como maximo, el resultado real de un envio a UN residente
+const VERIFY_STEP_MS = 2000;
 const CONN_CHECK_EVERY = 10;            // cada cuantos mensajes se vuelve a comprobar la conexion de WhatsApp
 const QUEUE = 'colas_envios';
 
@@ -65,6 +70,26 @@ async function requireConnected(whatsapp, config) {
     return conn;
 }
 
+// Resultado REAL de un envio suelto: se espera unos segundos y se mira lo que UltraMsg dice del mensaje a ese telefono.
+// null si no se puede saber (proveedor sin esta consulta o UltraMsg no responde).
+async function verifyDelivery({ whatsapp, config, phone, sinceMs, waitMs = VERIFY_WAIT_MS, sleep = realSleep }) {
+    if (typeof whatsapp.listMessages !== 'function' || typeof whatsapp.deliveryFor !== 'function') return null;
+    const sinceSec = Math.floor(sinceMs / 1000);
+    const attempts = Math.max(1, Math.ceil(waitMs / VERIFY_STEP_MS) + 1);   // la primera mirada es enseguida; despues se espera de a 2 s
+    let last = null;
+    for (let i = 0; i < attempts; i++) {
+        if (i > 0) await sleep(VERIFY_STEP_MS);
+        let rows = null;
+        try { rows = await whatsapp.listMessages(config, { sinceSec: sinceSec - 5, maxPages: 1 }); } catch (e) { rows = null; }
+        if (!rows) return last;
+        const result = whatsapp.deliveryFor(rows, phone, sinceSec);
+        last = { state: result.state, reason: result.reason || '' };
+        if (result.found && result.state !== 'en_cola' && result.state !== 'pendiente') return last;
+    }
+    return last;
+}
+const reasonText = (whatsapp, reason) => (typeof whatsapp.describeReason === 'function' ? whatsapp.describeReason(reason) : String(reason || ''));
+
 // Por que a un residente no se le puede enviar (null si si): lo usan el envio a todos y el envio a uno
 function skipReason(user, ficha, phone) {
     if (!user || user.role !== 'vecino') return 'no es un vecino';
@@ -103,11 +128,20 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         users.push(...await db.getAll(...part.map((id) => condoRef.collection('usuarios').doc(id))));
         fichas.push(...await db.getAll(...part.map((id) => condoRef.collection('finanzas_residentes').doc(id))));
     }
+    // El mismo mensaje al mismo telefono se manda una sola vez (un propietario con varios lotes recibia el aviso hasta 11 veces:
+    // pasó en La Perla el 2026-11-16, y repetir el mismo texto tambien levanta sospechas en WhatsApp). Si el texto cambia por lote
+    // (por ejemplo {saldo}), se manda cada uno.
+    const seenMessages = new Set();
     const rows = ids.map((id, i) => {
         const user = users[i].exists ? users[i].data() : null;
         const ficha = fichas[i].exists ? fichas[i].data() : null;
         const phone = user ? normalizePhone(user.phone) : '';
-        const reason = skipReason(user, ficha, phone);
+        let reason = skipReason(user, ficha, phone);
+        if (!reason) {
+            const key = `${phone}|${texts.get(id)}`;
+            if (seenMessages.has(key)) reason = 'mismo mensaje al mismo teléfono (ya se le manda por otro lote)';
+            else seenMessages.add(key);
+        }
         return {
             id,
             data: {
@@ -131,7 +165,8 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         createdAt, createdBy: { id: caller.id, name: String(caller.name || '') },
         mode: data.mode === 'varios' ? 'varios' : 'mora', status: 'running', lockUntil: 0,
         total: rows.length, pending: pending.length, sent: 0, failed: 0, skipped: rows.length - pending.length,
-        pauseSeconds: AVG_PAUSE_SECONDS, sample: pending[0].data.text.slice(0, 200)
+        pauseSeconds: AVG_PAUSE_SECONDS, sample: pending[0].data.text.slice(0, 200),
+        ...(data.resendOf ? { resendOf: String(data.resendOf) } : {})
     });
     await queueDoc(db, condominioId, campRef.id).set({ condominioId, campaignId: campRef.id, status: 'running', createdAt });
     return {
@@ -307,7 +342,7 @@ async function controlCampaign({ db, condominioId, data, whatsapp, now = () => n
 // El boton Enviar de cada residente y Contactar. No pasa por la cola ni por la pausa: sale ya. El telefono sale de la
 // ficha del vecino (nunca del cliente). Queda anotado en condominios/{c}/recordatorios_individuales (solo lo escribe
 // el servidor): quien, cuando, a quien y el texto.
-async function sendOne({ db, whatsapp, condominioId, caller, data, now = () => new Date() }) {
+async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, now = () => new Date() }) {
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     await requireConnected(whatsapp, config);
@@ -326,18 +361,25 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, now = () => n
     if (reason) throw fail('failed-precondition', `No se le puede enviar: ${reason}.`);
     let channel = null;
     let error = null;
+    const startedMs = now().getTime();
     try { channel = await whatsapp.send(config, phone, text); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    // "Enviado" solo dice que UltraMsg lo acepto: se mira que paso de verdad (en cola, rechazado por WhatsApp, entregado...)
+    const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
     await condoRef.collection('recordatorios_individuales').doc().set({
         at: now().toISOString(), by: { id: caller.id, name: String(caller.name || '') }, residentId,
         name: String(user.name || ''), casa: String(user.casa || ''), phoneTail: phone.slice(-4), text,
         mode: data.mode === 'varios' ? 'varios' : 'mora', status: channel ? 'sent' : 'failed', channel: channel || null,
+        delivery: delivery ? delivery.state : null, ...(delivery && delivery.reason ? { deliveryReason: delivery.reason } : {}),
         ...(channel ? {} : { error: error || 'No salió por ningún proveedor de WhatsApp' })
     });
-    return { sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), name: String(user.name || ''), casa: String(user.casa || '') };
+    return {
+        sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), name: String(user.name || ''), casa: String(user.casa || ''),
+        delivery: delivery ? delivery.state : null, deliveryReason: delivery ? delivery.reason : '', deliveryText: delivery && delivery.state === 'rechazado' ? reasonText(whatsapp, delivery.reason) : ''
+    };
 }
 
 // ───────── 4. Mensaje de prueba ─────────
-async function sendTest({ whatsapp, data }) {
+async function sendTest({ whatsapp, data, verify = {} }) {
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio.');
     await requireConnected(whatsapp, config);
@@ -345,8 +387,13 @@ async function sendTest({ whatsapp, data }) {
     if (!phone) throw fail('invalid-argument', 'Escriba el teléfono completo (8 dígitos de Guatemala o con código de país).');
     const text = String((data && data.text) || '').trim();
     if (!text || text.length > MAX_TEXT) throw fail('invalid-argument', `El mensaje debe tener entre 1 y ${MAX_TEXT} caracteres.`);
+    const startedMs = Date.now();
     const channel = await whatsapp.send(config, phone, text);
-    return { sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4) };
+    const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
+    return {
+        sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4),
+        delivery: delivery ? delivery.state : null, deliveryReason: delivery ? delivery.reason : '', deliveryText: delivery && delivery.state === 'rechazado' ? reasonText(whatsapp, delivery.reason) : ''
+    };
 }
 
 // ───────── 5. Estado de la conexion (lo que muestra OIKOS arriba de los botones de enviar) ─────────
@@ -364,8 +411,83 @@ async function connectionInfo({ whatsapp }) {
     };
 }
 
+// ───────── 6. Comprobar que llego de verdad y reenviar solo a los que no recibieron ─────────
+// Pregunta a UltraMsg que paso con cada mensaje aceptado de un envio y lo anota en cada destinatario (`delivery`: entregado,
+// enviado, pendiente, en_cola, rechazado o desconocido) y en el envio (`delivery`: los totales y `resend`, a cuantos se les
+// puede reenviar). Los mensajes se enlazan por telefono y hora (un propietario con varios lotes recibe varios).
+async function reconcileCampaign({ db, whatsapp, condominioId, campaignId, now = () => new Date() }) {
+    const id = String(campaignId || '').trim();
+    if (!id || id.includes('/')) throw fail('invalid-argument', 'Envío inválido.');
+    const campRef = campaignsOf(db, condominioId).doc(id);
+    const snap = await campRef.get();
+    if (!snap.exists) throw fail('not-found', 'El envío no existe.');
+    const camp = snap.data();
+    const config = await whatsapp.loadConfig();
+    if (typeof whatsapp.listMessages !== 'function' || !config || config.provider === 'simulado' || !config.ultramsgInstance) {
+        throw fail('failed-precondition', 'La comprobación de entregas solo está disponible con UltraMsg.');
+    }
+    const createdMs = Date.parse(camp.createdAt) || 0;
+    const rows = await whatsapp.listMessages(config, { sinceSec: Math.floor(createdMs / 1000) - 600, maxPages: 15 });
+    if (!rows) throw fail('unavailable', 'No se pudo leer el estado de los mensajes en UltraMsg. Intente de nuevo en un momento.');
+
+    const destRef = campRef.collection('destinatarios');
+    const all = (await destRef.get()).docs;
+    const accepted = all.filter((d) => d.data().status === 'sent' && d.data().sentAt);
+    const condoRef = db.collection('condominios').doc(condominioId);
+    const phones = new Map();
+    for (const part of chunks(accepted, 300)) {
+        const users = await db.getAll(...part.map((d) => condoRef.collection('usuarios').doc(d.id)));
+        users.forEach((u, i) => phones.set(part[i].id, u.exists ? normalizePhone(u.data().phone) : ''));
+    }
+    const matched = whatsapp.matchCampaign(rows, accepted.map((d) => ({ id: d.id, phone: phones.get(d.id), sentAtMs: Date.parse(d.data().sentAt) })));
+    const totals = { entregado: 0, enviado: 0, pendiente: 0, en_cola: 0, rechazado: 0, desconocido: 0, sinEnviar: 0 };
+    const reasons = {};
+    const checkedAt = now().toISOString();
+    const updates = [];
+    for (const d of accepted) {
+        const result = whatsapp.classify(matched.get(d.id));
+        totals[result.state] = (totals[result.state] || 0) + 1;
+        if (result.state === 'rechazado') reasons[result.reason] = (reasons[result.reason] || 0) + 1;
+        updates.push([d.ref, { delivery: result.state, deliveryReason: result.reason || null, deliveryCheckedAt: checkedAt }]);
+    }
+    for (const d of all) {
+        const status = d.data().status;
+        if (status === 'failed' || status === 'pending') {
+            totals.sinEnviar++;
+            updates.push([d.ref, { delivery: 'sin_enviar', deliveryReason: null, deliveryCheckedAt: checkedAt }]);
+        }
+    }
+    for (const part of chunks(updates, BATCH)) {
+        const batch = db.batch();
+        part.forEach(([ref, fields]) => batch.update(ref, fields));
+        await batch.commit();
+    }
+    const summary = { ...totals, resend: totals.rechazado + totals.desconocido + totals.sinEnviar, reasons, checkedAt };
+    await campRef.update({ delivery: summary });
+    return summary;
+}
+
+// Manda de nuevo SOLO a los que no recibieron (rechazados por WhatsApp, sin rastro en UltraMsg o que nunca se aceptaron), con el
+// mismo texto que ya tenian. Crea un envio nuevo (con las mismas revisiones: conexion, uno a la vez, un mensaje por telefono).
+async function resendCampaign({ db, whatsapp, condominioId, caller, data }) {
+    const sourceId = String((data && data.campaignId) || '').trim();
+    if (!sourceId || sourceId.includes('/')) throw fail('invalid-argument', 'Envío inválido.');
+    const campRef = campaignsOf(db, condominioId).doc(sourceId);
+    const snap = await campRef.get();
+    if (!snap.exists) throw fail('not-found', 'El envío no existe.');
+    const camp = snap.data();
+    if (camp.status === 'running') throw fail('failed-precondition', 'Ese envío sigue en curso. Páuselo o espere a que termine.');
+    if (!camp.delivery) throw fail('failed-precondition', 'Primero pulse "Comprobar entregas" para saber a quiénes les llegó.');
+    const dests = (await campRef.collection('destinatarios').get()).docs;
+    const items = dests
+        .filter((d) => { const x = d.data(); return x.status !== 'skipped' && (x.delivery === 'rechazado' || x.delivery === 'desconocido' || x.delivery === 'sin_enviar'); })
+        .map((d) => ({ residentId: d.id, text: d.data().text }));
+    if (!items.length) throw fail('failed-precondition', 'No hay a quién reenviar: a todos les llegó o siguen en proceso.');
+    return createCampaign({ db, whatsapp, condominioId, caller, data: { mode: camp.mode, items, resendOf: sourceId } });
+}
+
 module.exports = {
-    CONN_CHECK_EVERY, connectionInfo,
+    CONN_CHECK_EVERY, connectionInfo, verifyDelivery, reconcileCampaign, resendCampaign,
     MAX_RECIPIENTS, MAX_TEXT, PAUSE_MIN_MS, PAUSE_MAX_MS, AVG_PAUSE_SECONDS, RUN_BUDGET_MS, LOCK_MS, FAIL_STREAK,
     fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest
 };

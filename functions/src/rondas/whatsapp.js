@@ -56,4 +56,9 @@ async function send(config, to, message) {
 }
 
 // Estado de la conexion de UltraMsg (ver ultramsg-estado.js): connection, queueStats y describeConnection
-module.exports = { loadConfig, hasProvider, send, connection: estado.connection, queueStats: estado.queueStats, describeConnection: estado.describeConnection };
+module.exports = {
+    loadConfig, hasProvider, send,
+    connection: estado.connection, queueStats: estado.queueStats, describeConnection: estado.describeConnection,
+    // Lo que UltraMsg dice de cada mensaje (en cola, rechazado, enviado, entregado): ver ultramsg-estado.js
+    listMessages: estado.listMessages, classify: estado.classify, describeReason: estado.describeReason, deliveryFor: estado.deliveryFor, matchCampaign: estado.matchCampaign
+};

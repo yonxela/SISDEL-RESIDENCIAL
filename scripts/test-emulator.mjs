@@ -1675,6 +1675,16 @@ async function run() {
     await denied('sin sesion no se llama', () => remStatus(nobody, {}));
     const remConnResult = (await remStatus(admin, {})).data;
     equal('el administrador ve que WhatsApp esta conectado (simulado en el emulador)', [remConnResult.configured, remConnResult.connected, remConnResult.state, remConnResult.message], [true, true, 'simulado', '']);
+    // Que llego de verdad (UltraMsg) y reenviar solo a los que no recibieron
+    const remReconcile = (c, data) => httpsCallable(c.functions, 'reconcileReminderCampaign')(data);
+    const remResend = (c, data) => httpsCallable(c.functions, 'resendReminderCampaign')(data);
+    await denied('un vecino no comprueba entregas', () => remReconcile(ana, { campaignId: remResult.data.id }));
+    await denied('el auditor tampoco', () => remReconcile(auditor, { campaignId: remResult.data.id }));
+    await denied('sin sesion no se llama', () => remReconcile(nobody, { campaignId: remResult.data.id }));
+    await denied('un vecino no reenvia', () => remResend(ana, { campaignId: remResult.data.id }));
+    await rejectedWith('con el WhatsApp simulado del emulador no se puede comprobar (solo con UltraMsg)', () => remReconcile(admin, { campaignId: remResult.data.id }), 'failed-precondition');
+    await rejectedWith('antes de comprobar no se reenvia', () => remResend(admin, { campaignId: remResult.data.id }), 'failed-precondition');
+    await rejectedWith('un envio inexistente se avisa', () => remReconcile(admin, { campaignId: 'nada' }), 'not-found');
     equal('el administrador manda un mensaje de prueba (WhatsApp simulado)', (await remTest(admin, { phone: '5555-1111', text: '(Mensaje de prueba) hola' })).data.sent, true);
     await rejectedWith('la prueba pide un telefono completo', () => remTest(admin, { phone: '12', text: 'hola' }), 'invalid-argument');
     // Los privilegios se aplican: sin finanzas.residentes_contactar el administrador tampoco puede
@@ -1682,6 +1692,8 @@ async function run() {
     await denied('sin el privilegio de recordatorios ni el administrador inicia envios', () => remStart(admin, { mode: 'varios', items: remItems }));
     await denied('ni lee los envios', () => getDocs(remCol));
     await denied('ni consulta la conexion de WhatsApp', () => remStatus(admin, {}));
+    await denied('ni comprueba entregas', () => remReconcile(admin, { campaignId: remResult.data.id }));
+    await denied('ni reenvia', () => remResend(admin, { campaignId: remResult.data.id }));
     await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
     await allowed('con el privilegio otra vez, vuelve a poder', () => remStart(admin, { mode: 'varios', items: remItems }));
     await remControl(admin, { campaignId: (await getDocs(query(remCol, where('status', '==', 'running')))).docs[0].id, action: 'cancel' });

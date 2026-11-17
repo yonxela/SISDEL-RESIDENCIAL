@@ -28,6 +28,7 @@ const SisdelReportes = (() => {
         { id: 'month-balance', key: 'finanzas.reportes_resumen', title: 'Ingresos, egresos y saldo por mes', text: 'Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año.' },
         { id: 'morosos', key: 'finanzas.reportes_morosos', title: 'Morosos y meses adeudados', text: 'Cada residente en mora con los meses que debe y el total; también la lista de los que están al día.' },
         { id: 'pay-map', key: 'finanzas.reportes_morosos', title: 'Tabla general', text: 'Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó; arriba los que más tiempo llevan en mora.' },
+        { id: 'owners', key: 'finanzas.reportes_morosos', title: 'Listado general de propietarios', text: 'Número de lote, nombre y teléfono de cada propietario con su deuda por cuotas, su mora y su saldo total; por período, por fase, en orden alfabético o de mayor a menor deuda.' },
         { id: 'account-statement', key: 'finanzas.reportes_libro', title: 'Estado de cuenta general', text: 'El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período.' },
         { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' }
     ];

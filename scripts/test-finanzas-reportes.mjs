@@ -266,6 +266,53 @@ console.log('\nEstado de cuenta: lo que debe el residente');
 }
 
 console.log('\nCopia en el navegador');
+// ───────── Listado general de propietarios ─────────
+console.log('\nListado general de propietarios');
+const own = [
+    { id: 'a', name: 'Ana', unit: 'C002', contact: '+50211111111', fase: '1' },
+    { id: 'b', name: 'Beto', unit: 'C001', contact: '', fase: '2' },
+    { id: 'c', name: 'Carla', unit: 'C003', contact: '+50233333333', fase: '1' },
+    { id: 'd', name: 'Dario', unit: 'C004', contact: '+50244444444' }
+];
+const ownTx = [];
+['a', 'b', 'c', 'd'].forEach((id) => ['2026-01', '2026-02', '2026-03'].forEach((m) => ownTx.push({ id: `fee_${id}_${m}`, type: 'charge', kind: 'fee', period: m, resiId: id, amount: 300, date: `${m}-01T12:00:00.000Z` })));
+ownTx.push({ id: 'x1', type: 'charge', kind: 'extra', resiId: 'c', amount: 100, date: '2026-02-15T12:00:00.000Z' });
+ownTx.push({ id: 'p-a', type: 'income', resiId: 'a', amount: 300, date: '2026-03-10T12:00:00.000Z' });
+ownTx.push({ id: 'p-b', type: 'income', resiId: 'b', amount: 900, date: '2026-03-10T12:00:00.000Z' });
+ownTx.push({ id: 'p-d', type: 'income', resiId: 'd', amount: 600, date: '2026-03-10T12:00:00.000Z' });
+ownTx.push({ id: 'gone', type: 'charge', kind: 'fee', period: '2026-04', resiId: 'a', amount: 999, date: '2026-04-01T12:00:00.000Z', deleted: true });
+const owedTable = { a: { pending: 600, mora: 50.5, total: 650.5 }, b: { pending: 0, mora: 0, total: 0 }, c: { pending: 1000, mora: 120, total: 1120 }, d: { pending: 300, mora: 10, total: 310 } };
+const owedOf = (r) => owedTable[r.id];
+const moraItems = { a: [{ id: 'fee_a_2026-02', period: '2026-02', mora: 20 }, { id: 'fee_a_2026-03', period: '2026-03', mora: 10 }], c: [{ id: 'fee_c_2026-02', period: '2026-02', mora: 40 }, { id: 'x1', period: null, mora: 5 }, { id: 'fee_c_2026-03', period: '2026-03', mora: 0 }] };
+const moraItemsOf = (r) => moraItems[r.id] || null;
+const view = (o) => R.ownersList(own, ownTx, { owedOf, moraItemsOf, ...o });
+const brief = (l) => l.rows.map((x) => [x.name, x.pending, x.mora, x.total]);
+
+const todo = view({});
+equal('por defecto muestra a todos, en orden alfabetico, con lo mismo que Residentes (owedOf)', brief(todo), [['Ana', 600, 50.5, 650.5], ['Beto', 0, 0, 0], ['Carla', 1000, 120, 1120], ['Dario', 300, 10, 310]]);
+equal('las columnas del listado: lote, nombre y telefono', todo.rows.map((x) => [x.unit, x.name, x.phone]), [['C002', 'Ana', '+50211111111'], ['C001', 'Beto', ''], ['C003', 'Carla', '+50233333333'], ['C004', 'Dario', '+50244444444']]);
+equal('totales: cuantos son, cuantos deben y la suma de cada columna (cuotas + mora = total)', todo.totals, { count: 4, owing: 3, pending: 1900, mora: 180.5, total: 2080.5 });
+equal('en cada fila y en el total, cuotas + mora = total (centavos exactos)', [todo.rows.every((x) => Math.round(x.pending * 100) + Math.round(x.mora * 100) === Math.round(x.total * 100)), Math.round(todo.totals.pending * 100) + Math.round(todo.totals.mora * 100) === Math.round(todo.totals.total * 100)], [true, true]);
+equal('de mayor a menor deuda (a igual deuda, por nombre)', view({ order: 'debt' }).rows.map((x) => x.name), ['Carla', 'Ana', 'Dario', 'Beto']);
+equal('solo los que deben', view({ onlyDebt: true }).rows.map((x) => x.name), ['Ana', 'Carla', 'Dario']);
+equal('el orden alfabetico no distingue acentos ni mayusculas y ordena los numeros como numeros', R.ownersList([{ id: '1', name: 'Zoila', unit: 'C10' }, { id: '2', name: 'álvaro', unit: 'C2' }, { id: '3', name: 'Alma', unit: 'C9' }, { id: '4', name: 'Alma', unit: 'C10' }], [], { owedOf: () => ({ pending: 0, mora: 0, total: 0 }) }).rows.map((x) => `${x.name} ${x.unit}`), ['Alma C9', 'Alma C10', 'álvaro C2', 'Zoila C10']);
+equal('por fase: una fase, sin fase, y las fases que existen', [view({ fase: '1' }).rows.map((x) => x.name), view({ fase: R.NO_FASE }).rows.map((x) => x.name), view({ fase: '2' }).rows.map((x) => x.name), todo.fases, todo.withoutFase], [['Ana', 'Carla'], ['Dario'], ['Beto'], ['1', '2'], 1]);
+equal('los totales siguen al filtro de fase', view({ fase: '1' }).totals, { count: 2, owing: 2, pending: 1600, mora: 170.5, total: 1770.5 });
+// Por periodo: lo que falta pagar de las cuotas y cargos de esos meses (los pagos cubren primero lo mas antiguo) y su mora
+const feb = view({ from: '2026-02', to: '2026-02' });
+equal('por periodo (un mes): lo que falta pagar de ese mes y la mora de ese mes', brief(feb), [['Ana', 300, 20, 320], ['Beto', 0, 0, 0], ['Carla', 400, 45, 445], ['Dario', 0, 0, 0]]);
+equal('un cargo suelto cae en el mes de su fecha, con su mora (renglon sin periodo)', [feb.rows[2].pending, feb.rows[2].mora], [400, 45]);
+equal('por periodo: los totales y byPeriod', [feb.totals, feb.byPeriod, todo.byPeriod], [{ count: 4, owing: 2, pending: 700, mora: 65, total: 765 }, true, false]);
+equal('por periodo con solo "desde": de ese mes en adelante', brief(view({ from: '2026-03' })), [['Ana', 300, 10, 310], ['Beto', 0, 0, 0], ['Carla', 300, 0, 300], ['Dario', 300, 0, 300]]);
+equal('por periodo con solo "hasta": hasta ese mes', brief(view({ to: '2026-01' })), [['Ana', 0, 0, 0], ['Beto', 0, 0, 0], ['Carla', 300, 0, 300], ['Dario', 0, 0, 0]]);
+equal('todos los meses del rango dan lo que se debe de cuotas (mismo reparto que la Tabla general)', brief(view({ from: '2026-01', to: '2026-12' })).map((x) => x[1]), [600, 0, 1000, 300]);
+equal('un pago de mas en otro mes cubre lo mas antiguo (no el mes que se mira)', brief(view({ from: '2026-03', to: '2026-03', fase: '1' })).map((x) => [x[0], x[1]]), [['Ana', 300], ['Carla', 300]]);
+equal('sin regla de mora (sin renglones) la mora por periodo es cero', R.ownersList(own, ownTx, { owedOf, from: '2026-02', to: '2026-02' }).rows.map((x) => x.mora), [0, 0, 0, 0]);
+equal('un mes mal escrito se ignora (sigue el listado general)', brief(view({ from: '2026-13', to: 'x' })), brief(todo));
+equal('por periodo y por fase, de mayor a menor deuda', view({ from: '2026-02', to: '2026-02', fase: '1', order: 'debt' }).rows.map((x) => [x.name, x.total]), [['Carla', 445], ['Ana', 320]]);
+equal('los centavos se suman sin errores de redondeo', R.ownersList([{ id: 'z', name: 'Zeta', unit: 'C1' }], [], { owedOf: () => ({ pending: 0.1, mora: 0.2, total: 0.3 }) }).totals, { count: 1, owing: 1, pending: 0.1, mora: 0.2, total: 0.3 });
+equal('sin residentes o sin datos de deuda, el listado sale vacio o en cero', [R.ownersList([], [], {}).rows, R.ownersList([{ id: 'q', name: 'Q', unit: 'C9' }], [], {}).rows.map((x) => x.total)], [[], [0]]);
+
 const sandbox = { self: {} };
 vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-reportes.js'), sandbox);

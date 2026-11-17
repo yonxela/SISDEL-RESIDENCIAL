@@ -164,6 +164,34 @@
     const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const periodLabel = (period) => `${MONTHS_SHORT[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
 
+    // Cuotas y cargos de UN residente repartidos con sus pagos, del mas antiguo al mas nuevo (el mismo reparto del reporte de
+    // Morosos): Map(periodo 'AAAA-MM' -> { charged, owed }) en centavos. Una cuota cae en su mes (period) y un cargo suelto en
+    // el mes de su fecha. `list` trae los movimientos vivos del residente (cargos y pagos).
+    function periodsOf(list, feePeriodOf, dayKey) {
+        let credit = 0;
+        const charges = [];
+        (list || []).forEach((t) => {
+            if (t.type === 'income') { credit += cents(t.amount); return; }
+            const fee = feePeriodOf(t);
+            const day = t.date ? dayKey(t.date) : '';
+            const period = fee || monthOf(day);
+            if (!validMonth(period)) return;
+            charges.push({ period, sort: fee ? `${period}-00` : day, amount: cents(t.amount) });
+        });
+        // Del mas antiguo al mas nuevo (sort es estable: a igual fecha, en su orden)
+        charges.sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
+        const periods = new Map();
+        charges.forEach((c) => {
+            const paid = Math.min(Math.max(credit, 0), c.amount);
+            credit -= paid;
+            const p = periods.get(c.period) || { charged: 0, owed: 0 };
+            p.charged += c.amount;
+            p.owed += c.amount - paid;
+            periods.set(c.period, p);
+        });
+        return periods;
+    }
+
     function paymentMap(residents, txs, opts) {
         const options = opts || {};
         const dayKey = dayKeyOf(options);
@@ -186,27 +214,7 @@
 
         let firstYear = curYear;
         const computed = (residents || []).map((r, index) => {
-            let credit = 0;
-            const charges = [];
-            (byResident.get(String(r.id)) || []).forEach((t) => {
-                if (t.type === 'income') { credit += cents(t.amount); return; }
-                const fee = feePeriodOf(t);
-                const day = t.date ? dayKey(t.date) : '';
-                const period = fee || monthOf(day);
-                if (!validMonth(period)) return;
-                charges.push({ period, sort: fee ? `${period}-00` : day, amount: cents(t.amount) });
-            });
-            // Del mas antiguo al mas nuevo (sort es estable: a igual fecha, en su orden)
-            charges.sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
-            const periods = new Map();
-            charges.forEach((c) => {
-                const paid = Math.min(Math.max(credit, 0), c.amount);
-                credit -= paid;
-                const p = periods.get(c.period) || { charged: 0, owed: 0 };
-                p.charged += c.amount;
-                p.owed += c.amount - paid;
-                periods.set(c.period, p);
-            });
+            const periods = periodsOf(byResident.get(String(r.id)) || [], feePeriodOf, dayKey);
             let lateMonths = 0;
             let lateTotal = 0;
             let pendingTotal = 0;
@@ -352,6 +360,93 @@
         return { rows, capital: fromCents(capital), mora: fromCents(mora), total: fromCents(capital + mora) };
     }
 
+    // ───────── Listado general de propietarios ─────────
+    // Una fila por residente con su numero de lote, nombre, telefono y lo que debe: deuda por cuotas (cuotas y cargos sin
+    // pagar), deuda por mora y saldo total (cuotas + mora, siempre en centavos: la suma cuadra).
+    // Por defecto (sin periodo) cada cifra es la de `owedOf(r)` -> { pending, mora, total }: lo mismo que Residentes y los
+    // demas reportes. Con periodo (from / to, meses 'AAAA-MM', cualquiera de los dos o ambos) es la deuda de las cuotas y
+    // cargos de esos meses: lo que falta pagar de ellos (los pagos cubren primero lo mas antiguo, periodsOf) y la mora que
+    // esos meses generaron (moraItemsOf(r) -> los renglones del estado de mora; id, period y mora de cada uno).
+    // opts: { dayKey, feePeriodOf(t), from, to, fase ('' = todas, '__none__' = sin fase, o una fase), order ('name' =
+    // alfabetico, por defecto, o 'debt' = de mayor a menor deuda), onlyDebt (solo los que deben), owedOf, moraItemsOf,
+    // phoneOf(r) }.
+    // Devuelve { rows, totals: { count, owing, pending, mora, total }, fases (las fases que existen), withoutFase, byPeriod }.
+    const NO_FASE = '__none__';
+    const collator = (a, b) => String(a).localeCompare(String(b), 'es', { sensitivity: 'base', numeric: true });
+
+    function ownersList(residents, txs, opts) {
+        const options = opts || {};
+        const dayKey = dayKeyOf(options);
+        const feePeriodOf = typeof options.feePeriodOf === 'function' ? options.feePeriodOf : (t) => (t.kind === 'fee' && validMonth(String(t.period || '')) ? t.period : null);
+        const from = validMonth(String(options.from || '')) ? options.from : '';
+        const to = validMonth(String(options.to || '')) ? options.to : '';
+        const byPeriod = !!(from || to);
+        const inRange = (month) => validMonth(month) && (!from || month >= from) && (!to || month <= to);
+        const faseOf = (r) => String(r.fase || '').trim();
+        const wantFase = String(options.fase || '');
+
+        const all = (residents || []).filter((r) => r && r.id !== undefined && r.id !== null);
+        const fases = Array.from(new Set(all.map(faseOf).filter(Boolean))).sort(collator);
+        const withoutFase = all.filter((r) => !faseOf(r)).length;
+
+        // Movimientos de cada residente (solo hacen falta con periodo)
+        const byResident = new Map();
+        if (byPeriod) {
+            (txs || []).forEach((t) => {
+                if (!t || t.deleted || (t.type !== 'charge' && t.type !== 'income')) return;
+                if (t.resiId === undefined || t.resiId === null || t.resiId === '') return;
+                const id = String(t.resiId);
+                if (!byResident.has(id)) byResident.set(id, []);
+                byResident.get(id).push(t);
+            });
+        }
+
+        const rows = [];
+        all.forEach((r) => {
+            if (wantFase === NO_FASE ? faseOf(r) : (wantFase && faseOf(r) !== wantFase)) return;
+            let pending = 0;
+            let mora = 0;
+            if (!byPeriod) {
+                const o = typeof options.owedOf === 'function' ? (options.owedOf(r) || {}) : {};
+                pending = Math.max(0, cents(o.pending));
+                mora = Math.max(0, cents(o.mora));
+            } else {
+                const list = byResident.get(String(r.id)) || [];
+                periodsOf(list, feePeriodOf, dayKey).forEach((p, month) => { if (inRange(month)) pending += Math.max(0, p.owed); });
+                const items = typeof options.moraItemsOf === 'function' ? options.moraItemsOf(r) : null;
+                if (Array.isArray(items) && items.length) {
+                    const dates = new Map(list.map((t) => [String(t.id), t.date]));
+                    items.forEach((item) => {
+                        const owed = cents(item.mora);
+                        if (owed <= 0) return;
+                        const month = validMonth(String(item.period || '')) ? item.period : (dates.has(String(item.id)) ? monthOf(dayKey(dates.get(String(item.id)))) : '');
+                        if (inRange(month)) mora += owed;
+                    });
+                }
+            }
+            const total = pending + mora;
+            if (options.onlyDebt && total <= 0) return;
+            rows.push({
+                resident: r, unit: String(r.unit || r.lot || ''), name: String(r.name || ''),
+                phone: String(typeof options.phoneOf === 'function' ? options.phoneOf(r) || '' : r.contact || ''), fase: faseOf(r),
+                pending: fromCents(pending), mora: fromCents(mora), total: fromCents(total), cents: total
+            });
+        });
+
+        const byName = (a, b) => collator(a.name, b.name) || collator(a.unit, b.unit);
+        rows.sort(options.order === 'debt' ? (a, b) => (b.cents - a.cents) || byName(a, b) : byName);
+
+        let sumPending = 0;
+        let sumMora = 0;
+        let sumTotal = 0;
+        rows.forEach((x) => { sumPending += cents(x.pending); sumMora += cents(x.mora); sumTotal += x.cents; delete x.cents; });
+        return {
+            rows,
+            totals: { count: rows.length, owing: rows.filter((x) => x.total > 0).length, pending: fromCents(sumPending), mora: fromCents(sumMora), total: fromCents(sumTotal) },
+            fases, withoutFase, byPeriod
+        };
+    }
+
     // Texto de una celda que puede traer HTML (p. ej. el boton del No. de documento)
     function plain(value) {
         if (value === null || value === undefined) return '';
@@ -437,5 +532,5 @@
         };
     }
 
-    return { MAX_MONTHS, monthBalance, periodSummary, paymentMap, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel };
+    return { MAX_MONTHS, NO_FASE, monthBalance, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel };
 });

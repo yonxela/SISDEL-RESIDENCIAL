@@ -334,10 +334,10 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Cada clave que usa el modulo existe en el catalogo
     const used = [...rp.matchAll(/can\('([a-z_]+\.[a-z_]+)'\)/g)].map((m) => m[1]);
     yes('reportes-ui.js solo usa privilegios del catalogo', used.length > 10 && used.every((k) => P.itemOf(k)));
-    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 7);
+    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 8);
     // Los accesos directos llegan a pantallas que existen en OIKOS
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
-    equal('los siete reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'account-statement', 'resumen']);
+    equal('los ocho reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'account-statement', 'resumen']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
     // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
     const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
@@ -379,7 +379,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const repDetail = oikos.slice(oikos.indexOf('id="rep-detail"'), oikos.indexOf('id="rep-table-wrap"'));
     yes('la pantalla de Reportes trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleReportChart()', 'printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].every((f) => repDetail.includes(`onclick="${f}"`)));
     yes('la ventana del reporte financiero trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleSummaryChart()', 'printReport()', 'downloadReportPDF()', 'exportReportExcel()', 'shareReportWhatsApp()'].every((f) => oikos.includes(`onclick="${f}"`)));
-    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 6);
+    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 7);
     // Dos funciones con el mismo nombre: la segunda pisa a la primera (asi Imprimir y PDF de Reportes sacaban la ventana del reporte financiero)
     const fnNames = [...oikos.matchAll(/^        (?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]);
     equal('OIKOS no repite nombres de funciones', fnNames.filter((n, i) => fnNames.indexOf(n) !== i), []);
@@ -422,6 +422,13 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('ya no hay texto a quien esta en plazo: el mensaje por morosidad va solo a los morosos (lo guardado antes se conserva)', !oikos.includes('rem-msg-pending') && /currentRemMode === 'varios' && \['all', 'mora', 'todos'\]\.includes\(filterMode\) \? filterMode : 'mora'/.test(oikos));
     yes('el saldo de los recordatorios es lo que debe con la mora, igual que los reportes (sisdelOwedOf)', /function reminderOwedOf\(r\) \{\s*const o = sisdelOwedOf\(r\);/.test(oikos));
     yes('los recordatorios escapan nombre, casa y telefono y no meten el telefono en el onclick', !/\$\{r\.name\}/.test(remCode) && /onclick="sendReminder\(this\.dataset\.id\)" data-id="\$\{esc\(r\.id\)\}"/.test(remCode) && !/contactSingleWhatsApp\('\$\{r\.contact\}'/.test(oikos));
+    // Listado general de propietarios (pedido del usuario, 2026-11-16): columnas, filtros, grafica, Excel, PDF e impresion
+    const ownCode = oikos.slice(oikos.indexOf('function buildOwnersReport'), oikos.indexOf('// ========== REPORTS (mensual del dashboard'));
+    yes('el listado de propietarios trae las seis columnas pedidas y su fila de totales', /headers: \['Número de lote', 'Nombre', 'Teléfono', 'Deuda por cuotas', 'Deuda por mora', 'Saldo total'\]/.test(ownCode) && /totals: \['TOTAL'/.test(ownCode) && /numericCols: \[3, 4, 5\]/.test(ownCode));
+    yes('el listado de propietarios usa el mismo calculo que Residentes (sisdelOwedOf) y el de ownersList', /owedOf: sisdelOwedOf/.test(ownCode) && /R\.ownersList\(/.test(ownCode));
+    yes('el listado de propietarios filtra por periodo (meses), fase, orden y a quienes mostrar, con todo por defecto', ['own-from', 'own-to', 'own-fase', 'own-order', 'own-show', 'rep-owners-filters'].every((id) => oikos.includes(`id="${id}"`)) && /<option value="name">Alfabético<\/option>[\s\S]{0,80}<option value="debt">De mayor a menor deuda<\/option>/.test(oikos) && /<option value="all">Todos los propietarios<\/option>/.test(oikos));
+    yes('el listado de propietarios tiene grafica (barras apiladas de cuotas y mora), Excel, PDF, imprimir y WhatsApp como todos', /chartStacked: true/.test(ownCode) && /chartDatasets: \[/.test(ownCode) && /compact: \{/.test(ownCode) && /selectReport\('owners'\)/.test(oikos) && /else if \(currentReportKey === 'owners'\) currentReportData = buildOwnersReport\(\)/.test(oikos));
+    yes('imprimir y PDF de los reportes salen en tamano oficio (8.5 x 13 pulgadas) y en horizontal', /@page\{size:13in 8\.5in;margin:10mm\}/.test(oikos) && /new jsPDF\(\{ orientation: 'landscape', unit: 'mm', format: \[215\.9, 330\.2\] \}\)/.test(oikos) && !/isWide/.test(oikos));
     // Bancos: pantalla, datos en finanzas.html y bloqueo por privilegios
     yes('OIKOS tiene la pantalla Bancos con su menu (oculto sin bancos) y carga sus calculos', oikos.includes('id="view-banks"') && /id="nav-banks" class="nav-item hidden/.test(oikos) && /<script src="\.\/sisdel-bancos\.js\?v=\w+"><\/script>/.test(oikos) && /\['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'\]/.test(oikos));
     yes('finanzas.html arranca los bancos solo con el privilegio de verlos', /<script src="finanzas-bancos\.js\?v=\w+"><\/script>/.test(fin) && /SISDEL\.can\('finanzas\.bancos_ver'\) && typeof SisdelFinanzasBancos !== 'undefined'/.test(fin));
@@ -448,11 +455,11 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar la lectura del historial de la camara oculta la seccion de garita', sectionsFor('admin', { 'garita.camara': false }), ['morosos', 'finanzas', 'rondas']);
     // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
     const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
-    equal('el administrador ve cuatro categorias, con 7, 1, 7 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:7', 'rondas:1']);
+    equal('el administrador ve cuatro categorias, con 7, 1, 8 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:8', 'rondas:1']);
     equal('la plantilla de consulta ve solo la categoria de garita, con sus 7 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:7']);
-    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:6', 'rondas:1']);
-    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
-    equal('sin el de morosos se quitan el y el mapa de pagos', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:7', 'rondas:1']);
+    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:6', 'rondas:1']);
+    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
     equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
     equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
     const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);

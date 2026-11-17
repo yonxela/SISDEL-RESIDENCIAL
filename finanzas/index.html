@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261115b"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261116b"></script>
+    <script src="./sisdel-reportes.js?v=20261116c"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -714,6 +714,7 @@
                                 <li><button type="button" onclick="selectReport('month-balance')" id="rep-tab-month-balance" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año."><span>Ingresos, egresos y saldo por mes</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
@@ -737,6 +738,41 @@
                             <div id="rep-period-wrap-to">
                                 <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Hasta</label>
                                 <input type="date" id="rep-to" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm" />
+                            </div>
+                            <!-- SISDEL: filtros del Listado general de propietarios (se ven solo en ese reporte). Por defecto muestra todo:
+                                 el periodo (meses) y la fase vacios; el orden es alfabetico o de mayor a menor deuda. -->
+                            <div id="rep-owners-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div>
+                                    <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Período desde (mes)</label>
+                                    <input type="month" id="own-from" onchange="renderCurrentReport()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Hasta (mes)</label>
+                                    <input type="month" id="own-to" onchange="renderCurrentReport()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm" />
+                                </div>
+                                <div class="flex gap-1.5 pb-0.5" role="group" aria-label="Períodos rápidos">
+                                    <button type="button" onclick="ownersPeriodPreset('all')" class="px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-200 transition" title="Todo el histórico">Todo</button>
+                                    <button type="button" onclick="ownersPeriodPreset('year')" class="px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-200 transition" title="Los meses de este año">Este año</button>
+                                    <button type="button" onclick="ownersPeriodPreset('month')" class="px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-200 transition" title="Solo este mes">Este mes</button>
+                                </div>
+                                <div>
+                                    <label for="own-fase" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fase</label>
+                                    <select id="own-fase" onchange="renderCurrentReport()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm"></select>
+                                </div>
+                                <div>
+                                    <label for="own-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Orden</label>
+                                    <select id="own-order" onchange="ownersOrderChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm">
+                                        <option value="name">Alfabético</option>
+                                        <option value="debt">De mayor a menor deuda</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="own-show" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Mostrar</label>
+                                    <select id="own-show" onchange="renderCurrentReport()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm">
+                                        <option value="all">Todos los propietarios</option>
+                                        <option value="debt">Solo los que deben</option>
+                                    </select>
+                                </div>
                             </div>
                             <button onclick="renderCurrentReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition">
                                 <i class="fas fa-sync-alt mr-1.5"></i>Actualizar
@@ -4540,6 +4576,7 @@
             'month-balance': 'Ingresos, egresos y saldo por mes',
             morosos: 'Morosos y meses adeudados',
             'pay-map': 'Tabla general',
+            owners: 'Listado general de propietarios',
             'account-statement': 'Estado de cuenta general'
         };
 
@@ -4567,6 +4604,10 @@
             const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance';
             if (periodWrap) periodWrap.style.display = showPeriod ? '' : 'none';
             if (periodWrapTo) periodWrapTo.style.display = showPeriod ? '' : 'none';
+            // SISDEL: el Listado general de propietarios trae sus propios filtros (periodo por meses, fase, orden y a quienes mostrar)
+            const ownersWrap = document.getElementById('rep-owners-filters');
+            if (ownersWrap) ownersWrap.style.display = key === 'owners' ? '' : 'none';
+            if (key === 'owners') ownersPrepareFilters();
             renderCurrentReport();
         }
 
@@ -4580,6 +4621,7 @@
             else if (currentReportKey === 'account-statement') currentReportData = buildAccountStatementReport();
             else if (currentReportKey === 'month-balance') currentReportData = buildMonthBalanceReport();
             else if (currentReportKey === 'pay-map') currentReportData = buildPayMapReport();
+            else if (currentReportKey === 'owners') currentReportData = buildOwnersReport();
             paintReportTable();
             if (repChartVisible) paintReportChart();
         }
@@ -4610,7 +4652,7 @@
                 d.hint ? '<span><i class="fas fa-hand-pointer mr-1.5"></i>' + esc(d.hint) + '</span>' : ''].join('');
             // Hasta 4 tarjetas por fila; 6 van en dos filas de 3 (cuantos y, abajo, lo que deben)
             const count = (d.highlights || []).length || 1;
-            const cols = count === 6 ? 3 : Math.min(4, count);
+            const cols = (count === 5 || count === 6) ? 3 : Math.min(4, count);
             return '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-' + cols + ' gap-3">' + cards + '</div>'
                 + (legend || notes ? '<div class="mt-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 space-y-2">'
                     + (legend ? '<div class="flex flex-wrap gap-x-6 gap-y-2 text-base font-medium text-slate-800 dark:text-slate-100">' + legend + '</div>' : '')
@@ -4648,7 +4690,7 @@
             const pinFirst = !!d.cellStatus;
             const pinCls = 'sticky left-0 z-[1] bg-slate-50 dark:bg-slate-800 shadow-[1px_0_0_rgba(148,163,184,0.35)]';
             thead.innerHTML = '<tr>' + d.headers.map(function (h, i) {
-                const align = i === 0 ? 'text-left' : 'text-right';
+                const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : 'text-right';
                 return '<th class="px-4 py-3 ' + align + (pinFirst && i === 0 ? ' ' + pinCls : '') + (d.cellStatus && i > 0 ? ' text-center whitespace-nowrap' : '') + '">' + h + '</th>';
             }).join('') + '</tr>';
             if (!d.rows || d.rows.length === 0) {
@@ -4690,7 +4732,7 @@
                 // SISDEL: celdas de color (mapa de pagos): rojo debe, verde pagado, amarillo aun no vence, gris sin cuota
                 const statusRow = (d.cellStatus || [])[rowIdx] || [];
                 return '<tr' + trAttrs + '>' + row.map(function (cell, i) {
-                    const align = i === 0 ? 'text-left' : 'text-right';
+                    const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : 'text-right';
                     const content = (isClickable && i === 0)
                         ? '<i class="fas fa-chevron-right ' + chevronColor + ' mr-2 text-[10px]"></i>' + cell
                         : cell;
@@ -4701,7 +4743,7 @@
             }).join('');
             if (d.totals) {
                 tfoot.innerHTML = '<tr>' + d.totals.map(function (cell, i) {
-                    const align = i === 0 ? 'text-left' : (d.cellStatus ? 'text-center whitespace-nowrap' : 'text-right');
+                    const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : (d.cellStatus ? 'text-center whitespace-nowrap' : 'text-right');
                     return '<td class="px-4 py-3 ' + align + ' font-mono' + (pinFirst && i === 0 ? ' ' + pinCls : '') + '">' + cell + '</td>';
                 }).join('') + '</tr>';
             } else {
@@ -4737,9 +4779,10 @@
                 plugins: { legend: { labels: { color: tick } } },
             };
             if (!isCircular) {
+                // SISDEL: chartStacked apila las series (p. ej. deuda por cuotas + deuda por mora de cada propietario)
                 opts.scales = {
-                    x: { ticks: { color: tick }, grid: { color: grid } },
-                    y: { beginAtZero: true, ticks: { color: tick }, grid: { color: grid } },
+                    x: { stacked: !!d.chartStacked, ticks: { color: tick }, grid: { color: grid } },
+                    y: { stacked: !!d.chartStacked, beginAtZero: true, ticks: { color: tick }, grid: { color: grid } },
                 };
             }
             // SISDEL: un reporte puede traer varias series (chartDatasets: ingresos, egresos y saldo de cada mes)
@@ -4847,7 +4890,11 @@
             const html = `<!DOCTYPE html><html><head><title>${escText(d.title)} - ${escText(s.name || 'OIKOS')}</title>
                 <style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
                     body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-                    @media print{body{padding:15px}}
+                    /* SISDEL: tamano oficio (8.5 x 13 pulgadas) en horizontal, para que quepan todas las columnas */
+                    @page{size:13in 8.5in;margin:10mm}
+                    @media print{body{padding:0}}
+                    thead{display:table-header-group}
+                    tr{page-break-inside:avoid}
                     .hdr{background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:18px}
                     .hdr h1{margin:0;font-size:20px}
                     .hdr p{margin:4px 0 0;font-size:13px;opacity:.85}
@@ -4890,8 +4937,8 @@
             const numericCols = new Set(d.numericCols || []);
             const meta = d.rowsMeta || [];
             const { jsPDF } = window.jspdf;
-            const isWide = d.headers.length > 5;
-            const doc = new jsPDF({ orientation: isWide ? 'landscape' : 'portrait' });
+            // SISDEL: tamano oficio (215.9 x 330.2 mm) en horizontal en todos los reportes, para que quepan todas las columnas
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [215.9, 330.2] });
             const pageW = doc.internal.pageSize.getWidth();
             // Header violeta
             doc.setFillColor(79, 70, 229);
@@ -4952,7 +4999,7 @@
                 foot,
                 theme: 'striped',
                 footStyles: { fillColor: [226, 232, 240], textColor: 30, fontStyle: 'bold' },
-                bodyStyles: { fontSize: d.headers.length > 12 ? 6 : 8 },
+                bodyStyles: { fontSize: d.headers.length > 12 ? 6 : (d.headers.length > 8 ? 8 : 9) },
                 headStyles: { fillColor: [79, 70, 229], fontSize: d.headers.length > 12 ? 6 : 9, textColor: 255 },
                 columnStyles,
                 // Las filas de total de cada ano van en negrita y con fondo; SISDEL: las celdas del mapa de pagos, con su color
@@ -5524,6 +5571,113 @@
                 chartLabel: 'Cuotas vencidas por período',
                 chartColors: 'rgba(220,38,38,0.7)',
                 chartColorsBorder: '#DC2626',
+            };
+        }
+
+        // ─── SISDEL: Reporte 8: Listado general de propietarios ────────────
+        // Una fila por propietario: numero de lote, nombre, telefono, deuda por cuotas, deuda por mora y saldo total (cuotas +
+        // mora, siempre igual a Residentes y a los demas reportes: sisdelOwedOf). Por defecto muestra a todos, en orden
+        // alfabetico; se puede mostrar de mayor a menor deuda, por periodo (meses: lo que falta pagar de esas cuotas y su
+        // mora), por fase y solo a los que deben. El calculo esta en finanzas/sisdel-reportes.js (ownersList).
+        var ownersOrder = (() => { try { return localStorage.getItem('sisdel_prop_orden') === 'debt' ? 'debt' : 'name'; } catch (e) { return 'name'; } })();
+        function ownersOrderChanged() {
+            const el = document.getElementById('own-order');
+            ownersOrder = el && el.value === 'debt' ? 'debt' : 'name';
+            try { localStorage.setItem('sisdel_prop_orden', ownersOrder); } catch (e) { /* solo se pierde la preferencia */ }
+            renderCurrentReport();
+        }
+        // Mes actual 'AAAA-MM' y atajos del periodo
+        function ownersPeriodPreset(kind) {
+            const month = localDayKey(new Date()).slice(0, 7);
+            const from = document.getElementById('own-from');
+            const to = document.getElementById('own-to');
+            if (kind === 'year') { from.value = month.slice(0, 4) + '-01'; to.value = month.slice(0, 4) + '-12'; }
+            else if (kind === 'month') { from.value = month; to.value = month; }
+            else { from.value = ''; to.value = ''; }
+            renderCurrentReport();
+        }
+        // Las fases que existen entre los residentes (y "Sin fase" si unos la tienen y otros no); conserva la elegida
+        function ownersPrepareFilters() {
+            const order = document.getElementById('own-order');
+            if (order) order.value = ownersOrder;
+            const select = document.getElementById('own-fase');
+            if (!select) return;
+            const residents = Store.get('residents') || [];
+            const fases = Array.from(new Set(residents.map(r => String(r.fase || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }));
+            const withoutFase = residents.some(r => !String(r.fase || '').trim());
+            const keep = select.value;
+            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">Fase ' + SisdelBusqueda.escapeHtml(f) + '</option>'));
+            if (fases.length && withoutFase) opts.push('<option value="' + SisdelReportesOikos.NO_FASE + '">Sin fase</option>');
+            select.innerHTML = opts.join('');
+            select.value = Array.from(select.options).some(o => o.value === keep) ? keep : '';
+            select.disabled = !fases.length;
+            select.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente';
+        }
+        function ownersFilters() {
+            const val = (id) => (document.getElementById(id) || {}).value || '';
+            return { from: val('own-from'), to: val('own-to'), fase: val('own-fase'), order: ownersOrder, onlyDebt: val('own-show') === 'debt' };
+        }
+
+        function buildOwnersReport() {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const R = SisdelReportesOikos;
+            const f = ownersFilters();
+            const today = localDayKey(new Date());
+            const list = R.ownersList(Store.get('residents') || [], Store.get('transactions') || [], {
+                dayKey: localDayKey, feePeriodOf: txFeePeriod, from: f.from, to: f.to, fase: f.fase, order: f.order, onlyDebt: f.onlyDebt,
+                owedOf: sisdelOwedOf, phoneOf: (r) => r.contact,
+                moraItemsOf: (r) => { const ms = sisdelMoraOf(r.id); return ms && Array.isArray(ms.items) ? ms.items : null; }
+            });
+            const t = list.totals;
+            // El texto de lo que se esta viendo (periodo, fase, orden y a quienes)
+            const mon = (m) => R.periodLabel(m);
+            const periodText = !f.from && !f.to ? 'todo el histórico'
+                : f.from && f.to ? (f.from === f.to ? 'mes de ' + mon(f.from) : 'de ' + mon(f.from) + ' a ' + mon(f.to))
+                    : f.from ? 'desde ' + mon(f.from) : 'hasta ' + mon(f.to);
+            const faseText = f.fase === R.NO_FASE ? 'sin fase' : f.fase ? 'fase ' + f.fase : 'todas las fases';
+            const orderText = f.order === 'debt' ? 'de mayor a menor deuda' : 'en orden alfabético';
+            const filtersText = 'Período: ' + periodText + ' · ' + faseText + ' · ' + orderText + (f.onlyDebt ? ' · solo los que deben' : '');
+            const zero = (v) => (v > 0 ? formatMoney(v) : '<span class="text-slate-400 dark:text-slate-500">' + formatMoney(0) + '</span>');
+            const total = (v) => (v > 0 ? '<span class="font-semibold text-rose-600 dark:text-rose-400">' + formatMoney(v) + '</span>' : zero(0));
+            const rows = list.rows.map(x => [
+                esc(x.unit || '—'), esc(x.name) + (isResidentActive(x.resident) ? '' : ' (finiquitado)'), esc(x.phone || '—'),
+                zero(x.pending), zero(x.mora), total(x.total)
+            ]);
+            // Grafica: los 30 que mas deben, con su deuda por cuotas y su mora apiladas
+            const top = list.rows.filter(x => x.total > 0).slice().sort((a, b) => (b.total - a.total) || String(a.name).localeCompare(String(b.name), 'es')).slice(0, 30);
+            return {
+                title: 'Listado general de propietarios',
+                summary: t.count + ' propietario(s) · ' + t.owing + ' con deuda · al ' + today + ' · ' + filtersText,
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [
+                    { tone: 'none', value: String(t.count), label: t.count === 1 ? 'propietario en la lista' : 'propietarios en la lista' },
+                    { tone: 'owed', value: String(t.owing), label: 'con deuda' }
+                ].concat(sisdelDebtHighlights({ pending: t.pending, mora: t.mora, total: t.total })),
+                highlightsNote: 'Al ' + today + ' · ' + filtersText,
+                hint: 'Toque un propietario para ver su estado de cuenta',
+                notice: list.byPeriod ? 'Con un período se muestra lo que falta pagar de las cuotas y cargos de esos meses (los pagos cubren primero lo más antiguo) y la mora que esos meses generaron.' : '',
+                emptyText: 'No hay propietarios con estos filtros.',
+                headers: ['Número de lote', 'Nombre', 'Teléfono', 'Deuda por cuotas', 'Deuda por mora', 'Saldo total'],
+                leftCols: [1, 2],
+                rows: rows,
+                rowsMeta: list.rows.map(x => ({ kind: 'resident', residentId: x.resident.id })),
+                totals: ['TOTAL', t.count + ' propietario(s)', '', formatMoney(t.pending), formatMoney(t.mora), formatMoney(t.total)],
+                numericCols: [3, 4, 5],
+                // WhatsApp: los que mas deben (lote, nombre y saldo total)
+                compact: {
+                    headers: ['Lote', 'Nombre', 'Saldo total'],
+                    rows: list.rows.filter(x => x.total > 0).slice().sort((a, b) => b.total - a.total).map(x => [esc(x.unit || '—'), esc(x.name), formatMoney(x.total)]),
+                    totals: ['TOTAL', t.owing + ' con deuda', formatMoney(t.total)],
+                    numericCols: [2]
+                },
+                chartType: 'bar',
+                chartStacked: true,
+                chartLabels: top.map(x => (x.unit ? x.unit + ' · ' : '') + x.name),
+                chartDatasets: [
+                    { label: 'Deuda por cuotas', data: top.map(x => x.pending), color: 'rgba(244,63,94,0.7)', border: '#E11D48' },
+                    { label: 'Deuda por mora', data: top.map(x => x.mora), color: 'rgba(249,115,22,0.7)', border: '#EA580C' }
+                ]
             };
         }
 

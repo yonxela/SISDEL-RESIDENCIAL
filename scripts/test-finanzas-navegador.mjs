@@ -412,6 +412,33 @@ async function run() {
         await oikos(`(() => { Store.get = window.__origGet; window.confirm = window.__realConfirm; closeModal('modal-reminders'); try { localStorage.removeItem('sisdel_rem_modo'); } catch (e) {} })()`);
         await page.evaluate(`(() => { window.sisdelWhatsApp = window.__realWa; })()`);
 
+        console.log('\nLote o casa');
+        const finRef = (id) => condoRef.collection('finanzas_residentes').doc(id);
+        // El formulario de un residente nuevo pide el tipo; el de uno que ya existia sin tipo se puede editar sin elegirlo
+        equal('residente nuevo: la flecha empieza en "Elegir" y es obligatoria', await oikos(`(() => { navigate('residents'); openModal('modal-resident'); const t = document.getElementById('res-unit-type'); const out = [t.value, t.required]; closeModal('modal-resident'); return out; })()`), ['', true]);
+        equal('residente que ya existia: sin tipo y no obligatoria', await oikos(`(() => { editResident('u-ana'); const t = document.getElementById('res-unit-type'); return [t.value, t.required, Store.get('residents').find(r => r.id === 'u-ana').unitType === undefined]; })()`), ['', false, true]);
+        // Marcar a Ana como casa desde su formulario
+        await oikos(`(() => { document.getElementById('res-unit-type').value = 'casa'; handleResidentSubmit({ preventDefault() {} }); })()`);
+        equal('guardar con la flecha en Casa deja el tipo en el residente', await oikos(`Store.get('residents').find(r => r.id === 'u-ana').unitType`), 'casa');
+        equal('se guarda en la nube con los datos financieros', await idle(), 'ok');
+        equal('en finanzas_residentes (no en el vecino de SISDEL)', [(await finRef('u-ana').get()).get('unitType'), (await condoRef.collection('usuarios').doc('u-ana').get()).get('unitType')], ['casa', undefined]);
+        // La lista
+        equal('la lista solo con casas muestra a Ana y los conteos de cada tipo salen en el filtro', await oikos(`(() => { resTypeChanged('casa'); const ids = visibleResidents().map(r => r.id); const opts = [...document.querySelectorAll('#res-type-filter option')].map(o => o.textContent); resTypeChanged(''); return [ids, opts[2], opts[1]]; })()`), [['u-ana'], 'Solo casas (1)', 'Solo lotes (0)']);
+        equal('el tipo se ve bajo la referencia y "casa" lo encuentra en la busqueda', await oikos(`(() => { const s = document.getElementById('res-search'); s.value = 'casa'; resSearchChanged(); const ids = visibleResidents().map(r => r.id); const chip = document.querySelector('#residents-table-body tr .uppercase.block') ? document.querySelector('#residents-table-body tr .uppercase.block').textContent : ''; s.value = ''; resSearchChanged(); return [ids.includes('u-ana'), chip]; })()`), [true, 'Casa']);
+        // Marcar tipo en bloque: solo a los que no tienen tipo
+        const withoutType = await oikos(`(() => { openBulkType(); return [Store.get('residents').filter(r => !r.unitType).length, document.getElementById('bt-summary').textContent]; })()`);
+        record('Marcar tipo avisa cuantos faltan', withoutType[0] >= 1 && withoutType[1].includes(String(withoutType[0])), JSON.stringify(withoutType));
+        await oikos(`applyBulkType('lote')`);
+        equal('Marcar tipo los deja como lotes y no toca a Ana (casa)', await oikos(`Store.get('residents').map(r => [r.id, r.unitType]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))`).then((rows) => [rows.every((r) => r[0] === 'u-ana' ? r[1] === 'casa' : r[1] === 'lote'), rows.length > 1]), [true, true]);
+        equal('se guarda en la nube', await idle(), 'ok');
+        equal('en la nube, otro residente quedo como lote y Ana sigue como casa', [(await finRef('u-maria').get()).get('unitType'), (await finRef('u-ana').get()).get('unitType')], ['lote', 'casa']);
+        equal('ya no queda ninguno sin indicar y el boton Marcar tipo se oculta', await oikos(`(() => { renderResidents(); return [Store.get('residents').filter(r => !r.unitType).length, document.getElementById('res-bulk-type-btn').classList.contains('hidden')]; })()`), [0, true]);
+        // Los reportes por residente
+        equal('Tabla general solo de casas trae solo a Ana; solo de lotes, a los demas', await oikos(`(() => { repTypeFilter = 'casa'; const a = sisdelPayMap().map.rows.map(x => x.resident.id); repTypeFilter = 'lote'; const l = sisdelPayMap().map.rows.map(x => x.resident.id); repTypeFilter = ''; const all = sisdelPayMap().map.rows.length; return [a, l.includes('u-ana'), l.length + a.length === all]; })()`), [['u-ana'], false, true]);
+        equal('el texto de Morosos, Tabla general y Listado de propietarios dice solo casas', await oikos(`(() => { repTypeFilter = 'casa'; const out = [buildMorososReport().summary, buildPayMapReport().summary, buildOwnersReport().summary].map(t => t.includes('solo casas')); repTypeFilter = ''; return out; })()`), [true, true, true]);
+        equal('el Listado de propietarios solo de casas trae una fila', await oikos(`(() => { repTypeFilter = 'casa'; const n = buildOwnersReport().rows.length; repTypeFilter = ''; return n; })()`), 1);
+        equal('el filtro de los reportes aparece en los reportes por residente y no en los de dinero', await oikos(`(() => { const out = []; ['morosos', 'pay-map', 'owners', 'income', 'month-balance'].forEach(k => { selectReport(k); out.push(document.getElementById('rep-type-wrap').style.display !== 'none'); }); return out; })()`), [true, true, true, false, false]);
+
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);
         await page.evaluate(`document.getElementById('btnReload').click()`);

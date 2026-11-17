@@ -517,6 +517,13 @@
                                 <option value="unit">Por casa / referencia</option>
                             </select>
                         </label>
+                        <!-- SISDEL: lote o casa: solo lotes, solo casas o los que aun no se han marcado (con cuantos hay de cada uno) -->
+                        <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><i class="fas fa-filter"></i><span class="sr-only sm:not-sr-only">Tipo</span>
+                            <select id="res-type-filter" onchange="resTypeChanged(this.value)" class="px-3 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                                <option value="">Todos</option><option value="lote">Solo lotes</option><option value="casa">Solo casas</option><option value="none">Sin indicar</option>
+                            </select>
+                        </label>
+                        <button id="res-bulk-type-btn" onclick="openBulkType()" class="hidden text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-white px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 transition" title="Marcar de una vez como lote o como casa a todos los residentes que todavia no lo tienen"><i class="fas fa-tags mr-1"></i>Marcar tipo</button>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
                     <!-- SISDEL: la lista va en orden alfabetico y de 50 en 50, con flechas arriba y abajo (ver renderResidents) -->
@@ -768,6 +775,14 @@
                             <div id="rep-period-wrap-to">
                                 <label class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Hasta</label>
                                 <input type="date" id="rep-to" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm" />
+                            </div>
+                            <!-- SISDEL: lote o casa: filtro comun de los reportes por residente (Morosos, Tabla general y Listado general
+                                 de propietarios), para sacar el reporte de lotes y el de casas por separado -->
+                            <div id="rep-type-wrap" style="display:none">
+                                <label for="rep-type" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
+                                <select id="rep-type" onchange="repTypeChanged(this.value)" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                    <option value="">Todos</option><option value="lote">Solo lotes</option><option value="casa">Solo casas</option><option value="none">Sin indicar</option>
+                                </select>
                             </div>
                             <!-- SISDEL: filtros del Listado general de propietarios (se ven solo en ese reporte). Por defecto muestra todo:
                                  el periodo (meses) y la fase vacios; el orden es alfabetico o de mayor a menor deuda. -->
@@ -1181,7 +1196,15 @@
                         </div>
                         <div class="col-span-3">
                             <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Casa o lote *</label>
-                            <input type="text" id="res-unit" required maxlength="40" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-semibold" placeholder="Ej. Casa 12" autocomplete="off">
+                            <!-- SISDEL: la flecha dice si la propiedad es un lote o una casa (unitType): asi los reportes se sacan por separado -->
+                            <div class="flex gap-2">
+                                <select id="res-unit-type" aria-label="Tipo de propiedad: lote o casa" title="Si la propiedad es un lote o una casa: sirve para sacar los reportes de lotes y de casas por separado" class="w-[46%] min-w-0 pl-2 pr-1 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm font-semibold cursor-pointer">
+                                    <option value="">Elegir…</option>
+                                    <option value="lote">Lote</option>
+                                    <option value="casa">Casa</option>
+                                </select>
+                                <input type="text" id="res-unit" required maxlength="40" class="flex-1 min-w-0 px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none font-semibold" placeholder="Ej. 281" autocomplete="off">
+                            </div>
                         </div>
                     </div>
                     <div>
@@ -1404,6 +1427,22 @@
             <p id="fc-error" class="hidden mt-2 text-sm font-semibold text-rose-600 dark:text-rose-400"></p>
             <div class="mt-6 flex justify-end space-x-3"><button type="button" onclick="closeFeeConfirm()" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button><button type="submit" id="fc-submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition disabled:opacity-50 disabled:cursor-wait">Confirmar y aplicar</button></div>
             </form>
+        </div>
+    </div>
+    <!-- SISDEL: MARCAR TIPO EN BLOQUE: marca de una vez como lote o como casa a los residentes que todavia no lo tienen -->
+    <div id="modal-bulk-type" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeModal('modal-bulk-type')}">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-blue-500">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center"><div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mr-3"><i class="fas fa-tags text-blue-600"></i></div><div><h3 class="text-xl font-bold dark:text-white">Marcar tipo</h3><p class="text-xs text-slate-500 dark:text-slate-400">Lote o casa, de una vez</p></div></div>
+                <button type="button" onclick="closeModal('modal-bulk-type')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 -mt-2 -mr-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
+            </div>
+            <p id="bt-summary" class="text-sm text-slate-600 dark:text-slate-300 mb-4"></p>
+            <div class="grid grid-cols-2 gap-3">
+                <button type="button" id="bt-lote" onclick="applyBulkType('lote')" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition">Marcar como lotes</button>
+                <button type="button" id="bt-casa" onclick="applyBulkType('casa')" class="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition">Marcar como casas</button>
+            </div>
+            <p class="mt-4 text-[11px] text-slate-500 dark:text-slate-400">Solo cambia a los que no tienen tipo; los que ya lo tienen no se tocan. Cualquiera se corrige despues en su formulario.</p>
+            <div class="mt-4 flex justify-end"><button type="button" onclick="closeModal('modal-bulk-type')" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button></div>
         </div>
     </div>
     <!-- ACCOUNT STATEMENT MODAL -->
@@ -3359,7 +3398,70 @@
         }
         // SISDEL: busqueda inteligente de residentes (sisdel-busqueda.js): por el principio de cada palabra, sin importar
         // acentos ni mayusculas, en cualquier orden y con los mejores resultados primero. El primer campo es el nombre.
-        function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi]; }
+        function residentSearchFields(r) { return [r.name, r.unit, r.fase, r.contact, r.email, r.propietario, r.nit, r.dpi, unitTypeLabel(r)]; }
+
+        // ─── SISDEL: lote o casa ───────────────────────────────────────────────────────────────────────────────
+        // Cada residente dice si su propiedad es un lote o una casa (unitType, en finanzas_residentes con los demas datos
+        // financieros): asi se sacan por separado la lista de Residentes y los reportes de Morosos, Tabla general y Listado de
+        // propietarios. Los que existian antes quedan "sin indicar" hasta que se marquen (uno por uno en su formulario o todos
+        // juntos con "Marcar tipo"). Filtro: '' (todos), 'lote', 'casa' o 'none' (sin indicar).
+        // (funciones y no una tabla: la lista se pinta al arrancar, antes de que se ejecute una variable declarada aqui)
+        var resTypeFilter = '';
+        var repTypeFilter = '';
+        function isUnitType(v) { return v === 'lote' || v === 'casa'; }
+        function unitTypeLabel(r) { return r && r.unitType === 'lote' ? 'Lote' : r && r.unitType === 'casa' ? 'Casa' : ''; }
+        function unitTypeMatches(r, filter) {
+            if (!filter) return true;
+            if (filter === 'none') return !unitTypeLabel(r);
+            return !!r && r.unitType === filter;
+        }
+        // "solo lotes", "solo casas" o "los sin indicar"; vacio con todos (para el texto de la lista y de los reportes)
+        function unitTypeFilterText(filter) {
+            return filter === 'lote' ? 'solo lotes' : filter === 'casa' ? 'solo casas' : filter === 'none' ? 'solo los sin indicar si es lote o casa' : '';
+        }
+        // Marcar de una vez a todos los que no tienen tipo (a los que ya lo tienen no se les toca nada). Se puede deshacer
+        function openBulkType() {
+            const none = (Store.get('residents') || []).filter(r => !unitTypeLabel(r));
+            if (!none.length) { showToast('Todos los residentes ya tienen su tipo.'); return; }
+            document.getElementById('bt-summary').textContent = `Hay ${none.length} residente(s) que todavía no dicen si son lote o casa. ¿Cómo los marca?`;
+            openModal('modal-bulk-type');
+        }
+        function applyBulkType(type) {
+            if (!isUnitType(type)) return;
+            const res = Store.get('residents');
+            const targets = res.filter(r => !unitTypeLabel(r));
+            if (!targets.length) { closeModal('modal-bulk-type'); return; }
+            History.push();
+            targets.forEach(r => { r.unitType = type; });
+            Store.set('residents', res);
+            closeModal('modal-bulk-type');
+            renderResidents();
+            showToast(`${targets.length} residente(s) marcado(s) como ${type === 'lote' ? 'lotes' : 'casas'}.`);
+        }
+        function resTypeChanged(value) {
+            resTypeFilter = ['lote', 'casa', 'none'].includes(value) ? value : '';
+            resPage = 0;
+            renderResidents();
+        }
+        function repTypeChanged(value) {
+            repTypeFilter = ['lote', 'casa', 'none'].includes(value) ? value : '';
+            renderCurrentReport();
+        }
+        // Los residentes de un reporte por residente: todos, o solo los del tipo elegido en el reporte
+        function reportResidents() { return (Store.get('residents') || []).filter(r => unitTypeMatches(r, repTypeFilter)); }
+        // Los textos de las opciones del filtro con cuantos hay de cada uno (se actualizan al pintar la lista y los reportes)
+        function unitTypeCounts(residents) {
+            const counts = { all: 0, lote: 0, casa: 0, none: 0 };
+            (residents || []).forEach(r => { counts.all++; if (unitTypeLabel(r)) counts[r.unitType]++; else counts.none++; });
+            return counts;
+        }
+        function unitTypeOptions(select, counts, current) {
+            if (!select) return;
+            const label = { '': 'Todos', lote: 'Solo lotes', casa: 'Solo casas', none: 'Sin indicar' };
+            const n = { '': counts.all, lote: counts.lote, casa: counts.casa, none: counts.none };
+            select.innerHTML = Object.keys(label).map(k => `<option value="${k}">${label[k]} (${n[k]})</option>`).join('');
+            select.value = current;
+        }
         // Los residentes que muestra la lista ahora (finiquitados ocultos o no, y lo escrito en la busqueda)
         // SISDEL: saldo que se muestra de un residente: con regla de mora incluye la mora a hoy (ms dice cuanto es)
         function residentShownBalance(r) {
@@ -3399,7 +3501,8 @@
         function residentsView() {
             const search = document.getElementById('res-search')?.value || '';
             const all = Store.get('residents');
-            const res = showClosedResidents ? all : all.filter(isResidentActive);
+            // SISDEL: solo lotes, solo casas o los sin indicar (resTypeFilter)
+            const res = (showClosedResidents ? all : all.filter(isResidentActive)).filter(r => unitTypeMatches(r, resTypeFilter));
             const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base', numeric: true }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true });
             const byUnit = (a, b) => String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true, sensitivity: 'base' }) || byName(a, b);
             let ordered;
@@ -3429,6 +3532,10 @@
             resPage = view.page;
             const orderSel = document.getElementById('res-order');
             if (orderSel && orderSel.value !== resOrder) orderSel.value = resOrder;
+            // SISDEL: el filtro lote / casa con cuantos hay de cada uno (de los que se ven: con o sin finiquitados)
+            unitTypeOptions(document.getElementById('res-type-filter'), unitTypeCounts(showClosedResidents ? all : all.filter(isResidentActive)), resTypeFilter || '');
+            const bulkBtn = document.getElementById('res-bulk-type-btn');
+            if (bulkBtn) bulkBtn.classList.toggle('hidden', !all.some(r => !unitTypeLabel(r)));
             const res = view.list;
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
@@ -3445,7 +3552,7 @@
             if (note) {
                 note.textContent = view.search
                     ? `${view.ordered.length} residente(s) encontrado(s)${view.pages > 1 ? ` · mostrando ${range}` : ''}.`
-                    : (view.ordered.length ? `Mostrando ${range} residentes, ${RES_ORDERS[resOrder]}.` : '');
+                    : (view.ordered.length ? `Mostrando ${range} residentes, ${RES_ORDERS[resOrder]}${resTypeFilter ? ', ' + unitTypeFilterText(resTypeFilter) : ''}.` : '');
                 note.classList.toggle('hidden', !note.textContent);
             }
             const pagerTop = document.getElementById('res-pager-top');
@@ -3471,6 +3578,7 @@
                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 ${closed ? 'opacity-60' : ''}" ${r.notes ? `title="${esc(r.notes)}"` : ''}>
                     <td class="py-4 px-6 font-mono font-bold text-center">
                         <button onclick="openEstadoCuenta('${r.id}')" class="text-indigo-600 dark:text-indigo-400 hover:underline" title="Ver estado de cuenta">${esc(r.unit)}</button>
+                        ${unitTypeLabel(r) ? `<span class="block font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">${unitTypeLabel(r)}</span>` : ''}
                     </td>
                     <td class="py-4 px-6">
                         <button onclick="openEstadoCuenta('${r.id}')" class="text-left font-medium text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition" title="Ver estado de cuenta">${esc(r.name)}</button>${closedBadge}${moraBadge}
@@ -3620,6 +3728,7 @@
             opt('ownerGroup', resOwnerGroupOf(nit));
             opt('direccion', val('res-direccion'));
             opt('waterUnits', SisdelCuotas.waterUnits({ waterUnits: val('res-water') }));
+            opt('unitType', isUnitType(val('res-unit-type')) ? val('res-unit-type') : '');   // SISDEL: 'lote' o 'casa'
             let newResidentId = null;
             if (id) {
                 const idx = res.findIndex(r => String(r.id) === String(id));
@@ -4284,6 +4393,9 @@
                 if (!isResidentActive(r)) closedNote.textContent = `Residente finiquitado el ${r.closedAt ? new Date(r.closedAt).toLocaleDateString('es-MX') : '—'}${r.closeReason ? ' · ' + r.closeReason : ''}. No recibe cargos automáticos.`;
             }
             document.getElementById('res-unit').value = r.unit;
+            // SISDEL: lote o casa (unitType). Un residente que ya existia sin tipo se puede seguir editando sin elegirlo
+            const typeEl = document.getElementById('res-unit-type');
+            if (typeEl) { typeEl.value = isUnitType(r.unitType) ? r.unitType : ''; typeEl.required = false; }
             document.getElementById('res-name').value = r.name;
             document.getElementById('res-dpi').value = r.dpi || '';
             const notesEl = document.getElementById('res-notes'); if (notesEl) notesEl.value = r.notes || '';
@@ -5548,6 +5660,11 @@
             const ownersWrap = document.getElementById('rep-owners-filters');
             if (ownersWrap) ownersWrap.style.display = key === 'owners' ? '' : 'none';
             if (key === 'owners') ownersPrepareFilters();
+            // SISDEL: lote o casa: el filtro va en los reportes por residente
+            const typeWrap = document.getElementById('rep-type-wrap');
+            const byResident = key === 'morosos' || key === 'pay-map' || key === 'owners';
+            if (typeWrap) typeWrap.style.display = byResident ? '' : 'none';
+            if (byResident) unitTypeOptions(document.getElementById('rep-type'), unitTypeCounts(Store.get('residents') || []), repTypeFilter || '');
             renderCurrentReport();
         }
 
@@ -6098,7 +6215,7 @@
             const money = (x) => (x > 0 ? formatMoney(x) : '—');
             return {
                 title: 'Vecinos con morosidad — meses adeudados',
-                summary: rows.length + ' residente(s) deben · cuota ' + formatMoney(fee) + ' · al ' + today + ' · de mayor a menor total que debe',
+                summary: rows.length + ' residente(s) deben · cuota ' + formatMoney(fee) + ' · al ' + today + ' · de mayor a menor total que debe' + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
                 hideSummary: true,
                 kpisFromTotals: false,
                 highlights: [{ tone: 'owed', value: String(rows.length), label: rows.length === 1 ? 'residente debe' : 'residentes deben' }].concat(sisdelDebtHighlights(debt)),
@@ -6417,7 +6534,7 @@
         // vencer): late + upcoming = owed.pending y owed.pending + owed.mora = owed.total, siempre.
         function sisdelPayMap() {
             const today = localDayKey(new Date());
-            const residents = Store.get('residents') || [];
+            const residents = reportResidents();   // SISDEL: todos, o solo lotes / solo casas segun el filtro del reporte
             // Residentes de la carga inicial (dados de alta hasta un dia despues de la carga): sus meses anteriores a
             // "cobrar desde" sin cuota cuentan como pagados. Uno que entro despues no: antes de entrar no debia nada.
             const loadAt = sisdelInitialLoadAt();
@@ -6472,7 +6589,7 @@
             const debt = { pending: sum(x => x.owed.pending), mora: sum(x => x.owed.mora), total: sum(x => x.owed.total) };
             return {
                 title: 'Tabla general',
-                summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe',
+                summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe' + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
                 hideSummary: true,
                 kpisFromTotals: false,
                 // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); tambien
@@ -6563,7 +6680,7 @@
             const R = SisdelReportesOikos;
             const f = ownersFilters();
             const today = localDayKey(new Date());
-            const list = R.ownersList(Store.get('residents') || [], Store.get('transactions') || [], {
+            const list = R.ownersList(reportResidents(), Store.get('transactions') || [], {
                 dayKey: localDayKey, feePeriodOf: txFeePeriod, from: f.from, to: f.to, fase: f.fase, order: f.order, onlyDebt: f.onlyDebt,
                 owedOf: sisdelOwedOf, phoneOf: (r) => r.contact,
                 moraItemsOf: (r) => { const ms = sisdelMoraOf(r.id); return ms && Array.isArray(ms.items) ? ms.items : null; }
@@ -6576,7 +6693,7 @@
                     : f.from ? 'desde ' + mon(f.from) : 'hasta ' + mon(f.to);
             const faseText = f.fase === R.NO_FASE ? 'sin fase' : f.fase ? 'fase ' + f.fase : 'todas las fases';
             const orderText = f.order === 'debt' ? 'de mayor a menor deuda' : 'en orden alfabético';
-            const filtersText = 'Período: ' + periodText + ' · ' + faseText + ' · ' + orderText + (f.onlyDebt ? ' · solo los que deben' : '');
+            const filtersText = 'Período: ' + periodText + ' · ' + faseText + ' · ' + orderText + (f.onlyDebt ? ' · solo los que deben' : '') + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : '');
             const zero = (v) => (v > 0 ? formatMoney(v) : '<span class="text-slate-400 dark:text-slate-500">' + formatMoney(0) + '</span>');
             const total = (v) => (v > 0 ? '<span class="font-semibold text-rose-600 dark:text-rose-400">' + formatMoney(v) + '</span>' : zero(0));
             const rows = list.rows.map(x => [
@@ -7306,6 +7423,8 @@
                 residentBeingEditedId = null;
                 const titleEl = document.getElementById('title-modal-res'); if (titleEl) titleEl.textContent = 'Nuevo Residente';
                 const unitEl = document.getElementById('res-unit'); if (unitEl) unitEl.value = nextResidentRef();
+                // SISDEL: un residente nuevo tiene que decir si es lote o casa (los reportes se sacan por separado)
+                const typeEl = document.getElementById('res-unit-type'); if (typeEl) { typeEl.value = ''; typeEl.required = true; }
                 const nameEl = document.getElementById('res-name'); if (nameEl) nameEl.value = '';
                 const dpiEl = document.getElementById('res-dpi'); if (dpiEl) dpiEl.value = '';
                 const ccEl = document.getElementById('res-country-code'); if (ccEl) ccEl.value = '+502';

@@ -112,7 +112,7 @@ yes('pasar a otro vecino con cambios sin guardar pregunta antes', /function resG
 yes('Anterior y Siguiente recorren la lista tal como se ve (con su busqueda)', /function resNeighbors\(id\) \{\s*let list = visibleResidents\(\);/.test(oikos));
 yes('registrar un ingreso y cargar a un residente tienen busqueda dentro de la lista', /initResidentPicker\('inc-resident'\)/.test(oikos) && /initResidentPicker\('bulk-resident'\)/.test(oikos) && /function filterResidentPicker\(selectId\)/.test(oikos));
 yes('mientras se busca no queda ningun vecino elegido por accidente', /sel\.selectedIndex = -1;/.test(oikos) && /sel\.size = Math\.min\(6, Math\.max\(2, found\.length\)\)/.test(oikos));
-yes('la navegacion y el buscador tambien se ocultan por privilegio (residentes_editar)', /\['#residents-table-body button\[onclick\^="editResident\("\]', '#res-nav', '#res-jump-wrap'\]/.test(read('finanzas-bloqueo.js')));
+yes('la navegacion y el buscador tambien se ocultan por privilegio (residentes_editar)', /\['#residents-table-body button\[onclick\^="editResident\("\]', '#res-nav', '#res-jump-wrap'[,\]]/.test(read('finanzas-bloqueo.js')));
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) { console.log(failures.map((f) => ` - ${f}`).join('\n')); process.exit(1); }

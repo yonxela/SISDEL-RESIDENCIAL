@@ -41,10 +41,11 @@
         residents: ['residentes_ver'],
         accounting: ['contabilidad_ver'],
         banks: ['bancos_ver'],
+        chats: ['whatsapp_chat'],
         reports: REPORT_KEYS,
         settings: ['config_ver']
     };
-    const VIEW_ORDER = ['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'];
+    const VIEW_ORDER = ['dashboard', 'residents', 'chats', 'accounting', 'banks', 'reports', 'settings'];
 
     const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos' };
     const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'account-statement'];
@@ -64,6 +65,8 @@
         [/^(openFiniquito|reactivateResident|handleFiniquitoSubmit)\(/, ['residentes_finiquitar']],
         [/^deleteResident\(/, ['residentes_eliminar']],
         [/^openEstadoCuenta\(/, ['residentes_estado']],
+        // Chat de WhatsApp con los residentes (la pantalla Chats WhatsApp y el boton del menu de cada residente)
+        [/^(openResidentChat|openChat|startChatWith|toggleChatNew|setChatFilter|sendChatFromInput|loadChatHistoryNow)\(/, ['whatsapp_chat']],
         [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
         // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
         [/^saveReminderMessages\(/, ['config_general']],
@@ -105,6 +108,7 @@
         [VIEWS.residents, ['#nav-residents', '#view-residents']],
         [VIEWS.accounting, ['#nav-accounting', '#view-accounting']],
         [VIEWS.banks, ['#nav-banks', '#view-banks']],
+        [VIEWS.chats, ['#nav-chats', '#view-chats', '#residents-table-body .dropdown button[onclick^="openResidentChat("]']],
         [VIEWS.reports, ['#nav-reports', '#view-reports']],
         [VIEWS.settings, ['#nav-settings', '#view-settings']],
         [['deshacer'], ['#btn-undo-header', '#btn-redo-header']],

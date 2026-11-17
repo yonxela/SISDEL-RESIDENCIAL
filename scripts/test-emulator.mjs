@@ -463,6 +463,27 @@ async function run() {
             && entries.some((e) => e.collection === 'finanzas_config' && e.docId === 'bancos');
     });
 
+    // ───────── Chat de WhatsApp con los residentes (functions/src/whatsapp-chat.js) ─────────
+    console.log('\nChat de WhatsApp');
+    const sendChat = (c, data) => httpsCallable(c.functions, 'sendChatMessage')(data);
+    const ANA_TEL = '50255555678';
+    const chatSent = await sendChat(admin, { residentId: 'u-ana', text: 'Hola Ana, prueba del chat' });
+    equal('el administrador le escribe a un residente por su ficha (WhatsApp simulado): va al telefono de la ficha', [chatSent.data.ok, chatSent.data.chatId], [true, ANA_TEL]);
+    await allowed('el administrador lee los chats de su condominio', () => getDocs(collection(admin.db, `condominios/${A}/whatsapp_chats`)));
+    await allowed('y sus mensajes', () => getDocs(collection(admin.db, `condominios/${A}/whatsapp_chats/${ANA_TEL}/wa_mensajes`)));
+    await denied('un vecino no lee los chats', () => getDocs(collection(ana.db, `condominios/${A}/whatsapp_chats`)));
+    await denied('el auditor no lee los chats (el privilegio es solo del administrador)', () => getDocs(collection(auditor.db, `condominios/${A}/whatsapp_chats`)));
+    await denied('el admin de otro condominio no lee estos chats', () => getDocs(collection(luciaFin.db, `condominios/${A}/whatsapp_chats`)));
+    await denied('nadie escribe un chat desde el navegador', () => setDoc(doc(admin.db, `condominios/${A}/whatsapp_chats/${ANA_TEL}`), { unread: 0 }, { merge: true }));
+    await denied('ni un mensaje', () => setDoc(doc(admin.db, `condominios/${A}/whatsapp_chats/${ANA_TEL}/wa_mensajes/falso`), { body: 'falso', fromMe: false }));
+    await denied('los mensajes de numeros que no son de nadie solo los lee el master', () => getDocs(collection(admin.db, 'whatsapp_sin_asignar')));
+    await denied('un vecino no envia por el WhatsApp del condominio', () => sendChat(ana, { chatId: ANA_TEL, text: 'Hola' }));
+    await denied('ni el auditor', () => sendChat(auditor, { residentId: 'u-ana', text: 'Hola' }));
+    await refusedWith('el admin de otro condominio no le escribe a un chat de este', () => sendChat(luciaFin, { chatId: ANA_TEL, text: 'Hola' }), 'not-found');
+    await refusedWith('no se le escribe a un numero cualquiera', () => sendChat(admin, { chatId: '50299990000', text: 'Hola' }), 'not-found');
+    const chatRead = await httpsCallable(admin.functions, 'markChatRead')({ chatId: ANA_TEL });
+    equal('marcar como leido funciona', chatRead.data.ok, true);
+
     // ───────── Mora automatica: el Sistema Financiero decide el estado de pago ─────────
     console.log('\nMora automatica');
     const condoA = () => getDoc(doc(admin.db, `condominios/${A}`)).then((d) => d.data());

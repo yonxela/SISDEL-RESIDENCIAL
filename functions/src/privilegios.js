@@ -173,6 +173,9 @@
                 { key: 'finanzas.config_conceptos', sub: 'Configuración', parent: 'finanzas.usar', label: 'Editar los conceptos frecuentes', description: 'Los conceptos de ingresos y egresos que se repiten.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
 
                 { key: 'finanzas.deshacer', sub: 'Datos', parent: 'finanzas.usar', label: 'Deshacer y rehacer', description: 'Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas.', requires: ['finanzas.ver'], sensitive: true, enforce: 'reglas' },
+                // Chat de WhatsApp con los residentes (pedido del dueno, 2026-11-17): paraguas propio, del administrador por defecto;
+                // a cualquier otro usuario se le da en Configuracion. Las reglas solo dejan leer; escribe el servidor (whatsapp-chat.js).
+                { key: 'finanzas.whatsapp_chat', sub: 'WhatsApp', label: 'Chat de WhatsApp con residentes', description: 'La pantalla Chats WhatsApp de OIKOS: ver las conversaciones con los residentes (lo que se les envió, si les llegó y si lo leyeron, y lo que respondieron) y contestarles desde el WhatsApp del condominio. Son conversaciones privadas.', roles: ['admin'], sensitive: true, enforce: 'reglas' },
             ]
         },
         {
@@ -395,7 +398,7 @@
         {
             id: 'sys-admin-sin-finanzas', name: 'Administrador sin finanzas', role: 'admin', system: true,
             description: 'Administrador completo, salvo el Sistema Financiero.',
-            claves: without(adminKeys, 'finanzas.ver', 'finanzas.usar', 'reportes.finanzas')
+            claves: without(adminKeys, 'finanzas.ver', 'finanzas.usar', 'reportes.finanzas', 'finanzas.whatsapp_chat')
         }
     ];
     // Privilegios por defecto de un rol: los raiz segun `roles` y, con ellos, todas sus acciones

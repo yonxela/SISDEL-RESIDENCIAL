@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-150 privilegios: 31 paraguas y 119 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+151 privilegios: 32 paraguas y 119 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Usuarios y vecinos
 
@@ -170,6 +170,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.config_cuota` | Cambiar la cuota y el cobro **(sensible)**. Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora. | los de su paraguas | Reglas |
 | `finanzas.config_conceptos` | Editar los conceptos frecuentes. Los conceptos de ingresos y egresos que se repiten. | los de su paraguas | Reglas |
 | `finanzas.deshacer` | Deshacer y rehacer **(sensible)**. Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas. | los de su paraguas | Reglas |
+| `finanzas.whatsapp_chat` | Chat de WhatsApp con residentes **(sensible)**. La pantalla Chats WhatsApp de OIKOS: ver las conversaciones con los residentes (lo que se les envió, si les llegó y si lo leyeron, y lo que respondieron) y contestarles desde el WhatsApp del condominio. Son conversaciones privadas. | `admin` | Reglas |
 
 ### Rondas de vigilancia (RONDIN)
 
@@ -360,6 +361,8 @@ condominios/{condoId}
     finanzas_config/bancos          historial de la cuenta favorita de Bancos (solo lo escribe el servidor: setFavoriteBank)
     finanzas_bancos/{id}            cuentas bancarias (banco, numero, tipo, moneda, saldo y fecha de apertura; el saldo no se guarda)
     finanzas_bancos_movs/{id}       movimientos bancarios hechos a mano (depositos, retiros, transferencias, cheques, comisiones...; se anulan, no se borran)
+    whatsapp_chats/{telefono}       chat de WhatsApp con un residente (nombres, lotes, ultimo mensaje, no leidos); lo escribe solo el servidor
+      wa_mensajes/{id}              cada mensaje que entra o sale, con sus palomitas (en cola, enviado, entregado, leido); no se borran
     bitacora/{id}                   rastro de cada cambio a usuarios, vehiculos y Sistema Financiero: quien, cuando y el valor de antes y de despues (solo la escribe el servidor)
     rondas_config/general           configuracion de RONDIN (boton de panico de vecinos)
     rondas_personal/{userId}        expediente del guardia (DPI, sangre, supervisor)
@@ -379,6 +382,7 @@ condominios/{condoId}
 codigos/{codigo}            índice único código -> usuario
 mensajes_globales/{msgId}   mensajes del master para todos
 camera_logs_huerfanos/      lecturas de cámara sin condominio válido
+whatsapp_sin_asignar/       mensajes de WhatsApp de números que no son de ningún usuario (solo el master los lee)
 _privado/                   solo servidor (huella del código master, límites de intentos)
 ```
 

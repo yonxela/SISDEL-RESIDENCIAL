@@ -137,6 +137,7 @@ service cloud.firestore {
     function pFinanzasConfigCuota(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_cuota'); }
     function pFinanzasConfigConceptos(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.config_conceptos'); }
     function pFinanzasDeshacer(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.deshacer'); }
+    function pFinanzasWhatsappChat(c) { return can(c, 'finanzas.whatsapp_chat', ['admin']); }
     // Rondas de vigilancia (RONDIN)
     function pRondasVer(c) { return can(c, 'rondas.ver', ['admin', 'supervisor', 'auditor']); }
     function pRondasGestionar(c) { return can(c, 'rondas.gestionar', ['admin', 'supervisor']); }
@@ -248,6 +249,16 @@ service cloud.firestore {
         || (pMensajesRecibir(request.auth.token.get('condominioId', ''))
             && notAuditor(request.auth.token.get('condominioId', ''))
             && onlyChanges(['read']));
+    }
+
+    // ── Mensajes de WhatsApp de numeros que no son de ningun residente (whatsapp-chat.js): solo el master ──
+    match /whatsapp_sin_asignar/{chatId} {
+      allow read: if isMaster();
+      allow write: if false;
+      match /wa_mensajes/{msgId} {
+        allow read: if isMaster();
+        allow write: if false;
+      }
     }
 
     // ── Lecturas de camara sin condominio valido ──
@@ -708,6 +719,18 @@ service cloud.firestore {
         allow write: if false;
         match /destinatarios/{rid} {
           allow read: if isMaster() || pFinanzasResidentesContactar(condoId);
+          allow write: if false;
+        }
+      }
+
+      // Chat de WhatsApp con los residentes (functions/src/whatsapp-chat*.js): un chat por telefono, con sus mensajes en
+      // wa_mensajes (no "mensajes": el master lee todas las colecciones mensajes como mensajes internos). Los escribe solo el
+      // servidor (webhook de UltraMsg y las funciones que envian); los lee quien tiene el chat de WhatsApp. Nada se borra.
+      match /whatsapp_chats/{chatId} {
+        allow read: if isMaster() || pFinanzasWhatsappChat(condoId);
+        allow write: if false;
+        match /wa_mensajes/{msgId} {
+          allow read: if isMaster() || pFinanzasWhatsappChat(condoId);
           allow write: if false;
         }
       }

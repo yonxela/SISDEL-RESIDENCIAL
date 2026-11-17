@@ -456,6 +456,8 @@
             <nav class="flex-1 px-3 space-y-1.5">
                 <a href="#" onclick="navigate('dashboard')" id="nav-dashboard" class="nav-item flex items-center space-x-3 px-3 py-2.5 bg-blue-600/10 text-blue-400 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full" id="indicator-dashboard"></div><i class="fas fa-chart-pie w-5 text-center"></i><span class="font-medium" id="lbl-nav-dash">Dashboard</span></a>
                 <a href="#" onclick="navigate('residents')" id="nav-residents" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-residents"></div><i class="fas fa-users w-5 text-center"></i><span class="font-medium" id="lbl-nav-res">Residentes</span></a>
+                <!-- SISDEL: chat de WhatsApp con los residentes (finanzas-chats.js); se muestra solo con el privilegio -->
+                <a href="#" onclick="navigate('chats')" id="nav-chats" class="nav-item hidden flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-chats"></div><i class="fab fa-whatsapp w-5 text-center"></i><span class="font-medium">Chats WhatsApp</span><span id="nav-chats-badge" class="hidden ml-auto min-w-[1.4rem] text-center px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[11px] font-bold leading-none"></span></a>
                 <a href="#" onclick="navigate('accounting')" id="nav-accounting" class="nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-accounting"></div><i class="fas fa-wallet w-5 text-center"></i><span class="font-medium" id="lbl-nav-acc">Contabilidad</span></a>
                 <!-- SISDEL: Bancos (finanzas-bancos.js + finanzas/sisdel-bancos.js); se muestra solo si el usuario puede verlos -->
                 <a href="#" onclick="navigate('banks')" id="nav-banks" class="nav-item hidden flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group"><div class="indicator absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full opacity-0 hidden" id="indicator-banks"></div><i class="fas fa-university w-5 text-center"></i><span class="font-medium">Bancos</span></a>
@@ -636,6 +638,34 @@
                         </div>
                         <div class="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700"><h4 class="font-semibold text-rose-600 mb-4" id="lbl-set-data">Gestión de Datos</h4><div class="flex space-x-4"><button onclick="exportCSV()" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-medium transition" id="btn-export">Exportar CSV</button></div></div>
                         <div class="mt-8 flex justify-end"><button onclick="saveSettings()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow-md" id="btn-save-cfg">Guardar Cambios</button></div>
+                    </div>
+                </div>
+                <!-- SISDEL: VISTA CHATS WHATSAPP. Las conversaciones con los residentes viven en Firestore (whatsapp_chats y wa_mensajes):
+                     las guarda el servidor con los avisos de UltraMsg (mensajes que entran y salen, y sus palomitas). Enviar, marcar
+                     como leido y traer los mensajes de antes los hace el servidor (functions/src/whatsapp-chat.js). -->
+                <div id="view-chats" class="hidden-section fade-in">
+                    <div class="flex flex-col md:flex-row gap-4 h-[calc(100vh-10.5rem)] min-h-[28rem]">
+                        <!-- Lista de chats -->
+                        <div id="chat-list-pane" class="md:w-[22rem] shrink-0 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                            <div class="p-3 border-b border-slate-100 dark:border-slate-700 space-y-2">
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="chat-search" autocomplete="off" oninput="renderChatList()" class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Buscar chat..."></div>
+                                    <button type="button" onclick="toggleChatNew()" id="btn-chat-new" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition" title="Escribirle a un residente"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div id="chat-new-wrap" class="hidden">
+                                    <input type="text" id="chat-new-search" autocomplete="off" oninput="renderChatNew()" class="w-full px-3 py-2 bg-white dark:bg-slate-900 dark:text-white border border-emerald-300 dark:border-emerald-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Nuevo chat: nombre, casa o teléfono del residente">
+                                    <div id="chat-new-results" class="mt-1 max-h-60 overflow-y-auto"></div>
+                                </div>
+                                <div class="flex gap-1.5 text-xs font-semibold">
+                                    <button type="button" onclick="setChatFilter('all')" id="chat-filter-all" class="px-3 py-1.5 rounded-full">Todos</button>
+                                    <button type="button" onclick="setChatFilter('unread')" id="chat-filter-unread" class="px-3 py-1.5 rounded-full">No leídos</button>
+                                </div>
+                            </div>
+                            <div id="chat-list" class="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700"></div>
+                            <p id="chat-list-note" class="px-3 py-2 text-[11px] text-slate-400 border-t border-slate-100 dark:border-slate-700"></p>
+                        </div>
+                        <!-- Conversacion -->
+                        <div id="chat-pane" class="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden"></div>
                     </div>
                 </div>
                 <!-- SISDEL: VISTA BANCOS. Las cuentas y sus movimientos a mano viven en Firestore (finanzas-bancos.js); los pagos y gastos de
@@ -2485,7 +2515,7 @@
 
         // ========== NAVIGATION ==========
         function navigate(v) {
-            ['dashboard', 'residents', 'accounting', 'banks', 'reports', 'settings'].forEach(x => {
+            ['dashboard', 'residents', 'chats', 'accounting', 'banks', 'reports', 'settings'].forEach(x => {
                 document.getElementById(`view-${x}`).classList.add('hidden-section');
                 document.getElementById(`indicator-${x}`).classList.add('hidden', 'opacity-0');
                 document.getElementById(`nav-${x}`).className = 'nav-item flex items-center space-x-3 px-3 py-2.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition relative group';
@@ -2496,15 +2526,308 @@
             const s = Store.get('settings');
             // SISDEL: el menu Bancos solo aparece si hay bancos (SISDEL con el privilegio de verlos)
             if (!sisdelBanks()) document.getElementById('nav-banks').classList.add('hidden');
-            const titles = { dashboard: 'Dashboard', residents: 'Residentes', accounting: 'Contabilidad', banks: 'Bancos', reports: 'Reportes', settings: 'Configuración' };
+            // SISDEL: el menu Chats WhatsApp solo aparece con el chat (SISDEL con el privilegio); su numero = chats sin leer
+            if (!sisdelChatsApi()) document.getElementById('nav-chats').classList.add('hidden');
+            else ensureChatsSubscription();
+            const titles = { dashboard: 'Dashboard', residents: 'Residentes', chats: 'Chats WhatsApp', accounting: 'Contabilidad', banks: 'Bancos', reports: 'Reportes', settings: 'Configuración' };
             document.getElementById('page-title').innerText = titles[v];
             currentView = v;
             if (v === 'dashboard') { renderDashboard(); renderBankDashboard(); }
             if (v === 'banks') initBanks();
+            if (v === 'chats') initChats();
+            else stopChatMessages();
             if (v === 'residents') renderResidents();
             if (v === 'accounting') renderAccounting();
             if (v === 'reports') initReports();
             if (v === 'settings') renderSettings();
+        }
+
+        // ========== SISDEL: CHATS DE WHATSAPP ==========
+        // Datos: window.parent.sisdelChats (finanzas-chats.js, en finanzas.html): la lista de chats y los mensajes en tiempo
+        // real. Enviar, marcar como leido y traer los mensajes de antes los hace el servidor. Las palomitas: reloj = en cola,
+        // una gris = enviado, dos grises = entregado, dos azules = leido (o escuchado). Todo texto se escapa al pintarlo.
+        // Con var y function (no let/const): navigate() puede llamarlas al arrancar, antes de llegar a estas lineas.
+        function sisdelChatsApi() {
+            try { return window.parent && window.parent !== window && window.parent.sisdelChats && window.parent.sisdelChats.available ? window.parent.sisdelChats : null; } catch (e) { return null; }
+        }
+        var chatCurrentId = null;        // telefono del chat abierto
+        var chatNewResident = null;      // residente al que se le escribe por primera vez (aun sin chat)
+        var chatMessages = [];
+        var chatStopMessages = null;
+        var chatListUnsub;   // sin valor inicial: navigate() puede suscribirse antes de llegar a esta linea
+        var chatFilter = 'all';
+        var chatHistoryAsked = {};
+        var chatSending = false;
+        var chatReadTimer = null;
+        function chatEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function chatPhoneText(phone) {
+            const d = String(phone || '');
+            return d.length === 11 && d.startsWith('502') ? '+502 ' + d.slice(3, 7) + ' ' + d.slice(7) : (d ? '+' + d : '');
+        }
+        function chatTitle(c) {
+            const names = (c.names || []).filter(Boolean);
+            return names.length ? names.join(' / ') : (c.lastPushname || chatPhoneText(c.phone || c.id));
+        }
+        function chatTimeText(iso) {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return '';
+            const today = localDayKey(new Date());
+            const day = localDayKey(d);
+            if (day === today) return d.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+            const y = new Date(); y.setDate(y.getDate() - 1);
+            if (day === localDayKey(y)) return 'Ayer';
+            return d.toLocaleDateString('es-GT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+        }
+        function chatTicks(ack) {
+            if (ack === 'failed') return '<i class="fas fa-exclamation-circle text-rose-500" title="No se envió"></i>';
+            if (!ack || ack === 'pending') return '<i class="far fa-clock text-slate-400" title="En cola"></i>';
+            if (ack === 'server') return '<i class="fas fa-check text-slate-400" title="Enviado"></i>';
+            const read = ack === 'read' || ack === 'played';
+            return '<i class="fas fa-check-double ' + (read ? 'text-sky-500' : 'text-slate-400') + '" title="' + (read ? (ack === 'played' ? 'Escuchado' : 'Leído') : 'Entregado') + '"></i>';
+        }
+        var CHAT_TYPES = { image: 'Imagen', sticker: 'Sticker', ptt: 'Nota de voz', audio: 'Audio', video: 'Video', document: 'Documento', location: 'Ubicación', vcard: 'Contacto', revoked: 'Mensaje eliminado' };
+        function chatTypeLabel(type) { return CHAT_TYPES[type] || 'Mensaje'; }
+        function ensureChatsSubscription() {
+            const api = sisdelChatsApi();
+            if (!api || chatListUnsub) return;
+            chatListUnsub = 'pendiente';   // subscribe avisa enseguida: que no vuelva a entrar aqui
+            chatListUnsub = api.subscribe(function () {
+                updateChatsBadge();
+                if (currentView === 'chats') { renderChatList(); if (chatCurrentId) renderChatHeader(); }
+            });
+        }
+        function updateChatsBadge() {
+            const api = sisdelChatsApi();
+            const badge = document.getElementById('nav-chats-badge');
+            if (!badge) return;
+            const n = api ? api.state.unread : 0;
+            badge.textContent = n > 99 ? '99+' : String(n);
+            badge.classList.toggle('hidden', !n);
+        }
+        function initChats() {
+            ensureChatsSubscription();
+            setChatFilter(chatFilter);
+            renderChatPane();
+        }
+        function stopChatMessages() {
+            if (typeof chatStopMessages === 'function') { try { chatStopMessages(); } catch (e) { /* ya detenido */ } }
+            chatStopMessages = null;
+        }
+        function setChatFilter(kind) {
+            chatFilter = kind === 'unread' ? 'unread' : 'all';
+            ['all', 'unread'].forEach(function (k) {
+                const b = document.getElementById('chat-filter-' + k);
+                if (b) b.className = 'px-3 py-1.5 rounded-full ' + (k === chatFilter ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300');
+            });
+            renderChatList();
+        }
+        function chatOf(id) {
+            const api = sisdelChatsApi();
+            return api ? api.state.chats.find(function (c) { return c.id === id; }) || null : null;
+        }
+        function renderChatList() {
+            const api = sisdelChatsApi();
+            const list = document.getElementById('chat-list');
+            const note = document.getElementById('chat-list-note');
+            if (!list) return;
+            if (!api) { list.innerHTML = ''; return; }
+            const st = api.state;
+            if (!st.ready) { list.innerHTML = '<p class="p-6 text-center text-sm text-slate-400"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando chats...</p>'; return; }
+            if (st.error) { list.innerHTML = '<p class="p-6 text-center text-sm text-rose-500">' + chatEsc(st.error) + '</p>'; return; }
+            const text = document.getElementById('chat-search')?.value || '';
+            let chats = st.chats.filter(function (c) { return chatFilter === 'all' || c.unread > 0; });
+            if (text.trim()) chats = SisdelBusqueda.filter(chats, text, function (c) { return [(c.names || []).join(' '), (c.units || []).join(' '), c.phone || c.id, c.lastPushname || '']; });
+            if (note) note.textContent = st.chats.length + ' chat(s)' + (st.unread ? ' · ' + st.unread + ' sin leer' : '');
+            if (!chats.length) {
+                list.innerHTML = '<p class="p-6 text-center text-sm text-slate-400">' + (st.chats.length ? 'Ningún chat coincide.' : 'Todavía no hay conversaciones. Cuando un residente escriba o se le envíe un mensaje, aparece aquí. Para escribirle a alguien use <i class="fas fa-plus"></i>.') + '</p>';
+                return;
+            }
+            const mark = function (v) { return text.trim() ? SisdelBusqueda.highlight(v, text) : chatEsc(v); };
+            list.innerHTML = chats.map(function (c) {
+                const last = c.lastMessage || {};
+                const preview = (last.fromMe ? chatTicks(last.ack) + ' ' : '') + chatEsc(last.text || (last.type && last.type !== 'chat' ? '[' + chatTypeLabel(last.type) + ']' : ''));
+                const active = c.id === chatCurrentId;
+                const unread = c.unread > 0 ? '<span class="ml-2 min-w-[1.3rem] text-center px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[11px] font-bold">' + (c.unread > 99 ? '99+' : c.unread) + '</span>' : '';
+                return '<button type="button" onclick="openChat(this.dataset.id)" data-id="' + chatEsc(c.id) + '" class="w-full text-left px-3 py-2.5 flex gap-3 items-start transition ' + (active ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-700/40') + '">'
+                    + '<span class="w-10 h-10 shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold">' + chatEsc((chatTitle(c)[0] || '?').toUpperCase()) + '</span>'
+                    + '<span class="flex-1 min-w-0"><span class="flex items-center justify-between gap-2"><span class="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">' + mark(chatTitle(c)) + '</span><span class="text-[11px] shrink-0 ' + (c.unread > 0 ? 'text-emerald-600 font-bold' : 'text-slate-400') + '">' + chatEsc(chatTimeText(c.lastAt)) + '</span></span>'
+                    + '<span class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500 dark:text-slate-400 truncate">' + ((c.units || []).length ? '<b>' + mark((c.units || []).join(', ')) + '</b> · ' : '') + preview + '</span>' + unread + '</span></span>'
+                    + '</button>';
+            }).join('');
+        }
+        // Abrir un chat (por su telefono)
+        function openChat(id) {
+            stopChatMessages();
+            chatCurrentId = String(id || '') || null;
+            chatNewResident = null;
+            chatMessages = [];
+            renderChatList();
+            renderChatPane();
+            const api = sisdelChatsApi();
+            if (!api || !chatCurrentId) return;
+            const opened = chatCurrentId;
+            chatStopMessages = api.watchMessages(opened, function (list, error) {
+                if (opened !== chatCurrentId) return;
+                if (error) { renderChatMessages('No se pudieron leer los mensajes. Revise su conexión.'); return; }
+                // Un enviado que quedo repetido (su aviso llego en otro orden) no se muestra dos veces
+                chatMessages = (list || []).filter(function (m) { return !m.duplicateOf; });
+                renderChatMessages();
+                scheduleChatRead();
+                // La primera vez que se abre un chat con pocos mensajes se traen los de antes (los guarda UltraMsg)
+                const c = chatOf(opened);
+                if (c && !c.historyLoadedAt && !chatHistoryAsked[opened] && chatMessages.length < 10) {
+                    chatHistoryAsked[opened] = true;
+                    api.loadHistory(opened).catch(function () { /* sin historial: sigue con lo que hay */ });
+                }
+            });
+            scheduleChatRead();
+        }
+        // Marca como leido el chat abierto (si la pantalla se esta viendo)
+        function scheduleChatRead() {
+            clearTimeout(chatReadTimer);
+            chatReadTimer = setTimeout(function () {
+                const c = chatOf(chatCurrentId);
+                const api = sisdelChatsApi();
+                if (!c || !api || !(c.unread > 0) || currentView !== 'chats' || document.visibilityState !== 'visible') return;
+                api.markRead(c.id).catch(function () { /* se marcara la proxima vez */ });
+            }, 800);
+        }
+        // Desde Residentes: abrir el chat del residente o empezar uno nuevo
+        function openResidentChat(residentId) {
+            navigate('chats');
+            const api = sisdelChatsApi();
+            if (!api) return;
+            const existing = api.state.chats.find(function (c) { return (c.residentIds || []).indexOf(String(residentId)) >= 0; });
+            if (existing) { openChat(existing.id); return; }
+            const r = (Store.get('residents') || []).find(function (x) { return String(x.id) === String(residentId); });
+            if (!r) return;
+            stopChatMessages();
+            chatCurrentId = null;
+            chatNewResident = r;
+            chatMessages = [];
+            renderChatList();
+            renderChatPane();
+        }
+        function toggleChatNew() {
+            const wrap = document.getElementById('chat-new-wrap');
+            if (!wrap) return;
+            wrap.classList.toggle('hidden');
+            if (!wrap.classList.contains('hidden')) { const i = document.getElementById('chat-new-search'); i.value = ''; renderChatNew(); i.focus(); }
+        }
+        function renderChatNew() {
+            const box = document.getElementById('chat-new-results');
+            const text = document.getElementById('chat-new-search')?.value || '';
+            if (!box) return;
+            if (!text.trim()) { box.innerHTML = '<p class="px-2 py-2 text-xs text-slate-400">Escriba el nombre, la casa o el teléfono.</p>'; return; }
+            const found = SisdelBusqueda.filter((Store.get('residents') || []).filter(isResidentActive), text, residentSearchFields, { limit: 8 });
+            box.innerHTML = found.length ? found.map(function (r) {
+                return '<button type="button" onclick="startChatWith(this.dataset.id)" data-id="' + chatEsc(r.id) + '" class="w-full text-left px-2 py-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-sm"><b>' + SisdelBusqueda.highlight(r.unit || '—', text) + '</b> · ' + SisdelBusqueda.highlight(r.name || '', text) + (r.contact ? '' : ' <span class="text-xs text-rose-500">(sin teléfono)</span>') + '</button>';
+            }).join('') : '<p class="px-2 py-2 text-xs text-slate-400">Ningún residente coincide.</p>';
+        }
+        function startChatWith(residentId) {
+            const wrap = document.getElementById('chat-new-wrap');
+            if (wrap) wrap.classList.add('hidden');
+            openResidentChat(residentId);
+        }
+        function renderChatHeader() {
+            const head = document.getElementById('chat-head');
+            if (!head) return;
+            const c = chatOf(chatCurrentId);
+            const r = chatNewResident;
+            const title = c ? chatTitle(c) : (r ? r.name : '');
+            const units = c ? (c.units || []).join(', ') : (r ? r.unit || '' : '');
+            const phone = c ? chatPhoneText(c.phone || c.id) : (r ? (r.contact || 'sin teléfono') : '');
+            const ids = c ? (c.residentIds || []) : (r ? [r.id] : []);
+            const pushname = c && c.lastPushname && (c.names || []).length ? ' · en WhatsApp: ' + chatEsc(c.lastPushname) : '';
+            head.innerHTML = '<div class="min-w-0"><p class="font-bold text-slate-800 dark:text-white truncate">' + chatEsc(title) + '</p><p class="text-xs text-slate-500 dark:text-slate-400 truncate">' + (units ? '<b>' + chatEsc(units) + '</b> · ' : '') + chatEsc(phone) + pushname + (c && !(c.residentIds || []).length ? ' · <span class="text-amber-600">no está en la lista de residentes</span>' : '') + '</p></div>'
+                + '<div class="flex gap-2 shrink-0">'
+                + (ids.length === 1 ? '<button type="button" onclick="openEstadoCuenta(this.dataset.id)" data-id="' + chatEsc(ids[0]) + '" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300"><i class="fas fa-file-invoice-dollar mr-1"></i>Estado de cuenta</button>' : '')
+                + (c ? '<button type="button" onclick="loadChatHistoryNow()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200" title="Trae los últimos mensajes que guarda WhatsApp"><i class="fas fa-history mr-1"></i>Mensajes anteriores</button>' : '')
+                + '</div>';
+        }
+        function loadChatHistoryNow() {
+            const api = sisdelChatsApi();
+            if (!api || !chatCurrentId) return;
+            showToast('Trayendo los mensajes anteriores...');
+            api.loadHistory(chatCurrentId).then(function (r) {
+                showToast(r && r.ok ? (r.saved ? r.saved + ' mensaje(s) anteriores agregados.' : 'No había mensajes anteriores que agregar.') : 'WhatsApp no entregó los mensajes anteriores.');
+            }).catch(function (e) { alert((e && e.message) || 'No se pudo.'); });
+        }
+        function renderChatPane() {
+            const pane = document.getElementById('chat-pane');
+            if (!pane) return;
+            if (!chatCurrentId && !chatNewResident) {
+                pane.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400"><i class="fab fa-whatsapp text-6xl text-emerald-500/60 mb-4"></i><p class="font-semibold text-slate-600 dark:text-slate-300">Chats de WhatsApp con los residentes</p><p class="text-sm mt-1 max-w-md">Elija una conversación de la lista. Ahí ve lo que se le envió a cada residente, si le llegó (dos palomitas) y si lo leyó (azules), y lo que respondió.</p></div>';
+                return;
+            }
+            pane.innerHTML = '<div id="chat-head" class="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3"></div>'
+                + '<div id="chat-messages" class="flex-1 overflow-y-auto px-4 py-3 space-y-1.5 bg-slate-50 dark:bg-slate-900/40"></div>'
+                + '<div class="border-t border-slate-100 dark:border-slate-700 p-3 flex gap-2 items-end">'
+                + '<textarea id="chat-input" rows="2" maxlength="4096" onkeydown="chatInputKey(event)" class="flex-1 resize-none px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)"></textarea>'
+                + '<button type="button" onclick="sendChatFromInput()" id="chat-send" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition" title="Enviar"><i class="fas fa-paper-plane"></i></button>'
+                + '</div>';
+            renderChatHeader();
+            renderChatMessages();
+        }
+        function renderChatMessages(errorText) {
+            const box = document.getElementById('chat-messages');
+            if (!box) return;
+            if (errorText) { box.innerHTML = '<p class="text-center text-sm text-rose-500 py-6">' + chatEsc(errorText) + '</p>'; return; }
+            if (!chatMessages.length) {
+                box.innerHTML = '<p class="text-center text-sm text-slate-400 py-6">' + (chatNewResident ? (chatNewResident.contact ? 'Todavía no hay mensajes con este residente. Escriba el primero abajo.' : 'Este residente no tiene teléfono: regístrelo en Residentes para poder escribirle.') : 'Sin mensajes todavía.') + '</p>';
+                return;
+            }
+            const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+            let lastDay = '';
+            box.innerHTML = chatMessages.map(function (m) {
+                const day = localDayKey(m.at);
+                const sep = day !== lastDay ? '<div class="text-center my-2"><span class="px-3 py-1 rounded-full bg-white dark:bg-slate-700 text-[11px] text-slate-500 dark:text-slate-300 shadow-sm">' + chatEsc(new Date(m.at).toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })) + '</span></div>' : '';
+                lastDay = day;
+                const mine = !!m.fromMe;
+                const url = /^https:\/\//i.test(m.media || '') ? m.media : '';
+                let media = '';
+                if (url && (m.type === 'image' || m.type === 'sticker')) media = '<a href="' + chatEsc(url) + '" target="_blank" rel="noopener noreferrer"><img src="' + chatEsc(url) + '" alt="Imagen" loading="lazy" class="rounded-lg max-h-64 mb-1"></a>';
+                else if (url && (m.type === 'ptt' || m.type === 'audio')) media = '<audio controls preload="none" src="' + chatEsc(url) + '" class="max-w-full mb-1"></audio>';
+                else if (url && m.type === 'video') media = '<video controls preload="none" src="' + chatEsc(url) + '" class="rounded-lg max-h-64 mb-1"></video>';
+                else if (url) media = '<a href="' + chatEsc(url) + '" target="_blank" rel="noopener noreferrer" class="underline"><i class="fas fa-file mr-1"></i>' + chatEsc(m.fileName || chatTypeLabel(m.type)) + '</a>';
+                else if (m.type && m.type !== 'chat' && !m.placeholder) media = '<span class="italic text-xs opacity-70">[' + chatEsc(chatTypeLabel(m.type)) + ']</span>';
+                const body = m.body ? '<div class="whitespace-pre-wrap break-words">' + chatEsc(m.body) + '</div>' : (m.placeholder ? '<div class="italic text-xs opacity-60">(mensaje sin texto todavía)</div>' : '');
+                const who = mine ? (m.source === 'sisdel' ? (m.sentByName ? 'Enviado por ' + chatEsc(m.sentByName) : 'Enviado desde SISDEL') : 'Desde el teléfono o un envío automático') : '';
+                const err = m.ack === 'failed' && m.error ? '<div class="text-[11px] text-rose-600">No se envió: ' + chatEsc(m.error) + '</div>' : '';
+                return sep + '<div class="flex ' + (mine ? 'justify-end' : 'justify-start') + '"><div class="max-w-[78%] px-3 py-2 rounded-2xl text-sm shadow-sm ' + (mine ? 'bg-emerald-100 dark:bg-emerald-800/60 text-slate-800 dark:text-slate-50 rounded-br-md' : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-bl-md') + '">'
+                    + media + body + err
+                    + '<div class="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-slate-500 dark:text-slate-300">' + (who ? '<span class="mr-auto">' + who + '</span>' : '') + chatEsc(new Date(m.at).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })) + (mine ? ' ' + chatTicks(m.ack) : '') + '</div>'
+                    + '</div></div>';
+            }).join('');
+            if (atBottom || box.dataset.first !== '1') { box.scrollTop = box.scrollHeight; box.dataset.first = '1'; }
+        }
+        function chatInputKey(event) {
+            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChatFromInput(); }
+        }
+        function sendChatFromInput() {
+            const api = sisdelChatsApi();
+            const input = document.getElementById('chat-input');
+            const btn = document.getElementById('chat-send');
+            if (!api || !input || chatSending) return;
+            const text = input.value.trim();
+            if (!text) return;
+            const target = chatCurrentId ? { chatId: chatCurrentId } : (chatNewResident ? { residentId: chatNewResident.id } : null);
+            if (!target) return;
+            chatSending = true;
+            if (btn) btn.disabled = true;
+            api.send(target, text).then(function (r) {
+                input.value = '';
+                if (r && r.chatId && !chatCurrentId) openChat(r.chatId);
+                if (r && !r.ok) alert('WhatsApp no aceptó el mensaje: ' + (r.error || 'intente de nuevo') + '. Quedó marcado como no enviado.');
+            }).catch(function (e) {
+                alert((e && e.message) || 'No se pudo enviar el mensaje.');
+            }).finally(function () {
+                chatSending = false;
+                const b = document.getElementById('chat-send');
+                if (b) b.disabled = false;
+                const i = document.getElementById('chat-input');
+                if (i) i.focus();
+            });
         }
 
         // ========== SISDEL: BANCOS ==========
@@ -3144,6 +3467,7 @@
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
                             <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
+                            <button onclick="openResidentChat(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-400"><i class="fas fa-comments w-5"></i> Chat de WhatsApp</button>
                             ${closed
                                 ? `<button onclick="reactivateResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-600"><i class="fas fa-user-check w-5"></i> Reactivar residente</button>`
                                 : `<button onclick="openFiniquito('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-400"><i class="fas fa-handshake w-5"></i> Finiquitar relación</button>`}

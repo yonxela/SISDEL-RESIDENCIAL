@@ -430,15 +430,31 @@ async function run() {
         equal('se guarda en la nube con los datos financieros', await idle(), 'ok');
         equal('en finanzas_residentes (no en el vecino de SISDEL)', [(await finRef('u-ana').get()).get('unitType'), (await condoRef.collection('usuarios').doc('u-ana').get()).get('unitType')], ['casa', undefined]);
         // La lista
-        equal('la lista solo con casa con lote muestra a Ana y los conteos de cada tipo salen en el filtro', await oikos(`(() => { resTypeChanged('casa'); const ids = visibleResidents().map(r => r.id); const opts = [...document.querySelectorAll('#res-type-filter option')].map(o => o.textContent); resTypeChanged(''); return [ids, opts[2], opts[1]]; })()`), [['u-ana'], 'Casa con lote (1)', 'Solo lote (0)']);
+        equal('la lista solo con casa con lote muestra a Ana y los conteos de cada tipo salen en el filtro', await oikos(`(() => { resTypeChanged('casa'); const ids = visibleResidents().map(r => r.id); const opts = [...document.querySelectorAll('#res-type-filter option')].map(o => o.textContent); resTypeChanged(''); return [ids, opts[2], opts[1]]; })()`), [['u-ana'], 'Casa con lote (1)', 'Solo lote (1)']);
         equal('el tipo se ve bajo la referencia y "casa" lo encuentra en la busqueda', await oikos(`(() => { const s = document.getElementById('res-search'); s.value = 'casa'; resSearchChanged(); const ids = visibleResidents().map(r => r.id); const chip = document.querySelector('#residents-table-body tr .uppercase.block') ? document.querySelector('#residents-table-body tr .uppercase.block').textContent : ''; s.value = ''; resSearchChanged(); return [ids.includes('u-ana'), chip]; })()`), [true, 'Casa con lote']);
-        // Marcar tipo en bloque: solo a los que no tienen tipo
+        // Sin marcar, el tipo lo dice el agua (el agua se cobra solo a los lotes con casa): los Recordatorios usan el mismo tipo
+        equal('sin marcar, quien paga agua cuenta como casa con lote y quien no, como solo lote (tambien en Recordatorios)', await oikos(`(() => {
+            const res = Store.get('residents'); res.find(r => r.id === 'u-maria').waterUnits = 1; Store.set('residents', res);
+            const m = Store.get('residents').find(r => r.id === 'u-maria');
+            const out = [unitTypeOf(m), unitTypeLabel(m), remPassFilters(m, '', 'casa'), remPassFilters(m, '', 'lote')];
+            const back = Store.get('residents'); back.find(r => r.id === 'u-maria').waterUnits = 0; Store.set('residents', back);
+            return out;
+        })()`), ['casa', 'Casa con lote', true, false]);
+        await idle();
+        // Marcar tipo en bloque: solo a los que no se han marcado
         const withoutType = await oikos(`(() => { openBulkType(); return [Store.get('residents').filter(r => !r.unitType).length, document.getElementById('bt-summary').textContent]; })()`);
         record('Marcar tipo avisa cuantos faltan', withoutType[0] >= 1 && withoutType[1].includes(String(withoutType[0])), JSON.stringify(withoutType));
-        await oikos(`applyBulkType('lote')`);
-        equal('Marcar tipo los deja como solo lote y no toca a Ana (casa con lote)', await oikos(`Store.get('residents').map(r => [r.id, r.unitType]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))`).then((rows) => [rows.every((r) => r[0] === 'u-ana' ? r[1] === 'casa' : r[1] === 'lote'), rows.length > 1]), [true, true]);
+        // El agua de Maria sube a 1 antes de marcar segun el agua: ella pasa a casa con lote, los demas a solo lote
+        await oikos(`(() => { const res = Store.get('residents'); res.find(r => r.id === 'u-maria').waterUnits = 1; Store.set('residents', res); })()`);
+        const countsLine = await oikos(`(() => { openBulkType(); return document.getElementById('bt-agua-counts').textContent; })()`);
+        record('Marcar tipo dice cuantos serian casa con lote y cuantos solo lote segun el agua', /^1 casa\(s\) con lote y \d+ solo lote$/.test(countsLine), countsLine);
+        await oikos(`applyBulkType('agua')`);
+        equal('Marcar segun el agua deja a Maria como casa con lote, a los demas como solo lote, y no toca a Ana (casa con lote)', await oikos(`Store.get('residents').map(r => [r.id, r.unitType]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))`).then((rows) => [rows.every((r) => r[0] === 'u-ana' || r[0] === 'u-maria' ? r[1] === 'casa' : r[1] === 'lote'), rows.length > 1]), [true, true]);
         equal('se guarda en la nube', await idle(), 'ok');
-        equal('en la nube, otro residente quedo como lote y Ana sigue como casa', [(await finRef('u-maria').get()).get('unitType'), (await finRef('u-ana').get()).get('unitType')], ['lote', 'casa']);
+        equal('en la nube, Maria quedo como casa (por el agua) y Ana sigue como casa', [(await finRef('u-maria').get()).get('unitType'), (await finRef('u-ana').get()).get('unitType')], ['casa', 'casa']);
+        // Maria vuelve a no pagar agua para que lo que sigue sea el mismo escenario de siempre (solo Ana es casa con lote)
+        await oikos(`(() => { const res = Store.get('residents'); const m = res.find(r => r.id === 'u-maria'); m.waterUnits = 0; m.unitType = 'lote'; Store.set('residents', res); })()`);
+        await idle();
         equal('ya no queda ninguno sin indicar y el boton Marcar tipo se oculta', await oikos(`(() => { renderResidents(); return [Store.get('residents').filter(r => !r.unitType).length, document.getElementById('res-bulk-type-btn').classList.contains('hidden')]; })()`), [0, true]);
         // Los reportes por residente
         equal('Tabla general de casa con lote trae solo a Ana; de solo lote, a los demas', await oikos(`(() => { repTypeFilter = 'casa'; const a = sisdelPayMap().map.rows.map(x => x.resident.id); repTypeFilter = 'lote'; const l = sisdelPayMap().map.rows.map(x => x.resident.id); repTypeFilter = ''; const all = sisdelPayMap().map.rows.length; return [a, l.includes('u-ana'), l.length + a.length === all]; })()`), [['u-ana'], false, true]);

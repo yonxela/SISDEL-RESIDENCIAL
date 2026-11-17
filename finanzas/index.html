@@ -520,10 +520,10 @@
                         <!-- SISDEL: lote o casa: solo lotes, solo casas o los que aun no se han marcado (con cuantos hay de cada uno) -->
                         <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><i class="fas fa-filter"></i><span class="sr-only sm:not-sr-only">Tipo</span>
                             <select id="res-type-filter" onchange="resTypeChanged(this.value)" class="px-3 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                                <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin indicar</option>
+                                <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin marcar</option>
                             </select>
                         </label>
-                        <button id="res-bulk-type-btn" onclick="openBulkType()" class="hidden text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-white px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 transition" title="Marcar de una vez como solo lote o como casa con lote a todos los residentes que todavia no lo tienen"><i class="fas fa-tags mr-1"></i>Marcar tipo</button>
+                        <button id="res-bulk-type-btn" onclick="openBulkType()" class="hidden text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-white px-3 py-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 transition" title="Marcar de una vez el tipo (segun el agua, o todos solo lote, o todos casa con lote) a los residentes que todavia no se han marcado"><i class="fas fa-tags mr-1"></i>Marcar tipo</button>
                         <button id="res-closed-toggle" onclick="toggleShowClosed()" class="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 transition"></button>
                     </div>
                     <!-- SISDEL: la lista va en orden alfabetico y de 50 en 50, con flechas arriba y abajo (ver renderResidents) -->
@@ -781,7 +781,7 @@
                             <div id="rep-type-wrap" style="display:none">
                                 <label for="rep-type" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
                                 <select id="rep-type" onchange="repTypeChanged(this.value)" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
-                                    <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin indicar</option>
+                                    <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin marcar</option>
                                 </select>
                             </div>
                             <!-- SISDEL: filtros del Listado general de propietarios (se ven solo en ese reporte). Por defecto muestra todo:
@@ -930,8 +930,8 @@
                 <button onclick="renderRemindersList('mora')" id="tab-rem-mora" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-semibold rounded-md bg-white dark:bg-slate-600 shadow text-slate-800 dark:text-white transition">Solo Morosos</button>
                 <button onclick="renderRemindersList('todos')" id="tab-rem-todos" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Todos los pendientes</button>
                 <button onclick="renderRemindersList('fase')" id="tab-rem-fase" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por fase</button>
-                <button onclick="renderRemindersList('casas')" id="tab-rem-casas" title="Se considera con casa al lote que paga agua (se anota en la ficha del residente, pestaña Cuota y agua)" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo casas</button>
-                <button onclick="renderRemindersList('lotes')" id="tab-rem-lotes" title="Lotes sin casa: los que no pagan agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo lotes</button>
+                <button onclick="renderRemindersList('casas')" id="tab-rem-casas" title="Casa con lote: la que se marcó en el formulario del residente (Tipo de propiedad) o, si no se marcó, la que paga agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo casas</button>
+                <button onclick="renderRemindersList('lotes')" id="tab-rem-lotes" title="Solo lote, sin casa: el que se marcó así en el formulario del residente o, si no se marcó, el que no paga agua" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Solo lotes</button>
                 <button onclick="renderRemindersList('seleccion')" id="tab-rem-seleccion" class="flex-1 min-w-[6.5rem] px-2 py-1.5 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition">Por selección</button>
             </div>
             <div id="rem-fase-chips" class="hidden flex flex-wrap gap-1.5 mb-2"></div>
@@ -1208,7 +1208,7 @@
                             <button type="button" id="res-type-lote" data-unit-type="lote" role="radio" aria-checked="false" onclick="setResUnitType('lote')" class="px-3 py-2.5 rounded-lg border text-sm font-bold transition bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300"><i class="fas fa-vector-square mr-2"></i>Solo lote</button>
                             <button type="button" id="res-type-casa" data-unit-type="casa" role="radio" aria-checked="false" onclick="setResUnitType('casa')" class="px-3 py-2.5 rounded-lg border text-sm font-bold transition bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300"><i class="fas fa-home mr-2"></i>Casa con lote</button>
                         </div>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Elija uno: sirve para sacar por separado el reporte de lotes y el de casas.</p>
+                        <p id="res-type-note" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Elija uno: sirve para sacar por separado el reporte de lotes y el de casas.</p>
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Teléfono</label>
@@ -1252,7 +1252,7 @@
                 <div class="space-y-4 hidden" data-res-pane="fee">
                     <div>
                         <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Agua del lote</label>
-                        <select id="res-water" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" onchange="renderResConcepts()">
+                        <select id="res-water" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" onchange="renderResConcepts(); paintResUnitType()">
                             <option value="0">Sin agua</option>
                             <option value="0.5">Media paja</option>
                             <option value="1">Paja completa</option>
@@ -1440,11 +1440,13 @@
                 <button type="button" onclick="closeModal('modal-bulk-type')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 -mt-2 -mr-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
             <p id="bt-summary" class="text-sm text-slate-600 dark:text-slate-300 mb-4"></p>
+            <button type="button" id="bt-agua" onclick="applyBulkType('agua')" class="w-full px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition"><i class="fas fa-tint mr-2"></i>Marcar según el agua</button>
+            <p class="mt-1 mb-3 text-[11px] text-slate-500 dark:text-slate-400">El agua se cobra solo a los lotes con casa: los que pagan agua pasan a casa con lote y los demás a solo lote (<span id="bt-agua-counts"></span>).</p>
             <div class="grid grid-cols-2 gap-3">
-                <button type="button" id="bt-lote" onclick="applyBulkType('lote')" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition">Marcar como solo lote</button>
-                <button type="button" id="bt-casa" onclick="applyBulkType('casa')" class="px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition">Marcar como casa con lote</button>
+                <button type="button" id="bt-lote" onclick="applyBulkType('lote')" class="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition">Todos solo lote</button>
+                <button type="button" id="bt-casa" onclick="applyBulkType('casa')" class="px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition">Todos casa con lote</button>
             </div>
-            <p class="mt-4 text-[11px] text-slate-500 dark:text-slate-400">Solo cambia a los que no tienen tipo; los que ya lo tienen no se tocan. Cualquiera se corrige despues en su formulario.</p>
+            <p class="mt-4 text-[11px] text-slate-500 dark:text-slate-400">Solo cambia a los que no se han marcado; los que ya tienen tipo no se tocan. Cualquiera se corrige despues en su formulario.</p>
             <div class="mt-4 flex justify-end"><button type="button" onclick="closeModal('modal-bulk-type')" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button></div>
         </div>
     </div>
@@ -3405,14 +3407,21 @@
 
         // ─── SISDEL: lote o casa ───────────────────────────────────────────────────────────────────────────────
         // Cada residente dice si su propiedad es SOLO LOTE ('lote') o CASA CON LOTE ('casa') (unitType, en finanzas_residentes
-        // con los demas datos financieros): asi se sacan por separado la lista de Residentes y los reportes de Morosos, Tabla
-        // general y Listado de propietarios. Los que existian antes quedan "sin indicar" hasta que se marquen (uno por uno en su
-        // formulario o todos juntos con "Marcar tipo"). Filtro: '' (todos), 'lote', 'casa' o 'none' (sin indicar).
+        // con los demas datos financieros): asi se sacan por separado la lista de Residentes, los Recordatorios y los reportes de
+        // Morosos, Tabla general y Listado de propietarios. TIPO EFECTIVO (unitTypeOf, el que usa todo): el que se marco o, si
+        // todavia no se marco, el que dice el agua: el agua se cobra solo a los lotes con casa (waterUnits > 0 = casa con lote;
+        // sin agua = solo lote). Se marca uno por uno en su formulario o todos juntos con "Marcar tipo" (que puede marcar segun
+        // el agua). Filtro: '' (todos), 'lote', 'casa' o 'none' (los que todavia no se han marcado).
         // (funciones y no una tabla: la lista se pinta al arrancar, antes de que se ejecute una variable declarada aqui)
         var resTypeFilter = '';
         var repTypeFilter = '';
         function isUnitType(v) { return v === 'lote' || v === 'casa'; }
-        function unitTypeLabel(r) { return r && r.unitType === 'lote' ? 'Solo lote' : r && r.unitType === 'casa' ? 'Casa con lote' : ''; }
+        function unitTypeMarked(r) { return !!r && isUnitType(r.unitType); }
+        function unitTypeOf(r) {
+            if (unitTypeMarked(r)) return r.unitType;
+            return typeof SisdelCuotas !== 'undefined' && SisdelCuotas.waterUnits(r) > 0 ? 'casa' : 'lote';
+        }
+        function unitTypeLabel(r) { return unitTypeOf(r) === 'casa' ? 'Casa con lote' : 'Solo lote'; }
         // Los dos botones del formulario: el campo oculto guarda el valor y los botones se pintan segun el
         function setResUnitType(type) {
             const el = document.getElementById('res-unit-type');
@@ -3431,34 +3440,51 @@
                     ? 'bg-blue-600 border-blue-600 text-white shadow'
                     : 'bg-slate-50 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-blue-400');
             });
+            // Un residente que ya existia y no se ha marcado se toma por el agua: la nota lo dice
+            const note = document.getElementById('res-type-note');
+            if (note) {
+                const water = SisdelCuotas.waterUnits({ waterUnits: (document.getElementById('res-water') || {}).value }) > 0;
+                note.textContent = current || !residentBeingEditedId
+                    ? 'Elija uno: sirve para sacar por separado el reporte de lotes y el de casas.'
+                    : `Sin marcar: se toma como «${water ? 'Casa con lote' : 'Solo lote'}» porque ${water ? 'paga agua' : 'no paga agua'}. Elija uno para dejarlo establecido.`;
+            }
         }
         function unitTypeMatches(r, filter) {
             if (!filter) return true;
-            if (filter === 'none') return !unitTypeLabel(r);
-            return !!r && r.unitType === filter;
+            if (filter === 'none') return !unitTypeMarked(r);
+            return !!r && unitTypeOf(r) === filter;
         }
-        // "solo lotes", "solo casas" o "los sin indicar"; vacio con todos (para el texto de la lista y de los reportes)
+        // "solo lote", "casa con lote" o "los sin marcar"; vacio con todos (para el texto de la lista y de los reportes)
         function unitTypeFilterText(filter) {
-            return filter === 'lote' ? 'solo lote (sin casa)' : filter === 'casa' ? 'casa con lote' : filter === 'none' ? 'sin indicar si es solo lote o casa con lote' : '';
+            return filter === 'lote' ? 'solo lote (sin casa)' : filter === 'casa' ? 'casa con lote' : filter === 'none' ? 'sin marcar el tipo (se toman por el agua)' : '';
         }
-        // Marcar de una vez a todos los que no tienen tipo (a los que ya lo tienen no se les toca nada). Se puede deshacer
+        // Marcar de una vez a todos los que no se han marcado (a los que ya tienen tipo no se les toca nada): segun el agua (los que
+        // pagan agua son casa con lote y los demas solo lote), todos solo lote o todos casa con lote. Se puede deshacer
         function openBulkType() {
-            const none = (Store.get('residents') || []).filter(r => !unitTypeLabel(r));
+            const none = (Store.get('residents') || []).filter(r => !unitTypeMarked(r));
             if (!none.length) { showToast('Todos los residentes ya tienen su tipo.'); return; }
+            const houses = none.filter(r => unitTypeOf(r) === 'casa').length;
             document.getElementById('bt-summary').textContent = `Hay ${none.length} residente(s) que todavía no dicen si son solo lote o casa con lote. ¿Cómo los marca?`;
+            document.getElementById('bt-agua-counts').textContent = `${houses} casa(s) con lote y ${none.length - houses} solo lote`;
             openModal('modal-bulk-type');
         }
         function applyBulkType(type) {
-            if (!isUnitType(type)) return;
+            if (!isUnitType(type) && type !== 'agua') return;
             const res = Store.get('residents');
-            const targets = res.filter(r => !unitTypeLabel(r));
+            const targets = res.filter(r => !unitTypeMarked(r));
             if (!targets.length) { closeModal('modal-bulk-type'); return; }
             History.push();
-            targets.forEach(r => { r.unitType = type; });
+            let houses = 0;
+            targets.forEach(r => {
+                r.unitType = type === 'agua' ? unitTypeOf(r) : type;
+                if (r.unitType === 'casa') houses++;
+            });
             Store.set('residents', res);
             closeModal('modal-bulk-type');
             renderResidents();
-            showToast(`${targets.length} residente(s) marcado(s) como ${type === 'lote' ? 'solo lote' : 'casa con lote'}.`);
+            showToast(type === 'agua'
+                ? `${targets.length} residente(s) marcado(s) según el agua: ${houses} casa(s) con lote y ${targets.length - houses} solo lote.`
+                : `${targets.length} residente(s) marcado(s) como ${type === 'lote' ? 'solo lote' : 'casa con lote'}.`);
         }
         function resTypeChanged(value) {
             resTypeFilter = ['lote', 'casa', 'none'].includes(value) ? value : '';
@@ -3474,12 +3500,12 @@
         // Los textos de las opciones del filtro con cuantos hay de cada uno (se actualizan al pintar la lista y los reportes)
         function unitTypeCounts(residents) {
             const counts = { all: 0, lote: 0, casa: 0, none: 0 };
-            (residents || []).forEach(r => { counts.all++; if (unitTypeLabel(r)) counts[r.unitType]++; else counts.none++; });
+            (residents || []).forEach(r => { counts.all++; counts[unitTypeOf(r)]++; if (!unitTypeMarked(r)) counts.none++; });
             return counts;
         }
         function unitTypeOptions(select, counts, current) {
             if (!select) return;
-            const label = { '': 'Todos', lote: 'Solo lote', casa: 'Casa con lote', none: 'Sin indicar' };
+            const label = { '': 'Todos', lote: 'Solo lote', casa: 'Casa con lote', none: 'Sin marcar' };
             const n = { '': counts.all, lote: counts.lote, casa: counts.casa, none: counts.none };
             select.innerHTML = Object.keys(label).map(k => `<option value="${k}">${label[k]} (${n[k]})</option>`).join('');
             select.value = current;
@@ -3557,7 +3583,7 @@
             // SISDEL: el filtro lote / casa con cuantos hay de cada uno (de los que se ven: con o sin finiquitados)
             unitTypeOptions(document.getElementById('res-type-filter'), unitTypeCounts(showClosedResidents ? all : all.filter(isResidentActive)), resTypeFilter || '');
             const bulkBtn = document.getElementById('res-bulk-type-btn');
-            if (bulkBtn) bulkBtn.classList.toggle('hidden', !all.some(r => !unitTypeLabel(r)));
+            if (bulkBtn) bulkBtn.classList.toggle('hidden', !all.some(r => !unitTypeMarked(r)));
             const res = view.list;
             const tog = document.getElementById('res-closed-toggle');
             if (tog) {
@@ -3600,7 +3626,7 @@
                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 ${closed ? 'opacity-60' : ''}" ${r.notes ? `title="${esc(r.notes)}"` : ''}>
                     <td class="py-4 px-6 font-mono font-bold text-center">
                         <button onclick="openEstadoCuenta('${r.id}')" class="text-indigo-600 dark:text-indigo-400 hover:underline" title="Ver estado de cuenta">${esc(r.unit)}</button>
-                        ${unitTypeLabel(r) ? `<span class="block font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">${unitTypeLabel(r)}</span>` : ''}
+                        <span class="block font-sans text-[10px] font-semibold uppercase tracking-wide ${unitTypeMarked(r) ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400/70 dark:text-slate-500 italic'}" ${unitTypeMarked(r) ? '' : 'title="Sin marcar: se toma por el agua. Márquelo en su formulario o con Marcar tipo"'}>${unitTypeLabel(r)}</span>
                     </td>
                     <td class="py-4 px-6">
                         <button onclick="openEstadoCuenta('${r.id}')" class="text-left font-medium text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition" title="Ver estado de cuenta">${esc(r.name)}</button>${closedBadge}${moraBadge}
@@ -4430,6 +4456,7 @@
             setVal('res-nit', r.nit || ''); setVal('res-direccion', r.direccion || '');
             resOwnerMirror = !r.propietario; setVal('res-owner', r.propietario || r.name || '');
             setVal('res-water', String(SisdelCuotas.waterUnits(r)));
+            paintResUnitType();   // la nota de "sin marcar" depende del agua
             const platesWrap = document.getElementById('res-plates-wrap'); if (platesWrap) platesWrap.classList.add('hidden');
             resOwnerNote();
             const titleEl = document.getElementById('title-modal-res'); if (titleEl) titleEl.textContent = 'Editar Residente';
@@ -4503,7 +4530,8 @@
         }
         // ───────── A quienes se envia: la barra de opciones ─────────
         // Todos los residentes | Solo morosos | Todos los pendientes | Por fase | Solo casas | Solo lotes | Por seleccion.
-        // "Con casa" = el lote paga agua (waterUnits > 0: el agua se cobra solo a los lotes con casa); "solo lote" = sin agua.
+        // "Con casa" = casa con lote y "solo lote" = solo lote, del tipo de propiedad del residente (unitTypeOf: el que se marco en
+        // su formulario o, si no se marco, el que dice el agua: el agua se cobra solo a los lotes con casa).
         // Con el mensaje por morosidad todo se limita a los morosos. Se envia SIEMPRE a la lista que se ve en esa opcion;
         // con "Por seleccion", solo a los marcados (nunca "a todos si no marco a nadie").
         var REM_NO_FASE = '__none__';
@@ -4511,7 +4539,7 @@
         function remPassFilters(r, fase, tipo) {
             const f = String(r.fase || '').trim();
             if (fase === REM_NO_FASE ? f : (fase && f !== fase)) return false;
-            const hasHouse = SisdelCuotas.waterUnits(r) > 0;
+            const hasHouse = unitTypeOf(r) === 'casa';
             if (tipo === 'casa' && !hasHouse) return false;
             if (tipo === 'lote' && hasHouse) return false;
             return true;

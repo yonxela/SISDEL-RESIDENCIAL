@@ -70,9 +70,25 @@ async function requireConnected(whatsapp, config) {
     return conn;
 }
 
+// WhatsApp OFICIAL de Meta: los avisos van con una plantilla aprobada (un texto fijo con huecos) y OIKOS manda los datos de cada
+// residente (`vars`: nombre, casa, saldo...) en vez de un texto. El texto que queda anotado es el de la plantilla ya llena.
+const templatesOn = (whatsapp, config) => typeof whatsapp.usesTemplates === 'function' && !!whatsapp.usesTemplates(config);
+function templateOrFail(whatsapp, config, mode) {
+    const tpl = typeof whatsapp.templateFor === 'function' ? whatsapp.templateFor(config, mode) : null;
+    if (!tpl) throw fail('failed-precondition', `Falta la plantilla de Meta para los avisos de ${mode === 'varios' ? 'mensajes varios' : 'mora'}. Pida al programador que la cargue (scripts/set-whatsapp-plantillas.mjs).`);
+    return tpl;
+}
+// Los datos de la plantilla de un residente: ya calculados (`params`, al reenviar) o a partir de `vars`; null si no vienen
+const paramsOf = (whatsapp, tpl, item) => {
+    if (item && Array.isArray(item.params)) return item.params.map(String);
+    if (item && item.vars && typeof item.vars === 'object') return whatsapp.templateParams(tpl, item.vars);
+    return null;
+};
+
 // Resultado REAL de un envio suelto: se espera unos segundos y se mira lo que UltraMsg dice del mensaje a ese telefono.
 // null si no se puede saber (proveedor sin esta consulta o UltraMsg no responde).
 async function verifyDelivery({ whatsapp, config, phone, sinceMs, waitMs = VERIFY_WAIT_MS, sleep = realSleep }) {
+    if (templatesOn(whatsapp, config)) return null;   // con Meta el resultado llega por su webhook, no por el listado de UltraMsg
     if (typeof whatsapp.listMessages !== 'function' || typeof whatsapp.deliveryFor !== 'function') return null;
     const sinceSec = Math.floor(sinceMs / 1000);
     const attempts = Math.max(1, Math.ceil(waitMs / VERIFY_STEP_MS) + 1);   // la primera mirada es enseguida; despues se espera de a 2 s
@@ -109,13 +125,20 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
     const items = Array.isArray(data && data.items) ? data.items : [];
     if (!items.length) throw fail('invalid-argument', 'No hay a quién enviar.');
     if (items.length > MAX_RECIPIENTS) throw fail('invalid-argument', `Se pueden enviar hasta ${MAX_RECIPIENTS} mensajes a la vez.`);
+    const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data.mode) : null;
     const texts = new Map();
+    const paramsById = new Map();
     for (const item of items) {
         const id = String((item && item.residentId) || '').trim();
-        const text = String((item && item.text) || '').trim();
-        if (!id || id.includes('/') || !text) throw fail('invalid-argument', 'Hay un mensaje sin residente o sin texto.');
+        let text = String((item && item.text) || '').trim();
+        let params = null;
+        if (tpl) {
+            params = paramsOf(whatsapp, tpl, item);
+            text = params ? whatsapp.renderTemplate(tpl, params).trim() : '';
+        }
+        if (!id || id.includes('/') || !text) throw fail('invalid-argument', tpl ? 'Hay un residente sin datos para la plantilla.' : 'Hay un mensaje sin residente o sin texto.');
         if (text.length > MAX_TEXT) throw fail('invalid-argument', `Un mensaje pasa de ${MAX_TEXT} caracteres.`);
-        if (!texts.has(id)) texts.set(id, text);
+        if (!texts.has(id)) { texts.set(id, text); if (params) paramsById.set(id, params); }
     }
     if (await hasRunning(db, condominioId)) throw fail('failed-precondition', 'Ya hay un envío en curso o en pausa. Espere a que termine, o continúelo o cancélelo.');
 
@@ -147,6 +170,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
             data: {
                 name: user ? String(user.name || '') : '', casa: user ? String(user.casa || '') : '',
                 phoneTail: phone ? phone.slice(-4) : '', text: texts.get(id),
+                ...(paramsById.has(id) ? { params: paramsById.get(id) } : {}),
                 status: reason ? 'skipped' : 'pending', ...(reason ? { reason } : {})
             }
         };
@@ -166,6 +190,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         mode: data.mode === 'varios' ? 'varios' : 'mora', status: 'running', lockUntil: 0,
         total: rows.length, pending: pending.length, sent: 0, failed: 0, skipped: rows.length - pending.length,
         pauseSeconds: AVG_PAUSE_SECONDS, sample: pending[0].data.text.slice(0, 200),
+        ...(tpl ? { channel: 'meta', template: tpl.name } : {}),
         ...(data.resendOf ? { resendOf: String(data.resendOf) } : {})
     });
     await queueDoc(db, condominioId, campRef.id).set({ condominioId, campaignId: campRef.id, status: 'running', createdAt });
@@ -189,7 +214,7 @@ async function processCampaign(ctx) {
         if (camp.status !== 'running') return { status: camp.status };
         if ((camp.lockUntil || 0) > nowMs()) return { busy: true };
         tx.update(campRef, { lockUntil: nowMs() + LOCK_MS });
-        return { ok: true, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
+        return { ok: true, mode: camp.mode, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
     });
     if (claimed.gone) { await queueRef.delete(); return { campaignId, gone: true }; }
     if (claimed.status) { await queueRef.set({ status: claimed.status }, { merge: true }); return { campaignId, status: claimed.status }; }
@@ -219,6 +244,16 @@ async function processCampaign(ctx) {
         await queueRef.set({ status: 'error' }, { merge: true });
         return { campaignId, status: 'error', stoppedBy: 'conexion' };
     }
+    // Con el WhatsApp oficial de Meta cada mensaje sale con la plantilla del tipo de aviso (si falta, se detiene con el motivo)
+    let tpl = null;
+    if (templatesOn(whatsapp, config)) {
+        tpl = typeof whatsapp.templateFor === 'function' ? whatsapp.templateFor(config, claimed.mode) : null;
+        if (!tpl) {
+            await campRef.update({ status: 'error', lockUntil: 0, errorMessage: 'Falta la plantilla de Meta para este aviso. Pida al programador que la cargue y pulse Continuar.' });
+            await queueRef.set({ status: 'error' }, { merge: true });
+            return { campaignId, status: 'error', stoppedBy: 'plantilla' };
+        }
+    }
 
     let sent = 0; let failed = 0; let streak = 0; let sinceCheck = 0; let lostConn = null; let finished = false; let stoppedBy = null;
     outer: for (;;) {
@@ -245,13 +280,15 @@ async function processCampaign(ctx) {
             sinceCheck++;
             let channel = null;
             let error = null;
-            try { channel = await whatsapp.send(config, phone, doc.data().text); } catch (e) { error = e && e.message ? e.message : 'error'; }
+            const sendErrors = [];
+            const sendOpts = tpl && doc.data().params ? { template: tpl, params: doc.data().params, errors: sendErrors } : { errors: sendErrors };
+            try { channel = await whatsapp.send(config, phone, doc.data().text, sendOpts); } catch (e) { error = e && e.message ? e.message : 'error'; }
             if (channel) {
                 await doc.ref.update({ status: 'sent', channel, sentAt: isoNow() });
                 await bump('sent');
                 sent++; streak = 0;
             } else {
-                await doc.ref.update({ status: 'failed', error: error || 'No salió por ningún proveedor de WhatsApp' });
+                await doc.ref.update({ status: 'failed', error: error || sendErrors.join('; ') || 'No salió por ningún proveedor de WhatsApp' });
                 await bump('failed');
                 failed++; streak++;
                 if (streak >= FAIL_STREAK) { stoppedBy = 'fallos'; break outer; }
@@ -347,7 +384,10 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     await requireConnected(whatsapp, config);
     const residentId = String((data && data.residentId) || '').trim();
-    const text = String((data && data.text) || '').trim();
+    const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data && data.mode) : null;
+    const params = tpl ? paramsOf(whatsapp, tpl, data) : null;
+    if (tpl && !params) throw fail('invalid-argument', 'Faltan los datos del residente para la plantilla.');
+    const text = tpl ? whatsapp.renderTemplate(tpl, params).trim() : String((data && data.text) || '').trim();
     if (!residentId || residentId.includes('/')) throw fail('invalid-argument', 'Residente inválido.');
     if (!text || text.length > MAX_TEXT) throw fail('invalid-argument', `El mensaje debe tener entre 1 y ${MAX_TEXT} caracteres.`);
     const condoRef = db.collection('condominios').doc(condominioId);
@@ -362,18 +402,21 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     let channel = null;
     let error = null;
     const startedMs = now().getTime();
-    try { channel = await whatsapp.send(config, phone, text); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    const sendErrors = [];
+    try { channel = await whatsapp.send(config, phone, text, tpl ? { template: tpl, params, errors: sendErrors } : { errors: sendErrors }); } catch (e) { error = e && e.message ? e.message : 'error'; }
     // "Enviado" solo dice que UltraMsg lo acepto: se mira que paso de verdad (en cola, rechazado por WhatsApp, entregado...)
     const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
     await condoRef.collection('recordatorios_individuales').doc().set({
         at: now().toISOString(), by: { id: caller.id, name: String(caller.name || '') }, residentId,
         name: String(user.name || ''), casa: String(user.casa || ''), phoneTail: phone.slice(-4), text,
         mode: data.mode === 'varios' ? 'varios' : 'mora', status: channel ? 'sent' : 'failed', channel: channel || null,
+        ...(tpl ? { template: tpl.name } : {}),
         delivery: delivery ? delivery.state : null, ...(delivery && delivery.reason ? { deliveryReason: delivery.reason } : {}),
-        ...(channel ? {} : { error: error || 'No salió por ningún proveedor de WhatsApp' })
+        ...(channel ? {} : { error: error || sendErrors.join('; ') || 'No salió por ningún proveedor de WhatsApp' })
     });
     return {
         sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), name: String(user.name || ''), casa: String(user.casa || ''),
+        ...(channel ? {} : { error: error || sendErrors.join('; ') || '' }),
         delivery: delivery ? delivery.state : null, deliveryReason: delivery ? delivery.reason : '', deliveryText: delivery && delivery.state === 'rechazado' ? reasonText(whatsapp, delivery.reason) : ''
     };
 }
@@ -385,13 +428,17 @@ async function sendTest({ whatsapp, data, verify = {} }) {
     await requireConnected(whatsapp, config);
     const phone = normalizePhone(data && data.phone);
     if (!phone) throw fail('invalid-argument', 'Escriba el teléfono completo (8 dígitos de Guatemala o con código de país).');
-    const text = String((data && data.text) || '').trim();
+    const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data && data.mode) : null;
+    const params = tpl ? paramsOf(whatsapp, tpl, data) : null;
+    if (tpl && !params) throw fail('invalid-argument', 'Faltan los datos de ejemplo para la plantilla.');
+    const text = tpl ? whatsapp.renderTemplate(tpl, params).trim() : String((data && data.text) || '').trim();
     if (!text || text.length > MAX_TEXT) throw fail('invalid-argument', `El mensaje debe tener entre 1 y ${MAX_TEXT} caracteres.`);
     const startedMs = Date.now();
-    const channel = await whatsapp.send(config, phone, text);
+    const sendErrors = [];
+    const channel = await whatsapp.send(config, phone, text, tpl ? { template: tpl, params, errors: sendErrors } : { errors: sendErrors });
     const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
     return {
-        sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4),
+        sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), ...(channel ? {} : { error: sendErrors.join('; ') }),
         delivery: delivery ? delivery.state : null, deliveryReason: delivery ? delivery.reason : '', deliveryText: delivery && delivery.state === 'rechazado' ? reasonText(whatsapp, delivery.reason) : ''
     };
 }
@@ -405,8 +452,15 @@ async function connectionInfo({ whatsapp }) {
     const conn = await connectionOf(whatsapp, config);
     let queue = null;
     if (typeof whatsapp.queueStats === 'function') { try { queue = await whatsapp.queueStats(config); } catch (e) { queue = null; } }
+    // Con Meta: las plantillas (para mostrar el texto y saber que dato va en cada hueco) y la calidad del numero
+    const onMeta = templatesOn(whatsapp, config);
+    const templates = onMeta && typeof whatsapp.templateFor === 'function'
+        ? { mora: whatsapp.templateFor(config, 'mora'), general: whatsapp.templateFor(config, 'varios') }
+        : null;
     return {
         configured: true, connected: conn.connected, state: conn.state, provider: conn.provider || null,
+        channel: onMeta ? 'meta' : 'ultramsg', templates,
+        ...(onMeta ? { meta: { quality: conn.quality || '', name: conn.name || '', number: conn.number || '' } } : {}),
         message: conn.connected === false ? connectionText(whatsapp, conn) : '', queue
     };
 }
@@ -423,6 +477,9 @@ async function reconcileCampaign({ db, whatsapp, condominioId, campaignId, now =
     if (!snap.exists) throw fail('not-found', 'El envío no existe.');
     const camp = snap.data();
     const config = await whatsapp.loadConfig();
+    if (templatesOn(whatsapp, config)) {
+        throw fail('failed-precondition', 'Con el WhatsApp oficial de Meta el resultado de cada mensaje llega por el webhook de Meta, que todavía no está conectado a OIKOS.');
+    }
     if (typeof whatsapp.listMessages !== 'function' || !config || config.provider === 'simulado' || !config.ultramsgInstance) {
         throw fail('failed-precondition', 'La comprobación de entregas solo está disponible con UltraMsg.');
     }
@@ -481,7 +538,7 @@ async function resendCampaign({ db, whatsapp, condominioId, caller, data }) {
     const dests = (await campRef.collection('destinatarios').get()).docs;
     const items = dests
         .filter((d) => { const x = d.data(); return x.status !== 'skipped' && (x.delivery === 'rechazado' || x.delivery === 'desconocido' || x.delivery === 'sin_enviar'); })
-        .map((d) => ({ residentId: d.id, text: d.data().text }));
+        .map((d) => ({ residentId: d.id, text: d.data().text, ...(Array.isArray(d.data().params) ? { params: d.data().params } : {}) }));
     if (!items.length) throw fail('failed-precondition', 'No hay a quién reenviar: a todos les llegó o siguen en proceso.');
     return createCampaign({ db, whatsapp, condominioId, caller, data: { mode: camp.mode, items, resendOf: sourceId } });
 }

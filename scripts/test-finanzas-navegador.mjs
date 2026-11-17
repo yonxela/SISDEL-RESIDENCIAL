@@ -290,6 +290,27 @@ async function run() {
         record('si no se pudo comprobar, lo dice y deja seguir (el servidor vuelve a comprobar)', unknown.texto.includes('No se pudo comprobar') && !unknown.enviar, JSON.stringify(unknown));
         await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
         await oikos(`checkRemConnection()`);
+        // WhatsApp OFICIAL de Meta: el texto lo fija la plantilla aprobada y a cada residente se le mandan sus datos
+        const metaConn = (templates) => `window.__conn = { ok: true, connected: true, state: 'connected', message: '', queue: null, channel: 'meta', meta: { quality: 'GREEN', number: '+502 1111 2222', name: 'La Perla' }, templates: ${JSON.stringify(templates)} }`;
+        await page.evaluate(metaConn({ mora: null, general: { name: 'aviso_general', language: 'es', params: ['nombre', 'casa', 'saldo'], body: 'Hola {{1}}, casa {{2}}: debe {{3}}.' } }));
+        await oikos(`setReminderMode('varios'); checkRemConnection();`);
+        await sleep(300);
+        const metaUi = await oikos(`(() => ({ estado: document.getElementById('rem-wa-status').textContent.replace(/\\s+/g, ' ').trim(), caja: !document.getElementById('rem-template-box').classList.contains('hidden'), editableOculto: document.getElementById('rem-msg-box').classList.contains('hidden'), info: document.getElementById('rem-template-info').textContent, vista: document.getElementById('rem-template-preview').textContent }))()`);
+        record('con Meta: dice WhatsApp oficial conectado, con el numero y la calidad', /WhatsApp oficial de Meta conectado/.test(metaUi.estado) && /\+502 1111 2222/.test(metaUi.estado) && /calidad GREEN/.test(metaUi.estado), metaUi.estado);
+        record('con Meta: el texto fijo de la plantilla se muestra (no editable) y dice cual es y que datos lleva', metaUi.caja && metaUi.editableOculto && /aviso_general/.test(metaUi.info) && /nombre, casa, saldo/.test(metaUi.info), JSON.stringify(metaUi));
+        record('con Meta: la vista previa es la plantilla con los datos reales del primer residente', /^Hola .+, casa .+: debe Q/.test(metaUi.vista), metaUi.vista);
+        const sentBefore = await page.evaluate(`window.__sent.length`);
+        await oikos(`sendRemindersToAll()`);
+        const metaSent = await page.evaluate(`window.__sent.slice(${sentBefore})`);
+        record('con Meta cada residente va con sus datos (vars) para llenar la plantilla, y sin telefonos', metaSent.length === 1 && metaSent[0].items.length > 0 && metaSent[0].items.every((i) => i.vars && ['nombre', 'casa', 'saldo', 'cuotas', 'mora', 'condominio'].every((k) => typeof i.vars[k] === 'string') && /^Hola /.test(i.text) && !('phone' in i) && !('contact' in i)), JSON.stringify(metaSent[0] && metaSent[0].items[0]));
+        await oikos(`setReminderMode('mora')`);
+        const noTpl = await oikos(`document.getElementById('rem-template-info').textContent`);
+        const noTplAlerts = await oikos(`(() => { const seen = []; const real = window.alert; window.alert = (m) => seen.push(String(m)); let ready; try { ready = reminderTemplateReady({ id: 'x' }); } finally { window.alert = real; } return [ready, seen]; })()`);
+        record('si falta la plantilla de ese tipo de aviso (mora) lo dice y no deja enviar', /Falta la plantilla/.test(noTpl) && noTplAlerts[0] === false && noTplAlerts[1].length === 1 && /Falta la plantilla de Meta/.test(noTplAlerts[1][0]), JSON.stringify([noTpl, noTplAlerts]));
+        await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
+        await oikos(`setReminderMode('mora'); checkRemConnection();`);
+        await sleep(300);
+        equal('al volver a UltraMsg se ve el texto editable otra vez', await oikos(`[document.getElementById('rem-template-box').classList.contains('hidden'), document.getElementById('rem-msg-box').classList.contains('hidden')]`), [true, false]);
         // Con poca pantalla (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
         await oikos(`openReminders()`);
         const scrolling = await oikos(`(() => {

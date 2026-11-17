@@ -33,6 +33,7 @@ let provider = true;
 const CONNECTED = { connected: true, state: 'authenticated', provider: 'ultramsg' };
 let connState = CONNECTED;
 const E = require('../functions/src/rondas/ultramsg-estado.js');
+const MT = require('../functions/src/rondas/meta-estado.js');
 const SIMULADO = { provider: 'simulado' };
 const ULTRAMSG = { ultramsgInstance: 'instancia', ultramsgToken: 'token' };
 let cfg = SIMULADO;            // la configuracion de WhatsApp que ve el servidor
@@ -40,12 +41,18 @@ let uRows = null;              // lo que "dice UltraMsg" de los mensajes (null =
 const whatsapp = {
     loadConfig: async () => cfg,
     hasProvider: () => provider,
-    send: async (config, to, message) => { sentLog.push({ to, message }); return failTo.has(to) ? null : 'SIMULADO'; },
+    send: async (config, to, message, opts = {}) => {
+        sentLog.push({ to, message, opts });
+        if (failTo.has(to)) { if (opts.errors && config && config.channel === 'meta') opts.errors.push('Meta (131026): no se pudo entregar'); return null; }
+        return 'SIMULADO';
+    },
     connection: async () => connState,
     describeConnection: (conn) => `WhatsApp no está conectado (estado: ${conn.state}). Revise la instancia.`,
     queueStats: async () => ({ queued: 7, sent: 1, unsent: 0, invalid: 0, expired: 0 }),
     // Lo que UltraMsg dice de cada mensaje: el listado es de mentira, el resto es el codigo de verdad
-    listMessages: async () => uRows, classify: E.classify, describeReason: E.describeReason, deliveryFor: E.deliveryFor, matchCampaign: E.matchCampaign
+    listMessages: async () => uRows, classify: E.classify, describeReason: E.describeReason, deliveryFor: E.deliveryFor, matchCampaign: E.matchCampaign,
+    // WhatsApp oficial de Meta con plantillas: el codigo de verdad
+    usesTemplates: (config) => !!(config && config.channel === 'meta'), templateFor: MT.templateFor, templateParams: MT.templateParams, renderTemplate: MT.renderTemplate
 };
 const pauses = [];
 const sleep = async (ms) => { pauses.push(ms); };
@@ -403,6 +410,109 @@ console.log('\nQue llego de verdad (UltraMsg acepta y despues WhatsApp puede rec
     const different = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: ['p1', 'p2', 'p3'].map((id) => ({ residentId: id, text: `Debe Q${id}` })) } });
     equal('si el texto cambia por lote (por ejemplo el saldo) se manda cada uno', [different.pending, different.skipped], [3, 0]);
     await control(different.id, 'cancel');
+}
+
+console.log('\nWhatsApp oficial de Meta: cada aviso sale con una plantilla aprobada');
+{
+    const control = (id, action) => R.controlCampaign({ db, whatsapp, condominioId: CONDO, data: { campaignId: id, action } });
+    const META = {
+        channel: 'meta', metaToken: 't', metaPhoneId: 'p',
+        metaTemplates: {
+            mora: { name: 'aviso_mora', language: 'es', params: ['nombre', 'casa', 'saldo'], body: 'Hola {{1}}, casa {{2}}: debe {{3}}.' },
+            general: { name: 'aviso_general', language: 'es', params: [], body: 'Aviso general de la administración.' }
+        }
+    };
+    const vars = (name, casa, saldo) => ({ nombre: name, casa, saldo, cuotas: 'Q1.00', mora: 'Q0.00', condominio: 'La Perla' });
+
+    reset();
+    cfg = META;
+    const c = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: [
+        { residentId: 'v1', text: 'ESTO SE IGNORA', vars: vars('Ana', 'A1', 'Q10.00') },
+        { residentId: 'v2', vars: vars('Beto', 'B2', 'Q20.00') },
+        { residentId: 'v3', vars: { nombre: 'Carla\nPerez', casa: '', saldo: 'Q30.00' } }
+    ] } });
+    equal('con Meta el texto de cada residente es el de la plantilla con sus datos (el texto que mande la pantalla se ignora)', [(await dest(c.id, 'v1')).text, (await dest(c.id, 'v2')).text], ['Hola Ana, casa A1: debe Q10.00.', 'Hola Beto, casa B2: debe Q20.00.']);
+    equal('guarda los datos de cada uno y un dato vacio o con salto de linea se arregla', [(await dest(c.id, 'v1')).params, (await dest(c.id, 'v3')).params], [['Ana', 'A1', 'Q10.00'], ['Carla Perez', '-', 'Q30.00']]);
+    const metaCamp = await camp(c.id);
+    equal('el envio dice que es de Meta y con que plantilla', [metaCamp.channel, metaCamp.template], ['meta', 'aviso_mora']);
+    await run();
+    const first = sentLog[0];
+    equal('cada mensaje sale con la plantilla, su idioma y sus datos', [first.opts.template.name, first.opts.template.language, first.opts.params], ['aviso_mora', 'es', ['Ana', 'A1', 'Q10.00']]);
+    equal('salieron los 3', [sentLog.length, (await camp(c.id)).status], [3, 'done']);
+
+    // Falla: el motivo de Meta queda en el destinatario
+    reset();
+    cfg = META;
+    failTo.add('50255551111');
+    const f = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: [{ residentId: 'v1', vars: vars('Ana', 'A1', 'Q10.00') }] } });
+    await run();
+    equal('si Meta rechaza, el motivo queda anotado', [(await dest(f.id, 'v1')).status, (await dest(f.id, 'v1')).error], ['failed', 'Meta (131026): no se pudo entregar']);
+
+    // Sin plantilla o sin datos
+    reset();
+    cfg = { ...META, metaTemplates: { mora: META.metaTemplates.mora } };
+    await rejects('sin la plantilla de ese tipo de aviso no se crea el envio y dice cual falta', () => R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: [{ residentId: 'v1', vars: {} }] } }), 'failed-precondition');
+    cfg = META;
+    await rejects('un residente sin datos para la plantilla se rechaza', () => R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: [{ residentId: 'v1', text: 'solo texto' }] } }), 'invalid-argument');
+    // Se quita la plantilla DESPUES de crear el envio: la corrida se detiene con el motivo
+    const g = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: [{ residentId: 'v1', vars: vars('Ana', 'A1', 'Q10.00') }] } });
+    cfg = { ...META, metaTemplates: {} };
+    await run();
+    const lost = await camp(g.id);
+    equal('si falta la plantilla al mandar, no sale nada y queda detenido con el motivo', [sentLog.length, lost.status, /Falta la plantilla/.test(lost.errorMessage)], [0, 'error', true]);
+    cfg = META;
+    await control(g.id, 'cancel');
+
+    // Un mismo texto al mismo telefono (con los datos ya puestos) sale una vez
+    reset();
+    cfg = META;
+    await user('m1', { phone: '5588-1001' });
+    await user('m2', { phone: '5588-1001' });
+    const dup = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: [{ residentId: 'm1', vars: {} }, { residentId: 'm2', vars: {} }] } });
+    equal('el aviso general (sin datos) al mismo telefono sale una sola vez', [dup.pending, dup.skipped], [1, 1]);
+    await control(dup.id, 'cancel');
+
+    // Un residente y la prueba
+    reset();
+    cfg = META;
+    const one = await R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'mora', text: 'IGNORADO', vars: vars('Ana', 'A1', 'Q10.00') } });
+    equal('un residente sale con la plantilla (y sin consultar a UltraMsg)', [one.sent, sentLog[0].opts.template.name, sentLog[0].message, one.delivery], [true, 'aviso_mora', 'Hola Ana, casa A1: debe Q10.00.', null]);
+    const oneDoc = (await condoRef.collection('recordatorios_individuales').orderBy('at', 'desc').limit(1).get()).docs[0].data();
+    equal('queda anotado con la plantilla', [oneDoc.template, oneDoc.text], ['aviso_mora', 'Hola Ana, casa A1: debe Q10.00.']);
+    await rejects('un residente sin datos para la plantilla se rechaza', () => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'mora', text: 'solo texto' } }), 'invalid-argument');
+    const testSent = await R.sendTest({ whatsapp, data: { phone: '5555-1111', mode: 'varios', vars: {} } });
+    equal('la prueba tambien sale con la plantilla', [testSent.sent, sentLog[sentLog.length - 1].opts.template.name], [true, 'aviso_general']);
+    await rejects('la prueba sin datos se rechaza', () => R.sendTest({ whatsapp, data: { phone: '5555-1111', mode: 'mora', text: 'solo texto' } }), 'invalid-argument');
+    failTo.add('50255551111');
+    const failedOne = await R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'mora', vars: vars('Ana', 'A1', 'Q10.00') } });
+    equal('si Meta lo rechaza, el motivo vuelve a la pantalla', [failedOne.sent, failedOne.error], [false, 'Meta (131026): no se pudo entregar']);
+
+    // Lo que ve OIKOS arriba de los botones: el canal, las plantillas y la calidad del numero
+    reset();
+    cfg = META;
+    connState = { connected: true, state: 'connected', provider: 'meta', quality: 'GREEN', name: 'Residenciales La Perla', number: '+502 1111 2222' };
+    const info = await R.connectionInfo({ whatsapp });
+    equal('el estado trae el canal Meta, las dos plantillas y la calidad del numero', [info.channel, info.templates.mora.name, info.templates.general.name, info.templates.mora.params, info.meta], ['meta', 'aviso_mora', 'aviso_general', ['nombre', 'casa', 'saldo'], { quality: 'GREEN', name: 'Residenciales La Perla', number: '+502 1111 2222' }]);
+    cfg = { ...META, metaTemplates: { mora: META.metaTemplates.mora } };
+    equal('si falta una plantilla lo dice (null)', (await R.connectionInfo({ whatsapp })).templates.general, null);
+    cfg = SIMULADO;
+    const plain = await R.connectionInfo({ whatsapp });
+    equal('con UltraMsg el estado dice ultramsg y no trae plantillas', [plain.channel, plain.templates], ['ultramsg', null]);
+
+    // Comprobar entregas no aplica a Meta (su resultado llega por su webhook); reenviar usa los datos ya calculados
+    reset();
+    cfg = META;
+    const h = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'mora', items: [{ residentId: 'v1', vars: vars('Ana', 'A1', 'Q10.00') }, { residentId: 'v2', vars: vars('Beto', 'B2', 'Q20.00') }] } });
+    await run();
+    await rejects('con Meta no se comprueba con UltraMsg y lo dice', () => R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: h.id }), 'failed-precondition');
+    await condoRef.collection('recordatorios_envios').doc(h.id).collection('destinatarios').doc('v2').update({ delivery: 'rechazado' });
+    await condoRef.collection('recordatorios_envios').doc(h.id).update({ delivery: { resend: 1, checkedAt: new Date().toISOString() } });
+    sentLog.length = 0;
+    const again2 = await R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: h.id } });
+    equal('reenviar con plantilla usa los mismos datos de ese residente', [again2.pending, (await dest(again2.id, 'v2')).params, (await dest(again2.id, 'v2')).text], [1, ['Beto', 'B2', 'Q20.00'], 'Hola Beto, casa B2: debe Q20.00.']);
+    await run();
+    equal('y sale con la plantilla', [sentLog.length, sentLog[0].opts.template.name, sentLog[0].opts.params], [1, 'aviso_mora', ['Beto', 'B2', 'Q20.00']]);
+    reset();
 }
 
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');

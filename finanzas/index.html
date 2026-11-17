@@ -912,6 +912,13 @@
                     <div id="rem-bulk-buttons" class="flex flex-wrap gap-2 mt-2"></div>
                 </div>
             </div>
+            <!-- SISDEL: con el WhatsApp OFICIAL de Meta el texto lo fija una plantilla aprobada por Meta: solo cambian los datos de cada residente -->
+            <div id="rem-template-box" class="hidden mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 px-4 py-3">
+                <p class="text-sm font-bold text-sky-800 dark:text-sky-200"><i class="fas fa-shield-halved mr-1.5"></i>WhatsApp oficial de Meta</p>
+                <p id="rem-template-info" class="text-xs text-slate-600 dark:text-slate-300 mt-1"></p>
+                <p id="rem-template-preview-wrap" class="hidden text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400 mt-2">Así le llega <span id="rem-template-who" class="font-normal normal-case"></span></p>
+                <p id="rem-template-preview" class="text-sm text-slate-800 dark:text-slate-100 whitespace-pre-line break-words"></p>
+            </div>
             <!-- SISDEL: el mensaje que se envia se puede cambiar: en el momento (vale para esta ventana) o guardado para todos -->
             <details id="rem-msg-box" open class="mb-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/30">
                 <summary class="cursor-pointer select-none px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200"><i class="fab fa-whatsapp text-emerald-500 mr-1.5"></i><span id="rem-msg-title">Texto del mensaje por morosidad</span> <span class="font-normal text-slate-500 dark:text-slate-400">(se puede editar)</span></summary>
@@ -3993,14 +4000,27 @@
             const o = sisdelOwedOf(r);
             return { owed: o.total, mora: o.mora, cuotas: o.pending };
         }
-        function reminderText(template, r) {
+        // Los datos de un residente para el aviso: los {nombre}, {casa}, {saldo}... de los textos y los huecos de una plantilla de Meta
+        function reminderVars(r) {
             const s = Store.get('settings') || {};
             const o = reminderOwedOf(r);
-            const values = { nombre: r.name || '', casa: r.unit || '', saldo: formatMoney(o.owed), cuotas: formatMoney(o.cuotas), mora: formatMoney(o.mora), condominio: s.name || 'OIKOS' };
+            return { nombre: r.name || '', casa: r.unit || '', saldo: formatMoney(o.owed), cuotas: formatMoney(o.cuotas), mora: formatMoney(o.mora), condominio: s.name || 'OIKOS' };
+        }
+        function reminderText(template, r) {
+            const values = reminderVars(r);
             return String(template).replace(/\{(nombre|casa|saldo|cuotas|mora|condominio)\}/gi, (_, key) => values[key.toLowerCase()]);
+        }
+        // WhatsApp OFICIAL de Meta: el texto es el de la plantilla aprobada ({{1}}, {{2}}... -> {nombre}, {casa}...: el mismo mecanismo)
+        function remMetaMode() { return !!(remConn && remConn.channel === 'meta'); }
+        function remMetaTemplate() { return remMetaMode() && remConn.templates ? (remConn.templates[currentRemMode === 'varios' ? 'general' : 'mora'] || null) : null; }
+        function remTemplateAsText(tpl) { return String(tpl.body || '').replace(/\{\{(\d+)\}\}/g, (_, n) => '{' + (tpl.params[Number(n) - 1] || 'nombre') + '}'); }
+        // Lo que se manda por residente: el texto y, con Meta, sus datos para llenar la plantilla
+        function remItemFor(r) {
+            return { residentId: String(r.id), text: reminderText(reminderTemplateFor(r), r), ...(remMetaMode() ? { vars: reminderVars(r) } : {}) };
         }
         // El texto que le toca a un residente segun el mensaje seleccionado (lo escrito en la ventana o, vacio, el guardado)
         function reminderTemplateFor(r) {
+            if (remMetaMode()) { const tpl = remMetaTemplate(); return tpl ? remTemplateAsText(tpl) : ''; }
             const saved = reminderMessagesSaved();
             const pick = (id, fallback) => { const v = document.getElementById(id).value; return v.trim() ? v : fallback; };
             if (currentRemMode === 'varios') return pick('rem-msg-general', saved.general);
@@ -4030,7 +4050,7 @@
             const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
             const preview = text.length > 400 ? text.slice(0, 400) + '...' : text;
             if (!confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return;
-            const result = await bridge.one({ residentId: String(r.id), text, mode });
+            const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
             if (!result.ok) {
                 if (/no está conectado/i.test(result.error) && confirm(result.error + '\n\n¿Abrir WhatsApp para enviarlo a mano?')) return manual();
                 if (!/no está conectado/i.test(result.error)) alert(result.error);
@@ -4071,6 +4091,21 @@
             paintReminderMode();
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
         }
+        function paintRemMeta() {
+            const meta = remMetaMode();
+            const box = document.getElementById('rem-template-box');
+            if (!box) return;
+            box.classList.toggle('hidden', !meta);
+            const textBox = document.getElementById('rem-msg-box');
+            if (textBox) textBox.classList.toggle('hidden', meta);
+            if (!meta) return;
+            const tpl = remMetaTemplate();
+            const info = document.getElementById('rem-template-info');
+            info.className = 'text-xs mt-1 ' + (tpl ? 'text-slate-600 dark:text-slate-300' : 'text-rose-700 dark:text-rose-300 font-semibold');
+            info.textContent = tpl
+                ? `El texto de este aviso lo fija la plantilla «${tpl.name}» aprobada por Meta: no se edita aquí; solo cambian los datos de cada residente (${tpl.params.join(', ') || 'ninguno'}).`
+                : 'Falta la plantilla de Meta para este tipo de aviso: pida al programador que la cargue antes de enviar.';
+        }
         function paintReminderMode() {
             const varios = currentRemMode === 'varios';
             const on = 'rem-mode px-4 py-3 rounded-xl border-2 text-left transition border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
@@ -4082,6 +4117,7 @@
             document.getElementById('rem-msg-mora-wrap').classList.toggle('hidden', varios);
             document.getElementById('rem-msg-general-wrap').classList.toggle('hidden', !varios);
             document.getElementById('rem-msg-title').textContent = varios ? 'Texto de los mensajes varios' : 'Texto del mensaje por morosidad';
+            paintRemMeta();
             // El mensaje por morosidad va solo a los morosos; con mensajes varios se elige: todos, morosos o pendientes
             document.getElementById('tab-rem-all').classList.toggle('hidden', !varios);
             document.getElementById('tab-rem-todos').classList.toggle('hidden', !varios);
@@ -4091,6 +4127,15 @@
             const wrap = document.getElementById('rem-preview-wrap');
             if (!wrap) return;
             const r = remPreviewResident;
+            if (remMetaMode()) {
+                const tpl = remMetaTemplate();
+                const who = document.getElementById('rem-template-who');
+                document.getElementById('rem-template-preview-wrap').classList.toggle('hidden', !r || !tpl);
+                document.getElementById('rem-template-preview').textContent = r && tpl ? reminderText(remTemplateAsText(tpl), r) : '';
+                if (who) who.textContent = r ? '(' + (r.unit ? r.unit + ' · ' : '') + (r.name || '') + ')' : '';
+                wrap.classList.add('hidden');
+                return;
+            }
             wrap.classList.toggle('hidden', !r);
             if (!r) return;
             document.getElementById('rem-preview-who').textContent = '(como le llega a ' + (r.unit ? r.unit + ' · ' : '') + (r.name || '') + ')';
@@ -4233,9 +4278,11 @@
             try { r = await bridge.status({}); } catch (e) { r = null; }
             remConnBusy = false;
             remConn = r && r.ok
-                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null }
+                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null, channel: r.channel || 'ultramsg', templates: r.templates || null, meta: r.meta || null }
                 : { connected: null, state: 'sin-respuesta', message: '', queue: null };
             paintRemConnection();
+            paintRemMeta();
+            renderReminderPreview();
             paintReminderBulk();
         }
         function paintRemConnection() {
@@ -4247,7 +4294,8 @@
             const queued = c.queue && c.queue.queued > 0 ? c.queue.queued : 0;
             const queueTag = queued ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-semibold">${queued} en la cola de UltraMsg</span>` : '';
             if (c.connected === true) {
-                el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold"><i class="fas fa-circle-check mr-1"></i>WhatsApp conectado</span>${queueTag}${queued ? '<span class="text-slate-500 dark:text-slate-400">salen solos, de 1 a 15 segundos entre cada uno</span>' : ''}${again}`;
+                const officialTag = c.channel === 'meta' ? `<span class="text-slate-600 dark:text-slate-300">${SisdelBusqueda.escapeHtml(((c.meta && c.meta.number) || '') + (c.meta && c.meta.quality ? ' · calidad ' + c.meta.quality : ''))}</span>` : '';
+                el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold"><i class="fas fa-circle-check mr-1"></i>${c.channel === 'meta' ? 'WhatsApp oficial de Meta conectado' : 'WhatsApp conectado'}</span>${officialTag}${queueTag}${queued ? '<span class="text-slate-500 dark:text-slate-400">salen solos, de 1 a 15 segundos entre cada uno</span>' : ''}${again}`;
             } else if (c.connected === false) {
                 el.innerHTML = `<div class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp desconectado: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.message || '')}</p>${queued ? `<p class="mt-1">${queueTag} Salen solos cuando se vuelva a conectar, si no pasan 24 horas.</p>` : ''}<div class="mt-2">${again}</div></div>`;
             } else {
@@ -4316,7 +4364,7 @@
                 }
             }
             // Comprobar entregas: con el envio detenido y algo aceptado. Reenviar: solo si ya se comprobo y hay a quien
-            if (c.status !== 'running' && (c.sent || 0) > 0) buttons.push(`<button type="button" onclick="reconcileRemCampaign()" class="${btnCls} bg-sky-600 hover:bg-sky-700 text-white"><i class="fas fa-magnifying-glass-chart mr-1"></i>Comprobar entregas</button>`);
+            if (c.status !== 'running' && (c.sent || 0) > 0 && !remMetaMode()) buttons.push(`<button type="button" onclick="reconcileRemCampaign()" class="${btnCls} bg-sky-600 hover:bg-sky-700 text-white"><i class="fas fa-magnifying-glass-chart mr-1"></i>Comprobar entregas</button>`);
             if ((c.status === 'done' || c.status === 'canceled' || c.status === 'error') && del && (del.resend || 0) > 0) buttons.push(`<button type="button" onclick="resendRemCampaign()" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-rotate-right mr-1"></i>Reenviar a los que no recibieron (${del.resend})</button>`);
             document.getElementById('rem-bulk-buttons').innerHTML = buttons.join('');
         }
@@ -4350,6 +4398,7 @@
         }
         // Avisa y vuelve a la ventana si el aviso sigue con el texto de ejemplo
         function reminderTemplateReady(r) {
+            if (remMetaMode() && !remMetaTemplate()) { alert('Falta la plantilla de Meta para este tipo de aviso. Pida al programador que la cargue antes de enviar.'); return false; }
             const template = reminderTemplateFor(r);
             if (!template.includes(SISDEL_REMINDER_PLACEHOLDER)) return true;
             document.getElementById('rem-msg-box').open = true;
@@ -4367,7 +4416,7 @@
             const list = picked.length ? picked : reminderSendable(remShownList);
             if (!list.length) return alert('No hay residentes con teléfono en esta lista.');
             if (!reminderTemplateReady(list[0])) return;
-            const items = list.map(r => ({ residentId: String(r.id), text: reminderText(reminderTemplateFor(r), r) }));
+            const items = list.map(remItemFor);
             const minutes = Math.max(1, Math.ceil((items.length * REM_PAUSE_SECONDS) / 60));
             const first = list[0];
             const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
@@ -4399,7 +4448,7 @@
             if (phone === null) return;
             remLastTestPhone = phone;
             try { localStorage.setItem('sisdel_rem_prueba', phone); } catch (e) { /* solo se pierde el recuerdo */ }
-            const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r) });
+            const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r), mode: currentRemMode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
             if (!result.ok) return alert(result.error);
             const outcome = remOutcome(result);
             if (outcome === 'ok') showToast(`Prueba enviada al teléfono que termina en ${result.phoneTail}: WhatsApp la recibió. Revise que llegó.`);

@@ -4,6 +4,7 @@
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 const estado = require('./ultramsg-estado');
+const meta = require('./meta-estado');
 
 async function loadConfig() {
     const snap = await db.doc('_privado/whatsapp').get();
@@ -47,9 +48,24 @@ async function sendMeta(config, to, message) {
     }
 }
 
-// Devuelve el canal usado o null si no salio por ninguno
-async function send(config, to, message) {
+// Por el WhatsApp OFICIAL de Meta (config.channel === 'meta'): con plantilla si se pide (opts.template + opts.params), si no texto
+// libre (solo llega a quien escribio en las ultimas 24 h). Si falla, deja el motivo en opts.errors; nunca anota el token.
+async function sendMetaOfficial(config, to, message, opts) {
+    const result = opts.template
+        ? await meta.sendTemplate(config, to, opts.template, opts.params || [])
+        : await meta.sendText(config, to, message);
+    if (result.ok) return true;
+    logger.warn('whatsapp: Meta rechazo el mensaje', { code: result.code, message: result.error });
+    if (Array.isArray(opts.errors)) opts.errors.push(`Meta (${result.code}): ${result.error}`);
+    return false;
+}
+
+// Devuelve el canal usado o null si no salio por ninguno. Con config.channel === 'meta' sale SOLO por Meta (no cae a UltraMsg:
+// su numero puede estar bloqueado); si no, UltraMsg y, de respaldo, Meta con texto libre, como siempre.
+// opts: { template, params, errors }
+async function send(config, to, message, opts = {}) {
     if (config.provider === 'simulado') return 'SIMULADO';
+    if (meta.usesMeta(config)) return (await sendMetaOfficial(config, to, message, opts)) ? 'META' : null;
     if (await sendUltraMsg(config, to, message)) return 'ULTRAMSG';
     if (await sendMeta(config, to, message)) return 'META';
     return null;
@@ -58,7 +74,13 @@ async function send(config, to, message) {
 // Estado de la conexion de UltraMsg (ver ultramsg-estado.js): connection, queueStats y describeConnection
 module.exports = {
     loadConfig, hasProvider, send,
-    connection: estado.connection, queueStats: estado.queueStats, describeConnection: estado.describeConnection,
+    // Estado de la conexion: del canal que se use (Meta o UltraMsg)
+    connection: (config) => (meta.usesMeta(config) ? meta.connection(config) : estado.connection(config)),
+    describeConnection: (conn) => (conn && conn.provider === 'meta' ? meta.describeConnection(conn) : estado.describeConnection(conn)),
+    queueStats: (config) => (meta.usesMeta(config) ? null : estado.queueStats(config)),
     // Lo que UltraMsg dice de cada mensaje (en cola, rechazado, enviado, entregado): ver ultramsg-estado.js
-    listMessages: estado.listMessages, classify: estado.classify, describeReason: estado.describeReason, deliveryFor: estado.deliveryFor, matchCampaign: estado.matchCampaign
+    listMessages: (config, options) => (meta.usesMeta(config) ? null : estado.listMessages(config, options)),
+    classify: estado.classify, describeReason: estado.describeReason, deliveryFor: estado.deliveryFor, matchCampaign: estado.matchCampaign,
+    // WhatsApp oficial de Meta con plantillas aprobadas (ver meta-estado.js)
+    usesTemplates: meta.usesMeta, templateFor: meta.templateFor, templateParams: meta.templateParams, renderTemplate: meta.renderTemplate
 };

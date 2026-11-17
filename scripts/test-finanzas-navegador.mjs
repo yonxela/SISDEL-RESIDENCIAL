@@ -181,7 +181,7 @@ async function run() {
 
         console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');
         // WhatsApp de mentira (no sale nada): se ve a quien le tocaria. A los residentes de prueba se les pone un telefono solo en pantalla.
-        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), status: async () => window.__conn, reconcile: async (d) => { window.__calls.push(['reconcile', d]); return { ok: true, entregado: 3, rechazado: 7 }; }, resend: async (d) => { window.__calls.push(['resend', d]); return { ok: true, pending: 7, estimatedMinutes: 1 }; }, watch: () => () => {} }; window.__calls = []; window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }; })()`);
+        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), status: async () => window.__conn, reconcile: async (d) => { window.__calls.push(['reconcile', d]); return { ok: true, entregado: 3, rechazado: 7 }; }, resend: async (d) => { window.__calls.push(['resend', d]); return { ok: true, pending: 7, estimatedMinutes: 1 }; }, recipients: async (d) => { window.__calls.push(['recipients', d]); return { ok: true, items: window.__rec || [] }; }, watch: () => () => {} }; window.__calls = []; window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }; })()`);
         await oikos(`(() => {
             window.__origGet = Store.get; window.__realConfirm = window.confirm;
             // El condominio de prueba trae solo 2 vecinos: se agregan 6 de mentira (solo en pantalla) para poder elegir unos y dejar otros
@@ -246,6 +246,53 @@ async function run() {
         await panel('done', { id: 'envio-1', pending: 0, sent: 10, delivery });
         await oikos(`(async () => { await reconcileRemCampaign(); await resendRemCampaign(); })()`);
         equal('los botones llaman al servidor con el envio: comprobar y reenviar', await page.evaluate(`window.__calls.map((c) => [c[0], c[1].campaignId])`), [['reconcile', 'envio-1'], ['resend', 'envio-1']]);
+        // Quienes recibieron el ultimo mensaje: boton y listado por lo que WhatsApp confirmo
+        const nowIso = new Date().toISOString();
+        await page.evaluate(`window.__rec = [
+            { id: 'u-ana', name: 'Ana', casa: 'A1', phoneTail: '1111', status: 'sent', delivery: 'entregado', sentAt: '${nowIso}' },
+            { id: 'fake-0', name: 'Beatriz', casa: 'F-1', phoneTail: '2222', status: 'sent', delivery: 'enviado', sentAt: '${nowIso}' },
+            { id: 'fake-1', name: 'Carlos', casa: 'F-2', phoneTail: '3333', status: 'sent', delivery: 'pendiente', sentAt: '${nowIso}' },
+            { id: 'fake-2', name: 'Diana', casa: 'F-3', phoneTail: '4444', status: 'sent', delivery: 'rechazado', deliveryReason: 'temporary_block', sentAt: '${nowIso}' },
+            { id: 'fake-3', name: 'Esteban', casa: 'F-4', phoneTail: '5555', status: 'sent', delivery: 'desconocido', sentAt: '${nowIso}' },
+            { id: 'fake-4', name: 'Flor', casa: 'F-5', phoneTail: '6666', status: 'pending', delivery: 'sin_enviar' },
+            { id: 'fake-5', name: 'Gabriel', casa: 'F-6', phoneTail: '', status: 'skipped', reason: 'sin teléfono válido' }
+        ]; window.__calls.length = 0;`);
+        await panel('done', { id: 'envio-2', pending: 0, sent: 10, delivery });
+        equal('con un envio aparece el boton Ver quienes recibieron', await oikos(`!document.getElementById('rem-rec-btn').classList.contains('hidden')`), true);
+        await oikos(`showRemRecipients()`);
+        await sleep(300);
+        const recTabs = await oikos(`[...document.querySelectorAll('#rem-rec-tabs button')].map((b) => b.textContent)`);
+        equal('el listado se divide por lo que WhatsApp confirmo, con su cuenta', recTabs, ['Ya recibieron (2)', 'Sin confirmar (1)', 'No recibieron (3)', 'Sin teléfono (1)']);
+        const received = await oikos(`[...document.querySelectorAll('#rem-rec-list > div')].map((d) => d.textContent.replace(/\\s+/g, ' ').trim())`);
+        record('en Ya recibieron salen solo los que llegaron (entregado o recibido por WhatsApp), con su casa y su hora', received.length === 2 && /Ana/.test(received[0]) && /llegó al teléfono/.test(received[0]) && /Beatriz/.test(received[1]) && /WhatsApp lo recibió/.test(received[1]) && !received.some((t) => /Diana|Carlos|Esteban|Flor/.test(t)), JSON.stringify(received));
+        equal('con el envio ya comprobado no se vuelve a preguntar a UltraMsg, solo se lee el listado', await page.evaluate(`window.__calls.map((c) => c[0])`), ['recipients']);
+        await oikos(`setRemRecTab('no_recibieron')`);
+        const notReceived = await oikos(`[...document.querySelectorAll('#rem-rec-list > div')].map((d) => d.textContent.replace(/\\s+/g, ' ').trim())`);
+        record('en No recibieron cada uno dice por que: rechazado por WhatsApp, sin rastro, o sin enviar', notReceived.length === 3 && notReceived.some((t) => /Diana.*bloqueo temporal de WhatsApp/.test(t)) && notReceived.some((t) => /Esteban.*sin rastro en UltraMsg/.test(t)) && notReceived.some((t) => /Flor.*todavía no se envió/.test(t)), JSON.stringify(notReceived));
+        await oikos(`(() => { const s = document.getElementById('rem-rec-search'); s.value = 'dian'; renderRemRecipients(); })()`);
+        equal('el buscador filtra el listado', await oikos(`[...document.querySelectorAll('#rem-rec-list > div')].length`), 1);
+        await oikos(`(() => { document.getElementById('rem-rec-search').value = ''; })()`);
+        await oikos(`showRemRecipients()`);
+        equal('el mismo boton cierra el listado', await oikos(`document.getElementById('rem-recipients').classList.contains('hidden')`), true);
+        // Sin haber comprobado: pregunta a UltraMsg y luego lista
+        await page.evaluate(`window.__calls.length = 0`);
+        await panel('done', { id: 'envio-3', pending: 0, sent: 10 });
+        await oikos(`showRemRecipients()`);
+        await sleep(300);
+        equal('si todavia no se comprobo, primero comprueba con UltraMsg y despues lee el listado', await page.evaluate(`window.__calls.map((c) => [c[0], c[1].campaignId])`), [['reconcile', 'envio-3'], ['recipients', 'envio-3']]);
+        // Con Meta: solo se sabe a quienes acepto
+        await page.evaluate(`window.__rec = [{ id: 'u-ana', name: 'Ana', casa: 'A1', phoneTail: '1111', status: 'sent', delivery: null, sentAt: '${nowIso}' }]; window.__conn = { ok: true, connected: true, state: 'connected', message: '', queue: null, channel: 'meta', templates: { mora: null, general: null }, meta: null };`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
+        await panel('done', { id: 'envio-4', pending: 0, sent: 1 });
+        await oikos(`showRemRecipients()`);
+        await sleep(300);
+        const metaRec = await oikos(`({ tabs: [...document.querySelectorAll('#rem-rec-tabs button')].map((b) => b.textContent), note: document.getElementById('rem-rec-note').textContent })`);
+        record('con Meta no se promete entrega: dice a quienes acepto Meta y que todavia no se sabe si llego', metaRec.tabs.includes('Aceptados por Meta (1)') && /Meta/.test(metaRec.note) && /todavía no se sabe/.test(metaRec.note), JSON.stringify(metaRec));
+        await oikos(`hideRemRecipients()`);
+        await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
         // El aviso de UN residente cuenta lo que paso de verdad (no basta con que UltraMsg lo acepte)
         const outcomes = await oikos(`[{ sent: true, delivery: 'entregado' }, { sent: true, delivery: 'enviado' }, { sent: true, delivery: 'rechazado' }, { sent: true, delivery: 'en_cola' }, { sent: true, delivery: 'pendiente' }, { sent: true, delivery: null }, { sent: false }].map(remOutcome)`);
         equal('entregado y enviado son ok; rechazado es rechazado; en cola, pendiente y sin saber NO se dan por entregados', outcomes, ['ok', 'ok', 'rejected', 'unconfirmed', 'unconfirmed', 'unconfirmed', 'failed']);

@@ -101,8 +101,8 @@
     <script src="privilegios.js?v=20261116f"></script>
     <script src="sisdel-core.js?v=20261116f"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261117b"></script>
-    <script src="finanzas-bloqueo.js?v=20261117b"></script>
+    <script src="finanzas-sync.js?v=20261117c"></script>
+    <script src="finanzas-bloqueo.js?v=20261117c"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -144,6 +144,22 @@
                 // Que paso de verdad con los mensajes de un envio y reenviar solo a los que no recibieron
                 reconcile: callServer('reconcileReminderCampaign'),
                 resend: callServer('resendReminderCampaign'),
+                // A quienes se les mando un envio y que paso con cada uno (sin el texto): el listado "quienes recibieron"
+                recipients: async ({ campaignId }) => {
+                    try {
+                        const snap = await window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('recordatorios_envios')
+                            .doc(String(campaignId)).collection('destinatarios').get();
+                        return {
+                            ok: true,
+                            items: snap.docs.map((d) => {
+                                const x = d.data();
+                                return { id: d.id, name: x.name || '', casa: x.casa || '', phoneTail: x.phoneTail || '', status: x.status || '', delivery: x.delivery || null, deliveryReason: x.deliveryReason || '', reason: x.reason || '', error: x.error || '', sentAt: x.sentAt || '' };
+                            })
+                        };
+                    } catch (error) {
+                        return { ok: false, error: 'No se pudo leer el listado. Revise su conexión y su permiso de recordatorios.' };
+                    }
+                },
                 // El ultimo envio del condominio, en vivo (lo lee quien tiene el privilegio de recordatorios)
                 watch: (callback) => {
                     try {

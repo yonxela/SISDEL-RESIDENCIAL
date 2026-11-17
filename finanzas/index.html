@@ -894,6 +894,7 @@
                 <div id="rem-wa-status" class="flex flex-wrap items-center gap-2 mb-3 text-xs"></div>
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="rem-send-all" onclick="sendRemindersToAll()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition"><i class="fab fa-whatsapp mr-1.5"></i><span id="rem-send-all-label">Enviar a todos</span></button>
+                    <button type="button" id="rem-rec-btn" onclick="showRemRecipients()" class="hidden px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-list-check mr-1.5"></i>Ver quiénes recibieron</button>
                     <button type="button" id="rem-send-test" onclick="sendReminderTest()" class="px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-vial mr-1.5"></i>Enviar prueba</button>
                     <span class="text-xs text-slate-600 dark:text-slate-300">Sale del WhatsApp del condominio, un mensaje cada ~8 segundos.</span>
                 </div>
@@ -910,6 +911,17 @@
                     <p id="rem-bulk-detail" class="text-xs text-slate-600 dark:text-slate-300 mt-1.5"></p>
                     <p id="rem-bulk-delivery" class="hidden text-xs mt-1.5 rounded-lg px-3 py-2 bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200"></p>
                     <div id="rem-bulk-buttons" class="flex flex-wrap gap-2 mt-2"></div>
+                </div>
+                <!-- SISDEL: quienes ya recibieron el ultimo mensaje (y quienes no, con el motivo) -->
+                <div id="rem-recipients" class="hidden mt-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60 p-3">
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <p class="text-sm font-bold text-slate-800 dark:text-slate-100">Quiénes recibieron el último mensaje <span id="rem-rec-when" class="font-normal text-xs text-slate-500 dark:text-slate-400"></span></p>
+                        <button type="button" onclick="hideRemRecipients()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-lg leading-none px-1" aria-label="Cerrar el listado" title="Cerrar el listado">&times;</button>
+                    </div>
+                    <div id="rem-rec-tabs" class="flex flex-wrap gap-1.5 mb-2"></div>
+                    <input type="text" id="rem-rec-search" autocomplete="off" oninput="renderRemRecipients()" class="w-full px-3 py-2 mb-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Buscar en esta lista por nombre o casa...">
+                    <p id="rem-rec-note" class="text-xs text-slate-600 dark:text-slate-300 mb-2"></p>
+                    <div id="rem-rec-list" class="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 text-sm"></div>
                 </div>
             </div>
             <!-- SISDEL: con el WhatsApp OFICIAL de Meta el texto lo fija una plantilla aprobada por Meta: solo cambian los datos de cada residente -->
@@ -4330,6 +4342,10 @@
             if (!wrap) return;
             const c = remCampaign;
             wrap.classList.toggle('hidden', !c);
+            const recBtn = document.getElementById('rem-rec-btn');
+            if (recBtn) recBtn.classList.toggle('hidden', !c);
+            // Si llega otro envio mientras el listado esta abierto, el listado es del anterior: se cierra
+            if (c && remRecData && remRecData.campaignId !== c.id) hideRemRecipients();
             if (!c) return;
             const total = c.total || 0;
             const done = (c.sent || 0) + (c.failed || 0) + (c.skipped || 0);
@@ -4367,6 +4383,105 @@
             if (c.status !== 'running' && (c.sent || 0) > 0 && !remMetaMode()) buttons.push(`<button type="button" onclick="reconcileRemCampaign()" class="${btnCls} bg-sky-600 hover:bg-sky-700 text-white"><i class="fas fa-magnifying-glass-chart mr-1"></i>Comprobar entregas</button>`);
             if ((c.status === 'done' || c.status === 'canceled' || c.status === 'error') && del && (del.resend || 0) > 0) buttons.push(`<button type="button" onclick="resendRemCampaign()" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-rotate-right mr-1"></i>Reenviar a los que no recibieron (${del.resend})</button>`);
             document.getElementById('rem-bulk-buttons').innerHTML = buttons.join('');
+        }
+        // ───────── Quienes recibieron el ultimo mensaje ─────────
+        // "Recibio" = UltraMsg dice que llego a WhatsApp (una palomita) o al telefono (dos); "enviado" a secas solo era "aceptado".
+        var remRecData = null;      // { campaignId, items: [{ ...destinatario, contact, group }], checkedAt }
+        var remRecTab = 'recibieron';
+        function remRecGroup(it) {
+            if (it.status === 'skipped') return 'sin_telefono';
+            if (it.delivery === 'entregado' || it.delivery === 'enviado') return 'recibieron';
+            if (it.delivery === 'pendiente') return 'sin_confirmar';
+            if (!it.delivery && it.status === 'sent') return remMetaMode() ? 'aceptado_meta' : 'sin_comprobar';
+            return 'no_recibieron';
+        }
+        function remRecWhy(it) {
+            if (it.status === 'skipped') return it.reason || 'sin teléfono válido';
+            if (it.delivery === 'rechazado') return remReasonShort(it.deliveryReason);
+            if (it.delivery === 'desconocido') return 'sin rastro en UltraMsg';
+            if (it.delivery === 'en_cola') return 'sigue en la cola de UltraMsg';
+            if (it.delivery === 'sin_enviar' || it.status === 'pending') return 'todavía no se envió';
+            if (it.status === 'failed') return it.error || 'no salió';
+            if (it.delivery === 'pendiente') return 'aceptado, WhatsApp aún no confirma';
+            if (it.delivery === 'entregado') return 'llegó al teléfono';
+            if (it.delivery === 'enviado') return 'WhatsApp lo recibió';
+            if (it.status === 'sent') return remMetaMode() ? 'aceptado por Meta' : 'aceptado por UltraMsg, sin comprobar';
+            return '';
+        }
+        async function showRemRecipients() {
+            const bridge = remBridge();
+            const panel = document.getElementById('rem-recipients');
+            if (!bridge || typeof bridge.recipients !== 'function' || !remCampaign || !panel) return;
+            if (!panel.classList.contains('hidden')) return hideRemRecipients();     // el boton abre y cierra
+            panel.classList.remove('hidden');
+            document.getElementById('rem-rec-list').innerHTML = '<p class="py-3 text-slate-500 dark:text-slate-400"><i class="fas fa-circle-notch fa-spin mr-1"></i>Cargando el listado...</p>';
+            const campaignId = remCampaign.id;
+            // Con UltraMsg, si todavia no se pregunto que llego de verdad, se pregunta ahora (con el envio detenido y algo aceptado)
+            if (!remMetaMode() && !remCampaign.delivery && remCampaign.status !== 'running' && (remCampaign.sent || 0) > 0 && typeof bridge.reconcile === 'function') {
+                document.getElementById('rem-rec-note').textContent = 'Comprobando con UltraMsg qué llegó de verdad...';
+                await bridge.reconcile({ campaignId });
+            }
+            const result = await bridge.recipients({ campaignId });
+            if (!result.ok) { panel.classList.add('hidden'); return alert(result.error); }
+            const residents = Store.get('residents') || [];
+            const items = result.items.map((it) => {
+                const r = residents.find((x) => String(x.id) === String(it.id));
+                return { ...it, name: (r && r.name) || it.name, casa: (r && r.unit) || it.casa, contact: (r && r.contact) || '', group: null };
+            });
+            items.forEach((it) => { it.group = remRecGroup(it); });
+            remRecData = { campaignId, items };
+            remRecTab = 'recibieron';
+            document.getElementById('rem-rec-search').value = '';
+            renderRemRecipients();
+        }
+        function hideRemRecipients() {
+            const panel = document.getElementById('rem-recipients');
+            if (panel) panel.classList.add('hidden');
+            remRecData = null;
+        }
+        function setRemRecTab(tab) { remRecTab = tab; renderRemRecipients(); }
+        function renderRemRecipients() {
+            if (!remRecData) return;
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            const c = remCampaign && remCampaign.id === remRecData.campaignId ? remCampaign : null;
+            const items = remRecData.items;
+            const count = (g) => items.filter((it) => it.group === g).length;
+            const tabs = [
+                ['recibieron', 'Ya recibieron', 'emerald'],
+                ['sin_confirmar', 'Sin confirmar', 'amber'],
+                ['sin_comprobar', 'Sin comprobar', 'amber'],
+                ['aceptado_meta', 'Aceptados por Meta', 'sky'],
+                ['no_recibieron', 'No recibieron', 'rose'],
+                ['sin_telefono', 'Sin teléfono', 'slate']
+            ].filter(([g]) => g === 'recibieron' || g === 'no_recibieron' || count(g) > 0);
+            if (!tabs.some(([g]) => g === remRecTab)) remRecTab = 'recibieron';
+            document.getElementById('rem-rec-tabs').innerHTML = tabs.map(([g, label, color]) => {
+                const on = g === remRecTab;
+                const onCls = { emerald: 'bg-emerald-600 text-white border-emerald-600', amber: 'bg-amber-500 text-white border-amber-500', sky: 'bg-sky-600 text-white border-sky-600', rose: 'bg-rose-600 text-white border-rose-600', slate: 'bg-slate-600 text-white border-slate-600' };
+                return `<button type="button" onclick="setRemRecTab('${g}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${on ? onCls[color] : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'}">${label} (${count(g)})</button>`;
+            }).join('');
+            const checkedAt = c && c.delivery && c.delivery.checkedAt ? new Date(c.delivery.checkedAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '';
+            document.getElementById('rem-rec-when').textContent = checkedAt ? `(comprobado a las ${checkedAt})` : '';
+            const note = document.getElementById('rem-rec-note');
+            const unchecked = !remMetaMode() && items.some((it) => it.group === 'sin_comprobar');
+            note.innerHTML = remMetaMode()
+                ? 'Con el WhatsApp oficial de Meta todavía no se sabe si cada mensaje se entregó: aquí solo se ve a quiénes Meta aceptó.'
+                : unchecked
+                    ? 'Todavía no se comprobó con UltraMsg qué llegó. <button type="button" onclick="reconcileRemCampaign().then(() => { hideRemRecipients(); showRemRecipients(); })" class="underline font-semibold text-sky-700 dark:text-sky-300">Comprobar ahora</button>'
+                    : '"Recibieron" cuenta solo lo que WhatsApp confirmó: una palomita (llegó a WhatsApp) o dos (llegó al teléfono).';
+            const query = document.getElementById('rem-rec-search').value;
+            let rows = items.filter((it) => it.group === remRecTab).sort((a, b) => String(a.name).localeCompare(String(b.name), 'es', { sensitivity: 'base' }) || String(a.casa).localeCompare(String(b.casa), 'es', { numeric: true }));
+            if (query.trim()) rows = SisdelBusqueda.filter(rows, query, (it) => [it.name, it.casa, it.contact]);
+            const list = document.getElementById('rem-rec-list');
+            if (!rows.length) {
+                list.innerHTML = `<p class="py-3 text-slate-500 dark:text-slate-400">${query.trim() ? 'Nadie coincide con la búsqueda.' : remRecTab === 'recibieron' ? 'Todavía nadie tiene confirmada la recepción de este mensaje.' : 'Nadie en esta lista.'}</p>`;
+                return;
+            }
+            list.innerHTML = rows.map((it) => {
+                const when = it.sentAt && it.group === 'recibieron' ? new Date(it.sentAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '';
+                const phone = it.contact || (it.phoneTail ? '…' + it.phoneTail : '');
+                return `<div class="py-2 flex items-baseline justify-between gap-3"><div class="min-w-0"><span class="font-semibold text-slate-800 dark:text-slate-100">${query.trim() ? SisdelBusqueda.highlight(it.casa || '—', query) : esc(it.casa || '—')} · ${query.trim() ? SisdelBusqueda.highlight(it.name, query) : esc(it.name)}</span><span class="block text-xs text-slate-500 dark:text-slate-400">${esc(phone)}</span></div><span class="text-xs text-right text-slate-600 dark:text-slate-300 shrink-0">${esc(remRecWhy(it))}${when ? ' · ' + when : ''}</span></div>`;
+            }).join('');
         }
         function remReasonShort(reason) {
             return reason === 'temporary_block' ? 'bloqueo temporal de WhatsApp' : reason === 'invalid' ? 'número sin WhatsApp' : reason === 'expired' ? 'venció en la cola' : String(reason || 'sin motivo');

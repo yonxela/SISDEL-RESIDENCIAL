@@ -120,6 +120,7 @@ service cloud.firestore {
     function pFinanzasResidentesEditar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_editar'); }
     function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_finiquitar'); }
     function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_eliminar'); }
+    function pFinanzasResidentesContactar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_contactar'); }
     function pFinanzasCuotasMes(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_mes'); }
     function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOn(c, 'finanzas.cuotas_meses'); }
     function pFinanzasCuotasCorregir(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
@@ -695,6 +696,17 @@ service cloud.firestore {
                                     'customExpenseConcepts', 'receiptCounter', 'chargedMonths', 'lastChargedMonth', 'updated_at', 'created_at'])
               || pFinanzasConfigGeneral(condoId));
       }
+      // Envios de recordatorios por WhatsApp a todos los residentes (functions/src/recordatorios-core.js): los escribe solo el
+      // servidor; los lee quien tiene el privilegio de recordatorios, para ver el avance
+      match /recordatorios_envios/{campId} {
+        allow read: if isMaster() || pFinanzasResidentesContactar(condoId);
+        allow write: if false;
+        match /destinatarios/{rid} {
+          allow read: if isMaster() || pFinanzasResidentesContactar(condoId);
+          allow write: if false;
+        }
+      }
+
       match /finanzas_config/{docId} {
         allow read: if canReadFinance();
         allow create: if pFinanzasUsar(condoId) && docId == 'oikos_settings'

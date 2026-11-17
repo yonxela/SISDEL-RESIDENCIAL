@@ -1632,6 +1632,46 @@ async function run() {
     await allowed('y vuelve a su nombre de antes', () => renameAdminCall(master, { condominioId: A, userId: adminIdA, newName: originalAdminName, masterCode: seed.masterCode }));
     equal('el administrador tiene otra vez su nombre', (await adminDocA()).name, originalAdminName);
 
+    // ───────── Recordatorios por WhatsApp a todos (el servidor manda; aqui se prueban las llamadas y las reglas) ─────────
+    // Quien manda es el WhatsApp de mentira del emulador (provider simulado). Lo que se manda de verdad se prueba en
+    // test-recordatorios.mjs; aqui: quien puede llamar, quien puede leer el avance y que nadie escribe a mano.
+    console.log('\nRecordatorios por WhatsApp');
+    const remStart = (c, data) => httpsCallable(c.functions, 'startReminderCampaign')(data);
+    const remControl = (c, data) => httpsCallable(c.functions, 'controlReminderCampaign')(data);
+    const remTest = (c, data) => httpsCallable(c.functions, 'sendReminderTest')(data);
+    const remVecinoId = ana.login.user.id;
+    const remItems = [{ residentId: remVecinoId, text: 'Hola Ana, aviso de prueba' }];
+    await denied('un vecino no inicia envios por WhatsApp', () => remStart(ana, { mode: 'varios', items: remItems }));
+    await denied('el auditor tampoco', () => remStart(auditor, { mode: 'varios', items: remItems }));
+    await denied('sin sesion no se llama', () => remStart(nobody, { mode: 'varios', items: remItems }));
+    await denied('el vecino no manda mensajes de prueba', () => remTest(ana, { phone: '5555-1111', text: 'hola' }));
+    const remResult = await remStart(admin, { mode: 'varios', items: [...remItems, { residentId: 'no-existe', text: 'x' }] });
+    equal('el administrador inicia un envio (un residente valido y uno que no existe)', [remResult.data.total, remResult.data.pending, remResult.data.skipped], [2, 1, 1]);
+    await rejectedWith('con un envio en curso no se inicia otro', () => remStart(admin, { mode: 'varios', items: remItems }), 'failed-precondition');
+    const remCol = collection(admin.db, `condominios/${A}/recordatorios_envios`);
+    equal('el administrador ve el avance', (await getDocs(remCol)).docs.map((d) => [d.data().status, d.data().pending, d.data().createdBy.id]), [['running', 1, adminIdA]]);
+    equal('y a quien se le manda (sin telefonos completos)', (await getDocs(collection(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}/destinatarios`))).docs.map((d) => [d.id, d.data().status, d.data().phoneTail]).sort(), [[remVecinoId, 'pending', '5678'], ['no-existe', 'skipped', '']].sort());
+    await denied('el vecino no lee los envios', () => getDocs(collection(ana.db, `condominios/${A}/recordatorios_envios`)));
+    await denied('el auditor no lee los envios', () => getDocs(collection(auditor.db, `condominios/${A}/recordatorios_envios`)));
+    await denied('nadie escribe un envio a mano (ni el administrador)', () => setDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/falso`), { status: 'done' }));
+    await denied('ni cambia uno existente', () => updateDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`), { status: 'done' }));
+    await denied('ni el master escribe un envio directo', () => updateDoc(doc(master.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`), { sent: 99 }));
+    await denied('ni sus destinatarios', () => updateDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}/destinatarios/${remVecinoId}`), { status: 'sent' }));
+    await denied('la cola de envios no se toca desde el navegador', () => getDocs(collection(admin.db, 'colas_envios')));
+    await denied('el vecino no cancela un envio', () => remControl(ana, { campaignId: remResult.data.id, action: 'cancel' }));
+    equal('el administrador cancela el envio', (await remControl(admin, { campaignId: remResult.data.id, action: 'cancel' })).data.status, 'canceled');
+    equal('y queda cancelado', (await getDoc(doc(admin.db, `condominios/${A}/recordatorios_envios/${remResult.data.id}`))).data().status, 'canceled');
+    await rejectedWith('un envio inexistente se avisa', () => remControl(admin, { campaignId: 'nada', action: 'cancel' }), 'not-found');
+    equal('el administrador manda un mensaje de prueba (WhatsApp simulado)', (await remTest(admin, { phone: '5555-1111', text: '(Mensaje de prueba) hola' })).data.sent, true);
+    await rejectedWith('la prueba pide un telefono completo', () => remTest(admin, { phone: '12', text: 'hola' }), 'invalid-argument');
+    // Los privilegios se aplican: sin finanzas.residentes_contactar el administrador tampoco puede
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'finanzas.residentes_contactar': false } });
+    await denied('sin el privilegio de recordatorios ni el administrador inicia envios', () => remStart(admin, { mode: 'varios', items: remItems }));
+    await denied('ni lee los envios', () => getDocs(remCol));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
+    await allowed('con el privilegio otra vez, vuelve a poder', () => remStart(admin, { mode: 'varios', items: remItems }));
+    await remControl(admin, { campaignId: (await getDocs(query(remCol, where('status', '==', 'running')))).docs[0].id, action: 'cancel' });
+
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');
     let blocked = null;

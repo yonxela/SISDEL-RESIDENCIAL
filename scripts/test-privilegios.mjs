@@ -729,6 +729,21 @@ console.log('\nNombre del condominio (solo el programador, con la clave master)'
     yes('el Sistema Financiero abre con el nombre vigente del condominio', /SISDEL\.getCondominio\(condoId\)/.test(read('finanzas.html')) && /msname: condoName/.test(read('finanzas.html')));
 }
 
+console.log('\nRecordatorios por WhatsApp a todos (servidor)');
+{
+    const oikos = read('finanzas/index.html');
+    const rules = read('firestore.rules');
+    const funcs = read('functions/index.js');
+    yes('las funciones del envio estan exportadas', ['startReminderCampaign', 'controlReminderCampaign', 'sendReminderTest', 'processReminderQueue'].every((f) => new RegExp(`\\b${f}\\b`).test(funcs)));
+    yes('piden el privilegio de recordatorios y tienen limites', /const KEY = 'finanzas\.residentes_contactar'/.test(read('functions/src/recordatorios.js')) && /CREATE_LIMIT/.test(read('functions/src/recordatorios.js')) && /TEST_LIMIT/.test(read('functions/src/recordatorios.js')));
+    yes('el telefono sale de la ficha del vecino, no de lo que manda OIKOS', /normalizePhone\(user\.phone\)/.test(read('functions/src/recordatorios-core.js')) && !/item\.phone|data\.phone[^a-zA-Z]/.test(read('functions/src/recordatorios-core.js').replace(/sendTest[\s\S]*$/, '')));
+    yes('las reglas dejan leer el avance al privilegio y no escribir a nadie', /match \/recordatorios_envios\/\{campId\}[\s\S]{0,200}pFinanzasResidentesContactar\(condoId\)[\s\S]{0,120}allow write: if false/.test(rules));
+    yes('el privilegio de recordatorios lo hace cumplir el servidor', /finanzas\.residentes_contactar[^}]*enforce: 'reglas'/.test(read('privilegios.js')));
+    yes('OIKOS pide el envio por el puente de finanzas.html y sin el puente no hay envio automatico', /window\.sisdelWhatsApp = \{/.test(read('finanzas.html')) && /window\.parent\.sisdelWhatsApp/.test(oikos) && /function sendRemindersToAll/.test(oikos));
+    yes('el bloqueo de pantalla cubre las funciones nuevas', /sendRemindersToAll\|sendReminderTest\|controlRemCampaign/.test(read('finanzas-bloqueo.js')));
+    yes('OIKOS avisa cuanto tarda y pide confirmar antes de enviar a todos', /Salen de a poco/.test(oikos) && /¿Enviar a todos\?/.test(oikos));
+}
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

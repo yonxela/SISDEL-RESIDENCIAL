@@ -1,0 +1,77 @@
+// Funciones del envio de recordatorios por WhatsApp a todos los residentes (la logica esta en recordatorios-core.js).
+//  - startReminderCampaign / controlReminderCampaign / sendReminderTest: las llama OIKOS (finanzas.html) con la sesion
+//    de quien lo usa; piden el privilegio finanzas.residentes_contactar y estan limitadas.
+//  - processReminderQueue: cada minuto manda los mensajes que faltan, de a poco.
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { logger } = require('firebase-functions/v2');
+const { db } = require('./firebase');
+const privilegios = require('./privilegios');
+const rateLimit = require('./rateLimit');
+const whatsapp = require('./rondas/whatsapp');
+const core = require('./recordatorios-core');
+
+const KEY = 'finanzas.residentes_contactar';
+const CREATE_LIMIT = { max: 6, windowMs: 60 * 60 * 1000 };
+const TEST_LIMIT = { max: 8, windowMs: 10 * 60 * 1000 };
+
+// Quien llama: un usuario activo del condominio con el privilegio de recordatorios
+async function authorize(request) {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sesión requerida');
+    const { uid, token } = request.auth;
+    const condominioId = token.condominioId;
+    if (!condominioId) throw new HttpsError('permission-denied', 'Sin permisos');
+    const me = await db.doc(`condominios/${condominioId}/usuarios/${uid}`).get();
+    const allowed = me.exists && me.data().active !== false && privilegios.has(me.data().role, me.data().privilegios, KEY);
+    if (!allowed) throw new HttpsError('permission-denied', 'Su usuario no tiene permiso para enviar recordatorios por WhatsApp.');
+    return { uid, condominioId, caller: { id: uid, name: me.data().name || '' } };
+}
+
+// Los errores de la logica traen su codigo y un texto en español; cualquier otro se registra y no se muestra
+function wrap(name, handler) {
+    return onCall({ timeoutSeconds: 120 }, async (request) => {
+        try {
+            return await handler(request);
+        } catch (error) {
+            if (error instanceof HttpsError) throw error;
+            if (error && error.userCode) throw new HttpsError(error.userCode, error.message);
+            logger.error(`recordatorios: ${name} fallo`, { message: error && error.message });
+            throw new HttpsError('internal', 'No se pudo completar. Intente de nuevo.');
+        }
+    });
+}
+
+const startReminderCampaign = wrap('startReminderCampaign', async (request) => {
+    const { uid, condominioId, caller } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios', uid, CREATE_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Ya hizo varios envíos en la última hora. Espere un poco e intente de nuevo.');
+    }
+    const result = await core.createCampaign({ db, whatsapp, condominioId, caller, data: request.data || {} });
+    await rateLimit.hit('recordatorios', uid, CREATE_LIMIT);
+    logger.warn('recordatorios: envio creado', { condominioId, campaignId: result.id, total: result.total, pendientes: result.pending, por: uid });
+    return result;
+});
+
+const controlReminderCampaign = wrap('controlReminderCampaign', async (request) => {
+    const { condominioId, uid } = await authorize(request);
+    const result = await core.controlCampaign({ db, condominioId, data: request.data || {} });
+    logger.warn('recordatorios: envio controlado', { condominioId, accion: (request.data || {}).action, campaignId: (request.data || {}).campaignId, por: uid });
+    return result;
+});
+
+const sendReminderTest = wrap('sendReminderTest', async (request) => {
+    const { uid } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios-prueba', uid, TEST_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiadas pruebas seguidas. Espere unos minutos.');
+    }
+    await rateLimit.hit('recordatorios-prueba', uid, TEST_LIMIT);
+    return core.sendTest({ whatsapp, data: request.data || {} });
+});
+
+const processReminderQueue = onSchedule({ schedule: 'every 1 minutes', timeoutSeconds: 900 }, async () => {
+    const results = await core.processQueue({ db, whatsapp });
+    const worked = results.filter((r) => !r.busy);
+    if (worked.length) logger.info('recordatorios: corrida', { envios: worked });
+});
+
+module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, processReminderQueue };

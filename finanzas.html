@@ -98,11 +98,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261116e"></script>
-    <script src="sisdel-core.js?v=20261116e"></script>
+    <script src="privilegios.js?v=20261116f"></script>
+    <script src="sisdel-core.js?v=20261116f"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261116e"></script>
-    <script src="finanzas-bloqueo.js?v=20261116e"></script>
+    <script src="finanzas-sync.js?v=20261116f"></script>
+    <script src="finanzas-bloqueo.js?v=20261116f"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -121,6 +121,31 @@
             window.sisdelConfirmCode = async (code) => {
                 const result = await window.sisdelFirebase.functions.httpsCallable('confirmOwnCode')({ code });
                 return result.data || { ok: false };
+            };
+
+            // OIKOS (el iframe) manda aqui los recordatorios de WhatsApp a todos los residentes: el servidor (functions/src/
+            // recordatorios.js) toma los telefonos de la ficha de cada vecino y los manda de a poco desde el WhatsApp del
+            // condominio. Cada llamada responde { ok: true, ... } o { ok: false, error } con el motivo en español.
+            const callServer = (name) => async (payload) => {
+                try {
+                    const result = await window.sisdelFirebase.functions.httpsCallable(name)(payload);
+                    return { ok: true, ...(result.data || {}) };
+                } catch (error) {
+                    return { ok: false, error: String((error && error.message) || 'No se pudo completar. Intente de nuevo.').replace(/\s*\[\d{3}\]\s*$/, '') };
+                }
+            };
+            window.sisdelWhatsApp = {
+                start: callServer('startReminderCampaign'),
+                test: callServer('sendReminderTest'),
+                control: callServer('controlReminderCampaign'),
+                // El ultimo envio del condominio, en vivo (lo lee quien tiene el privilegio de recordatorios)
+                watch: (callback) => {
+                    try {
+                        return window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('recordatorios_envios')
+                            .orderBy('createdAt', 'desc').limit(1)
+                            .onSnapshot((snap) => callback(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }), () => callback(null));
+                    } catch (error) { callback(null); return () => {}; }
+                }
             };
 
             const STATUS_TEXT = {

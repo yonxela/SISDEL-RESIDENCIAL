@@ -8,6 +8,8 @@
 //  2. processQueue (cada minuto, ver recordatorios.js): manda de a poco, con una pausa de 6 a 10 segundos entre mensajes
 //     (WhatsApp bloquea los numeros que mandan cientos seguidos). Cada mensaje queda como enviado o fallido; despues de
 //     5 fallos seguidos se detiene y avisa.
+//     Antes de mandar, y cada 10 mensajes, se comprueba que el WhatsApp del condominio este conectado (UltraMsg acepta los
+//     mensajes aunque su instancia este desconectada y los deja en cola: sin esta revision decia "enviado" y no salia nada).
 //  3. controlCampaign: pausar, continuar, cancelar o reintentar los fallidos. Pausar detiene el envio (en cuanto sale el
 //     mensaje en curso) y se puede continuar despues; cancelar es definitivo para quien usa OIKOS.
 // Los documentos de un envio los escribe solo el servidor; OIKOS los lee para mostrar el avance (reglas de Firestore).
@@ -23,6 +25,7 @@ const RUN_BUDGET_MS = 12 * 60 * 1000;   // lo que trabaja cada corrida del minut
 const LOCK_MS = 14 * 60 * 1000;         // una sola corrida por envio; si una muere, el turno vence solo
 const FAIL_STREAK = 5;
 const BATCH = 400;
+const CONN_CHECK_EVERY = 10;            // cada cuantos mensajes se vuelve a comprobar la conexion de WhatsApp
 const QUEUE = 'colas_envios';
 
 // Error con el codigo de HttpsError y un texto en español para quien lo usa
@@ -49,6 +52,19 @@ async function hasRunning(db, condominioId, exceptId) {
     return snap.docs.some((d) => d.id !== exceptId);
 }
 
+// Conexion del WhatsApp del condominio. El proveedor la consulta (whatsapp.connection); si no se puede saber (null) se deja
+// seguir: el envio mismo dira si falla. Un proveedor sin control (las pruebas) cuenta como conectado.
+async function connectionOf(whatsapp, config) {
+    if (typeof whatsapp.connection !== 'function') return { connected: true, state: 'sin-control' };
+    try { return await whatsapp.connection(config); } catch (e) { return { connected: null, state: 'sin-respuesta' }; }
+}
+const connectionText = (whatsapp, conn) => (typeof whatsapp.describeConnection === 'function' ? whatsapp.describeConnection(conn) : `WhatsApp no está conectado (estado: ${conn.state}).`);
+async function requireConnected(whatsapp, config) {
+    const conn = await connectionOf(whatsapp, config);
+    if (conn.connected === false) throw fail('failed-precondition', connectionText(whatsapp, conn));
+    return conn;
+}
+
 // Por que a un residente no se le puede enviar (null si si): lo usan el envio a todos y el envio a uno
 function skipReason(user, ficha, phone) {
     if (!user || user.role !== 'vecino') return 'no es un vecino';
@@ -64,6 +80,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
     if (!whatsapp.hasProvider(config)) {
         throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     }
+    await requireConnected(whatsapp, config);
     const items = Array.isArray(data && data.items) ? data.items : [];
     if (!items.length) throw fail('invalid-argument', 'No hay a quién enviar.');
     if (items.length > MAX_RECIPIENTS) throw fail('invalid-argument', `Se pueden enviar hasta ${MAX_RECIPIENTS} mensajes a la vez.`);
@@ -161,8 +178,14 @@ async function processCampaign(ctx) {
         await queueRef.set({ status: 'error' }, { merge: true });
         return { campaignId, status: 'error' };
     }
+    const startConn = await connectionOf(whatsapp, config);
+    if (startConn.connected === false) {
+        await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${connectionText(whatsapp, startConn)} Cuando esté conectado, pulse Continuar.` });
+        await queueRef.set({ status: 'error' }, { merge: true });
+        return { campaignId, status: 'error', stoppedBy: 'conexion' };
+    }
 
-    let sent = 0; let failed = 0; let streak = 0; let finished = false; let stoppedBy = null;
+    let sent = 0; let failed = 0; let streak = 0; let sinceCheck = 0; let lostConn = null; let finished = false; let stoppedBy = null;
     outer: for (;;) {
         const page = await campRef.collection('destinatarios').where('status', '==', 'pending').limit(20).get();
         if (page.empty) { finished = true; break; }
@@ -171,6 +194,11 @@ async function processCampaign(ctx) {
             // El estado se mira antes de CADA mensaje: pausar o cancelar detiene el envio en cuanto sale el que esta en curso
             const current = await campRef.get();
             if (!current.exists || current.data().status !== 'running') { stoppedBy = 'estado'; break outer; }
+            if (sinceCheck >= CONN_CHECK_EVERY) {
+                sinceCheck = 0;
+                const conn = await connectionOf(whatsapp, config);
+                if (conn.connected === false) { lostConn = conn; stoppedBy = 'conexion'; break outer; }
+            }
             const user = await condoRef.collection('usuarios').doc(doc.id).get();
             const phone = user.exists && user.data().active !== false ? normalizePhone(user.data().phone) : '';
             if (!phone) {
@@ -179,6 +207,7 @@ async function processCampaign(ctx) {
                 continue;
             }
             await doc.ref.update({ status: 'sending', startedAt: isoNow() });
+            sinceCheck++;
             let channel = null;
             let error = null;
             try { channel = await whatsapp.send(config, phone, doc.data().text); } catch (e) { error = e && e.message ? e.message : 'error'; }
@@ -200,6 +229,10 @@ async function processCampaign(ctx) {
         await recount(campRef);
         await campRef.update({ status: 'done', finishedAt: isoNow(), lockUntil: 0 });
         await queueRef.set({ status: 'done' }, { merge: true });
+    } else if (stoppedBy === 'conexion') {
+        await recount(campRef);
+        await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${connectionText(whatsapp, lostConn)} Cuando esté conectado, pulse Continuar.` });
+        await queueRef.set({ status: 'error' }, { merge: true });
     } else if (stoppedBy === 'fallos') {
         await recount(campRef);
         await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `WhatsApp no está respondiendo (${FAIL_STREAK} fallos seguidos). Revise la conexión de UltraMsg y use Reanudar.` });
@@ -225,7 +258,7 @@ async function processQueue({ db, whatsapp, sleep = realSleep, pause = randomPau
 // ───────── 3. Pausar, continuar, cancelar, reintentar ─────────
 // Ni pausar ni cancelar tocan lockUntil: lo suelta la corrida que esta mandando cuando ve el cambio (si se soltara aqui,
 // un "continuar" enseguida dejaria que otra corrida mande a la vez que la anterior y se repetirian mensajes).
-async function controlCampaign({ db, condominioId, data, now = () => new Date() }) {
+async function controlCampaign({ db, condominioId, data, whatsapp, now = () => new Date() }) {
     const campaignId = String((data && data.campaignId) || '').trim();
     if (!campaignId || campaignId.includes('/')) throw fail('invalid-argument', 'Envío inválido.');
     const campRef = campaignsOf(db, condominioId).doc(campaignId);
@@ -250,6 +283,8 @@ async function controlCampaign({ db, condominioId, data, now = () => new Date() 
     }
     if (action === 'resume' || action === 'retry') {
         if (camp.status === 'running') throw fail('failed-precondition', 'Ese envío ya está en curso.');
+        // Continuar con WhatsApp desconectado solo dejaria mas mensajes en la cola de UltraMsg
+        if (whatsapp) await requireConnected(whatsapp, await whatsapp.loadConfig());
         if (await hasRunning(db, condominioId, campaignId)) throw fail('failed-precondition', 'Ya hay otro envío en curso.');
         if (action === 'retry') {
             const failedDocs = await campRef.collection('destinatarios').where('status', '==', 'failed').get();
@@ -275,6 +310,7 @@ async function controlCampaign({ db, condominioId, data, now = () => new Date() 
 async function sendOne({ db, whatsapp, condominioId, caller, data, now = () => new Date() }) {
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
+    await requireConnected(whatsapp, config);
     const residentId = String((data && data.residentId) || '').trim();
     const text = String((data && data.text) || '').trim();
     if (!residentId || residentId.includes('/')) throw fail('invalid-argument', 'Residente inválido.');
@@ -304,6 +340,7 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, now = () => n
 async function sendTest({ whatsapp, data }) {
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio.');
+    await requireConnected(whatsapp, config);
     const phone = normalizePhone(data && data.phone);
     if (!phone) throw fail('invalid-argument', 'Escriba el teléfono completo (8 dígitos de Guatemala o con código de país).');
     const text = String((data && data.text) || '').trim();
@@ -312,7 +349,23 @@ async function sendTest({ whatsapp, data }) {
     return { sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4) };
 }
 
+// ───────── 5. Estado de la conexion (lo que muestra OIKOS arriba de los botones de enviar) ─────────
+async function connectionInfo({ whatsapp }) {
+    const config = await whatsapp.loadConfig();
+    if (!whatsapp.hasProvider(config)) {
+        return { configured: false, connected: false, state: 'sin-configurar', message: 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.', queue: null };
+    }
+    const conn = await connectionOf(whatsapp, config);
+    let queue = null;
+    if (typeof whatsapp.queueStats === 'function') { try { queue = await whatsapp.queueStats(config); } catch (e) { queue = null; } }
+    return {
+        configured: true, connected: conn.connected, state: conn.state, provider: conn.provider || null,
+        message: conn.connected === false ? connectionText(whatsapp, conn) : '', queue
+    };
+}
+
 module.exports = {
+    CONN_CHECK_EVERY, connectionInfo,
     MAX_RECIPIENTS, MAX_TEXT, PAUSE_MIN_MS, PAUSE_MAX_MS, AVG_PAUSE_SECONDS, RUN_BUDGET_MS, LOCK_MS, FAIL_STREAK,
     fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest
 };

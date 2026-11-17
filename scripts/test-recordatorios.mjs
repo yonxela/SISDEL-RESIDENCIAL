@@ -29,10 +29,16 @@ const caller = { id: 'adm', name: 'Administradora' };
 const sentLog = [];
 const failTo = new Set();
 let provider = true;
+// Estado de la conexion de WhatsApp (UltraMsg acepta los mensajes aunque su instancia este desconectada y los deja en cola)
+const CONNECTED = { connected: true, state: 'authenticated', provider: 'ultramsg' };
+let connState = CONNECTED;
 const whatsapp = {
     loadConfig: async () => ({ provider: 'simulado' }),
     hasProvider: () => provider,
-    send: async (config, to, message) => { sentLog.push({ to, message }); return failTo.has(to) ? null : 'SIMULADO'; }
+    send: async (config, to, message) => { sentLog.push({ to, message }); return failTo.has(to) ? null : 'SIMULADO'; },
+    connection: async () => connState,
+    describeConnection: (conn) => `WhatsApp no está conectado (estado: ${conn.state}). Revise la instancia.`,
+    queueStats: async () => ({ queued: 7, sent: 1, unsent: 0, invalid: 0, expired: 0 })
 };
 const pauses = [];
 const sleep = async (ms) => { pauses.push(ms); };
@@ -40,7 +46,7 @@ const pause = () => 0;
 const run = (extra = {}) => R.processQueue({ db, whatsapp, sleep, pause, ...extra });
 
 async function wipe() {
-    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios']) {
+    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios', 'recordatorios_individuales']) {
         for (const doc of (await condoRef.collection(col).get()).docs) await db.recursiveDelete(doc.ref);
     }
     for (const doc of (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).docs) await doc.ref.delete();
@@ -53,7 +59,7 @@ const create = (ids, extra = {}) => R.createCampaign({ db, whatsapp, condominioI
 const camp = async (id) => (await condoRef.collection('recordatorios_envios').doc(id).get()).data();
 const dest = async (id, rid) => (await condoRef.collection('recordatorios_envios').doc(id).collection('destinatarios').doc(rid).get()).data();
 const queue = async (id) => (await db.collection('colas_envios').doc(`${CONDO}__${id}`).get()).data();
-const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; };
+const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; connState = CONNECTED; };
 
 await condoRef.set({ id: CONDO, name: 'Condominio de pruebas de recordatorios', active: true, createdAt: now });
 await wipe();
@@ -227,6 +233,73 @@ console.log('\nPausar y continuar');
     equal('cancelar a mitad de la corrida la detiene despues del mensaje en curso (salio 1 de 3)', [sentLog.length, afterCancel.status, afterCancel.pending], [1, 'canceled', 2]);
     ok('cancelar no suelta el turno de golpe (lo suelta la corrida al parar)', lockAtCancel > Date.now() && afterCancel.lockUntil === 0, `-> en el momento ${lockAtCancel}, al final ${afterCancel.lockUntil}`);
     ok('un envio de otro condominio ni se pausa', await (async () => { try { await R.controlCampaign({ db, condominioId: 'otro-condo', data: { campaignId: c2.id, action: 'pause' } }); return false; } catch (e) { return e.userCode === 'not-found'; } })());
+}
+
+console.log('\nControl de conexion de WhatsApp (UltraMsg acepta y deja en cola si su instancia esta desconectada)');
+{
+    const control = (id, action) => R.controlCampaign({ db, whatsapp, condominioId: CONDO, data: { campaignId: id, action } });
+    const envios = async () => (await condoRef.collection('recordatorios_envios').get()).size;
+
+    // Desconectado: no se empieza nada, ni a un residente ni la prueba
+    reset();
+    connState = { connected: false, state: 'standby', provider: 'ultramsg' };
+    const antes = await envios();
+    let aviso = '';
+    try { await create(['v1', 'v2']); } catch (e) { aviso = e.message; }
+    ok('con WhatsApp desconectado (standby) no se crea el envio y el aviso dice el estado', /no está conectado \(estado: standby\)/.test(aviso) && (await envios()) === antes, aviso);
+    await rejects('tampoco se manda a un residente', () => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', text: 'hola' } }), 'failed-precondition');
+    await rejects('ni el mensaje de prueba', () => R.sendTest({ whatsapp, data: { phone: '5555-1111', text: 'hola' } }), 'failed-precondition');
+    equal('y no se mando nada', sentLog.length, 0);
+
+    // Si no se puede saber (UltraMsg no responde), se deja seguir: el envio mismo dira si falla
+    reset();
+    connState = { connected: null, state: 'sin-respuesta', provider: 'ultramsg' };
+    const unknown = await create(['v1']);
+    await run();
+    equal('si no se puede saber la conexion se deja seguir', [sentLog.length, (await camp(unknown.id)).status], [1, 'done']);
+
+    // Se desconecta DESPUES de crear el envio: la corrida no manda nada y avisa
+    reset();
+    const a = await create(['v1', 'v2', 'v3']);
+    connState = { connected: false, state: 'standby', provider: 'ultramsg' };
+    await run();
+    const stopped = await camp(a.id);
+    equal('si al empezar la corrida esta desconectado no manda nada y queda detenido con el motivo', [sentLog.length, stopped.status, stopped.pending, stopped.lockUntil, (await queue(a.id)).status], [0, 'error', 3, 0, 'error']);
+    ok('el motivo dice el estado y que se pulse Continuar', /estado: standby/.test(stopped.errorMessage) && /pulse Continuar/.test(stopped.errorMessage), stopped.errorMessage);
+    await rejects('no se puede continuar mientras siga desconectado (solo dejaria mas mensajes en la cola de UltraMsg)', () => control(a.id, 'resume'), 'failed-precondition');
+    connState = CONNECTED;
+    const resumedOk = await control(a.id, 'resume');
+    await run();
+    equal('al volver la conexion se continua y salen los 3 una sola vez', [resumedOk.status, sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(a.id)).status], ['running', 3, 3, 'done']);
+
+    // Se desconecta A MITAD del envio: se comprueba cada 10 mensajes y se detiene
+    reset();
+    const ids = Array.from({ length: 12 }, (_, i) => `w${i + 1}`);
+    for (const [i, id] of ids.entries()) await user(id, { phone: `5566-${1001 + i}` });
+    const b = await create(ids);
+    const realConnection = whatsapp.connection;
+    whatsapp.connection = async () => (sentLog.length >= R.CONN_CHECK_EVERY ? { connected: false, state: 'standby', provider: 'ultramsg' } : CONNECTED);
+    await run();
+    const mid = await camp(b.id);
+    equal(`se detiene al comprobar la conexion (cada ${R.CONN_CHECK_EVERY} mensajes): salieron ${R.CONN_CHECK_EVERY} de 12 y quedaron 2`, [sentLog.length, mid.status, mid.sent, mid.pending, mid.lockUntil], [R.CONN_CHECK_EVERY, 'error', R.CONN_CHECK_EVERY, 2, 0]);
+    ok('y dice que se desconecto', /estado: standby/.test(mid.errorMessage), mid.errorMessage);
+    whatsapp.connection = realConnection;
+    await control(b.id, 'resume');
+    await run();
+    equal('al volver salen los 2 que faltaban, sin repetir ninguno', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(b.id)).status], [12, 12, 'done']);
+
+    // Lo que ve OIKOS arriba de los botones
+    reset();
+    connState = { connected: false, state: 'standby', provider: 'ultramsg' };
+    const down = await R.connectionInfo({ whatsapp });
+    equal('el estado desconectado trae el motivo y lo que hay en la cola de UltraMsg', [down.configured, down.connected, down.state, /no está conectado/.test(down.message), down.queue.queued], [true, false, 'standby', true, 7]);
+    connState = CONNECTED;
+    const up = await R.connectionInfo({ whatsapp });
+    equal('el estado conectado no trae motivo', [up.connected, up.message], [true, '']);
+    provider = false;
+    const none = await R.connectionInfo({ whatsapp });
+    equal('sin claves de WhatsApp dice que no esta configurado', [none.configured, none.connected], [false, false]);
+    reset();
 }
 
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');

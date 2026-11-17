@@ -181,7 +181,7 @@ async function run() {
 
         console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');
         // WhatsApp de mentira (no sale nada): se ve a quien le tocaria. A los residentes de prueba se les pone un telefono solo en pantalla.
-        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), watch: () => () => {} }; })()`);
+        await page.evaluate(`(() => { window.__sent = []; window.__realWa = window.sisdelWhatsApp; window.sisdelWhatsApp = { start: async (d) => { window.__sent.push(d); return { ok: true, pending: d.items.length, estimatedMinutes: 1, skipped: 0 }; }, test: async () => ({ ok: true, sent: true }), control: async () => ({ ok: true }), one: async () => ({ ok: true, sent: true }), status: async () => window.__conn, watch: () => () => {} }; window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }; })()`);
         await oikos(`(() => {
             window.__origGet = Store.get; window.__realConfirm = window.confirm;
             // El condominio de prueba trae solo 2 vecinos: se agregan 6 de mentira (solo en pantalla) para poder elegir unos y dejar otros
@@ -237,6 +237,31 @@ async function run() {
         await oikos(`(() => { remCampaign = Object.assign({}, remCampaign, { status: 'paused', pausedAt: new Date().toISOString() }); paintReminderProgress(); })()`);
         equal('el texto del avance en pausa dice que se pulse Continuar', await oikos(`/en pausa desde .*pulse Continuar/.test(document.getElementById('rem-bulk-detail').textContent)`), true);
         await oikos(`(() => { remCampaign = null; paintReminderProgress(); paintReminderBulk(); })()`);
+        // Estado del WhatsApp del condominio: UltraMsg acepta los mensajes aunque este desconectado y los deja en cola (2026-11-16)
+        await oikos(`openReminders()`);
+        await sleep(300);
+        const wa = () => oikos(`(() => ({ texto: document.getElementById('rem-wa-status').textContent.replace(/\\s+/g, ' ').trim(), enviar: document.getElementById('rem-send-all').disabled, prueba: document.getElementById('rem-send-test').disabled }))()`);
+        const connected = await wa();
+        record('conectado: dice WhatsApp conectado y deja enviar', connected.texto.includes('WhatsApp conectado') && !connected.enviar && !connected.prueba, JSON.stringify(connected));
+        await page.evaluate(`window.__conn = { ok: true, connected: false, state: 'standby', message: 'WhatsApp no est\u00e1 conectado (estado: standby). Abra WhatsApp en el tel\u00e9fono vinculado.', queue: { queued: 709 } }`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
+        const down = await wa();
+        record('desconectado: avisa, dice cuantos hay en la cola de UltraMsg y no deja enviar ni mandar la prueba', down.texto.includes('WhatsApp desconectado') && down.texto.includes('estado: standby') && down.texto.includes('709 en la cola de UltraMsg') && down.enviar && down.prueba, JSON.stringify(down));
+        const alerts = await oikos(`(async () => { const seen = []; const real = window.alert; window.alert = (m) => seen.push(String(m)); try { await sendReminderTest(); await sendRemindersToAll(); } finally { window.alert = real; } return seen; })()`);
+        record('y aunque se fuerce el clic, el envio se detiene con el aviso (no sale nada)', alerts.length === 2 && alerts.every((m) => m.includes('no est\u00e1 conectado')) && (await page.evaluate(`window.__sent.length`)) === 2, JSON.stringify(alerts));
+        await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
+        const back = await wa();
+        record('al volver la conexion y revisar de nuevo, se puede enviar otra vez', back.texto.includes('WhatsApp conectado') && !back.enviar && !back.prueba, JSON.stringify(back));
+        await page.evaluate(`window.__conn = { ok: true, connected: null, state: 'sin-respuesta', message: '', queue: null }`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
+        const unknown = await wa();
+        record('si no se pudo comprobar, lo dice y deja seguir (el servidor vuelve a comprobar)', unknown.texto.includes('No se pudo comprobar') && !unknown.enviar, JSON.stringify(unknown));
+        await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
+        await oikos(`checkRemConnection()`);
         // Con poca pantalla (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
         await oikos(`openReminders()`);
         const scrolling = await oikos(`(() => {

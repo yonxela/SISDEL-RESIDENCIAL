@@ -890,6 +890,8 @@
             <!-- SISDEL: enviar a todos con un clic desde el WhatsApp del condominio. Lo manda el servidor, de a poco (una pausa de
                  6 a 10 segundos entre mensajes: WhatsApp bloquea los numeros que mandan cientos seguidos) y sigue aunque se cierre la ventana -->
             <div id="rem-bulk" class="hidden mb-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-900/10 p-3">
+                <!-- SISDEL: si el WhatsApp del condominio esta conectado (UltraMsg acepta los mensajes aunque este desconectado y los deja en cola) -->
+                <div id="rem-wa-status" class="flex flex-wrap items-center gap-2 mb-3 text-xs"></div>
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="rem-send-all" onclick="sendRemindersToAll()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition"><i class="fab fa-whatsapp mr-1.5"></i><span id="rem-send-all-label">Enviar a todos</span></button>
                     <button type="button" id="rem-send-test" onclick="sendReminderTest()" class="px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-vial mr-1.5"></i>Enviar prueba</button>
@@ -4090,6 +4092,7 @@
             paintReminderMode();
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
             startReminderWatch();
+            checkRemConnection();
         }
         function renderRemindersList(filterMode) {
             currentRemFilter = currentRemMode === 'varios' && ['all', 'mora', 'todos'].includes(filterMode) ? filterMode : 'mora';
@@ -4160,6 +4163,8 @@
             try { return window.parent && window.parent !== window && window.parent.sisdelWhatsApp ? window.parent.sisdelWhatsApp : null; } catch (e) { return null; }
         }
         var remShownList = [];
+        var remConn = null;            // estado del WhatsApp del condominio: { connected: true | false | null, state, message, queue }
+        var remConnBusy = false;
         var remAllResidents = [];
         var remSelected = new Set();   // ids de los residentes elegidos para el envio (se conservan al buscar y cambiar de lista)
         var remOnlySelected = false;
@@ -4199,6 +4204,40 @@
             remOnlySelected = !!on;
             renderRemindersList(currentRemFilter);
         }
+        // SISDEL: estado del WhatsApp del condominio. UltraMsg ACEPTA los mensajes aunque su instancia este desconectada y los deja en
+        // cola (a las 24 horas vencen): el 2026-11-16 salieron 712 "enviados" que nunca llegaron. Se muestra arriba de los botones y,
+        // si esta desconectado, no se deja enviar (el servidor tambien lo comprueba antes de mandar y cada 10 mensajes).
+        async function checkRemConnection() {
+            const bridge = remBridge();
+            if (!bridge || typeof bridge.status !== 'function' || remConnBusy) return;
+            remConnBusy = true;
+            remConn = { checking: true };
+            paintRemConnection();
+            let r = null;
+            try { r = await bridge.status({}); } catch (e) { r = null; }
+            remConnBusy = false;
+            remConn = r && r.ok
+                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null }
+                : { connected: null, state: 'sin-respuesta', message: '', queue: null };
+            paintRemConnection();
+            paintReminderBulk();
+        }
+        function paintRemConnection() {
+            const el = document.getElementById('rem-wa-status');
+            if (!el) return;
+            const c = remConn;
+            const again = '<button type="button" onclick="checkRemConnection()" class="px-2 py-1 rounded-md text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-rotate mr-1"></i>Revisar de nuevo</button>';
+            if (!c || c.checking) { el.innerHTML = '<span class="text-slate-500 dark:text-slate-400"><i class="fas fa-circle-notch fa-spin mr-1"></i>Comprobando la conexión de WhatsApp...</span>'; return; }
+            const queued = c.queue && c.queue.queued > 0 ? c.queue.queued : 0;
+            const queueTag = queued ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-semibold">${queued} en la cola de UltraMsg</span>` : '';
+            if (c.connected === true) {
+                el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold"><i class="fas fa-circle-check mr-1"></i>WhatsApp conectado</span>${queueTag}${queued ? '<span class="text-slate-500 dark:text-slate-400">salen solos, de 1 a 15 segundos entre cada uno</span>' : ''}${again}`;
+            } else if (c.connected === false) {
+                el.innerHTML = `<div class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp desconectado: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.message || '')}</p>${queued ? `<p class="mt-1">${queueTag} Salen solos cuando se vuelva a conectar, si no pasan 24 horas.</p>` : ''}<div class="mt-2">${again}</div></div>`;
+            } else {
+                el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 font-semibold">No se pudo comprobar la conexión de WhatsApp</span>${queueTag}${again}`;
+            }
+        }
         function paintReminderBulk() {
             const box = document.getElementById('rem-bulk');
             if (!box) return;
@@ -4214,10 +4253,13 @@
             if (countLabel) countLabel.textContent = remSelected.size ? `${remSelected.size} seleccionado(s)` : 'Sin selección: se envía a todos los de la lista';
             const clear = document.getElementById('rem-clear-picks');
             if (clear) clear.classList.toggle('hidden', !remSelected.size);
-            btn.disabled = !n || running;
+            const down = !!(remConn && remConn.connected === false);
+            btn.disabled = !n || running || down;
             btn.classList.toggle('opacity-50', btn.disabled);
             btn.classList.toggle('cursor-not-allowed', btn.disabled);
-            btn.title = running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
+            btn.title = down ? 'WhatsApp está desconectado: no se puede enviar' : running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
+            const testBtn = document.getElementById('rem-send-test');
+            if (testBtn) { testBtn.disabled = down; testBtn.classList.toggle('opacity-50', down); testBtn.classList.toggle('cursor-not-allowed', down); }
         }
         function paintReminderProgress() {
             const wrap = document.getElementById('rem-bulk-progress');
@@ -4266,6 +4308,8 @@
         async function sendRemindersToAll() {
             const bridge = remBridge();
             if (!bridge) return;
+            await checkRemConnection();
+            if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
             // Con residentes elegidos (casillas) se envia SOLO a ellos; sin elegir, a todos los de la lista
             const picked = remSelectedSendable();
             const list = picked.length ? picked : reminderSendable(remShownList);
@@ -4294,6 +4338,8 @@
         async function sendReminderTest() {
             const bridge = remBridge();
             if (!bridge) return;
+            await checkRemConnection();
+            if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
             const r = remShownList[0] || remPreviewResident;
             if (!r) return alert('No hay residentes en la lista para armar el mensaje de ejemplo.');
             if (!reminderTemplateReady(r)) return;

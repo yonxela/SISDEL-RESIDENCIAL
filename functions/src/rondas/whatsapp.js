@@ -3,6 +3,7 @@
 // scripts/set-whatsapp.mjs. Sin claves, no se envia nada y la alerta lo registra.
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
+const estado = require('./ultramsg-estado');
 
 async function loadConfig() {
     const snap = await db.doc('_privado/whatsapp').get();
@@ -54,4 +55,5 @@ async function send(config, to, message) {
     return null;
 }
 
-module.exports = { loadConfig, hasProvider, send };
+// Estado de la conexion de UltraMsg (ver ultramsg-estado.js): connection, queueStats y describeConnection
+module.exports = { loadConfig, hasProvider, send, connection: estado.connection, queueStats: estado.queueStats, describeConnection: estado.describeConnection };

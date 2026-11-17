@@ -15,6 +15,7 @@ const KEY = 'finanzas.residentes_contactar';
 const CREATE_LIMIT = { max: 6, windowMs: 60 * 60 * 1000 };
 const TEST_LIMIT = { max: 8, windowMs: 10 * 60 * 1000 };
 const ONE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
+const STATUS_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 
 // Quien llama: un usuario activo del condominio con el privilegio de recordatorios
 async function authorize(request) {
@@ -55,7 +56,7 @@ const startReminderCampaign = wrap('startReminderCampaign', async (request) => {
 
 const controlReminderCampaign = wrap('controlReminderCampaign', async (request) => {
     const { condominioId, uid } = await authorize(request);
-    const result = await core.controlCampaign({ db, condominioId, data: request.data || {} });
+    const result = await core.controlCampaign({ db, whatsapp, condominioId, data: request.data || {} });
     logger.warn('recordatorios: envio controlado', { condominioId, accion: (request.data || {}).action, campaignId: (request.data || {}).campaignId, por: uid });
     return result;
 });
@@ -81,10 +82,20 @@ const sendReminderOne = wrap('sendReminderOne', async (request) => {
     return result;
 });
 
+// Si el WhatsApp del condominio esta conectado (y cuantos mensajes tiene UltraMsg en cola): OIKOS lo muestra al abrir Recordatorios
+const checkWhatsAppConnection = wrap('checkWhatsAppConnection', async (request) => {
+    const { uid } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios-estado', uid, STATUS_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiadas revisiones seguidas. Espere unos minutos.');
+    }
+    await rateLimit.hit('recordatorios-estado', uid, STATUS_LIMIT);
+    return core.connectionInfo({ whatsapp });
+});
+
 const processReminderQueue = onSchedule({ schedule: 'every 1 minutes', timeoutSeconds: 900 }, async () => {
     const results = await core.processQueue({ db, whatsapp });
     const worked = results.filter((r) => !r.busy);
     if (worked.length) logger.info('recordatorios: corrida', { envios: worked });
 });
 
-module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, processReminderQueue };
+module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, checkWhatsAppConnection, processReminderQueue };

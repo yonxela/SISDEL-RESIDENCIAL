@@ -137,6 +137,7 @@
             window.sisdelWhatsApp = {
                 start: callServer('startReminderCampaign'),
                 test: callServer('sendReminderTest'),
+                one: callServer('sendReminderOne'),
                 control: callServer('controlReminderCampaign'),
                 // El ultimo envio del condominio, en vivo (lo lee quien tiene el privilegio de recordatorios)
                 watch: (callback) => {

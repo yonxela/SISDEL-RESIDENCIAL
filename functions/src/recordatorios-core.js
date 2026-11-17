@@ -47,6 +47,15 @@ async function hasRunning(db, condominioId, exceptId) {
     return snap.docs.some((d) => d.id !== exceptId);
 }
 
+// Por que a un residente no se le puede enviar (null si si): lo usan el envio a todos y el envio a uno
+function skipReason(user, ficha, phone) {
+    if (!user || user.role !== 'vecino') return 'no es un vecino';
+    if (user.active === false) return 'vecino inactivo';
+    if (ficha && ficha.deleted) return 'quitado del Sistema Financiero';
+    if (!phone) return 'sin teléfono válido';
+    return null;
+}
+
 // ───────── 1. Crear el envio ─────────
 async function createCampaign({ db, whatsapp, condominioId, caller, data, now = () => new Date() }) {
     const config = await whatsapp.loadConfig();
@@ -79,11 +88,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         const user = users[i].exists ? users[i].data() : null;
         const ficha = fichas[i].exists ? fichas[i].data() : null;
         const phone = user ? normalizePhone(user.phone) : '';
-        let reason = null;
-        if (!user || user.role !== 'vecino') reason = 'no es un vecino';
-        else if (user.active === false) reason = 'vecino inactivo';
-        else if (ficha && ficha.deleted) reason = 'quitado del Sistema Financiero';
-        else if (!phone) reason = 'sin teléfono válido';
+        const reason = skipReason(user, ficha, phone);
         return {
             id,
             data: {
@@ -254,6 +259,38 @@ async function controlCampaign({ db, condominioId, data, now = () => new Date() 
     throw fail('invalid-argument', 'Acción inválida.');
 }
 
+// ───────── 3b. Enviar a UN residente, al instante ─────────
+// El boton Enviar de cada residente y Contactar. No pasa por la cola ni por la pausa: sale ya. El telefono sale de la
+// ficha del vecino (nunca del cliente). Queda anotado en condominios/{c}/recordatorios_individuales (solo lo escribe
+// el servidor): quien, cuando, a quien y el texto.
+async function sendOne({ db, whatsapp, condominioId, caller, data, now = () => new Date() }) {
+    const config = await whatsapp.loadConfig();
+    if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
+    const residentId = String((data && data.residentId) || '').trim();
+    const text = String((data && data.text) || '').trim();
+    if (!residentId || residentId.includes('/')) throw fail('invalid-argument', 'Residente inválido.');
+    if (!text || text.length > MAX_TEXT) throw fail('invalid-argument', `El mensaje debe tener entre 1 y ${MAX_TEXT} caracteres.`);
+    const condoRef = db.collection('condominios').doc(condominioId);
+    const [userSnap, fichaSnap] = await Promise.all([
+        condoRef.collection('usuarios').doc(residentId).get(),
+        condoRef.collection('finanzas_residentes').doc(residentId).get()
+    ]);
+    const user = userSnap.exists ? userSnap.data() : null;
+    const phone = user ? normalizePhone(user.phone) : '';
+    const reason = skipReason(user, fichaSnap.exists ? fichaSnap.data() : null, phone);
+    if (reason) throw fail('failed-precondition', `No se le puede enviar: ${reason}.`);
+    let channel = null;
+    let error = null;
+    try { channel = await whatsapp.send(config, phone, text); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    await condoRef.collection('recordatorios_individuales').doc().set({
+        at: now().toISOString(), by: { id: caller.id, name: String(caller.name || '') }, residentId,
+        name: String(user.name || ''), casa: String(user.casa || ''), phoneTail: phone.slice(-4), text,
+        mode: data.mode === 'varios' ? 'varios' : 'mora', status: channel ? 'sent' : 'failed', channel: channel || null,
+        ...(channel ? {} : { error: error || 'No salió por ningún proveedor de WhatsApp' })
+    });
+    return { sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), name: String(user.name || ''), casa: String(user.casa || '') };
+}
+
 // ───────── 4. Mensaje de prueba ─────────
 async function sendTest({ whatsapp, data }) {
     const config = await whatsapp.loadConfig();
@@ -268,5 +305,5 @@ async function sendTest({ whatsapp, data }) {
 
 module.exports = {
     MAX_RECIPIENTS, MAX_TEXT, PAUSE_MIN_MS, PAUSE_MAX_MS, AVG_PAUSE_SECONDS, RUN_BUDGET_MS, LOCK_MS, FAIL_STREAK,
-    fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendTest
+    fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest
 };

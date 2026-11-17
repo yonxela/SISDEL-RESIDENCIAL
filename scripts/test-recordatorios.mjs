@@ -216,6 +216,45 @@ console.log('\nLimites y sin WhatsApp');
     equal('si WhatsApp no la entrega lo dice', (await R.sendTest({ whatsapp, data: { phone: '5555-1111', text: 'hola' } })).sent, false);
 }
 
+console.log('\nEnviar a UN residente (boton Enviar de la fila y Contactar)');
+{
+    reset();
+    const one = (data, extra = {}) => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data, ...extra });
+    // El telefono sale de la ficha del vecino: el que mande el cliente se ignora
+    const queueBefore = (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).size;
+    const r1 = await one({ residentId: 'v1', text: 'Hola v1, aviso', mode: 'mora', phone: '50299999999' });
+    equal('sale al instante al telefono de la ficha, con su texto', [r1.sent, r1.channel, r1.phoneTail, sentLog.map((s) => [s.to, s.message])], [true, 'SIMULADO', '1111', [['50255551111', 'Hola v1, aviso']]]);
+    equal('sin pausas ni cola', [pauses.length, (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).size - queueBefore], [0, 0]);
+    const logs = (await condoRef.collection('recordatorios_individuales').get()).docs.map((d) => d.data());
+    equal('queda anotado: quien, a quien, el texto y solo las ultimas 4 cifras', [logs.length, logs[0].by.id, logs[0].residentId, logs[0].status, logs[0].phoneTail, logs[0].mode, JSON.stringify(logs[0]).includes('55551111')], [1, 'adm', 'v1', 'sent', '1111', 'mora', false]);
+    equal('con un envio a todos en curso tambien sale (no se mezclan)', await (async () => {
+        const c = await create(['v2', 'v3']);
+        const out = await one({ residentId: 'v3', text: 'directo a v3', mode: 'varios' });
+        const state = (await camp(c.id)).status;
+        await condoRef.collection('recordatorios_envios').doc(c.id).update({ status: 'canceled' });
+        await db.collection('colas_envios').doc(`${CONDO}__${c.id}`).set({ status: 'canceled' }, { merge: true });
+        return [out.sent, state];
+    })(), [true, 'running']);
+    // Fallos y motivos
+    failTo.add('50255552222');
+    const failed = await one({ residentId: 'v2', text: 'aviso v2' });
+    const failedLog = (await condoRef.collection('recordatorios_individuales').where('status', '==', 'failed').get()).docs.map((d) => d.data());
+    equal('si WhatsApp no lo entrega lo dice y queda como fallido con su motivo', [failed.sent, failedLog.length, /ningún proveedor/.test(failedLog[0].error)], [false, 1, true]);
+    failTo.clear();
+    await rejects('a quien no tiene telefono no se le envia', () => one({ residentId: 'v4', text: 'x' }), 'failed-precondition');
+    await rejects('ni a un vecino inactivo', () => one({ residentId: 'v5', text: 'x' }), 'failed-precondition');
+    await rejects('ni a uno quitado del Sistema Financiero', () => one({ residentId: 'v6', text: 'x' }), 'failed-precondition');
+    await rejects('ni al personal (administrador o guardia)', () => one({ residentId: 'adm', text: 'x' }), 'failed-precondition');
+    await rejects('ni a un usuario que no existe', () => one({ residentId: 'no-existe', text: 'x' }), 'failed-precondition');
+    await rejects('un id con barra se rechaza', () => one({ residentId: 'a/b', text: 'x' }), 'invalid-argument');
+    await rejects('un mensaje vacio se rechaza', () => one({ residentId: 'v1', text: '  ' }), 'invalid-argument');
+    await rejects('uno de mas de 1000 caracteres se rechaza', () => one({ residentId: 'v1', text: 'a'.repeat(1001) }), 'invalid-argument');
+    equal('los rechazados no mandaron nada', sentLog.length, 3);
+    provider = false;
+    await rejects('sin WhatsApp conectado no se envia', () => one({ residentId: 'v1', text: 'x' }), 'failed-precondition');
+    provider = true;
+}
+
 await wipe();
 await condoRef.delete();
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

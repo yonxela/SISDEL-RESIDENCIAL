@@ -742,6 +742,7 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('OIKOS pide el envio por el puente de finanzas.html y sin el puente no hay envio automatico', /window\.sisdelWhatsApp = \{/.test(read('finanzas.html')) && /window\.parent\.sisdelWhatsApp/.test(oikos) && /function sendRemindersToAll/.test(oikos));
     yes('el bloqueo de pantalla cubre las funciones nuevas', /sendRemindersToAll\|sendReminderTest\|controlRemCampaign/.test(read('finanzas-bloqueo.js')));
     yes('las ventanas que abre OIKOS (WhatsApp) escapan del sandbox del iframe: sin esto salia "Se bloqueo api.whatsapp.com"', (() => { const m = /setAttribute\('sandbox', '([^']*)'\)/.exec(read('finanzas.html')); return !!m && m[1].split(' ').includes('allow-popups-to-escape-sandbox') && !m[1].includes('allow-top-navigation'); })());
+    yes('Enviar de la fila y Contactar mandan desde el servidor sin pedir telefono', /function remSendOne/.test(oikos) && /bridge\.one\(\{ residentId/.test(oikos) && /one: callServer\('sendReminderOne'\)/.test(read('finanzas.html')) && /contactWhatsApp\(this\.dataset\.id\)/.test(oikos) && /sendReminderOne\b/.test(funcs) && /match \/recordatorios_individuales\/\{msgId\}[\s\S]{0,160}allow write: if false/.test(rules));
     yes('OIKOS avisa cuanto tarda y pide confirmar antes de enviar a todos', /Salen de a poco/.test(oikos) && /¿Enviar a todos\?/.test(oikos));
 }
 

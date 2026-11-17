@@ -3108,7 +3108,7 @@
                             <button onclick="editResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fas fa-edit w-5"></i> Editar</button>
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
                             <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
-                            <button onclick="contactWhatsApp('${esc(r.contact)}', '${formatMoney(r.balance)}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
+                            <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
                             ${closed
                                 ? `<button onclick="reactivateResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-600"><i class="fas fa-user-check w-5"></i> Reactivar residente</button>`
                                 : `<button onclick="openFiniquito('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-400"><i class="fas fa-handshake w-5"></i> Finiquitar relación</button>`}
@@ -3926,11 +3926,17 @@
             resMarkClean(); resNavRefresh();   // SISDEL: estado limpio y contador de la navegacion
         }
 
-        function contactWhatsApp(contact, balance) {
-            if (!contact) return alert('No hay teléfono registrado');
-            const s = Store.get('settings');
-            const msg = `Hola, este es un aviso de ${s.name} Administración. Su balance actual es: ${balance}.`;
-            window.open('https://wa.me/' + contact.replace(/[^0-9]/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
+        // Contactar (menu de tres puntos de cada residente): el mismo mensaje de Recordatorios (el de mora si esta en mora;
+        // si no, el aviso general) con el total que debe, enviado desde el WhatsApp del condominio con confirmacion.
+        function contactWhatsApp(residentId) {
+            const r = Store.get('residents').find(x => String(x.id) === String(residentId));
+            if (!r) return alert('No se encontró al residente.');
+            if (!String(r.contact || '').replace(/[^0-9]/g, '')) return alert('No hay teléfono registrado');
+            const saved = reminderMessagesSaved();
+            const isMora = checkIsMoroso(r);
+            const template = isMora ? saved.mora : saved.general;
+            if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) return alert('Escriba el aviso general en Recordatorios (Mensajes varios) y use "Guardar para todos" antes de contactar a un residente que no está en mora.');
+            remSendOne(r, reminderText(template, r), isMora ? 'mora' : 'varios');
         }
 
         // SISDEL: Envio de recordatorios por WhatsApp. Lista en orden alfabetico, busqueda inteligente (la de Residentes) y
@@ -4001,7 +4007,27 @@
                 document.getElementById('rem-msg-general').focus();
                 return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
             }
-            window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(reminderText(template, r)), '_blank');
+            remSendOne(r, reminderText(template, r), currentRemMode);
+        }
+        // SISDEL: el mensaje a UN residente sale desde el WhatsApp del condominio (servidor), con confirmacion y SIN pedir
+        // telefono: el servidor lo toma de la ficha del vecino. Sin el puente (OIKOS fuera de SISDEL), o si WhatsApp no esta
+        // conectado y el usuario lo acepta, se abre WhatsApp para enviarlo a mano.
+        async function remSendOne(r, text, mode) {
+            const phone = String(r.contact || '').replace(/[^0-9]/g, '');
+            const manual = () => window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(text), '_blank');
+            const bridge = remBridge();
+            if (!bridge) return manual();
+            const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
+            const preview = text.length > 400 ? text.slice(0, 400) + '...' : text;
+            if (!confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return;
+            const result = await bridge.one({ residentId: String(r.id), text, mode });
+            if (!result.ok) {
+                if (/no está conectado/i.test(result.error) && confirm(result.error + '\n\n¿Abrir WhatsApp para enviarlo a mano?')) return manual();
+                if (!/no está conectado/i.test(result.error)) alert(result.error);
+                return;
+            }
+            if (result.sent) showToast(`Mensaje enviado a ${label}.`);
+            else alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
         }
         // Compatibilidad: la firma anterior (la usaba el boton Enviar de cada fila)
         function contactSingleWhatsApp(contact, balance, isMora, residentId) { sendReminder(residentId); }
@@ -4114,7 +4140,7 @@
         var remShownList = [];
         var remCampaign = null;
         var remUnwatch = null;
-        var remLastTestPhone = '';
+        var remLastTestPhone = (() => { try { return localStorage.getItem('sisdel_rem_prueba') || ''; } catch (e) { return ''; } })();
         const REM_PAUSE_SECONDS = 8;
         function reminderSendable(list) { return list.filter(r => String(r.contact || '').replace(/[^0-9]/g, '')); }
         function paintReminderBulk() {
@@ -4200,6 +4226,7 @@
             const phone = prompt('Escriba el teléfono al que llegará la prueba (8 dígitos de Guatemala o con código de país). Llega el mensaje de ejemplo de ' + (r.unit ? r.unit + ' · ' : '') + (r.name || '') + ':', remLastTestPhone);
             if (phone === null) return;
             remLastTestPhone = phone;
+            try { localStorage.setItem('sisdel_rem_prueba', phone); } catch (e) { /* solo se pierde el recuerdo */ }
             const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r) });
             if (!result.ok) return alert(result.error);
             if (result.sent) showToast(`Prueba enviada al teléfono que termina en ${result.phoneTail}. Revise que llegó.`);

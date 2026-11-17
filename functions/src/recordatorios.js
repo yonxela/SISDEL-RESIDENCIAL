@@ -14,6 +14,7 @@ const core = require('./recordatorios-core');
 const KEY = 'finanzas.residentes_contactar';
 const CREATE_LIMIT = { max: 6, windowMs: 60 * 60 * 1000 };
 const TEST_LIMIT = { max: 8, windowMs: 10 * 60 * 1000 };
+const ONE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 
 // Quien llama: un usuario activo del condominio con el privilegio de recordatorios
 async function authorize(request) {
@@ -68,10 +69,22 @@ const sendReminderTest = wrap('sendReminderTest', async (request) => {
     return core.sendTest({ whatsapp, data: request.data || {} });
 });
 
+// Un residente, al instante (boton Enviar de la fila y Contactar)
+const sendReminderOne = wrap('sendReminderOne', async (request) => {
+    const { uid, condominioId, caller } = await authorize(request);
+    if (await rateLimit.isBlocked('recordatorios-uno', uid, ONE_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiados mensajes seguidos. Espere unos minutos o use "Enviar a todos".');
+    }
+    await rateLimit.hit('recordatorios-uno', uid, ONE_LIMIT);
+    const result = await core.sendOne({ db, whatsapp, condominioId, caller, data: request.data || {} });
+    logger.warn('recordatorios: mensaje a un residente', { condominioId, residentId: (request.data || {}).residentId, enviado: result.sent, por: uid });
+    return result;
+});
+
 const processReminderQueue = onSchedule({ schedule: 'every 1 minutes', timeoutSeconds: 900 }, async () => {
     const results = await core.processQueue({ db, whatsapp });
     const worked = results.filter((r) => !r.busy);
     if (worked.length) logger.info('recordatorios: corrida', { envios: worked });
 });
 
-module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, processReminderQueue };
+module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, processReminderQueue };

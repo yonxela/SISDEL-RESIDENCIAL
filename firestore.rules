@@ -696,6 +696,11 @@ service cloud.firestore {
                                     'customExpenseConcepts', 'receiptCounter', 'chargedMonths', 'lastChargedMonth', 'updated_at', 'created_at'])
               || pFinanzasConfigGeneral(condoId));
       }
+      // Mensajes de WhatsApp a UN residente (boton Enviar de la fila y Contactar): los escribe solo el servidor
+      match /recordatorios_individuales/{msgId} {
+        allow read: if isMaster() || pFinanzasResidentesContactar(condoId);
+        allow write: if false;
+      }
       // Envios de recordatorios por WhatsApp a todos los residentes (functions/src/recordatorios-core.js): los escribe solo el
       // servidor; los lee quien tiene el privilegio de recordatorios, para ver el avance
       match /recordatorios_envios/{campId} {

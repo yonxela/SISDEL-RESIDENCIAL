@@ -1671,6 +1671,22 @@ async function run() {
     await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
     await allowed('con el privilegio otra vez, vuelve a poder', () => remStart(admin, { mode: 'varios', items: remItems }));
     await remControl(admin, { campaignId: (await getDocs(query(remCol, where('status', '==', 'running')))).docs[0].id, action: 'cancel' });
+    // Un residente, al instante (boton Enviar de la fila y Contactar)
+    const remOne = (c, data) => httpsCallable(c.functions, 'sendReminderOne')(data);
+    await denied('un vecino no envia mensajes a otros residentes', () => remOne(ana, { residentId: remVecinoId, text: 'hola' }));
+    await denied('el auditor tampoco', () => remOne(auditor, { residentId: remVecinoId, text: 'hola' }));
+    await denied('sin sesion no se llama', () => remOne(nobody, { residentId: remVecinoId, text: 'hola' }));
+    const oneResult = await remOne(admin, { residentId: remVecinoId, text: 'Hola Ana, aviso directo', mode: 'varios' });
+    equal('el administrador envia a un residente (WhatsApp simulado) y dice a que telefono (solo el final)', [oneResult.data.sent, oneResult.data.channel, oneResult.data.phoneTail], [true, 'SIMULADO', '5678']);
+    await rejectedWith('a un usuario que no es vecino no se le envia', () => remOne(admin, { residentId: adminIdA, text: 'hola' }), 'failed-precondition');
+    await rejectedWith('un mensaje vacio se rechaza', () => remOne(admin, { residentId: remVecinoId, text: ' ' }), 'invalid-argument');
+    const oneLog = await getDocs(collection(admin.db, `condominios/${A}/recordatorios_individuales`));
+    equal('queda anotado y el administrador lo ve (sin el telefono completo)', oneLog.docs.map((d) => [d.data().status, d.data().residentId === remVecinoId, d.data().phoneTail, JSON.stringify(d.data()).includes('55555678')]), [['sent', true, '5678', false]]);
+    await denied('el vecino no lee ese registro', () => getDocs(collection(ana.db, `condominios/${A}/recordatorios_individuales`)));
+    await denied('nadie escribe ese registro a mano', () => setDoc(doc(admin.db, `condominios/${A}/recordatorios_individuales/falso`), { status: 'sent' }));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'finanzas.residentes_contactar': false } });
+    await denied('sin el privilegio de recordatorios tampoco envia a un residente', () => remOne(admin, { residentId: remVecinoId, text: 'hola' }));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
 
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');

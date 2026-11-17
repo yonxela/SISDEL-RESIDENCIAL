@@ -224,7 +224,9 @@
                     mounted.classList.remove('pendiente');
                 });
                 // Mismo aislamiento que en MULTISYS: sin allow-top-navigation, OIKOS no puede navegar esta pagina
-                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-forms allow-modals');
+                // allow-popups-to-escape-sandbox: las ventanas que OIKOS abre (WhatsApp, impresion de reportes) NO heredan el
+                // sandbox. Sin eso WhatsApp respondia "Se bloqueó api.whatsapp.com" (ERR_BLOCKED_BY_RESPONSE) al pulsar Enviar.
+                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals');
                 message.style.display = 'none';
                 frameBox.appendChild(iframe);
             }

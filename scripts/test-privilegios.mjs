@@ -741,6 +741,7 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('el privilegio de recordatorios lo hace cumplir el servidor', /finanzas\.residentes_contactar[^}]*enforce: 'reglas'/.test(read('privilegios.js')));
     yes('OIKOS pide el envio por el puente de finanzas.html y sin el puente no hay envio automatico', /window\.sisdelWhatsApp = \{/.test(read('finanzas.html')) && /window\.parent\.sisdelWhatsApp/.test(oikos) && /function sendRemindersToAll/.test(oikos));
     yes('el bloqueo de pantalla cubre las funciones nuevas', /sendRemindersToAll\|sendReminderTest\|controlRemCampaign/.test(read('finanzas-bloqueo.js')));
+    yes('las ventanas que abre OIKOS (WhatsApp) escapan del sandbox del iframe: sin esto salia "Se bloqueo api.whatsapp.com"', (() => { const m = /setAttribute\('sandbox', '([^']*)'\)/.exec(read('finanzas.html')); return !!m && m[1].split(' ').includes('allow-popups-to-escape-sandbox') && !m[1].includes('allow-top-navigation'); })());
     yes('OIKOS avisa cuanto tarda y pide confirmar antes de enviar a todos', /Salen de a poco/.test(oikos) && /¿Enviar a todos\?/.test(oikos));
 }
 

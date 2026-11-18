@@ -180,18 +180,30 @@
                 <button class="btn btn-ghost btn-icon modal-close" id="btnCloseGpsHelp" type="button">&times;</button>
             </div>
             <div class="gps-help" style="padding:1.25rem; font-size:0.9rem; line-height:1.5;">
-                <p style="margin-bottom:0.75rem;">Su teléfono tiene bloqueada la ubicación para esta página, y por eso la alerta de pánico sale sin saber dónde está. Se activa una sola vez:</p>
-                <strong>iPhone</strong>
-                <ol>
-                    <li>Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización: active "Localización" y, en su navegador (Chrome o Safari), elija "Al usar la app".</li>
-                    <li>Safari: toque "aA" junto a la dirección &gt; Configuración del sitio web &gt; Ubicación &gt; Permitir.</li>
-                    <li>Chrome: toque el icono a la izquierda de la dirección &gt; Permisos (o Configuración del sitio) &gt; Ubicación &gt; Permitir.</li>
-                </ol>
-                <strong>Android (Chrome)</strong>
-                <ol>
-                    <li>Toque el icono junto a la dirección &gt; Permisos &gt; Ubicación &gt; Permitir.</li>
-                </ol>
-                <p class="text-xs text-muted">Los nombres de los menús pueden variar según su teléfono.</p>
+                <p style="margin-bottom:0.75rem;">Su teléfono tiene bloqueada la ubicación para esta página, y por eso la alerta de pánico sale sin saber dónde está. Una página no puede activarla ni abrir los Ajustes por usted: se activa una sola vez.</p>
+                <!-- iPhone con Chrome (u otro que no es Safari): Safari vuelve a preguntar, es lo mas rapido -->
+                <div id="gpsHelpSafari" style="display:none; margin-bottom:0.9rem; padding:0.75rem; border-radius:0.75rem; background:rgba(22,163,74,0.12); border:1px solid rgba(22,163,74,0.45);">
+                    <strong>Lo más rápido: ábrala en Safari</strong>
+                    <p class="text-xs" style="margin:0.35rem 0 0.6rem;">En Safari el teléfono vuelve a preguntar. Copie el enlace, ábralo en Safari, ingrese su clave y toque "Permitir" cuando el teléfono pregunte por su ubicación.</p>
+                    <button class="btn btn-ghost btn-sm" id="btnCopyLink" type="button" style="border:1px solid var(--border-strong); width:100%; white-space:normal; justify-content:center;">Copiar enlace para Safari</button>
+                </div>
+                <div id="gpsHelpIos">
+                    <strong>En el iPhone</strong>
+                    <ol>
+                        <li>Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización: active "Localización" y, en su navegador (Chrome o Safari), elija "Al usar la app".</li>
+                        <li>Safari: toque "aA" junto a la dirección &gt; Configuración del sitio web &gt; Ubicación &gt; Permitir.</li>
+                        <li>Chrome: toque el icono a la izquierda de la dirección &gt; Permisos (o Configuración del sitio) &gt; Ubicación &gt; Permitir.</li>
+                    </ol>
+                </div>
+                <div id="gpsHelpAndroid">
+                    <strong>En Android (Chrome)</strong>
+                    <ol>
+                        <li>Toque el icono junto a la dirección &gt; Permisos &gt; Ubicación &gt; Permitir.</li>
+                        <li>Si la ubicación del teléfono está apagada, enciéndala en los Ajustes.</li>
+                    </ol>
+                    <a class="btn btn-ghost btn-sm" id="btnAndroidLoc" href="intent:#Intent;action=android.settings.LOCATION_SOURCE_SETTINGS;end" style="border:1px solid var(--border-strong); margin-bottom:0.9rem; width:100%; white-space:normal; justify-content:center;">Abrir los ajustes de ubicación</a>
+                </div>
+                <p class="text-xs text-muted">Al volver a esta página la ubicación se comprueba sola. Los nombres de los menús pueden variar según su teléfono.</p>
                 <!-- pegado al fondo de la ventana: en un telefono chico la lista de pasos se desplaza y el boton siempre se ve -->
                 <div style="position:sticky; bottom:-1.25rem; margin:0 -1.25rem -1.25rem; padding:0.75rem 1.25rem 1.25rem; background:var(--bg-surface);">
                     <button class="btn btn-primary" id="btnGpsRecheck" type="button" style="width:100%;">Ya la activé: comprobar</button>
@@ -531,13 +543,26 @@
             }
             SisdelRondas.gps.onChange(paintGps);
             // Tocar el boton pide el permiso (el telefono muestra su ventana); si esta bloqueado, explica como activarlo
+            // La ayuda muestra solo lo que sirve a este telefono (una pagina no puede abrir los Ajustes: solo guiar)
+            const UA = navigator.userAgent || '';
+            const IS_IOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const IS_ANDROID = /Android/i.test(UA);
+            const IS_IOS_NOT_SAFARI = IS_IOS && /CriOS|FxiOS|EdgiOS|OPiOS/.test(UA); // Chrome, Firefox, Edge u Opera en iPhone
+            function openGpsHelp() {
+                document.getElementById('gpsHelpSafari').style.display = IS_IOS_NOT_SAFARI ? 'block' : 'none';
+                document.getElementById('gpsHelpIos').style.display = IS_IOS || !IS_ANDROID ? 'block' : 'none';
+                document.getElementById('gpsHelpAndroid').style.display = IS_ANDROID || !IS_IOS ? 'block' : 'none';
+                gpsHelpResult.style.display = 'none';
+                modalGpsHelp.style.display = 'flex';
+            }
+            document.getElementById('btnCopyLink').addEventListener('click', () => SISDEL.copyText(location.origin + '/index.html', 'Enlace copiado: péguelo en Safari'));
             async function askGps(fromHelp) {
                 if (SisdelRondas.gps.state().status === 'ok') return;
                 const result = await SisdelRondas.gps.ask(20000);
                 if (result === 'granted') SisdelRondas.gps.start(); // y sigue la posicion
                 else if (result === 'denied') {
                     if (fromHelp) { gpsHelpResult.textContent = 'Todavía está bloqueada. Revise los pasos y vuelva a comprobar.'; gpsHelpResult.style.color = '#dc2626'; gpsHelpResult.style.display = 'block'; }
-                    else { gpsHelpResult.style.display = 'none'; modalGpsHelp.style.display = 'flex'; }
+                    else openGpsHelp();
                 }
             }
             panicGps.addEventListener('click', () => askGps(false));
@@ -548,6 +573,8 @@
                 if (document.hidden) SisdelRondas.gps.stop();
                 else if (panicOn) SisdelRondas.gps.start();
             });
+            // Al volver de los Ajustes del telefono (o de otra app) se comprueba otra vez sin tocar nada: si ya la activo, aparece el chequesito
+            ['focus', 'pageshow'].forEach((ev) => window.addEventListener(ev, () => { if (panicOn && SisdelRondas.gps.state().status !== 'ok') SisdelRondas.gps.start(); }));
             const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const panicBtn = document.getElementById('btnPanicHold');
             const panicFill = document.getElementById('panicFill');

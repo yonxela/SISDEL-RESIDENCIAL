@@ -237,6 +237,26 @@ yes('hay un boton "Activar ubicacion" con casilla: vacia por activar, con cheque
 yes('tocar el boton pide el permiso (y espera la respuesta); si esta bloqueado, abre la ayuda para activarlo en el telefono', /const result = await SisdelRondas\.gps\.ask\(20000\);/.test(vecino) && /panicGps\.addEventListener\('click', \(\) => askGps\(false\)\)/.test(vecino) && /modalGpsHelp\.style\.display = 'flex'/.test(vecino) && /id="modalGpsHelp"/.test(vecino) && /Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización/.test(vecino) && /Android \(Chrome\)/.test(vecino));
 yes('la ayuda tiene "Ya la active: comprobar" y se cierra sola cuando la ubicacion queda activada', /id="btnGpsRecheck"/.test(vecino) && /askGps\(true\)/.test(vecino) && /if \(ok\) modalGpsHelp\.style\.display = 'none'/.test(vecino));
 yes('con la pagina oculta el GPS descansa y al volver se retoma', /document\.hidden\) SisdelRondas\.gps\.stop\(\);\s*else if \(panicOn\) SisdelRondas\.gps\.start\(\);/.test(vecino));
+// La ayuda del permiso bloqueado muestra solo lo que sirve a cada telefono (una pagina no puede abrir los Ajustes: solo guiar)
+const cut = (name) => (vecino.match(new RegExp(`const ${name} = ([^;]+);`)) || [])[1];
+const IS_IOS_SRC = cut('IS_IOS'), IS_ANDROID_SRC = cut('IS_ANDROID'), IS_IOS_NOT_SAFARI_SRC = cut('IS_IOS_NOT_SAFARI');
+function device(ua, platform = 'iPhone', touch = 5) {
+    const ctx = vm.createContext({ navigator: { userAgent: ua, platform, maxTouchPoints: touch } });
+    const UA = ua;
+    return vm.runInContext(`(() => { const UA = ${JSON.stringify(ua)}; const IS_IOS = ${IS_IOS_SRC}; const IS_ANDROID = ${IS_ANDROID_SRC}; const IS_IOS_NOT_SAFARI = ${IS_IOS_NOT_SAFARI_SRC}; return [IS_IOS, IS_ANDROID, IS_IOS_NOT_SAFARI]; })()`, ctx);
+}
+const SAFARI_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
+const CHROME_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1';
+const CHROME_ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+equal('el telefono se reconoce: iPhone con Safari, iPhone con Chrome, Android y computadora (IS_IOS, IS_ANDROID, IS_IOS_NOT_SAFARI)', [
+    device(SAFARI_IPHONE), device(CHROME_IPHONE), device(CHROME_ANDROID, 'Linux armv81', 5), device('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36', 'Win32', 0)
+], [[true, false, false], [true, false, true], [false, true, false], [false, false, false]]);
+equal('un iPad que se presenta como Mac tambien cuenta como iOS', device('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15', 'MacIntel', 5)[0], true);
+yes('en iPhone con Chrome la ayuda ofrece primero abrirla en Safari (el telefono vuelve a preguntar) con un boton que copia el enlace', /id="gpsHelpSafari"/.test(vecino) && /Lo más rápido: ábrala en Safari/.test(vecino) && /gpsHelpSafari'\)\.style\.display = IS_IOS_NOT_SAFARI \? 'block' : 'none'/.test(vecino) && /SISDEL\.copyText\(location\.origin \+ '\/index\.html', 'Enlace copiado: péguelo en Safari'\)/.test(vecino));
+yes('la ayuda dice la verdad: una pagina no puede activar la ubicacion ni abrir los Ajustes', /Una página no puede activarla ni abrir los Ajustes por usted/.test(vecino));
+yes('en Android hay un boton que intenta abrir los ajustes de ubicacion del telefono', /id="btnAndroidLoc" href="intent:#Intent;action=android\.settings\.LOCATION_SOURCE_SETTINGS;end"/.test(vecino));
+yes('al volver de los Ajustes (enfocar la pagina o regresar a ella) la ubicacion se comprueba sola', /\['focus', 'pageshow'\]\.forEach\(\(ev\) => window\.addEventListener\(ev, \(\) => \{ if \(panicOn && SisdelRondas\.gps\.state\(\)\.status !== 'ok'\) SisdelRondas\.gps\.start\(\); \}\)\)/.test(vecino));
+
 const login = read('index.html');
 yes('al ingresar, el vecino con panico activo (y con panico.activar) recibe la peticion del permiso de ubicacion ANTES de pasar al portal', /logged\.role !== 'vecino' \|\| !SISDEL\.can\('panico\.activar'\)/.test(login) && /SisdelRondas\.neighborPanicEnabled\(\)/.test(login) && /await SisdelRondas\.gps\.ask\(25000\)/.test(login));
 yes('la peticion se hace despues del bienvenido y antes del redireccionamiento (si no, el cambio de pagina se lleva la ventana del permiso)', /Bienvenido, \$\{userName\}`, 'success'\);\s*await askLocationAtLogin\(\);[\s\S]*?setTimeout\(\(\) => \{\s*window\.location\.href = target;/.test(login));

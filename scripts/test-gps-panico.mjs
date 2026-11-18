@@ -1,0 +1,192 @@
+// Pruebas del GPS del boton de panico (rondas-core.js: SisdelRondas.gps) con un GPS de mentira, sin emuladores.
+// La alerta de panico necesita las coordenadas al crearse (el WhatsApp sale de ahi): el permiso se pide al abrir y al empezar
+// a mantener presionado el boton, la posicion se sigue mientras la pagina esta visible y, al enviar, se usa la reciente o se
+// espera un poco a una nueva. Uso: node test-gps-panico.mjs
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+let passed = 0;
+const failures = [];
+function equal(name, actual, expected) {
+    const ok = JSON.stringify(actual) === JSON.stringify(expected);
+    if (ok) { passed++; console.log(`  ok   ${name}`); }
+    else { failures.push(name); console.log(`  FALLA ${name} -> esperado ${JSON.stringify(expected)}, recibido ${JSON.stringify(actual)}`); }
+}
+const yes = (name, value) => equal(name, !!value, true);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const fix = (lat, lng, accuracy = 12) => ({ coords: { latitude: lat, longitude: lng, accuracy } });
+
+// Un telefono de mentira: GPS que solo hace lo que la prueba le diga, y un reloj que la prueba puede adelantar
+function phone({ geolocation = true, permission = 'prompt' } = {}) {
+    const geo = {
+        watchers: [], cleared: [], current: [], nextId: 1,
+        watchPosition(ok, err, options) { const id = geo.nextId++; geo.watchers.push({ id, ok, err, options }); return id; },
+        clearWatch(id) { geo.cleared.push(id); geo.watchers = geo.watchers.filter((w) => w.id !== id); },
+        getCurrentPosition(ok, err, options) { geo.current.push({ ok, err, options }); }
+    };
+    const clock = { now: 1_000_000 };
+    const perms = { state: permission, onchange: null };
+    const context = {
+        navigator: Object.assign({}, geolocation ? { geolocation: geo } : {}, { permissions: { query: async () => perms } }),
+        setTimeout, clearTimeout, Promise, JSON, Math, Date: { now: () => clock.now }, window: {}
+    };
+    vm.createContext(context);
+    vm.runInContext(read('rondas-core.js'), context);
+    const core = vm.runInContext('SisdelRondas', context);
+    return { geo, clock, perms, gps: core.gps, core };
+}
+// Cuanto tarda una promesa en resolverse (ms) y con que
+async function timed(promise) {
+    const t0 = process.hrtime.bigint();
+    const value = await promise;
+    return { value, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
+}
+
+console.log('\nPosicion al instante');
+{
+    const t = phone();
+    t.gps.start();
+    t.geo.watchers[0].ok(fix(14.6, -90.5, 8));
+    const r = await timed(t.gps.bestPosition(500));
+    equal('con una posicion reciente la alerta sale al instante con las coordenadas', [r.value, r.ms < 50], [{ lat: 14.6, lng: -90.5, accuracy: 8 }, true]);
+    equal('el estado dice que hay ubicacion', [t.gps.state().status, t.gps.state().pos.lat], ['ok', 14.6]);
+}
+{
+    const t = phone();
+    t.gps.start();
+    t.geo.watchers[0].ok(fix(14.6, -90.5));
+    t.clock.now += 5 * 60 * 1000; // 5 minutos despues: ya no es "reciente" (2 min), pero todavia sirve de ultimo recurso (10 min)
+    const p = t.gps.bestPosition(300);
+    const r = await timed(p);
+    equal('una posicion de hace 5 minutos no sale al instante: espera una nueva y, si no llega, usa esa', [r.value && r.value.lat, r.ms >= 250], [14.6, true]);
+}
+{
+    const t = phone();
+    t.gps.start();
+    t.geo.watchers[0].ok(fix(14.6, -90.5));
+    t.clock.now += 11 * 60 * 1000;
+    const r = await timed(t.gps.bestPosition(200));
+    equal('una posicion de hace 11 minutos ya no se usa: la alerta sale sin coordenadas antes que con un lugar viejo', r.value, null);
+}
+
+console.log('\nEsperar al GPS');
+{
+    const t = phone();
+    const waiting = t.gps.bestPosition(1000);
+    equal('al pedir la posicion se empieza a seguir el GPS (el telefono pide el permiso)', t.geo.watchers.length, 1);
+    await sleep(60);
+    t.geo.watchers[0].ok(fix(14.7, -90.6));
+    const r = await timed(waiting);
+    equal('si el GPS responde mientras se espera, sale con esas coordenadas sin agotar la espera', [r.value && r.value.lat, r.ms < 400], [14.7, true]);
+}
+{
+    const t = phone();
+    const waiting = t.gps.bestPosition(900);
+    await sleep(400); // a un tercio de la espera (300 ms) ya se intento la ubicacion de red
+    equal('a un tercio de la espera se intenta la ubicacion de baja precision (red y wifi), que llega rapido dentro de edificios', [t.geo.current.length, t.geo.current[0] && t.geo.current[0].options.enableHighAccuracy], [1, false]);
+    t.geo.current[0].ok(fix(14.8, -90.7, 900));
+    const r = await timed(waiting);
+    equal('si la de red responde, esa se usa', r.value && r.value.lat, 14.8);
+}
+{
+    const t = phone();
+    const r = await timed(t.gps.bestPosition(300));
+    equal('si nada responde, al terminar la espera la alerta sale igual, sin coordenadas', [r.value, r.ms >= 250, r.ms < 600], [null, true, true]);
+    equal('sin respuesta el estado queda en "buscando"', t.gps.state().status, 'searching');
+}
+
+console.log('\nPermiso negado');
+{
+    const t = phone();
+    const waiting = t.gps.bestPosition(3000);
+    await sleep(30);
+    t.geo.watchers[0].err({ code: 1 });
+    const r = await timed(waiting);
+    equal('con el permiso negado no se espera: sale al instante sin coordenadas', [r.value, r.ms < 400], [null, true]);
+    equal('el estado es "denied" y se deja de insistir (se cierra la vigilancia)', [t.gps.state().status, t.geo.watchers.length, t.geo.cleared.length], ['denied', 0, 1]);
+}
+{
+    const t = phone();
+    t.gps.start();
+    t.geo.watchers[0].ok(fix(14.6, -90.5));
+    t.geo.watchers[0].err({ code: 1 });
+    equal('si el permiso se niega despues de tener una posicion, el estado es "denied" y la posicion vieja sigue guardada', [t.gps.state().status, t.gps.state().pos.lat], ['denied', 14.6]);
+}
+{
+    const t = phone();
+    t.gps.start();
+    t.geo.watchers[0].err({ code: 3 }); // sin senal por ahora: no es un rechazo, se sigue buscando
+    equal('un fallo de senal no es un rechazo: sigue buscando', [t.gps.state().status, t.geo.watchers.length], ['searching', 1]);
+}
+
+console.log('\nSeguir la posicion');
+{
+    const t = phone();
+    t.gps.start();
+    t.gps.start();
+    equal('pedir el GPS dos veces (al abrir y al presionar) deja una sola vigilancia', t.geo.watchers.length, 1);
+    equal('la vigilancia pide alta precision y acepta una posicion de hasta 15 s', [t.geo.watchers[0].options.enableHighAccuracy, t.geo.watchers[0].options.maximumAge], [true, 15000]);
+    t.gps.stop();
+    t.gps.stop();
+    equal('con la pagina oculta se cierra la vigilancia (bateria) y se puede retomar', [t.geo.watchers.length, t.geo.cleared.length], [0, 1]);
+    t.gps.start();
+    equal('al volver se retoma', t.geo.watchers.length, 1);
+}
+{
+    const t = phone();
+    const seen = [];
+    const off = t.gps.onChange((s) => seen.push(s.status));
+    t.gps.start();
+    t.geo.watchers[0].ok(fix(1, 2));
+    off();
+    t.geo.watchers[0].ok(fix(3, 4));
+    equal('quien escucha los cambios recibe buscando y luego ok, y deja de recibir al darse de baja', seen, ['searching', 'ok']);
+}
+{
+    const t = phone();
+    t.gps.onChange(() => { throw new Error('escuchador roto'); });
+    let later = null;
+    t.gps.onChange((s) => { later = s.status; });
+    t.gps.start();
+    equal('un escuchador que falla no frena a los demas', later, 'searching');
+}
+
+console.log('\nTelefono sin GPS o sin API de permisos');
+{
+    const t = phone({ geolocation: false });
+    const r = await timed(t.gps.bestPosition(500));
+    t.gps.start();
+    equal('sin GPS la alerta sale al instante sin coordenadas y el estado lo dice', [r.value, r.ms < 100, t.gps.state().status], [null, true, 'unsupported']);
+}
+{
+    const t = phone({ permission: 'denied' });
+    equal('el permiso se puede consultar antes de pedirlo', await t.gps.permission(), 'denied');
+    const notYet = phone({ permission: 'prompt' });
+    equal('"prompt": todavia no se ha pedido', await notYet.gps.permission(), 'prompt');
+    let changes = [];
+    notYet.gps.watchPermission((s) => changes.push(s));
+    await sleep(10);
+    notYet.perms.state = 'granted';
+    notYet.perms.onchange();
+    equal('si el usuario cambia el permiso (en los ajustes del telefono) se entera', changes, ['granted']);
+    const bare = vm.createContext({ navigator: { geolocation: {} }, setTimeout, clearTimeout, Promise, JSON, Math, Date, window: {} });
+    vm.runInContext(read('rondas-core.js'), bare);
+    equal('sin la API de permisos del navegador responde "unknown"', await vm.runInContext('SisdelRondas', bare).gps.permission(), 'unknown');
+}
+
+console.log('\nvecino.html y las demas paginas');
+const vecino = read('vecino.html');
+yes('el boton pide el GPS al empezar a mantenerse presionado', /e\.preventDefault\(\);\s*SisdelRondas\.gps\.start\(\);/.test(vecino));
+yes('al enviar espera la mejor posicion (no la pide recien al terminar los 2 segundos con solo 6 s de espera)', /const pos = await SisdelRondas\.gps\.bestPosition\(6000\);/.test(vecino) && !/SisdelRondas\.getPosition\(/.test(vecino));
+yes('al abrir (con el panico activo) se pide el permiso y se sigue la posicion', /SisdelRondas\.gps\.permission\(\)\.then\(\(state\) => \{ if \(state === 'denied'\) paintGps\(\{ status: 'denied' \}\); else SisdelRondas\.gps\.start\(\); \}\)/.test(vecino));
+yes('el estado del GPS se ve bajo el boton (activa, buscando, bloqueada) y se puede tocar para permitir', /id="panicGps"/.test(vecino) && /Ubicación bloqueada: actívela en los Ajustes del teléfono/.test(vecino) && /panicGps\.addEventListener\('click', \(\) => SisdelRondas\.gps\.start\(\)\)/.test(vecino));
+yes('con la pagina oculta el GPS descansa y al volver se retoma', /document\.hidden\) SisdelRondas\.gps\.stop\(\);\s*else if \(panicOn\) SisdelRondas\.gps\.start\(\);/.test(vecino));
+const versions = ['vecino.html', 'garita.html', 'admin.html'].map((f) => (read(f).match(/rondas-core\.js\?v=(\w+)/) || [])[1]);
+yes('rondas-core.js lleva la misma version en vecino, garita y admin', versions.every((v) => v && v === versions[0]));
+yes('la alerta lleva las coordenadas cuando las hay (lat, lng y precision)', /lat: pos \? pos\.lat : null, lng: pos \? pos\.lng : null, accuracy: pos \? pos\.accuracy : null/.test(read('rondas-core.js')));
+yes('el aviso por WhatsApp dice las coordenadas y el enlace del mapa cuando las hay', /GPS: \$\{Number\(alert\.lat\)\.toFixed\(5\)\}/.test(read('functions/src/rondas/avisos.js')) && /maps\.google\.com\/\?q=/.test(read('functions/src/rondas/avisos.js')));
+
+console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
+if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
+process.exit(failures.length ? 1 : 0);

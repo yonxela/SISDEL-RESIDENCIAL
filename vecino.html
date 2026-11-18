@@ -14,6 +14,11 @@
         .panic-top .panic-hold { width: auto; padding: 0.7rem 1.25rem; font-size: 0.95rem; box-shadow: 0 6px 16px rgba(220,38,38,0.35); }
         .panic-top .panic-hint { max-width: 17rem; text-align: right; font-size: 0.72rem; line-height: 1.3; }
         .panic-top .panic-status { align-self: stretch; text-align: left; margin-top: 0.25rem; }
+        /* Estado del GPS del celular (la alerta lleva las coordenadas): verde si ya hay ubicacion, ambar si falta, rojo si esta bloqueada */
+        .panic-gps { background: none; border: 0; padding: 0; font: inherit; font-size: 0.72rem; font-weight: 700; line-height: 1.3; text-align: right; max-width: 17rem; cursor: pointer; }
+        .panic-gps.ok { color: #16a34a; }
+        .panic-gps.warn { color: #d97706; }
+        .panic-gps.bad { color: #dc2626; }
         .panic-hold { position: relative; overflow: hidden; width: 100%; padding: 1.15rem; border: none; border-radius: 999px; background: #dc2626; color: #fff;
             font-weight: 900; font-size: 1.1rem; letter-spacing: 0.06em; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
             display: flex; align-items: center; justify-content: center; gap: 0.6rem; box-shadow: 0 10px 25px rgba(220,38,38,0.35); }
@@ -84,6 +89,7 @@
                         </span>
                     </button>
                     <p class="text-muted panic-hint" title="Avisa a la garita, la administración y sus contactos de emergencia">Mantenga presionado 2 segundos</p>
+                    <button class="panic-gps" id="panicGps" type="button" style="display:none;"></button>
                     <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
                 </div>
@@ -308,7 +314,7 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261117z"></script>
     <script src="sisdel-core.js?v=20261117z"></script>
-    <script src="rondas-core.js?v=20261108b"></script>
+    <script src="rondas-core.js?v=20261117a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
@@ -450,8 +456,39 @@
             // --- Boton de panico ---
             SisdelRondas.init(session);
             // El boton de panico del vecino se activa en RONDIN > Configuracion ("Vecinos usaran boton de panico")
+            let panicOn = false;
             SisdelRondas.neighborPanicEnabled().then((enabled) => {
-                document.getElementById('panicCard').style.display = enabled && canPanic ? 'flex' : 'none';
+                panicOn = enabled && canPanic;
+                document.getElementById('panicCard').style.display = panicOn ? 'flex' : 'none';
+                // El GPS del celular: se pide el permiso al abrir (y se sigue la posicion) para que la alerta salga con las coordenadas
+                if (panicOn) {
+                    paintGps(SisdelRondas.gps.state());
+                    SisdelRondas.gps.permission().then((state) => { if (state === 'denied') paintGps({ status: 'denied' }); else SisdelRondas.gps.start(); });
+                    SisdelRondas.gps.watchPermission((state) => { if (state === 'granted') SisdelRondas.gps.start(); else if (state === 'denied') paintGps({ status: 'denied' }); });
+                }
+            });
+            // Estado del GPS bajo el boton: lo que se ve es lo que la alerta llevara
+            const panicGps = document.getElementById('panicGps');
+            const GPS_TEXT = {
+                idle: ['warn', 'Toque aquí para permitir su ubicación'],
+                searching: ['warn', 'Buscando su ubicación... permita el acceso si el teléfono se lo pide'],
+                denied: ['bad', 'Ubicación bloqueada: actívela en los Ajustes del teléfono para que la garita sepa dónde está'],
+                unsupported: ['bad', 'Este teléfono no permite obtener la ubicación']
+            };
+            function paintGps(s) {
+                let cls, text;
+                if (s.status === 'ok') { cls = 'ok'; text = 'Ubicación activa' + (s.pos && s.pos.accuracy ? ' (±' + s.pos.accuracy + ' m)' : ''); }
+                else [cls, text] = GPS_TEXT[s.status] || GPS_TEXT.idle;
+                panicGps.className = 'panic-gps ' + cls;
+                panicGps.textContent = text;
+                panicGps.style.display = '';
+            }
+            SisdelRondas.gps.onChange(paintGps);
+            panicGps.addEventListener('click', () => SisdelRondas.gps.start());
+            // Con la pagina oculta el GPS descansa (bateria); al volver se retoma
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) SisdelRondas.gps.stop();
+                else if (panicOn) SisdelRondas.gps.start();
             });
             const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const panicBtn = document.getElementById('btnPanicHold');
@@ -491,9 +528,10 @@
             async function firePanic() {
                 panicBtn.disabled = true;
                 panicStatus.style.display = 'block';
-                panicStatus.textContent = 'Enviando alerta...';
+                panicStatus.textContent = 'Enviando alerta... obteniendo su ubicación';
                 try {
-                    const pos = await SisdelRondas.getPosition(6000);
+                    // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
+                    const pos = await SisdelRondas.gps.bestPosition(6000);
                     const alert = await SisdelRondas.raisePanic({ source: 'vecino', pos, casa: session.userCasa || '', phone: myPhone });
                     if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
                     followPanic(alert.id);
@@ -505,6 +543,7 @@
             function holdStartFn(e) {
                 if (panicBtn.disabled) return;
                 e.preventDefault();
+                SisdelRondas.gps.start(); // mantener presionado tambien pide el permiso del GPS y lo calienta mientras pasan los 2 segundos
                 holdStart = Date.now();
                 panicFill.style.transition = `width ${HOLD_MS}ms linear`;
                 panicFill.style.width = '100%';

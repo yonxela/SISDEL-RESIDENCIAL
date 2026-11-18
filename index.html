@@ -142,7 +142,29 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261117z"></script>
     <script src="sisdel-core.js?v=20261117z"></script>
+    <script src="rondas-core.js?v=20261117b"></script>
     <script>
+        // El vecino con boton de panico: al ingresar, el telefono le pide permiso para la ubicacion y se espera su respuesta antes de
+        // pasar al portal (si no, el cambio de pagina se lleva la ventana del permiso). Asi las alertas de panico siempre llevan
+        // coordenadas. Solo si el condominio activo el panico de vecinos (RONDIN > Configuracion) y el vecino puede usarlo.
+        async function askLocationAtLogin() {
+            try {
+                const logged = SISDEL.getSession();
+                if (!logged || logged.role !== 'vecino' || !SISDEL.can('panico.activar')) return;
+                SisdelRondas.init(logged);
+                if (!(await SisdelRondas.neighborPanicEnabled())) return;
+                const state = await SisdelRondas.gps.permission();
+                if (state === 'denied') {
+                    SISDEL.showToast('La ubicación está bloqueada en su teléfono: actívela en Ajustes para que su alerta de pánico lleve dónde está.', 'warning');
+                    await new Promise((resolve) => setTimeout(resolve, 2500));
+                    return;
+                }
+                if (state !== 'granted') SISDEL.showToast('Permita el acceso a su ubicación: así su alerta de pánico siempre llevará dónde está.', 'info');
+                await SisdelRondas.gps.ask(25000);
+            } catch (err) {
+                console.warn('ubicacion al ingresar:', err); // sin esto el ingreso sigue igual: el portal la vuelve a pedir
+            }
+        }
         document.addEventListener('DOMContentLoaded', async () => {
             const themeToggle = document.getElementById('themeToggle');
             const sunIcon = document.getElementById('sunIcon');
@@ -187,6 +209,7 @@
                     if (result.success) {
                         const userName = result.user ? result.user.name : 'Administrador Master';
                         SISDEL.showToast(`Bienvenido, ${userName}`, 'success');
+                        await askLocationAtLogin();
                         // Si venia de otro modulo (por ejemplo RONDIN) y su usuario puede entrar, vuelve ahi
                         let target = result.redirect;
                         const next = new URLSearchParams(window.location.search).get('next');

@@ -175,6 +175,59 @@ console.log('\nTelefono sin GPS o sin API de permisos');
     equal('sin la API de permisos del navegador responde "unknown"', await vm.runInContext('SisdelRondas', bare).gps.permission(), 'unknown');
 }
 
+console.log('\nAl ingresar: pedir el permiso y esperar la respuesta');
+{
+    const t = phone({ permission: 'prompt' });
+    const asking = t.gps.ask(2000);
+    await sleep(20);
+    equal('con el permiso sin pedir, el telefono lo pide (se hace una lectura de posicion de alta precision)', [t.geo.current.length, t.geo.current[0].options.enableHighAccuracy], [1, true]);
+    let settled = false;
+    asking.then(() => { settled = true; });
+    await sleep(100);
+    equal('y se ESPERA a que el vecino responda: no pasa al portal mientras la ventana del permiso sigue abierta', settled, false);
+    t.geo.current[0].ok(fix(14.61, -90.51, 15));
+    const r = await timed(asking);
+    equal('al permitir, devuelve "granted" y la posicion queda guardada para la alerta', [r.value, t.gps.state().status, t.gps.state().pos.lat], ['granted', 'ok', 14.61]);
+}
+{
+    const t = phone({ permission: 'prompt' });
+    const asking = t.gps.ask(2000);
+    await sleep(20);
+    t.geo.current[0].err({ code: 1 });
+    equal('al negar, devuelve "denied" y el estado lo dice', [await asking, t.gps.state().status], ['denied', 'denied']);
+}
+{
+    const t = phone({ permission: 'prompt' });
+    const asking = t.gps.ask(2000);
+    await sleep(20);
+    t.geo.current[0].err({ code: 2 });
+    equal('si dio el permiso pero aun no hay senal, cuenta como permitido (el portal sigue buscando)', await asking, 'granted');
+}
+{
+    const t = phone({ permission: 'prompt' });
+    const r = await timed(t.gps.ask(300));
+    equal('si no responde la ventana en el tiempo de espera, sigue al portal ("timeout"): alli se vuelve a pedir', [r.value, r.ms >= 250, r.ms < 700], ['timeout', true, true]);
+}
+{
+    const t = phone({ permission: 'granted' });
+    const r = await timed(t.gps.ask(2000));
+    equal('con el permiso ya dado no espera ni vuelve a preguntar: empieza a seguir la posicion', [r.value, r.ms < 100, t.geo.current.length, t.geo.watchers.length], ['granted', true, 0, 1]);
+}
+{
+    const t = phone({ permission: 'denied' });
+    const r = await timed(t.gps.ask(2000));
+    equal('con el permiso bloqueado no espera: devuelve "denied" para avisarle como activarlo', [r.value, r.ms < 100, t.gps.state().status, t.geo.current.length], ['denied', true, 'denied', 0]);
+}
+{
+    const t = phone({ geolocation: false });
+    equal('sin GPS en el telefono devuelve "unsupported"', [await t.gps.ask(500), t.gps.state().status], ['unsupported', 'unsupported']);
+}
+{
+    const bare = vm.createContext({ navigator: { geolocation: { getCurrentPosition(ok) { ok(fix(1, 2)); }, watchPosition() { return 1; }, clearWatch() {} } }, setTimeout, clearTimeout, Promise, JSON, Math, Date, window: {} });
+    vm.runInContext(read('rondas-core.js'), bare);
+    equal('sin la API de permisos del navegador (Safari antiguo) tambien lo pide y espera la respuesta', await vm.runInContext('SisdelRondas', bare).gps.ask(500), 'granted');
+}
+
 console.log('\nvecino.html y las demas paginas');
 const vecino = read('vecino.html');
 yes('el boton pide el GPS al empezar a mantenerse presionado', /e\.preventDefault\(\);\s*SisdelRondas\.gps\.start\(\);/.test(vecino));
@@ -182,8 +235,14 @@ yes('al enviar espera la mejor posicion (no la pide recien al terminar los 2 seg
 yes('al abrir (con el panico activo) se pide el permiso y se sigue la posicion', /SisdelRondas\.gps\.permission\(\)\.then\(\(state\) => \{ if \(state === 'denied'\) paintGps\(\{ status: 'denied' \}\); else SisdelRondas\.gps\.start\(\); \}\)/.test(vecino));
 yes('el estado del GPS se ve bajo el boton (activa, buscando, bloqueada) y se puede tocar para permitir', /id="panicGps"/.test(vecino) && /Ubicación bloqueada: actívela en los Ajustes del teléfono/.test(vecino) && /panicGps\.addEventListener\('click', \(\) => SisdelRondas\.gps\.start\(\)\)/.test(vecino));
 yes('con la pagina oculta el GPS descansa y al volver se retoma', /document\.hidden\) SisdelRondas\.gps\.stop\(\);\s*else if \(panicOn\) SisdelRondas\.gps\.start\(\);/.test(vecino));
-const versions = ['vecino.html', 'garita.html', 'admin.html'].map((f) => (read(f).match(/rondas-core\.js\?v=(\w+)/) || [])[1]);
-yes('rondas-core.js lleva la misma version en vecino, garita y admin', versions.every((v) => v && v === versions[0]));
+const login = read('index.html');
+yes('al ingresar, el vecino con panico activo (y con panico.activar) recibe la peticion del permiso de ubicacion ANTES de pasar al portal', /logged\.role !== 'vecino' \|\| !SISDEL\.can\('panico\.activar'\)/.test(login) && /SisdelRondas\.neighborPanicEnabled\(\)/.test(login) && /await SisdelRondas\.gps\.ask\(25000\)/.test(login));
+yes('la peticion se hace despues del bienvenido y antes del redireccionamiento (si no, el cambio de pagina se lleva la ventana del permiso)', /Bienvenido, \$\{userName\}`, 'success'\);\s*await askLocationAtLogin\(\);[\s\S]*?setTimeout\(\(\) => \{\s*window\.location\.href = target;/.test(login));
+yes('si algo falla al pedir la ubicacion, el ingreso sigue igual', /catch \(err\) \{\s*console\.warn\('ubicacion al ingresar:'/.test(login));
+yes('el login avisa como activar la ubicacion cuando esta bloqueada', /La ubicación está bloqueada en su teléfono: actívela en Ajustes/.test(login));
+yes('index.html carga rondas-core.js (con la misma version que las demas paginas)', /<script src="rondas-core\.js\?v=\w+"><\/script>/.test(login));
+const versions = ['index.html', 'vecino.html', 'garita.html', 'admin.html'].map((f) => (read(f).match(/rondas-core\.js\?v=(\w+)/) || [])[1]);
+yes('rondas-core.js lleva la misma version en el login, vecino, garita y admin', versions.every((v) => v && v === versions[0]));
 yes('la alerta lleva las coordenadas cuando las hay (lat, lng y precision)', /lat: pos \? pos\.lat : null, lng: pos \? pos\.lng : null, accuracy: pos \? pos\.accuracy : null/.test(read('rondas-core.js')));
 yes('el aviso por WhatsApp dice las coordenadas y el enlace del mapa cuando las hay', /GPS: \$\{Number\(alert\.lat\)\.toFixed\(5\)\}/.test(read('functions/src/rondas/avisos.js')) && /maps\.google\.com\/\?q=/.test(read('functions/src/rondas/avisos.js')));
 

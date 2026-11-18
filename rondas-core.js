@@ -86,6 +86,29 @@ const SisdelRondas = (() => {
         if (typeof navigator === 'undefined' || !navigator.permissions || !navigator.permissions.query) return;
         navigator.permissions.query({ name: 'geolocation' }).then((r) => { r.onchange = () => onChange(r.state); }).catch(() => {});
     }
+    // Al ingresar el vecino (index.html): pide el permiso del GPS y ESPERA su respuesta (hasta waitMs) antes de pasar al portal, para
+    // que el telefono no pierda la ventana al cambiar de pagina. Con el permiso ya dado no espera (sigue la posicion) y con el
+    // permiso negado tampoco. Devuelve: 'granted' | 'denied' | 'timeout' (no respondio: el portal lo vuelve a pedir) | 'unsupported'.
+    async function gpsAsk(waitMs = 25000) {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) { gps.status = 'unsupported'; gpsEmit(); return 'unsupported'; }
+        const state = await gpsPermission();
+        if (state === 'denied') { gps.status = 'denied'; gpsEmit(); return 'denied'; }
+        if (state === 'granted') { gpsStart(); return 'granted'; }
+        return new Promise((resolve) => {
+            let done = false;
+            let timer = null;
+            const finish = (result) => { if (done) return; done = true; clearTimeout(timer); resolve(result); };
+            timer = setTimeout(() => finish('timeout'), waitMs);
+            navigator.geolocation.getCurrentPosition(
+                (p) => { gpsFix(p); finish('granted'); },
+                (err) => {
+                    if (err && err.code === 1) { gps.status = 'denied'; gpsEmit(); finish('denied'); }
+                    else finish('granted'); // dio el permiso pero todavia no hay senal: el portal sigue buscando
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+            );
+        });
+    }
     function gpsOnChange(fn) { gps.listeners.add(fn); return () => gps.listeners.delete(fn); }
     // La mejor posicion para la alerta: la reciente si la hay (hasta maxAgeMs); si no, espera hasta waitMs una nueva.
     // Con el permiso negado responde null de inmediato. Nunca falla: sin posicion devuelve null y la alerta sale igual.
@@ -182,7 +205,7 @@ const SisdelRondas = (() => {
 
     return {
         init, getPosition, mapsLink,
-        gps: { start: gpsStart, stop: gpsStop, state: gpsState, permission: gpsPermission, watchPermission: gpsWatchPermission, onChange: gpsOnChange, bestPosition },
+        gps: { start: gpsStart, ask: gpsAsk, stop: gpsStop, state: gpsState, permission: gpsPermission, watchPermission: gpsWatchPermission, onChange: gpsOnChange, bestPosition },
         raisePanic, subscribeActivePanics, subscribePanic, attendPanic, resolvePanic, cancelPanic, myLatestPanic,
         getContacts, saveContacts, neighborPanicEnabled
     };

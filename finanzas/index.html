@@ -1314,7 +1314,21 @@
                 <div id="inc-balance-box" class="hidden rounded-xl border p-3" aria-live="polite">
                     <div class="flex items-start justify-between gap-3">
                         <div><p class="text-[11px] font-bold uppercase tracking-wide" id="inc-bal-label">Debe</p><p class="text-2xl font-extrabold leading-tight whitespace-nowrap" id="inc-bal-total">Q0.00</p></div>
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
                         <button type="button" id="inc-bal-fill" onclick="fillIncomeWithTotal()" class="hidden shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/80 dark:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-300 dark:border-slate-500 hover:bg-white dark:hover:bg-slate-600 transition" title="Poner en el monto todo lo que debe">Poner el total</button>
+                        <!-- SISDEL: el estado de cuenta del residente sin salir del pago: mostrarlo, enviarlo por WhatsApp, imprimirlo o
+                             descargarlo en PDF (ecQuick*: las mismas salidas de la ventana Estado de cuenta) -->
+                        <div id="inc-ec-quick" class="ec-quick relative">
+                            <button type="button" id="inc-ec-btn" onclick="toggleEcQuickMenu()" aria-haspopup="menu" aria-expanded="false" aria-controls="inc-ec-menu" class="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap bg-white/80 dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 border border-slate-300 dark:border-slate-500 hover:bg-white dark:hover:bg-slate-600 transition" title="Mostrar, enviar por WhatsApp, imprimir o descargar en PDF el estado de cuenta de este residente"><i class="fas fa-file-invoice-dollar mr-1.5"></i>Estado de cuenta<i class="fas fa-chevron-down ml-1.5 text-[9px]"></i></button>
+                            <div id="inc-ec-menu" role="menu" class="hidden absolute right-0 top-full mt-1 z-30 w-64 py-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl text-left">
+                                <button type="button" role="menuitem" onclick="ecQuickView('inc')" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-eye w-4 text-center text-indigo-500"></i>Mostrar estado de cuenta</button>
+                                <button type="button" role="menuitem" onclick="ecQuickWhatsApp('inc')" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fab fa-whatsapp w-4 text-center text-emerald-500"></i>Enviar por WhatsApp</button>
+                                <button type="button" role="menuitem" onclick="ecQuickPrint('inc')" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-print w-4 text-center text-slate-500 dark:text-slate-300"></i>Imprimir</button>
+                                <button type="button" role="menuitem" onclick="ecQuickPDF('inc')" class="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-file-pdf w-4 text-center text-rose-500"></i>Descargar PDF</button>
+                                <p class="px-3 pt-1.5 pb-1 mt-1 border-t border-slate-100 dark:border-slate-700 text-[11px] leading-snug text-slate-400">Este año, con el saldo anterior y lo que debe hoy. Para otro período, use Mostrar.</p>
+                            </div>
+                        </div>
+                        </div>
                     </div>
                     <p class="mt-1 text-[11px] opacity-80" id="inc-bal-detail"></p>
                     <p class="hidden mt-1 text-xs font-bold" id="inc-bal-after"></p>
@@ -1629,7 +1643,7 @@
                 </button>
             </div>
             <p class="text-sm text-slate-600 dark:text-slate-300 mb-5">
-                Elegí qué hacer con el comprobante. Podés imprimirlo directamente o guardar el PDF en tu equipo.
+                Elija qué hacer con el comprobante: imprimirlo directamente o guardar el PDF en su equipo.
             </p>
             <div class="flex space-x-3">
                 <button id="btn-voucher-print" onclick="printVoucher()" class="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition shadow flex items-center justify-center">
@@ -1639,7 +1653,19 @@
                     <i class="fas fa-download mr-2"></i>Descargar PDF
                 </button>
             </div>
-            <button onclick="closeModal('modal-voucher-options')" class="w-full mt-3 px-4 py-2.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm font-medium transition">
+            <!-- SISDEL: el estado de cuenta del residente de este pago (ya lo incluye): las mismas cuatro salidas del boton
+                 "Estado de cuenta" del Ingreso (ecQuick*). Solo en pagos de un residente que existe (openVoucherOptions) -->
+            <div id="voucher-ec" class="ec-quick hidden mt-5 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <p class="text-xs font-bold uppercase text-slate-400 mb-0.5"><i class="fas fa-file-invoice-dollar mr-1"></i>Estado de cuenta, ya con este pago</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-2 truncate" id="voucher-ec-who"></p>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button type="button" onclick="ecQuickView('voucher')" class="px-1 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition"><i class="fas fa-eye"></i>Mostrar</button>
+                    <button type="button" onclick="ecQuickWhatsApp('voucher')" class="px-1 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center justify-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition"><i class="fab fa-whatsapp"></i>WhatsApp</button>
+                    <button type="button" onclick="ecQuickPrint('voucher')" class="px-1 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100 border border-slate-200 dark:border-slate-600 transition"><i class="fas fa-print"></i>Imprimir</button>
+                    <button type="button" onclick="ecQuickPDF('voucher')" class="px-1 py-2 rounded-lg text-xs font-bold whitespace-nowrap flex items-center justify-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition"><i class="fas fa-file-pdf"></i>PDF</button>
+                </div>
+            </div>
+            <button onclick="closeModal('modal-voucher-options')" class="w-full mt-3px-4 py-2.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm font-medium transition">
                 Cerrar sin comprobante
             </button>
         </div>
@@ -7375,6 +7401,12 @@
                 (isInc ? 'Comprobante de Ingreso' : 'Comprobante de Egreso') + ' · No. ' + code;
             document.getElementById('voucher-opts-subtitle').textContent =
                 tx.concept + ' · ' + formatMoney(tx.amount);
+            // SISDEL: el estado de cuenta del residente de este pago (ecQuick*), solo si es un pago de un residente que existe
+            const ecBox = document.getElementById('voucher-ec');
+            const ecRes = isInc && tx.resiId ? (Store.get('residents') || []).find(r => String(r.id) === String(tx.resiId)) : null;
+            if (ecBox) ecBox.classList.toggle('hidden', !ecRes);
+            const ecWho = document.getElementById('voucher-ec-who');
+            if (ecWho) ecWho.textContent = ecRes ? ecRes.unit + ' - ' + ecRes.name : '';
             openModal('modal-voucher-options');
         }
 
@@ -7657,7 +7689,7 @@
             // SISDEL: cambiar el monto o el residente fuera del detalle vuelve al reparto automatico (el detalle manual se
             // anota con sus propias casillas: incAllocInput)
             if (!incAlloc.driving) incAlloc.manual = false;
-            if (!r) { syncIncAlloc(null); return; }
+            if (!r) { toggleEcQuickMenu(false); syncIncAlloc(null); return; }
             const o = sisdelOwedOf(r);
             const shown = residentShownBalance(r).shown;
             const owes = o.total > 0.004;
@@ -7887,6 +7919,7 @@
                 const incNotes = document.getElementById('inc-notes'); if (incNotes) incNotes.value = '';
                 incAlloc = { rid: null, rows: [], own: [], manual: false, driving: false }; setIncTab('pago');   // SISDEL: sin detalle anotado, en la pestana Pago
                 renderIncomeBalance(); checkIncomeDoc();   // SISDEL: sin saldo ni aviso de boleta, y el boton Registrar encendido
+                toggleEcQuickMenu(false);   // SISDEL: el menu del estado de cuenta empieza cerrado
             }
             if (id === 'modal-expense') {
                 // Reset del autocomplete de categoría — limpia input + cierra
@@ -8065,10 +8098,12 @@
         // ========== ESTADO DE CUENTA (ACCOUNT STATEMENT) ==========
         let ecResidentId = null;
 
-        function openEstadoCuenta(id) {
-            ecResidentId = id;
-            const r = Store.get('residents').find(x => x.id === id);
-            if (!r) return;
+        // SISDEL: deja listo el estado de cuenta de un residente (periodo: este ano) sin abrir la ventana. Lo usan la ventana y
+        // las salidas directas desde el pago (ecQuick*), asi las dos dicen lo mismo. Devuelve el residente o null
+        function prepareEstadoCuenta(id) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(id));
+            if (!r) return null;
+            ecResidentId = r.id;
             document.getElementById('ec-resident-info').textContent = r.unit + ' - ' + r.name + (isResidentActive(r) ? '' : ' · FINIQUITADO' + (r.closedAt ? ' el ' + new Date(r.closedAt).toLocaleDateString('es-MX') : ''));
             const sd = document.getElementById('ec-show-deleted'); if (sd) sd.checked = false;
             // Default: current year
@@ -8076,9 +8111,66 @@
             document.getElementById('ec-date-from').value = now.getFullYear() + '-01-01';
             document.getElementById('ec-date-to').value = localDayKey(now);
             document.getElementById('ec-gen-date').textContent = now.toLocaleString('es-MX');
+            return r;
+        }
+        function openEstadoCuenta(id) {
+            if (!prepareEstadoCuenta(id)) return;
             openModal('modal-estado-cuenta');
             renderEstadoCuenta();
         }
+
+        // ─── SISDEL: el estado de cuenta desde el pago ──────────────────────────────────────────────────────────
+        // Boton "Estado de cuenta" del Ingreso (del residente elegido) y el bloque del comprobante que sale al registrar el
+        // pago (ya con ese pago): Mostrar, Enviar por WhatsApp, Imprimir y Descargar PDF sin ir a Residentes. Son las salidas
+        // de la ventana Estado de cuenta (shareEstadoCuentaWhatsApp, printEstadoCuenta, downloadEstadoCuentaPDF) con su periodo
+        // de siempre (este ano, con el saldo anterior y lo que debe hoy). Privilegios en finanzas-bloqueo.js: todo pide
+        // residentes_estado; imprimir y PDF, reportes_exportar; WhatsApp, reportes_exportar o residentes_contactar.
+        // where: 'inc' (el formulario de Ingreso) o 'voucher' (el comprobante de un pago)
+        function ecQuickResidentId(where) {
+            if (where === 'voucher') {
+                const tx = currentVoucherTxId ? (Store.get('transactions') || []).find(t => t.id === currentVoucherTxId) : null;
+                return tx && tx.type === 'income' && tx.resiId ? tx.resiId : null;
+            }
+            return (document.getElementById('inc-resident') || {}).value || null;
+        }
+        function ecQuickPrepare(where) {
+            toggleEcQuickMenu(false);
+            const id = ecQuickResidentId(where);
+            if (id && prepareEstadoCuenta(id)) return true;
+            alert(where === 'voucher' ? 'No se encontró al residente de este pago.' : 'Elija primero al residente.');
+            return false;
+        }
+        function ecQuickView(where) {
+            if (!ecQuickPrepare(where)) return;
+            // El comprobante va encima de todas las ventanas: se cierra para que se vea el estado de cuenta. Desde el Ingreso,
+            // el estado de cuenta se abre encima y al cerrarlo el pago sigue como estaba
+            if (where === 'voucher') closeModal('modal-voucher-options');
+            openModal('modal-estado-cuenta');
+            renderEstadoCuenta();
+        }
+        function ecQuickWhatsApp(where) { if (ecQuickPrepare(where)) shareEstadoCuentaWhatsApp(); }
+        function ecQuickPrint(where) { if (ecQuickPrepare(where)) printEstadoCuenta(); }
+        function ecQuickPDF(where) { if (ecQuickPrepare(where)) downloadEstadoCuentaPDF(); }
+        // El menu del boton del Ingreso: se abre y cierra con el boton, y se cierra al elegir, al hacer clic fuera o con Escape
+        function toggleEcQuickMenu(open) {
+            const menu = document.getElementById('inc-ec-menu');
+            const btn = document.getElementById('inc-ec-btn');
+            if (!menu) return;
+            const show = typeof open === 'boolean' ? open : menu.classList.contains('hidden');
+            menu.classList.toggle('hidden', !show);
+            if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        }
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('inc-ec-quick');
+            if (wrap && !wrap.contains(e.target)) toggleEcQuickMenu(false);
+        });
+        document.addEventListener('keydown', (e) => {
+            const menu = document.getElementById('inc-ec-menu');
+            if (e.key !== 'Escape' || !menu || menu.classList.contains('hidden')) return;
+            e.preventDefault(); e.stopPropagation();
+            toggleEcQuickMenu(false);
+            const btn = document.getElementById('inc-ec-btn'); if (btn) btn.focus();
+        }, true);
 
         function setEcPeriod(period) {
             const now = new Date();

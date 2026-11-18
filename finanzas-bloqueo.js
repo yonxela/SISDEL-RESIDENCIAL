@@ -98,6 +98,11 @@
         [/^(printReport|downloadReportPDF|exportReportCSV|exportReportExcel|printCurrentReport|downloadCurrentReportPDF|exportCurrentReportExcel|shareCurrentReportWhatsApp|exportResStatusPDF|exportResStatusExcel|printEstadoCuenta|downloadEstadoCuentaPDF|exportEstadoCuentaExcel|exportCSV)\(/, ['reportes_exportar']],
         // Enviar el estado de cuenta por WhatsApp: lo puede quien exporta o quien contacta a los residentes
         [/^shareEstadoCuentaWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
+        // El estado de cuenta desde el pago (boton del Ingreso y bloque del comprobante): todo pide ver estados de cuenta y
+        // cada salida su privilegio, el mismo de la ventana Estado de cuenta
+        [/^(toggleEcQuickMenu|ecQuickView|ecQuickWhatsApp|ecQuickPrint|ecQuickPDF)\(/, ['residentes_estado']],
+        [/^(ecQuickPrint|ecQuickPDF)\(/, ['reportes_exportar']],
+        [/^ecQuickWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
@@ -120,7 +125,7 @@
             // Pestana Propietario del formulario de residente (nombre del dueno, NIT, direccion, DPI, observaciones)
             '#res-tab-owner', '#form-resident [data-res-pane="owner"]'
         ]],
-        [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta', '#inc-balance-box', '#inc-tabs', '#inc-pane-detalle']],
+        [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta', '#inc-balance-box', '#inc-tabs', '#inc-pane-detalle', '.ec-quick']],
         [['residentes_crear'], ['#view-residents button[onclick="openModal(\'modal-resident\')"]']],
         [['residentes_editar'], ['#residents-table-body button[onclick^="editResident("]', '#res-nav', '#res-jump-wrap', '#res-bulk-type-btn', '#modal-bulk-type', '#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases']],
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],
@@ -152,9 +157,10 @@
             '#modal-report button[onclick="downloadReportPDF()"]', '#modal-report button[onclick="exportReportExcel()"]', '#modal-report button[onclick="printReport()"]',
             '#modal-res-status button[onclick="exportResStatusPDF()"]', '#modal-res-status button[onclick="exportResStatusExcel()"]',
             '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]', '#modal-estado-cuenta button[onclick="exportEstadoCuentaExcel()"]',
+            'button[onclick^="ecQuickPrint("]', 'button[onclick^="ecQuickPDF("]',
             '#btn-export', 'button[onclick="exportCSV()"]'
         ]],
-        [['reportes_exportar', 'residentes_contactar'], ['#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]']],
+        [['reportes_exportar', 'residentes_contactar'], ['#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]', 'button[onclick^="ecQuickWhatsApp("]']],
         [['config_conceptos'], ['#view-settings div:has(> #lbl-set-concepts)']],
         [CONFIG_WRITE_KEYS, ['#btn-save-cfg']],
         [['config_general'], ['#rem-msg-save']],

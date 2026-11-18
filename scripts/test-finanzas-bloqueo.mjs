@@ -152,6 +152,17 @@ equal('Estado de cuenta: sin esos privilegios se ocultan sus botones; con contac
     const css = (...names) => B.cssFor(only('residentes_estado', ...names));
     return [css().includes(wa), css().includes(xl), css('residentes_contactar').includes(wa), css('residentes_contactar').includes(xl), css('reportes_exportar').includes(wa), css('reportes_exportar').includes(xl)];
 })(), [true, true, false, true, false, false]);
+// El estado de cuenta desde el pago (boton "Estado de cuenta" del Ingreso y bloque del comprobante; pedido del usuario el 2026-11-18)
+equal('Estado de cuenta desde el pago: todo pide ver estados de cuenta y cada salida su privilegio (el mismo de la ventana)', [
+    blocked("ecQuickView('inc')", only('residentes_estado')), blocked("ecQuickView('inc')", only('pagos_registrar')), blocked('toggleEcQuickMenu()', only('pagos_registrar')),
+    blocked("ecQuickPrint('inc')", only('residentes_estado', 'reportes_exportar')), blocked("ecQuickPrint('inc')", only('residentes_estado')), blocked("ecQuickPDF('voucher')", only('residentes_estado', 'residentes_contactar')), blocked("ecQuickPrint('inc')", only('reportes_exportar')),
+    blocked("ecQuickWhatsApp('inc')", only('residentes_estado', 'residentes_contactar')), blocked("ecQuickWhatsApp('voucher')", only('residentes_estado', 'reportes_exportar')), blocked("ecQuickWhatsApp('inc')", only('residentes_estado')), blocked("ecQuickWhatsApp('inc')", only('residentes_contactar'))
+], [false, true, true, false, true, true, true, false, false, true, true]);
+equal('Estado de cuenta desde el pago: sin ver estados de cuenta no se ve; sin exportar ni contactar solo queda Mostrar', (() => {
+    const css = (...names) => B.cssFor(only(...names));
+    const has = (c) => ['.ec-quick', 'button[onclick^="ecQuickPrint("]', 'button[onclick^="ecQuickPDF("]', 'button[onclick^="ecQuickWhatsApp("]'].map((sel) => c.includes(sel));
+    return [has(css('pagos_registrar')), has(css('residentes_estado')), has(css('residentes_estado', 'residentes_contactar')), has(css('residentes_estado', 'reportes_exportar'))];
+})(), [[true, true, true, true], [false, true, true, true], [false, true, true, false], [false, false, false, false]]);
 equal('la navegacion y el buscador del formulario del residente solo los ve quien puede editar residentes', [B.cssFor(only('residentes_crear')).includes('#res-nav'), B.cssFor(only('residentes_crear')).includes('#res-jump-wrap'), B.cssFor(only('residentes_editar')).includes('#res-nav'), B.cssFor(only('residentes_editar')).includes('#res-jump-wrap')], [true, true, false, false]);
 equal('el precio del agua (paja completa y media paja) tambien queda bloqueado sin config_cuota y libre con ella', [B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-half'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-half')], [true, true, false, false]);
 equal('los campos del precio del agua se deshabilitan igual que el desglose', B.DISABLE.config_cuota.includes('#cfg-water-full') && B.DISABLE.config_cuota.includes('#cfg-water-half'), true);

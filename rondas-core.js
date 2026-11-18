@@ -86,13 +86,15 @@ const SisdelRondas = (() => {
         if (typeof navigator === 'undefined' || !navigator.permissions || !navigator.permissions.query) return;
         navigator.permissions.query({ name: 'geolocation' }).then((r) => { r.onchange = () => onChange(r.state); }).catch(() => {});
     }
-    // Al ingresar el vecino (index.html): pide el permiso del GPS y ESPERA su respuesta (hasta waitMs) antes de pasar al portal, para
-    // que el telefono no pierda la ventana al cambiar de pagina. Con el permiso ya dado no espera (sigue la posicion) y con el
-    // permiso negado tampoco. Devuelve: 'granted' | 'denied' | 'timeout' (no respondio: el portal lo vuelve a pedir) | 'unsupported'.
+    // Al ingresar el vecino (index.html) o al tocar el boton de la ubicacion: pide el permiso del GPS y ESPERA su respuesta (hasta
+    // waitMs) antes de pasar al portal, para que el telefono no pierda la ventana al cambiar de pagina. Con el permiso ya dado no
+    // espera (sigue la posicion). Un "denegado" de la API de permisos NO se cree: en iOS esa API se equivoca (dice "prompt" cuando
+    // esta negado y puede quedarse atrasada tras cambiar los Ajustes), asi que se intenta de verdad: negado de verdad responde al
+    // instante con el error 1 (sin ventana), y si el usuario ya lo activo, funciona.
+    // Devuelve: 'granted' | 'denied' | 'timeout' (no respondio: el portal lo vuelve a pedir) | 'unsupported'.
     async function gpsAsk(waitMs = 25000) {
         if (typeof navigator === 'undefined' || !navigator.geolocation) { gps.status = 'unsupported'; gpsEmit(); return 'unsupported'; }
         const state = await gpsPermission();
-        if (state === 'denied') { gps.status = 'denied'; gpsEmit(); return 'denied'; }
         if (state === 'granted') { gpsStart(); return 'granted'; }
         return new Promise((resolve) => {
             let done = false;

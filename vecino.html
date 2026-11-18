@@ -182,17 +182,30 @@
             <div class="gps-help" style="padding:1.25rem; font-size:0.9rem; line-height:1.5;">
                 <p style="margin-bottom:0.75rem;">Su teléfono tiene bloqueada la ubicación para esta página, y por eso la alerta de pánico sale sin saber dónde está. Una página no puede activarla ni abrir los Ajustes por usted: se activa una sola vez.</p>
                 <!-- iPhone con Chrome (u otro que no es Safari): Safari vuelve a preguntar, es lo mas rapido -->
-                <div id="gpsHelpSafari" style="display:none; margin-bottom:0.9rem; padding:0.75rem; border-radius:0.75rem; background:rgba(22,163,74,0.12); border:1px solid rgba(22,163,74,0.45);">
-                    <strong>Lo más rápido: ábrala en Safari</strong>
-                    <p class="text-xs" style="margin:0.35rem 0 0.6rem;">En Safari el teléfono vuelve a preguntar. Copie el enlace, ábralo en Safari, ingrese su clave y toque "Permitir" cuando el teléfono pregunte por su ubicación.</p>
-                    <button class="btn btn-ghost btn-sm" id="btnCopyLink" type="button" style="border:1px solid var(--border-strong); width:100%; white-space:normal; justify-content:center;">Copiar enlace para Safari</button>
+                <!-- iPhone con Chrome (u otro que no es Safari): cada navegador tiene su PROPIO permiso de ubicacion; el de Safari no vale aqui -->
+                <div id="gpsHelpIosOther" style="display:none;">
+                    <div style="margin-bottom:0.9rem; padding:0.75rem; border-radius:0.75rem; background:rgba(217,119,6,0.14); border:1px solid rgba(217,119,6,0.5);">
+                        <strong>Está usando <span class="gps-browser">su navegador</span>.</strong>
+                        <p class="text-xs" style="margin:0.35rem 0 0;">Aunque Safari ya tenga la ubicación activada, cada navegador tiene su propio permiso: el de Safari no vale en <span class="gps-browser">su navegador</span>. Hay dos caminos:</p>
+                    </div>
+                    <div style="margin-bottom:0.9rem; padding:0.75rem; border-radius:0.75rem; background:rgba(22,163,74,0.12); border:1px solid rgba(22,163,74,0.45);">
+                        <strong>Camino 1, el más rápido: use Safari</strong>
+                        <p class="text-xs" style="margin:0.35rem 0 0.6rem;">Como Safari ya tiene la ubicación activada, solo hay que abrir allí garita.app, ingresar su clave y tocar "Permitir" si el teléfono pregunta.</p>
+                        <a class="btn btn-primary btn-sm" id="btnOpenSafari" href="#" style="width:100%; white-space:normal; justify-content:center; margin-bottom:0.5rem;">Abrir en Safari</a>
+                        <button class="btn btn-ghost btn-sm" id="btnCopyLink" type="button" style="border:1px solid var(--border-strong); width:100%; white-space:normal; justify-content:center;">Si no abre: copiar el enlace para pegarlo en Safari</button>
+                    </div>
+                    <strong>Camino 2: activar la ubicación de <span class="gps-browser">su navegador</span></strong>
+                    <ol>
+                        <li>Salga a los Ajustes del iPhone &gt; <span class="gps-browser">su navegador</span> &gt; Ubicación &gt; elija "Al usar la app" (o "Preguntar la próxima vez o al compartir").</li>
+                        <li>Cierre <span class="gps-browser">su navegador</span> por completo (deslice hacia arriba desde el selector de apps) y vuelva a abrir garita.app.</li>
+                        <li>Ingrese su clave y toque "Permitir" cuando el teléfono pregunte por su ubicación.</li>
+                    </ol>
                 </div>
                 <div id="gpsHelpIos">
-                    <strong>En el iPhone</strong>
+                    <strong>En el iPhone (Safari)</strong>
                     <ol>
-                        <li>Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización: active "Localización" y, en su navegador (Chrome o Safari), elija "Al usar la app".</li>
-                        <li>Safari: toque "aA" junto a la dirección &gt; Configuración del sitio web &gt; Ubicación &gt; Permitir.</li>
-                        <li>Chrome: toque el icono a la izquierda de la dirección &gt; Permisos (o Configuración del sitio) &gt; Ubicación &gt; Permitir.</li>
+                        <li>Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización: active "Localización" y, en "Sitios web de Safari", elija "Al usar la app".</li>
+                        <li>En Safari, toque "aA" junto a la dirección &gt; Configuración del sitio web &gt; Ubicación &gt; Permitir.</li>
                     </ol>
                 </div>
                 <div id="gpsHelpAndroid">
@@ -362,7 +375,7 @@
     <script src="firebase-client.js?v=20260929"></script>
     <script src="privilegios.js?v=20261117z"></script>
     <script src="sisdel-core.js?v=20261117z"></script>
-    <script src="rondas-core.js?v=20261117b"></script>
+    <script src="rondas-core.js?v=20261117c"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
@@ -511,7 +524,7 @@
                 // El GPS del celular: se pide el permiso al abrir (y se sigue la posicion) para que la alerta salga con las coordenadas
                 if (panicOn) {
                     paintGps(SisdelRondas.gps.state());
-                    SisdelRondas.gps.permission().then((state) => { if (state === 'denied') paintGps({ status: 'denied' }); else SisdelRondas.gps.start(); });
+                    SisdelRondas.gps.start(); // se intenta de verdad: la API de permisos de iOS se equivoca (si esta negado, el error 1 llega al instante)
                     SisdelRondas.gps.watchPermission((state) => { if (state === 'granted') SisdelRondas.gps.start(); else if (state === 'denied') paintGps({ status: 'denied' }); });
                 }
             });
@@ -548,9 +561,13 @@
             const IS_IOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             const IS_ANDROID = /Android/i.test(UA);
             const IS_IOS_NOT_SAFARI = IS_IOS && /CriOS|FxiOS|EdgiOS|OPiOS/.test(UA); // Chrome, Firefox, Edge u Opera en iPhone
+            const IOS_BROWSER = /CriOS/.test(UA) ? 'Chrome' : /FxiOS/.test(UA) ? 'Firefox' : /EdgiOS/.test(UA) ? 'Edge' : /OPiOS/.test(UA) ? 'Opera' : 'su navegador';
+            // x-safari-https:// abre la pagina en Safari desde otro navegador (no esta documentado por Apple: sirve en iOS 15, 17 y 18; por eso hay tambien "copiar el enlace")
+            document.getElementById('btnOpenSafari').setAttribute('href', 'x-safari-' + location.protocol.replace(':', '') + '://' + location.host + '/index.html');
             function openGpsHelp() {
-                document.getElementById('gpsHelpSafari').style.display = IS_IOS_NOT_SAFARI ? 'block' : 'none';
-                document.getElementById('gpsHelpIos').style.display = IS_IOS || !IS_ANDROID ? 'block' : 'none';
+                document.querySelectorAll('.gps-browser').forEach((el) => { el.textContent = IOS_BROWSER; });
+                document.getElementById('gpsHelpIosOther').style.display = IS_IOS_NOT_SAFARI ? 'block' : 'none';
+                document.getElementById('gpsHelpIos').style.display = IS_IOS_NOT_SAFARI ? 'none' : (IS_IOS || !IS_ANDROID ? 'block' : 'none');
                 document.getElementById('gpsHelpAndroid').style.display = IS_ANDROID || !IS_IOS ? 'block' : 'none';
                 gpsHelpResult.style.display = 'none';
                 modalGpsHelp.style.display = 'flex';

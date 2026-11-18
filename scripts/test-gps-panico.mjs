@@ -214,9 +214,20 @@ console.log('\nAl ingresar: pedir el permiso y esperar la respuesta');
     equal('con el permiso ya dado no espera ni vuelve a preguntar: empieza a seguir la posicion', [r.value, r.ms < 100, t.geo.current.length, t.geo.watchers.length], ['granted', true, 0, 1]);
 }
 {
+    // La API de permisos de iOS se equivoca (dice "prompt" cuando esta negado y se atrasa al cambiar los Ajustes): un "denied" no se cree, se intenta de verdad
     const t = phone({ permission: 'denied' });
-    const r = await timed(t.gps.ask(2000));
-    equal('con el permiso bloqueado no espera: devuelve "denied" para avisarle como activarlo', [r.value, r.ms < 100, t.gps.state().status, t.geo.current.length], ['denied', true, 'denied', 0]);
+    const asking = t.gps.ask(2000);
+    await sleep(20);
+    equal('aunque la API diga "denied" se intenta de verdad (negado de verdad no muestra ventana: el error 1 llega al instante)', t.geo.current.length, 1);
+    t.geo.current[0].err({ code: 1 });
+    equal('negado de verdad: devuelve "denied" para avisarle como activarlo', [await asking, t.gps.state().status], ['denied', 'denied']);
+}
+{
+    const t = phone({ permission: 'denied' });
+    const asking = t.gps.ask(2000);
+    await sleep(20);
+    t.geo.current[0].ok(fix(14.62, -90.52, 20));
+    equal('si la API se quedo atrasada ("denied") pero el usuario ya lo activo en los Ajustes, funciona', [await asking, t.gps.state().status], ['granted', 'ok']);
 }
 {
     const t = phone({ geolocation: false });
@@ -232,7 +243,7 @@ console.log('\nvecino.html y las demas paginas');
 const vecino = read('vecino.html');
 yes('el boton pide el GPS al empezar a mantenerse presionado', /e\.preventDefault\(\);\s*SisdelRondas\.gps\.start\(\);/.test(vecino));
 yes('al enviar espera la mejor posicion (no la pide recien al terminar los 2 segundos con solo 6 s de espera)', /const pos = await SisdelRondas\.gps\.bestPosition\(6000\);/.test(vecino) && !/SisdelRondas\.getPosition\(/.test(vecino));
-yes('al abrir (con el panico activo) se pide el permiso y se sigue la posicion', /SisdelRondas\.gps\.permission\(\)\.then\(\(state\) => \{ if \(state === 'denied'\) paintGps\(\{ status: 'denied' \}\); else SisdelRondas\.gps\.start\(\); \}\)/.test(vecino));
+yes('al abrir (con el panico activo) se intenta de verdad y se sigue la posicion, sin creerle el "denied" a la API de permisos de iOS', /if \(panicOn\) \{\s*paintGps\(SisdelRondas\.gps\.state\(\)\);\s*SisdelRondas\.gps\.start\(\);/.test(vecino) && !/gps\.permission\(\)\.then\(\(state\) => \{ if \(state === 'denied'\)/.test(vecino));
 yes('hay un boton "Activar ubicacion" con casilla: vacia por activar, con chequesito verde cuando esta activada, y bloqueada en rojo', /id="panicGps"/.test(vecino) && /role="checkbox" aria-checked="false"/.test(vecino) && /panicGpsBox\.innerHTML = ok \? CHECK_SVG : ''/.test(vecino) && /panicGps\.setAttribute\('aria-checked', ok \? 'true' : 'false'\)/.test(vecino) && /text = 'Ubicación activada'/.test(vecino) && /denied: \['bad', 'Ubicación bloqueada: toque para activarla'\]/.test(vecino) && /\.panic-loc\.ok \.panic-loc-box \{ background: #16a34a/.test(vecino));
 yes('tocar el boton pide el permiso (y espera la respuesta); si esta bloqueado, abre la ayuda para activarlo en el telefono', /const result = await SisdelRondas\.gps\.ask\(20000\);/.test(vecino) && /panicGps\.addEventListener\('click', \(\) => askGps\(false\)\)/.test(vecino) && /modalGpsHelp\.style\.display = 'flex'/.test(vecino) && /id="modalGpsHelp"/.test(vecino) && /Ajustes del iPhone &gt; Privacidad y seguridad &gt; Localización/.test(vecino) && /Android \(Chrome\)/.test(vecino));
 yes('la ayuda tiene "Ya la active: comprobar" y se cierra sola cuando la ubicacion queda activada', /id="btnGpsRecheck"/.test(vecino) && /askGps\(true\)/.test(vecino) && /if \(ok\) modalGpsHelp\.style\.display = 'none'/.test(vecino));
@@ -252,7 +263,15 @@ equal('el telefono se reconoce: iPhone con Safari, iPhone con Chrome, Android y 
     device(SAFARI_IPHONE), device(CHROME_IPHONE), device(CHROME_ANDROID, 'Linux armv81', 5), device('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36', 'Win32', 0)
 ], [[true, false, false], [true, false, true], [false, true, false], [false, false, false]]);
 equal('un iPad que se presenta como Mac tambien cuenta como iOS', device('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15', 'MacIntel', 5)[0], true);
-yes('en iPhone con Chrome la ayuda ofrece primero abrirla en Safari (el telefono vuelve a preguntar) con un boton que copia el enlace', /id="gpsHelpSafari"/.test(vecino) && /Lo más rápido: ábrala en Safari/.test(vecino) && /gpsHelpSafari'\)\.style\.display = IS_IOS_NOT_SAFARI \? 'block' : 'none'/.test(vecino) && /SISDEL\.copyText\(location\.origin \+ '\/index\.html', 'Enlace copiado: péguelo en Safari'\)/.test(vecino));
+yes('en iPhone con Chrome la ayuda dice que usa Chrome (cada navegador tiene su propio permiso: el de Safari no vale), ofrece abrirla en Safari y activar el permiso de ese navegador', /id="gpsHelpIosOther"/.test(vecino) && /Aunque Safari ya tenga la ubicación activada, cada navegador tiene su propio permiso/.test(vecino) && /Camino 1, el más rápido: use Safari/.test(vecino) && /Camino 2: activar la ubicación de/.test(vecino) && /Ajustes del iPhone &gt; <span class="gps-browser">su navegador<\/span> &gt; Ubicación/.test(vecino) && /Cierre <span class="gps-browser">su navegador<\/span> por completo/.test(vecino) && /gpsHelpIosOther'\)\.style\.display = IS_IOS_NOT_SAFARI \? 'block' : 'none'/.test(vecino));
+yes('"Abrir en Safari" usa x-safari-https:// (sirve en iOS 15, 17 y 18) y hay un respaldo que copia el enlace', /id="btnOpenSafari"/.test(vecino) && /setAttribute\('href', 'x-safari-' \+ location\.protocol\.replace\(':', ''\) \+ ':\/\/' \+ location\.host \+ '\/index\.html'\)/.test(vecino) && /SISDEL\.copyText\(location\.origin \+ '\/index\.html', 'Enlace copiado: péguelo en Safari'\)/.test(vecino) && /id="btnCopyLink"/.test(vecino));
+{
+    const cutName = (vecino.match(/const IOS_BROWSER = ([^;]+);/) || [])[1];
+    const browser = (ua) => vm.runInContext(`(() => { const UA = ${JSON.stringify(ua)}; return ${cutName}; })()`, vm.createContext({}));
+    equal('el navegador del iPhone se nombra: Chrome, Firefox, Edge, Opera; Safari o desconocido, "su navegador"', [
+        browser(CHROME_IPHONE), browser(CHROME_IPHONE.replace('CriOS/131.0.6778.73', 'FxiOS/133.0')), browser(CHROME_IPHONE.replace('CriOS/131.0.6778.73', 'EdgiOS/131.0')), browser(CHROME_IPHONE.replace('CriOS/131.0.6778.73', 'OPiOS/16.0')), browser(SAFARI_IPHONE)
+    ], ['Chrome', 'Firefox', 'Edge', 'Opera', 'su navegador']);
+}
 yes('la ayuda dice la verdad: una pagina no puede activar la ubicacion ni abrir los Ajustes', /Una página no puede activarla ni abrir los Ajustes por usted/.test(vecino));
 yes('en Android hay un boton que intenta abrir los ajustes de ubicacion del telefono', /id="btnAndroidLoc" href="intent:#Intent;action=android\.settings\.LOCATION_SOURCE_SETTINGS;end"/.test(vecino));
 yes('al volver de los Ajustes (enfocar la pagina o regresar a ella) la ubicacion se comprueba sola', /\['focus', 'pageshow'\]\.forEach\(\(ev\) => window\.addEventListener\(ev, \(\) => \{ if \(panicOn && SisdelRondas\.gps\.state\(\)\.status !== 'ok'\) SisdelRondas\.gps\.start\(\); \}\)\)/.test(vecino));
@@ -261,7 +280,7 @@ const login = read('index.html');
 yes('al ingresar, el vecino con panico activo (y con panico.activar) recibe la peticion del permiso de ubicacion ANTES de pasar al portal', /logged\.role !== 'vecino' \|\| !SISDEL\.can\('panico\.activar'\)/.test(login) && /SisdelRondas\.neighborPanicEnabled\(\)/.test(login) && /await SisdelRondas\.gps\.ask\(25000\)/.test(login));
 yes('la peticion se hace despues del bienvenido y antes del redireccionamiento (si no, el cambio de pagina se lleva la ventana del permiso)', /Bienvenido, \$\{userName\}`, 'success'\);\s*await askLocationAtLogin\(\);[\s\S]*?setTimeout\(\(\) => \{\s*window\.location\.href = target;/.test(login));
 yes('si algo falla al pedir la ubicacion, el ingreso sigue igual', /catch \(err\) \{\s*console\.warn\('ubicacion al ingresar:'/.test(login));
-yes('el login avisa como activar la ubicacion cuando esta bloqueada', /La ubicación está bloqueada en su teléfono: actívela en Ajustes/.test(login));
+yes('el login no le cree el "denied" a la API de permisos: intenta de verdad y, si esta bloqueada, manda al boton rojo del portal', /const result = await SisdelRondas\.gps\.ask\(25000\);\s*if \(result === 'denied'\)/.test(login) && /La ubicación está bloqueada en este navegador\. En el portal, toque el botón rojo/.test(login));
 yes('index.html carga rondas-core.js (con la misma version que las demas paginas)', /<script src="rondas-core\.js\?v=\w+"><\/script>/.test(login));
 const versions = ['index.html', 'vecino.html', 'garita.html', 'admin.html'].map((f) => (read(f).match(/rondas-core\.js\?v=(\w+)/) || [])[1]);
 yes('rondas-core.js lleva la misma version en el login, vecino, garita y admin', versions.every((v) => v && v === versions[0]));

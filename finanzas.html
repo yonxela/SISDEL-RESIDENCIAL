@@ -98,8 +98,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261117y"></script>
-    <script src="sisdel-core.js?v=20261117y"></script>
+    <script src="privilegios.js?v=20261117z"></script>
+    <script src="sisdel-core.js?v=20261117z"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
     <script src="finanzas-sync.js?v=20261117x"></script>
     <script src="finanzas-bloqueo.js?v=20261117x"></script>
@@ -302,6 +302,35 @@
                 } catch (error) {
                     console.error('Sistema Financiero: no se pudieron abrir los chats de WhatsApp', error);
                 }
+            }
+
+            // Claves de acceso de los residentes (coleccion codigos), en tiempo real: OIKOS las muestra bajo el nombre de cada
+            // residente (window.parent.sisdelCodes.watch). Solo con "Ver y cambiar codigos de acceso" (usuarios.codigos) y con
+            // poder ver residentes: las reglas de codigos tambien lo exigen (y solo dejan leer las de vecinos sin asignar
+            // privilegios). La escucha se abre cuando OIKOS la pide por primera vez, no al cargar la pagina.
+            window.sisdelCodes = null;
+            if (SISDEL.can('usuarios.codigos') && SISDEL.can('finanzas.residentes_ver')) {
+                const codeListeners = new Set();
+                let lastCodes = null;
+                let stopCodes = null;
+                window.sisdelCodes = {
+                    watch(callback) {
+                        if (typeof callback !== 'function') return () => {};
+                        codeListeners.add(callback);
+                        if (lastCodes) { try { callback(lastCodes); } catch (error) { console.error(error); } }
+                        if (!stopCodes) {
+                            stopCodes = window.sisdelFirebase.db.collection('codigos')
+                                .where('condominioId', '==', condoId).where('role', '==', 'vecino')
+                                .onSnapshot((snap) => {
+                                    const map = new Map();
+                                    snap.docs.forEach((d) => { const x = d.data(); if (x && x.userId) map.set(String(x.userId), d.id); });
+                                    lastCodes = map;
+                                    codeListeners.forEach((fn) => { try { fn(map); } catch (error) { console.error(error); } });
+                                }, (error) => { console.warn('Sistema Financiero: no se pudieron leer las claves de los residentes', error && error.code); });
+                        }
+                        return () => { codeListeners.delete(callback); };
+                    }
+                };
             }
 
             const banner = document.getElementById('remoteBanner');

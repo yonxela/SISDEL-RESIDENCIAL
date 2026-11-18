@@ -442,6 +442,23 @@ async function run() {
         await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);
         await idle();
 
+        console.log('\nClave del residente bajo el nombre (solo con el privilegio de ver codigos)');
+        const anaCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs[0].id;
+        await oikos(`(() => { navigate('residents'); const s = document.getElementById('res-search'); if (s) { s.value = ''; resSearchChanged(); } resTypeChanged(''); renderResidents(); })()`);
+        await idle();
+        const clave = await oikos(`(() => { const row = [...document.querySelectorAll('#residents-table-body tr')].find((tr) => tr.innerHTML.includes("openEstadoCuenta('u-ana')")); const line = row && row.querySelector('.resident-code'); const name = row && row.querySelector('td:nth-child(2) button'); if (!line || !name) return null; const cs = getComputedStyle(line), ns = getComputedStyle(name); return { text: line.textContent.replace(/\\s+/g, ' ').trim(), code: line.querySelector('.select-all').textContent, size: parseFloat(cs.fontSize), nameSize: parseFloat(ns.fontSize), color: cs.color, below: line.getBoundingClientRect().top >= name.getBoundingClientRect().bottom - 1 }; })()`);
+        record('el administrador ve la clave de Ana bajo su nombre', !!clave && clave.text === 'Clave: ' + clave.code && clave.below, JSON.stringify(clave));
+        record('la clave que se ve es la de la base de datos', !!clave && clave.code === anaCode, JSON.stringify([clave && clave.code, anaCode]));
+        record('su letra es un 25 % mas pequena que la del nombre', !!clave && Math.abs(clave.size - clave.nameSize * 0.75) < 0.6, JSON.stringify(clave));
+        const celeste = (clave && clave.color.match(/\d+/g) || []).map(Number);
+        record('y es de color celeste (mas azul que rojo)', celeste.length >= 3 && celeste[2] > celeste[0] + 40 && celeste[2] >= 200, JSON.stringify(clave && clave.color));
+        equal('todos los residentes con codigo muestran su clave', await oikos(`(() => { const rows = [...document.querySelectorAll('#residents-table-body tr')]; return rows.length > 0 && rows.every((tr) => tr.querySelector('.resident-code')); })()`), true);
+        // Sin el puente (quien no puede ver codigos) no se pinta nada
+        await oikos(`(() => { window.__codes = window.sisdelResidentCodes; window.sisdelResidentCodes = null; renderResidents(); })()`);
+        equal('sin la clave disponible no sale la linea ni queda un hueco', await oikos(`document.querySelectorAll('#residents-table-body .resident-code').length`), 0);
+        await oikos(`(() => { window.sisdelResidentCodes = window.__codes; renderResidents(); })()`);
+        equal('al volver la clave, vuelve a salir', await oikos(`document.querySelectorAll('#residents-table-body .resident-code').length > 0`), true);
+
         console.log('\nLote o casa');
         const finRef = (id) => condoRef.collection('finanzas_residentes').doc(id);
         // El formulario de un residente nuevo pide el tipo; el de uno que ya existia sin tipo se puede editar sin elegirlo

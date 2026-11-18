@@ -3661,7 +3661,25 @@
             const last = view.pages - 1;
             return `<div class="flex items-center gap-2">${btn(0, '<i class="fas fa-angle-double-left"></i>', 'Primera página', view.page === 0)}${btn(view.page - 1, '<i class="fas fa-chevron-left mr-1"></i>Anteriores', 'Los 50 anteriores', view.page === 0)}<span class="px-2 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">Página ${view.page + 1} de ${view.pages}</span>${btn(view.page + 1, 'Siguientes 50<i class="fas fa-chevron-right ml-1"></i>', 'Los 50 siguientes', view.page === last)}${btn(last, '<i class="fas fa-angle-double-right"></i>', 'Última página', view.page === last)}</div>`;
         }
+        // SISDEL: la clave de acceso de cada residente, bajo su nombre, para quien puede verla (usuarios.codigos: el puente
+        // window.parent.sisdelCodes de finanzas.html existe solo entonces). Se guarda en window y no en una variable de
+        // este script porque la lista se pinta al arrancar, antes de que corran las lineas de mas abajo.
+        function residentCodeOf(id) { const m = window.sisdelResidentCodes; return m && typeof m.get === 'function' ? String(m.get(String(id)) || '') : ''; }
+        function startResidentCodes() {
+            if (window.sisdelResidentCodesWatching) return;
+            let bridge = null;
+            try { bridge = window.parent && window.parent !== window ? window.parent.sisdelCodes : null; } catch (e) { bridge = null; }
+            if (!bridge || typeof bridge.watch !== 'function') return;
+            window.sisdelResidentCodesWatching = true;
+            let timer = null;
+            bridge.watch((map) => {
+                window.sisdelResidentCodes = map;
+                clearTimeout(timer);
+                timer = setTimeout(() => { if (document.getElementById('residents-table-body')) renderResidents(); }, 150);
+            });
+        }
         function renderResidents() {
+            startResidentCodes();
             const all = Store.get('residents');
             const closedCount = all.filter(r => !isResidentActive(r)).length;
             const view = residentsView();
@@ -3710,6 +3728,9 @@
                     : '';
                 const moroso = !closed && checkIsMoroso(r);
                 const moraBadge = moroso ? '<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-300 align-middle">Mora</span>' : '';
+                // SISDEL: la clave del residente en celeste, bajo el nombre y un 25 % mas pequena (.75em de la letra del nombre); solo con el privilegio
+                const codeNow = residentCodeOf(r.id);
+                const codeLine = codeNow ? `<span class="resident-code block mt-0.5 font-mono tracking-wide text-sky-500 dark:text-sky-300" style="font-size:.75em" title="Clave de acceso del residente: haga clic en ella para seleccionarla"><span class="font-sans font-medium opacity-80">Clave:</span> <span class="select-all font-semibold">${esc(codeNow)}</span></span>` : '';
                 return `
                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 ${closed ? 'opacity-60' : ''}" ${r.notes ? `title="${esc(r.notes)}"` : ''}>
                     <td class="py-4 px-6 font-mono font-bold text-center">
@@ -3717,7 +3738,7 @@
                         <span class="block font-sans text-[10px] font-semibold uppercase tracking-wide ${unitTypeMarked(r) ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400/70 dark:text-slate-500 italic'}" ${unitTypeMarked(r) ? '' : 'title="Sin marcar: se toma por el agua. Márquelo en su formulario o con Marcar tipo"'}>${unitTypeLabel(r)}</span>
                     </td>
                     <td class="py-4 px-6">
-                        <button onclick="openEstadoCuenta('${r.id}')" class="text-left font-medium text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition" title="Ver estado de cuenta">${esc(r.name)}</button>${closedBadge}${moraBadge}
+                        <button onclick="openEstadoCuenta('${r.id}')" class="text-left font-medium text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline transition" title="Ver estado de cuenta">${esc(r.name)}</button>${closedBadge}${moraBadge}${codeLine}
                     </td>
                     <td class="py-4 px-6 font-mono text-xs text-slate-500 dark:text-slate-400">${esc(r.dpi || '-')}</td>
                     <td class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">${esc(r.contact || '-')}</td>

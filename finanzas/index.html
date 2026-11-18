@@ -5204,7 +5204,7 @@
                 if (del) {
                     const reasons = Object.entries(del.reasons || {}).map(([k, n]) => `${remReasonShort(k)} (${n})`).join(', ');
                     const at = del.checkedAt ? new Date(del.checkedAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '';
-                    delEl.innerHTML = `<b>Lo que llegó de verdad</b> (comprobado a las ${at}): <b class="text-emerald-600 dark:text-emerald-300">${del.entregado || 0} entregados</b> · ${del.enviado || 0} recibidos por WhatsApp · ${del.pendiente || 0} sin confirmar · ${del.en_cola || 0} en cola · <b class="text-rose-600 dark:text-rose-300">${del.rechazado || 0} rechazados</b>${reasons ? ' — ' + SisdelBusqueda.escapeHtml(reasons) : ''} · ${del.desconocido || 0} sin rastro en UltraMsg · ${del.sinEnviar || 0} sin enviar. A reenviar: <b>${del.resend || 0}</b>.`;
+                    delEl.innerHTML = `<b>Lo que llegó de verdad</b> (comprobado a las ${at}): <b class="text-emerald-600 dark:text-emerald-300">${del.entregado || 0} entregados</b> · ${del.enviado || 0} recibidos por WhatsApp · ${del.pendiente || 0} sin confirmar · ${del.en_cola || 0} en cola · <b class="text-rose-600 dark:text-rose-300">${del.rechazado || 0} rechazados</b>${reasons ? ' — ' + SisdelBusqueda.escapeHtml(reasons) : ''} · ${del.desconocido || 0} sin rastro en UltraMsg · ${del.sinEnviar || 0} sin enviar. A reenviar: <b>${del.resend || 0}</b>.${(del.noWhatsapp || 0) > 0 ? ` <b class="text-amber-700 dark:text-amber-300">${del.noWhatsapp} con número sin WhatsApp</b>: reenviarles no sirve, corrija su teléfono (en «Ver quiénes recibieron», pestaña No recibieron).` : ''}`;
                 }
             }
             // Comprobar entregas: con el envio detenido y algo aceptado. Reenviar: solo si ya se comprobo y hay a quien
@@ -5308,7 +5308,11 @@
             list.innerHTML = rows.map((it) => {
                 const when = it.sentAt && it.group === 'recibieron' ? new Date(it.sentAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '';
                 const phone = it.contact || (it.phoneTail ? '…' + it.phoneTail : '');
-                return `<div class="py-2 flex items-baseline justify-between gap-3"><div class="min-w-0"><span class="font-semibold text-slate-800 dark:text-slate-100">${query.trim() ? SisdelBusqueda.highlight(it.casa || '—', query) : esc(it.casa || '—')} · ${query.trim() ? SisdelBusqueda.highlight(it.name, query) : esc(it.name)}</span><span class="block text-xs text-slate-500 dark:text-slate-400">${esc(phone)}</span></div><span class="text-xs text-right text-slate-600 dark:text-slate-300 shrink-0">${esc(remRecWhy(it))}${when ? ' · ' + when : ''}</span></div>`;
+                // SISDEL: un numero sin WhatsApp no se arregla reenviando: se abre la ficha para corregir el telefono
+                const fixPhone = it.group === 'no_recibieron' && it.deliveryReason === 'invalid' && it.id
+                    ? `<button type="button" onclick="editResident(this.dataset.id)" data-id="${esc(it.id)}" class="ml-2 shrink-0 px-2 py-1 rounded-lg text-[11px] font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition" title="Abrir su ficha para corregir el teléfono"><i class="fas fa-phone mr-1"></i>Corregir teléfono</button>`
+                    : '';
+                return `<div class="py-2 flex items-baseline justify-between gap-3"><div class="min-w-0"><span class="font-semibold text-slate-800 dark:text-slate-100">${query.trim() ? SisdelBusqueda.highlight(it.casa || '—', query) : esc(it.casa || '—')} · ${query.trim() ? SisdelBusqueda.highlight(it.name, query) : esc(it.name)}</span><span class="block text-xs text-slate-500 dark:text-slate-400">${esc(phone)}</span></div><span class="text-xs text-right text-slate-600 dark:text-slate-300 shrink-0">${esc(remRecWhy(it))}${when ? ' · ' + when : ''}</span>${fixPhone}</div>`;
             }).join('');
         }
         function remReasonShort(reason) {

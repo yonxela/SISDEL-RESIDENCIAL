@@ -465,6 +465,30 @@ console.log('\nQue llego de verdad (UltraMsg acepta y despues WhatsApp puede rec
     const allGood = await R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id });
     equal('si a todos les llego (o WhatsApp ya lo recibio) no hay nada que reenviar', [allGood.entregado, allGood.enviado, allGood.resend], [2, 1, 0]);
     await rejects('y reenviar avisa que no hay a quien', () => R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } }), 'failed-precondition');
+    // Un numero sin WhatsApp (invalid) cuenta como rechazado pero NO se reenvia: rebotaria otra vez hasta corregir su telefono
+    uRows = [
+        { id: 1, to: toOf('50255551111'), status: 'sent', ack: 'device', failed_reason: '', created_at: sentAt.v1 },
+        { id: 2, to: toOf('50255552222'), status: 'unsent', ack: 'pending', failed_reason: 'temporary_block', created_at: sentAt.v2 },
+        { id: 3, to: toOf('50255553333'), status: 'invalid', ack: 'pending', failed_reason: 'invalid', created_at: sentAt.v3 }
+    ];
+    const noWa = await R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id });
+    equal('un numero sin WhatsApp es rechazado pero no reenviable: se cuenta aparte (noWhatsapp) y no suma en resend', [noWa.rechazado, noWa.noWhatsapp, noWa.resend, noWa.reasons], [2, 1, 1, { temporary_block: 1, invalid: 1 }]);
+    equal('el envio guarda noWhatsapp junto a los totales', [(await camp(e.id)).delivery.noWhatsapp, (await camp(e.id)).delivery.resend], [1, 1]);
+    sentLog.length = 0;
+    const onlyTemp = await R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } });
+    equal('reenviar manda solo al rechazado por bloqueo temporal, no al que no tiene WhatsApp', [onlyTemp.pending, onlyTemp.total, (await dest(onlyTemp.id, 'v3'))], [1, 1, undefined]);
+    await run();
+    equal('y el reenvio solo salio a ese telefono', sentLog.map((x) => x.to), ['50255552222']);
+    // Solo quedan los de numero sin WhatsApp: no hay a quien reenviar y el aviso dice que corrijan el telefono
+    uRows = [
+        { id: 1, to: toOf('50255551111'), status: 'sent', ack: 'device', failed_reason: '', created_at: sentAt.v1 },
+        { id: 2, to: toOf('50255552222'), status: 'invalid', ack: 'pending', failed_reason: 'invalid', created_at: sentAt.v2 },
+        { id: 3, to: toOf('50255553333'), status: 'invalid', ack: 'pending', failed_reason: 'invalid', created_at: sentAt.v3 }
+    ];
+    const onlyNoWa = await R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id });
+    equal('si los que faltan no tienen WhatsApp: 2 sin WhatsApp y 0 a reenviar', [onlyNoWa.rechazado, onlyNoWa.noWhatsapp, onlyNoWa.resend], [2, 2, 0]);
+    const noWaError = await R.resendCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { campaignId: e.id } }).then(() => null, (err) => err);
+    equal('reenviar se rechaza y explica que son 2 con numero sin WhatsApp, que corrijan su telefono', [noWaError && noWaError.userCode, /2 tienen un número sin WhatsApp/.test(noWaError ? noWaError.message : ''), /corrija su teléfono/.test(noWaError ? noWaError.message : '')], ['failed-precondition', true, true]);
     // Sin UltraMsg o sin lectura
     reset();
     await rejects('con el proveedor simulado no se puede comprobar', () => R.reconcileCampaign({ db, whatsapp, condominioId: CONDO, campaignId: e.id }), 'failed-precondition');

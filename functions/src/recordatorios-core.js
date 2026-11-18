@@ -505,6 +505,8 @@ async function connectionInfo({ whatsapp }) {
 }
 
 // ───────── 6. Comprobar que llego de verdad y reenviar solo a los que no recibieron ─────────
+// Motivo con que UltraMsg rechaza un numero que no tiene WhatsApp o esta mal escrito (ultramsg-estado.js, classify): es definitivo
+const NO_WHATSAPP = 'invalid';
 // Pregunta a UltraMsg que paso con cada mensaje aceptado de un envio y lo anota en cada destinatario (`delivery`: entregado,
 // enviado, pendiente, en_cola, rechazado o desconocido) y en el envio (`delivery`: los totales y `resend`, a cuantos se les
 // puede reenviar). Los mensajes se enlazan por telefono y hora (un propietario con varios lotes recibe varios).
@@ -538,12 +540,16 @@ async function reconcileCampaign({ db, whatsapp, condominioId, campaignId, now =
     const matched = whatsapp.matchCampaign(rows, accepted.map((d) => ({ id: d.id, phone: phones.get(d.id), sentAtMs: Date.parse(d.data().sentAt) })));
     const totals = { entregado: 0, enviado: 0, pendiente: 0, en_cola: 0, rechazado: 0, desconocido: 0, sinEnviar: 0 };
     const reasons = {};
+    let noWhatsapp = 0;
     const checkedAt = now().toISOString();
     const updates = [];
     for (const d of accepted) {
         const result = whatsapp.classify(matched.get(d.id));
         totals[result.state] = (totals[result.state] || 0) + 1;
-        if (result.state === 'rechazado') reasons[result.reason] = (reasons[result.reason] || 0) + 1;
+        if (result.state === 'rechazado') {
+            reasons[result.reason] = (reasons[result.reason] || 0) + 1;
+            if (result.reason === NO_WHATSAPP) noWhatsapp++;
+        }
         updates.push([d.ref, { delivery: result.state, deliveryReason: result.reason || null, deliveryCheckedAt: checkedAt }]);
     }
     for (const d of all) {
@@ -558,7 +564,8 @@ async function reconcileCampaign({ db, whatsapp, condominioId, campaignId, now =
         part.forEach(([ref, fields]) => batch.update(ref, fields));
         await batch.commit();
     }
-    const summary = { ...totals, resend: totals.rechazado + totals.desconocido + totals.sinEnviar, reasons, checkedAt };
+    // A un numero sin WhatsApp no se le reenvia: no sirve hasta que se corrija su telefono (se cuenta aparte, en noWhatsapp)
+    const summary = { ...totals, noWhatsapp, resend: totals.rechazado - noWhatsapp + totals.desconocido + totals.sinEnviar, reasons, checkedAt };
     await campRef.update({ delivery: summary });
     return summary;
 }
@@ -575,10 +582,17 @@ async function resendCampaign({ db, whatsapp, condominioId, caller, data }) {
     if (camp.status === 'running') throw fail('failed-precondition', 'Ese envío sigue en curso. Páuselo o espere a que termine.');
     if (!camp.delivery) throw fail('failed-precondition', 'Primero pulse "Comprobar entregas" para saber a quiénes les llegó.');
     const dests = (await campRef.collection('destinatarios').get()).docs;
+    // Los rechazados porque su numero no tiene WhatsApp (invalid) no se reenvian: volverian a rebotar hasta que se corrija su telefono
+    const noWa = (x) => x.delivery === 'rechazado' && x.deliveryReason === NO_WHATSAPP;
     const items = dests
-        .filter((d) => { const x = d.data(); return x.status !== 'skipped' && (x.delivery === 'rechazado' || x.delivery === 'desconocido' || x.delivery === 'sin_enviar'); })
+        .filter((d) => { const x = d.data(); return x.status !== 'skipped' && !noWa(x) && (x.delivery === 'rechazado' || x.delivery === 'desconocido' || x.delivery === 'sin_enviar'); })
         .map((d) => ({ residentId: d.id, text: d.data().text, ...(Array.isArray(d.data().params) ? { params: d.data().params } : {}) }));
-    if (!items.length) throw fail('failed-precondition', 'No hay a quién reenviar: a todos les llegó o siguen en proceso.');
+    if (!items.length) {
+        const withoutWhatsapp = dests.filter((d) => d.data().status !== 'skipped' && noWa(d.data())).length;
+        throw fail('failed-precondition', withoutWhatsapp
+            ? `No hay a quién reenviar: a los demás les llegó o siguen en proceso, y ${withoutWhatsapp} tienen un número sin WhatsApp (reenviarles no sirve): corrija su teléfono en su ficha.`
+            : 'No hay a quién reenviar: a todos les llegó o siguen en proceso.');
+    }
     return createCampaign({ db, whatsapp, condominioId, caller, data: { mode: camp.mode, items, resendOf: sourceId } });
 }
 

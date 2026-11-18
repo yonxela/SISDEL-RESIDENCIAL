@@ -310,6 +310,21 @@ async function run() {
         await oikos(`(() => { document.getElementById('rem-rec-search').value = ''; })()`);
         await oikos(`showRemRecipients()`);
         equal('el mismo boton cierra el listado', await oikos(`document.getElementById('rem-recipients').classList.contains('hidden')`), true);
+        // Un numero sin WhatsApp no se reenvia: el resumen lo dice y el listado ofrece corregir su telefono
+        await page.evaluate(`window.__rec = [
+            { id: 'u-ana', name: 'Ana', casa: 'A1', phoneTail: '1111', status: 'sent', delivery: 'rechazado', deliveryReason: 'invalid', sentAt: '${nowIso}' },
+            { id: 'fake-2', name: 'Diana', casa: 'F-3', phoneTail: '4444', status: 'sent', delivery: 'rechazado', deliveryReason: 'temporary_block', sentAt: '${nowIso}' }
+        ]; window.__calls.length = 0;`);
+        const noWaPanel = await panel('done', { id: 'envio-5', pending: 0, sent: 2, delivery: { entregado: 0, enviado: 0, pendiente: 0, en_cola: 0, rechazado: 2, desconocido: 0, sinEnviar: 0, noWhatsapp: 1, resend: 1, reasons: { invalid: 1, temporary_block: 1 }, checkedAt: nowIso } });
+        const noWaText = await oikos(`document.getElementById('rem-bulk-delivery').textContent`);
+        record('el resumen dice cuantos tienen numero sin WhatsApp y que reenviarles no sirve, y A reenviar no los cuenta', /A reenviar: 1\./.test(noWaText) && /1 con número sin WhatsApp/.test(noWaText) && /reenviarles no sirve/.test(noWaText), noWaText);
+        equal('el boton Reenviar cuenta solo a los que si se puede (1)', noWaPanel[1], ['Comprobar entregas', 'Reenviar a los que no recibieron (1)']);
+        await oikos(`showRemRecipients()`);
+        await sleep(300);
+        await oikos(`setRemRecTab('no_recibieron')`);
+        const noWaRows = await oikos(`[...document.querySelectorAll('#rem-rec-list > div')].map((d) => ({ text: d.textContent.replace(/\\s+/g, ' ').trim(), fix: !!d.querySelector('button[onclick^="editResident("]'), id: (d.querySelector('button[data-id]') || {}).dataset ? d.querySelector('button[data-id]').dataset.id : null }))`);
+        record('en No recibieron, quien tiene el numero sin WhatsApp trae Corregir telefono (con su id) y el de bloqueo temporal no', noWaRows.length === 2 && noWaRows.find((r) => /Ana/.test(r.text)).fix === true && noWaRows.find((r) => /Ana/.test(r.text)).id === 'u-ana' && /número sin WhatsApp/.test(noWaRows.find((r) => /Ana/.test(r.text)).text) && noWaRows.find((r) => /Diana/.test(r.text)).fix === false, JSON.stringify(noWaRows));
+        await oikos(`hideRemRecipients()`);
         // Sin haber comprobado: pregunta a UltraMsg y luego lista
         await page.evaluate(`window.__calls.length = 0`);
         await panel('done', { id: 'envio-3', pending: 0, sent: 10 });

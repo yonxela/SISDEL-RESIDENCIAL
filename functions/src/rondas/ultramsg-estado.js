@@ -185,9 +185,10 @@ async function health(config, fetchImpl = fetch, nowSec = Math.floor(Date.now() 
 // Texto para quien usa OIKOS (siempre empieza con "WhatsApp no está dejando salir los mensajes": la pantalla lo reconoce)
 function describeHealth(h) {
     const when = (sec) => new Date(sec * 1000).toLocaleString('es-GT', { timeZone: 'America/Guatemala', day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const stuckText = `los últimos ${(h && h.stuck) || 'varios'} mensajes enviados${h && h.since ? ` (desde el ${when(h.since)})` : ''} siguen sin una sola palomita`;
     const detail = h && h.blocked
-        ? 'rechazó mensajes por bloqueo temporal (temporary_block)'
-        : `los últimos ${(h && h.stuck) || 'varios'} mensajes enviados${h && h.since ? ` (desde el ${when(h.since)})` : ''} siguen sin una sola palomita`;
+        ? `rechazó mensajes por bloqueo temporal (temporary_block)${h.stuck ? ` y ${stuckText}` : ''}`
+        : stuckText;
     return `WhatsApp no está dejando salir los mensajes del número del condominio: ${detail}. Lo más probable es que WhatsApp haya restringido el número por mandar muchos mensajes seguidos. Mientras tanto no se envía nada: cada intento puede alargar el castigo. En el teléfono del condominio abra WhatsApp Business para ver cuánto falta. Después use "Enviar prueba" a su propio teléfono: cuando la prueba llegue, se vuelve a poder enviar.`;
 }
 

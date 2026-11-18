@@ -14,8 +14,10 @@ const { SERVER_STAMP, staleStamp } = require('./sello');
 const SETTINGS_DOC = 'oikos_settings';
 const BATCH_SIZE = 400;
 // Solo los campos que hacen falta: los movimientos pueden traer fotos de comprobantes
-// `date` y `moraFixed` los pide la mora por dia (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy
-const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', 'date', 'moraFixed', SERVER_STAMP];
+// `date` y `moraFixed` los pide la mora por dia (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy.
+// `breakdown` (los conceptos de una cuota) y `alloc` (a que conceptos se aplico un pago) tambien: con alloc, el servidor
+// reparte cada pago igual que la ventana del ingreso, y por eso decide lo mismo sobre quien es moroso.
+const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', 'date', 'moraFixed', 'breakdown', 'alloc', SERVER_STAMP];
 
 const docIdOf = (id) => String(id).replace(/\//g, '_');
 

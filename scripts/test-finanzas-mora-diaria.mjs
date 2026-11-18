@@ -170,6 +170,70 @@ const water = { fee: 300, waterUnitPrice: 160, moraRules: [rule()] };
 equal('con agua por lote, "una cuota" es la del lote (Q 460)', [M.moraOf('r1', [fee('a', '2026-11', 460)], water, dec20, lot).moroso, M.moraOf('r1', [fee('a', '2026-10', 460), fee('b', '2026-11', 460)], water, dec20, lot).moroso], [false, true]);
 equal('el dia del servidor es el de Guatemala', M.moraOf('r1', [nov], S, new Date('2026-12-06T03:00:00.000Z')).mora, 0);
 
+console.log('\nLo que se debe, por concepto');
+// Una cuota con su desglose (Q 300 de mantenimiento y Q 80 de agua) y otra sin desglose
+const feeB = (id, period, breakdown, day) => ({ ...fee(id, period, Object.values(breakdown).reduce((a, b) => a + b, 0), day), breakdown });
+const octB = feeB('b10', '2026-10', { maintenance: 300, water: 80 });
+const novB = feeB('b11', '2026-11', { maintenance: 300, water: 80 });
+const partsOf = (txs, asOf, settings = S) => state(txs, asOf, settings).parts;
+equal('cada cuota lleva sus conceptos y el estado suma lo que falta de cada uno', partsOf([octB, novB], '2026-11-20'), { maintenance: 600, water: 160 });
+equal('una cuota sin desglose es "fee"; un cargo extra, "extra"; la mora cargada no es de ningun concepto', partsOf([nov, extra('e', '2026-11-10', 120), extra('m', '2026-11-10', 45.5, { moraFixed: true })], '2026-11-20'), { fee: 300, extra: 120 });
+equal('un desglose que no suma el monto no se usa: la cuota entera es "fee"', partsOf([{ ...fee('x', '2026-11', 300), breakdown: { maintenance: 100, water: 50 } }], '2026-11-20'), { fee: 300 });
+equal('un desglose con basura, electricidad y otros tambien', partsOf([feeB('b', '2026-11', { maintenance: 200, water: 50, garbage: 25, electricity: 15.5, other: 9.5 })], '2026-11-20'), { maintenance: 200, water: 50, garbage: 25, electricity: 15.5, other: 9.5 });
+equal('un pago normal baja cada concepto de la cuota mas antigua en proporcion: Q 190 de Q 380', state([octB, pay('p', '2026-10-20', 190)], '2026-11-01').items[0].parts, { maintenance: 150, water: 40 });
+equal('un pago normal que cubre una cuota entera la saca y sigue con la siguiente', partsOf([octB, novB, pay('p', '2026-11-20', 380)], '2026-11-20'), { maintenance: 300, water: 80 });
+const parcial = state([octB, novB, pay('p', '2026-11-20', 500)], '2026-11-20');
+equal('las partes siempre suman el capital (cuota por cuota y en total)', [parcial.items.every((i) => round2(Object.values(i.parts).reduce((a, b) => a + b, 0)) === i.capital), round2(Object.values(parcial.parts).reduce((a, b) => a + b, 0)), parcial.capital], [true, 260, 260]);
+
+console.log('\nPago dirigido a conceptos (alloc)');
+// Dos cuotas (octubre y noviembre) de Q 380 cada una, al 20 de diciembre; mora de octubre Q 15 x 380/300 = Q 19.00 y de noviembre Q 7.60
+const two = [octB, novB];
+const dueMora = state(two, '2026-12-20').mora;
+equal('lo que se debe al 20 de diciembre: Q 760 de cuotas y su mora', [state(two, '2026-12-20').capital, dueMora], [760, 26.6]);
+const waterOnly = state([...two, pay('p', '2026-12-20', 160, { alloc: { water: 160 } })], '2026-12-20');
+equal('pagar solo el agua de las dos cuotas: baja el agua y deja todo el mantenimiento y la mora', [waterOnly.parts, waterOnly.capital, waterOnly.mora], [{ maintenance: 600 }, 600, 26.6]);
+const moraOnly = state([...two, pay('p', '2026-12-20', 26.6, { alloc: { mora: 26.6 } })], '2026-12-20');
+equal('pagar solo la mora: no toca las cuotas aunque payFirst sea "la cuota primero"', [moraOnly.capital, moraOnly.mora, moraOnly.moraPaid, moraOnly.parts], [760, 0, 26.6, { maintenance: 600, water: 160 }]);
+equal('el mismo pago SIN alloc se va primero a las cuotas (regla de siempre)', (({ capital, mora }) => ({ capital, mora }))(state([...two, pay('p', '2026-12-20', 26.6)], '2026-12-20')), { capital: 733.4, mora: 26.6 });
+const mixed = state([...two, pay('p', '2026-12-20', 400, { alloc: { maintenance: 300, water: 80, mora: 20 } })], '2026-12-20');
+equal('mantenimiento, agua y mora a la vez: lo mas antiguo primero en cada concepto', [mixed.items.map((i) => [i.period, i.capital, i.parts, i.mora]), mixed.capital, mixed.moraPaid], [[['2026-10', 0, {}, 0], ['2026-11', 380, { maintenance: 300, water: 80 }, 6.6]], 380, 20]);
+equal('la mora se paga a la cuota mas antigua primero', moraOnly.items.map((i) => [i.period, i.moraPaid]), [['2026-10', 19], ['2026-11', 7.6]]);
+equal('un alloc que no suma el pago se ignora: el pago se reparte normal', (({ capital, mora }) => ({ capital, mora }))(state([...two, pay('p', '2026-12-20', 100, { alloc: { water: 40 } })], '2026-12-20')), (({ capital, mora }) => ({ capital, mora }))(state([...two, pay('p', '2026-12-20', 100)], '2026-12-20')));
+equal('un alloc con montos raros (texto, negativos, conceptos que no existen) se ignora', (({ capital, mora }) => ({ capital, mora }))(state([...two, pay('p', '2026-12-20', 100, { alloc: { water: 'x', foo: 100, maintenance: -5 } })], '2026-12-20')), (({ capital, mora }) => ({ capital, mora }))(state([...two, pay('p', '2026-12-20', 100)], '2026-12-20')));
+const over = state([octB, pay('p', '2026-10-20', 150, { alloc: { water: 150 } })], '2026-10-20');
+equal('pagar de mas un concepto: lo que sobra se reparte como un pago normal (el agua solo debia Q 80)', [over.parts, over.capital, over.credit], [{ maintenance: 230 }, 230, 0]);
+equal('un pago dirigido sin nada que deber queda a favor entero', [state([pay('p', '2026-12-20', 100, { alloc: { water: 100 } })], '2026-12-20').credit, state([pay('p', '2026-12-20', 100, { alloc: { water: 100 } })], '2026-12-20').balance], [100, 100]);
+equal('la mora de la cuota deja de crecer sobre lo que se pago: pagar el mantenimiento baja la mora futura', (() => {
+    const a = state([octB, pay('p', '2026-11-15', 300, { alloc: { maintenance: 300 } })], '2026-12-31').mora;
+    const b = state([octB], '2026-12-31').mora;
+    return a < b;
+})(), true);
+equal('un cargo extra tambien se paga con su concepto', (({ capital, parts }) => ({ capital, parts }))(state([nov, extra('e', '2026-11-10', 120), pay('p', '2026-11-20', 120, { alloc: { extra: 120 } })], '2026-11-20')), { capital: 300, parts: { fee: 300 } });
+equal('una cuota sin desglose se paga con "fee"', (({ capital, parts }) => ({ capital, parts }))(state([nov, extra('e', '2026-11-10', 120), pay('p', '2026-11-20', 300, { alloc: { fee: 300 } })], '2026-11-20')), { capital: 120, parts: { extra: 120 } });
+equal('un pago anulado no se aplica, tampoco su alloc', state([...two, pay('p', '2026-12-20', 160, { alloc: { water: 160 }, deleted: true })], '2026-12-20').parts, { maintenance: 600, water: 160 });
+equal('el saldo no depende de como se dirija el pago: pagos menos cargos y mora', (() => {
+    const a = state([...two, pay('p', '2026-12-20', 400, { alloc: { maintenance: 300, water: 80, mora: 20 } })], '2026-12-20').balance;
+    return round2(a);
+})(), round2(400 - 760 - 26.6));
+equal('el servidor decide moroso con el pago dirigido: pagar solo la mora deja las dos cuotas vencidas', (({ overdue, moroso }) => ({ overdue, moroso }))(M.moraOf('r1', [...two, pay('p', '2026-12-20', 26.6, { alloc: { mora: 26.6 } })], S, dec20)), { overdue: 760, moroso: true });
+equal('el mismo pago sin alloc (primero la cuota) deja menos vencido', M.moraOf('r1', [...two, pay('p', '2026-12-20', 26.6)], S, dec20).overdue, 733.4);
+
+console.log('\nVista previa de un pago normal');
+const preview = (amount, txs = two, settings = S, asOf = '2026-12-20') => D.previewPayment('r1', txs, settings, amount, asOf);
+equal('Q 380 con primero la cuota: paga la cuota mas antigua entera y nada de mora', preview(380), { parts: { maintenance: 300, water: 80 }, mora: 0, credit: 0 });
+equal('Q 100: en proporcion de la cuota mas antigua', preview(100), { parts: { maintenance: 78.95, water: 21.05 }, mora: 0, credit: 0 });
+equal('con primero la mora, los primeros pesos van a la mora y los Q 3.40 que sobran a la cuota mas antigua, en proporcion', preview(30, two, { moraRules: [rule({ payFirst: 'mora' })] }), { parts: { maintenance: 2.68, water: 0.72 }, mora: 26.6, credit: 0 });
+equal('un pago de mas: paga todo y lo que sobra queda a favor', preview(1000), { parts: { maintenance: 600, water: 160 }, mora: 26.6, credit: 213.4 });
+equal('sin monto, nada', [preview(0), preview(''), preview(-5)], [{ parts: {}, mora: 0, credit: 0 }, { parts: {}, mora: 0, credit: 0 }, { parts: {}, mora: 0, credit: 0 }]);
+equal('la vista previa no cambia el estado de verdad', [state(two, '2026-12-20').capital, (preview(500), state(two, '2026-12-20').capital)], [760, 760]);
+equal('la vista previa de lo que se paga es exactamente lo que despues muestra el estado', (() => {
+    const p = preview(500);
+    const real = state([...two, pay('p', '2026-12-20', 500)], '2026-12-20');
+    const before = state(two, '2026-12-20');
+    return round2(before.capital - real.capital) === round2(Object.values(p.parts).reduce((a, b) => a + b, 0)) && round2(before.mora - real.mora) === p.mora;
+})(), true);
+equal('los conceptos que acepta un pago dirigido', [D.PART_KEYS, D.ALLOC_KEYS], [['maintenance', 'water', 'garbage', 'electricity', 'other'], ['maintenance', 'water', 'garbage', 'electricity', 'other', 'fee', 'extra', 'mora']]);
+
 console.log('\nCopia del servidor y navegador');
 yes('el servidor usa una copia IDENTICA del modulo', read('finanzas/sisdel-mora.js') === read('functions/src/finanzas/mora-diaria.js'));
 const sandbox = { self: {} };
@@ -188,6 +252,7 @@ yes('el estado de cuenta muestra capital vencido, mora y total a pagar', ['ec-mo
 yes('el PDF y la impresion del estado de cuenta llevan la mora', (oikos.match(/sisdelMoraRuleText\(\)/g) || []).length >= 3);
 yes('sin reglas de mora no se calcula nada (OIKOS como siempre)', /if \(typeof SisdelMora === 'undefined' \|\| !SisdelMora\.enabled\(s\)\) return null;/.test(oikos));
 yes('el servidor lee la fecha de cada cargo y si es mora fija', /const TX_FIELDS = \[[^\]]*'date'[^\]]*'moraFixed'/.test(recalc));
+yes('el servidor tambien lee los conceptos de cada cuota (breakdown) y a que conceptos se aplico cada pago (alloc)', /'moraFixed', 'breakdown', 'alloc'/.test(recalc));
 yes('el servidor pasa la ficha del lote al decidir quien es moroso', /moraOf\(r\.id, txs, settings, now, r\)/.test(recalc) && /moraOf\(String\(residentId\), txSnap\.docs\.map\(txOf\), settings, now, extraSnap\.exists \? extraSnap\.data\(\) : null\)/.test(recalc));
 yes('cambiar el desglose, el agua o la mora recalcula el condominio', /const FEE_SETTINGS = \[[^\]]*'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'moraRules'\]/.test(read('functions/src/finanzas/index.js')));
 

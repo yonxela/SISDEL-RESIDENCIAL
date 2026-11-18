@@ -460,6 +460,104 @@ async function run() {
         equal('sin la clave disponible no sale la linea ni queda un hueco', await oikos(`document.querySelectorAll('#residents-table-body .resident-code').length`), 0);
         await oikos(`(() => { window.sisdelResidentCodes = window.__codes; renderResidents(); })()`);
         equal('al volver la clave, vuelve a salir', await oikos(`document.querySelectorAll('#residents-table-body .resident-code').length > 0`), true);
+        console.log('\nPagos: detalle por concepto (de lo que debe, cuanto es de cada concepto, y el pago dirigido)');
+        await oikos(`(() => { window.__real = { alert: window.alert, confirm: window.confirm }; window.__alerts = []; window.alert = (m) => { window.__alerts.push(String(m)); }; window.confirm = () => true; navigate('accounting'); openModal('modal-income'); })()`);
+        const tabsState = () => oikos(`[document.getElementById('inc-pane-pago').classList.contains('hidden'), document.getElementById('inc-pane-detalle').classList.contains('hidden'), document.getElementById('inc-tab-pago').getAttribute('aria-selected'), document.getElementById('inc-tab-detalle').getAttribute('aria-selected')]`);
+        equal('el ingreso abre en la pestana Pago y el Detalle esta oculto', await tabsState(), [false, true, 'true', 'false']);
+        await oikos(`setIncTab('detalle')`);
+        equal('sin residente, el Detalle pide elegir uno', [await tabsState(), await oikos(`document.getElementById('inc-alloc-empty').textContent`)], [[true, false, 'false', 'true'], 'Elija un residente para ver lo que debe, por concepto.']);
+        // Con un residente: la tabla suma lo mismo que la caja "Debe"
+        await oikos(`(() => { setIncTab('pago'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); setIncTab('detalle'); })()`);
+        const detail = await oikos(`(() => {
+            const r = Store.get('residents').find((x) => x.id === 'u-ana'); const o = sisdelOwedOf(r);
+            const rows = [...document.querySelectorAll('#inc-alloc-rows tr')].map((tr) => ({ label: tr.cells[0].textContent.trim(), owed: tr.cells[1].textContent.trim(), input: !!tr.querySelector('input') }));
+            return { rows, total: document.getElementById('inc-alloc-owed').textContent, box: formatMoney(o.total), sum: document.getElementById('inc-alloc-sum').textContent, mode: document.getElementById('inc-alloc-mode').textContent, hasMora: o.mora > 0 };
+        })()`);
+        record('el Detalle trae una fila por concepto que se debe, y su total es el de la caja Debe', detail.rows.length >= 1 && detail.total === detail.box, JSON.stringify(detail));
+        record('cada concepto se puede pagar (hay casilla) salvo el ajuste de cuotas por venir', detail.rows.every((row) => row.input || row.label === 'Cuotas de meses por venir y otros'), JSON.stringify(detail.rows));
+        equal('sin monto, la columna Pagar esta en cero y el reparto es automatico', [detail.sum, detail.mode], ['Q0.00', 'Reparto automático']);
+        // El monto escrito en la pestana Pago se reparte solo y la columna Pagar lo muestra
+        const auto = await oikos(`(() => {
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            const amt = Math.max(1, Math.min(100, Math.floor(sisdelOwedOf(r).total / 2)));
+            document.getElementById('inc-amount').value = String(amt); renderIncomeBalance();
+            const pv = SisdelMora.previewPayment(r.id, Store.get('transactions').filter((t) => String(t.resiId) === 'u-ana'), Store.get('settings'), amt, localDayKey(new Date()));
+            const sorted = (o) => Object.fromEntries(Object.entries(o).sort());
+            const shown = sorted(Object.fromEntries([...document.querySelectorAll('#inc-alloc-rows input')].filter((i) => i.value).map((i) => [i.dataset.key, parseFloat(i.value)])));
+            const expected = sorted(Object.assign({}, pv.parts, pv.mora > 0 ? { mora: pv.mora } : {}));
+            return { shown, expected, sum: document.getElementById('inc-alloc-sum').textContent, want: formatMoney(amt), mode: document.getElementById('inc-alloc-mode').textContent, manual: incAlloc.manual };
+        })()`);
+        equal('con un monto escrito, la columna Pagar muestra como lo aplica el motor y suma ese monto', [auto.shown, auto.sum, auto.mode, auto.manual], [auto.expected, auto.want, 'Reparto automático', false]);
+        // Anotar a mano: la primera casilla (hasta lo que debe) y la segunda
+        const manual = await oikos(`(() => {
+            const inputs = [...document.querySelectorAll('#inc-alloc-rows input')];
+            const first = inputs[0], owed = parseFloat(first.max);
+            first.value = String(Math.min(30, owed)); incAllocInput(first);
+            const afterFirst = [document.getElementById('inc-amount').value, incAlloc.manual, document.getElementById('inc-alloc-mode').textContent];
+            let afterSecond = null;
+            if (inputs[1]) { inputs[1].value = String(Math.min(10, parseFloat(inputs[1].max))); incAllocInput(inputs[1]); afterSecond = document.getElementById('inc-amount').value; }
+            return { afterFirst, afterSecond, firstKey: first.dataset.key, secondKey: inputs[1] ? inputs[1].dataset.key : null, firstVal: first.value, hint: !document.getElementById('inc-amount-hint').classList.contains('hidden') };
+        })()`);
+        equal('anotar una casilla pasa al reparto manual y el monto del pago es la suma', [manual.afterFirst, manual.hint], [[Number(manual.firstVal).toFixed(2), true, 'Reparto anotado por usted'], true]);
+        if (manual.secondKey) equal('con dos casillas el monto es la suma de las dos', manual.afterSecond, (Number(manual.firstVal) + Math.min(10, Number(await oikos(`document.querySelector('#inc-alloc-rows input[data-key="${manual.secondKey}"]').max`)))).toFixed(2));
+        // Una casilla no pasa de lo que se debe de ese concepto
+        const clamp = await oikos(`(() => { const el = document.querySelector('#inc-alloc-rows input'); const max = parseFloat(el.max); el.value = String(max + 999); incAllocInput(el); return [parseFloat(el.value) === max, document.getElementById('inc-amount').value === (max + (parseFloat((document.querySelectorAll('#inc-alloc-rows input')[1] || {}).value) || 0)).toFixed(2)]; })()`);
+        equal('una casilla no pasa de lo que se debe de ese concepto', clamp, [true, true]);
+        // Cambiar el monto en la pestana Pago vuelve al reparto automatico
+        const backAuto = await oikos(`(() => { document.getElementById('inc-amount').value = '1'; renderIncomeBalance(); return [incAlloc.manual, document.getElementById('inc-alloc-mode').textContent, document.getElementById('inc-alloc-sum').textContent]; })()`);
+        equal('escribir el monto otra vez vuelve al reparto automatico', backAuto, [false, 'Reparto automático', 'Q1.00']);
+        // Limpiar y Pagar todo
+        await oikos(`incAllocClear()`);
+        equal('Limpiar deja el monto y las casillas vacios', await oikos(`[document.getElementById('inc-amount').value, [...document.querySelectorAll('#inc-alloc-rows input')].every((i) => !i.value)]`), ['', true]);
+        await oikos(`document.getElementById('inc-alloc-all').click()`);
+        equal('Pagar todo es lo mismo que Poner el total: el monto es lo que debe', await oikos(`(() => { const r = Store.get('residents').find((x) => x.id === 'u-ana'); return document.getElementById('inc-amount').value === sisdelOwedOf(r).total.toFixed(2); })()`), true);
+        // Registrar un pago dirigido (a mano) y ver que queda con su alloc, su concepto y lo que baja de cada concepto
+        const regs = await oikos(`(() => {
+            incAllocClear();
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            const own = () => Store.get('transactions').filter((t) => String(t.resiId) === 'u-ana');
+            const before = SisdelMora.stateOf('u-ana', own(), Store.get('settings'), localDayKey(new Date()));
+            const first = document.querySelector('#inc-alloc-rows input');
+            const key = first.dataset.key, amount = Math.min(20, parseFloat(first.max));
+            first.value = String(amount); incAllocInput(first);
+            document.getElementById('inc-concept-type').value = '';
+            window.__alerts.length = 0;
+            handleTransactionSubmit({ preventDefault() {} }, 'income');
+            const tx = Store.get('transactions').filter((t) => t.type === 'income' && t.resiId === 'u-ana' && t.alloc).pop();
+            const after = SisdelMora.stateOf('u-ana', own(), Store.get('settings'), localDayKey(new Date()));
+            window.__allocTx = tx && tx.id;
+            return { key, amount, tx: tx && { amount: tx.amount, alloc: tx.alloc, concept: tx.concept }, beforeVal: key === 'mora' ? before.mora : before.parts[key], afterVal: key === 'mora' ? after.mora : after.parts[key], alerts: window.__alerts };
+        })()`);
+        record('registrar con el detalle a mano deja el pago con su alloc y un concepto que dice a que se aplico', !!regs.tx && regs.tx.amount === regs.amount && JSON.stringify(regs.tx.alloc) === JSON.stringify({ [regs.key]: regs.amount }) && /^Pago de /.test(regs.tx.concept) && regs.alerts.length === 0, JSON.stringify(regs));
+        record('el concepto pagado baja exactamente lo anotado (y el motor lo aplica a ese concepto)', regs.tx && Math.abs((regs.beforeVal - (regs.afterVal || 0)) - regs.amount) < 0.011, JSON.stringify(regs));
+        await oikos(`(() => { closeModal('modal-voucher-options'); })()`);
+        // El pago dirigido en el detalle del movimiento y en el comprobante
+        const txShows = await oikos(`(() => { openTxDetail(window.__allocTx); return document.getElementById('tx-detail-body').textContent.includes('Aplicado a:'); })()`);
+        equal('el detalle del movimiento dice a que conceptos se aplico', txShows, true);
+        await oikos(`closeModal('modal-tx-detail')`);
+        const pdfHeights = await oikos(`(() => {
+            const plain = Store.get('transactions').filter((t) => t.type === 'income' && !t.alloc).pop();
+            const withAlloc = _buildVoucherPdf(window.__allocTx);
+            const without = plain ? _buildVoucherPdf(plain.id) : null;
+            return [withAlloc && Math.round(withAlloc.doc.internal.pageSize.getHeight()), without && Math.round(without.doc.internal.pageSize.getHeight()), without && Math.round(without.doc.internal.pageSize.getWidth()), withAlloc && Math.round(withAlloc.doc.internal.pageSize.getWidth())];
+        })()`);
+        equal('el comprobante es horizontal (148 x 115, como se dibuja: antes jsPDF lo giraba y se cortaba a la derecha) y el de un pago dirigido es mas alto (lleva "Aplicado a:")', [pdfHeights[0] > pdfHeights[1], pdfHeights[1], pdfHeights[2], pdfHeights[3]], [true, 115, 148, 148]);
+        // Un residente sin deuda: el Detalle dice que no debe nada
+        const none = await oikos(`(() => { openModal('modal-income'); setIncTab('detalle'); syncIncAlloc({ id: '__sin_deuda__', name: 'Nadie' }); return [document.getElementById('inc-alloc-empty').textContent, document.getElementById('inc-alloc-empty').classList.contains('hidden'), document.getElementById('inc-alloc-wrap').classList.contains('hidden')]; })()`);
+        equal('sin deuda, el Detalle dice que no debe nada y que lo que pague queda a favor', none, ['No debe nada: lo que pague quedará como saldo a favor.', false, true]);
+        // Un detalle que no suma el monto no se registra
+        const mismatch = await oikos(`(() => {
+            openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts();
+            const first = document.querySelector('#inc-alloc-rows input'); first.value = '5'; incAllocInput(first);
+            document.getElementById('inc-amount').value = '9';
+            incAlloc.manual = true;
+            const before = Store.get('transactions').length; window.__alerts.length = 0;
+            handleTransactionSubmit({ preventDefault() {} }, 'income');
+            return [Store.get('transactions').length === before, window.__alerts.some((m) => m.includes('no suma el monto'))];
+        })()`);
+        equal('si lo anotado no suma el monto, no se registra y avisa', mismatch, [true, true]);
+        await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);
+        await idle();
 
         console.log('\nLote o casa');
         const finRef = (id) => condoRef.collection('finanzas_residentes').doc(id);

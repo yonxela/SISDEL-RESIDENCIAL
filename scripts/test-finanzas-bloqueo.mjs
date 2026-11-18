@@ -130,6 +130,20 @@ equal('con config_cuota el desglose no se bloquea', (() => {
 equal('Marcar tipo (lote o casa, en bloque) exige poder editar residentes y su boton se oculta sin eso', [blocked('openBulkType()', only('residentes_editar')), blocked("applyBulkType('lote')", only('residentes_editar')), blocked('openBulkType()', only('residentes_ver')), blocked("applyBulkType('casa')", only('residentes_ver')), B.cssFor(only('residentes_ver')).includes('#res-bulk-type-btn'), B.cssFor(only('residentes_ver', 'residentes_editar')).includes('#res-bulk-type-btn')], [false, false, true, true, true, false]);
 equal('Fases por sector exige poder editar residentes y sus botones se ocultan sin eso', [blocked('openAssignFases()', only('residentes_editar')), blocked('applyAssignFases()', only('residentes_editar')), blocked('openAssignFases()', only('residentes_ver')), blocked('applyAssignFases()', only('residentes_ver')), ['#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases'].map((sel) => B.cssFor(only('residentes_ver')).includes(sel)), ['#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases'].map((sel) => B.cssFor(only('residentes_ver', 'residentes_editar')).includes(sel))], [false, false, true, true, [true, true, true], [false, false, false]]);
 equal('el saldo del residente en el ingreso es parte del estado de cuenta: se oculta sin ese privilegio', [B.cssFor(only('pagos_registrar')).includes('#inc-balance-box'), B.cssFor(only('pagos_registrar', 'residentes_estado')).includes('#inc-balance-box')], [true, false]);
+// Finiquitar y eliminar residentes: solo el administrador y a quien se le marque (pedido del dueno, 2026-11-17)
+{
+    const todoOp = new Set(['usuarios.ver', 'mensajes.recibir']);
+    PRIV.toggle(todoOp, 'finanzas.usar', true, { children: true, role: 'operador' });
+    const markedOp = new Set(todoOp);
+    ['finanzas.residentes_finiquitar', 'finanzas.residentes_eliminar'].forEach((k) => PRIV.toggle(markedOp, k, true));
+    const canAs = (role, set) => { const ov = set ? PRIV.toOverrides(role, set) : {}; return (key) => PRIV.has(role, ov, key); };
+    const hides = (can) => { const css = B.cssFor(can); return [css.includes('button[onclick^="openFiniquito("]'), css.includes('button[onclick^="deleteResident("]')]; };
+    equal('un operador con todo el Sistema Financiero no ve Finiquitar ni Eliminar en el menu del residente', hides(canAs('operador', todoOp)), [true, true]);
+    equal('el administrador si los ve', hides(canAs('admin')), [false, false]);
+    equal('un operador al que se le marcaron si los ve', hides(canAs('operador', markedOp)), [false, false]);
+    equal('un administrador al que se le quitaron no los ve', hides((key) => PRIV.has('admin', { 'finanzas.residentes_finiquitar': false, 'finanzas.residentes_eliminar': false }, key)), [true, true]);
+    equal('y sus acciones se bloquean igual aunque alguien las dispare', [blocked("openFiniquito('u1')", canAs('operador', todoOp)), blocked("deleteResident('u1')", canAs('operador', todoOp)), blocked("openFiniquito('u1')", canAs('admin')), blocked("deleteResident('u1')", canAs('admin'))], [true, true, false, false]);
+}
 equal('Estado de cuenta: el Excel exige exportar; WhatsApp lo puede quien exporta o quien contacta', [blocked('exportEstadoCuentaExcel()', only('reportes_exportar')), blocked('exportEstadoCuentaExcel()', only('residentes_estado')), blocked('exportEstadoCuentaExcel()', only('residentes_contactar')), blocked('shareEstadoCuentaWhatsApp()', only('reportes_exportar')), blocked('shareEstadoCuentaWhatsApp()', only('residentes_contactar')), blocked('shareEstadoCuentaWhatsApp()', only('residentes_estado'))], [false, true, true, false, false, true]);
 equal('Estado de cuenta: sin esos privilegios se ocultan sus botones; con contactar solo queda WhatsApp', (() => {
     const wa = '#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]';

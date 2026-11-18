@@ -144,8 +144,8 @@ const SisdelPrivilegiosUI = (() => {
                 // Los privilegios que su rol no puede tener (onlyRoles) no cuentan ni se activan
                 const usable = full.items.filter((i) => PRIV.allowedFor(i.key, opts.role));
                 const active = usable.filter((i) => opts.set.has(i.key)).length;
-                // Las que empiezan apagadas (optIn) no cuentan para "Marcar todo": se marcan a mano
-                const allOn = usable.filter((i) => !PRIV.isOptIn(i.key)).every((i) => opts.set.has(i.key));
+                // Las que empiezan apagadas (optIn, o de solo el administrador para otro rol) no cuentan para "Marcar todo": se marcan a mano
+                const allOn = usable.filter((i) => !PRIV.explicitFor(i.key, opts.role)).every((i) => opts.set.has(i.key));
                 return `<section class="pv-card">
                     <div class="pv-card-head">
                         <strong>${esc(g.title)}</strong>
@@ -156,15 +156,15 @@ const SisdelPrivilegiosUI = (() => {
                     </div>
                     <div class="pv-rows">${g.items.map((i, index) => {
                         const subHeading = i.sub && (index === 0 || g.items[index - 1].sub !== i.sub) ? `<div class="pv-sub">${esc(i.sub)}</div>` : '';
-                        // En una plantilla, una optIn no se puede marcar (se habilita usuario por usuario)
-                        const locked = !PRIV.allowedFor(i.key, opts.role) || (opts.template && PRIV.isOptIn(i.key));
+                        // En una plantilla, una accion que el rol debe marcar a mano no se puede marcar (se habilita usuario por usuario)
+                        const locked = !PRIV.allowedFor(i.key, opts.role) || (opts.template && PRIV.explicitFor(i.key, opts.role));
                         const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
                         const marks = opts.marks !== false;
                         const state = marks && on && !inRole ? ' is-added' : (marks && !on && inRole ? ' is-removed' : '');
                         const tag = marks && on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (marks && !on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
-                        const lockTag = locked ? (PRIV.isOptIn(i.key) && PRIV.allowedFor(i.key, opts.role) ? '<span class="pv-tag removed">Se marca usuario por usuario</span>' : '<span class="pv-tag removed">Solo administradores y operadores</span>') : '';
-                        const optTag = PRIV.isOptIn(i.key) && !locked ? '<span class="pv-tag sens">Se habilita aparte</span>' : '';
+                        const lockTag = locked ? (PRIV.explicitFor(i.key, opts.role) && PRIV.allowedFor(i.key, opts.role) ? '<span class="pv-tag removed">Se marca usuario por usuario</span>' : '<span class="pv-tag removed">Solo administradores y operadores</span>') : '';
+                        const optTag = PRIV.explicitFor(i.key, opts.role) && !locked ? '<span class="pv-tag sens">Se habilita aparte</span>' : '';
                         return `${subHeading}<button type="button" class="pv-row${on ? ' is-on' : ''}${state}${i.parent ? ' pv-child' : ''}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}" ${i.depth > 1 ? `style="margin-left:${(i.depth - 1) * 1.1}rem;"` : ''}>
                             ${on ? ICONS.on : ICONS.off}
                             <span style="flex:1; min-width:0;">
@@ -183,8 +183,8 @@ const SisdelPrivilegiosUI = (() => {
                 const turnOn = !opts.set.has(key);
                 // Un paraguas se marca con todas sus acciones (se pueden quitar una por una); una accion marca su paraguas
                 const withChildren = turnOn && PRIV.childrenOf(key).length > 0;
-                const cascade = PRIV.cascade(opts.set, key, turnOn, { children: withChildren });
-                PRIV.toggle(opts.set, key, turnOn, { children: withChildren });
+                const cascade = PRIV.cascade(opts.set, key, turnOn, { children: withChildren, role: opts.role });
+                PRIV.toggle(opts.set, key, turnOn, { children: withChildren, role: opts.role });
                 opts.onChange(opts.set, { key, on: turnOn, cascade });
             });
         });
@@ -192,8 +192,8 @@ const SisdelPrivilegiosUI = (() => {
             button.addEventListener('click', () => {
                 const turnOn = button.dataset.on === '1';
                 PRIV.GROUPS.find((g) => g.id === button.dataset.group).items
-                    .filter((i) => PRIV.allowedFor(i.key, opts.role) && (!turnOn || !PRIV.isOptIn(i.key)))
-                    .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn, { children: turnOn }));
+                    .filter((i) => PRIV.allowedFor(i.key, opts.role) && (!turnOn || !PRIV.explicitFor(i.key, opts.role)))
+                    .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn, { children: turnOn, role: opts.role }));
                 opts.onChange(opts.set, { group: button.dataset.group, on: turnOn, cascade: [] });
             });
         });
@@ -288,7 +288,7 @@ const SisdelPrivilegiosUI = (() => {
                 set.clear(); Object.keys(PRIV.defaultsOf(role)).forEach((k) => set.add(k));
                 draw('Se dejaron los privilegios del rol');
             } else if (kind === 'all') {
-                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role) && !PRIV.isOptIn(k)).forEach((k) => set.add(k));
+                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role) && !PRIV.explicitFor(k, role)).forEach((k) => set.add(k));
                 draw();
             } else if (kind === 'none') {
                 set.clear(); draw();
@@ -337,7 +337,7 @@ const SisdelPrivilegiosUI = (() => {
             bar.querySelector('[data-act=delTemplate]').style.display = tpl && tpl.custom ? '' : 'none';
             if (!tpl) return;
             set.clear();
-            PRIV.templateKeys(tpl).filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
+            PRIV.templateKeys(tpl, role).filter((k) => PRIV.allowedFor(k, role)).forEach((k) => set.add(k));
             draw(`Plantilla "${tpl.name}" aplicada; falta guardar`);
         });
 
@@ -525,7 +525,7 @@ const SisdelPrivilegiosUI = (() => {
         function mountForm(tpl) {
             const readOnly = tpl.system || !canManage;
             const form = { name: tpl.name || '', role: PRIV.ROLES.includes(tpl.role) ? tpl.role : 'operador', description: tpl.description || '' };
-            const set = new Set(PRIV.templateKeys({ ...tpl, claves: tpl.claves || [] }).filter((k) => PRIV.itemOf(k) && PRIV.allowedFor(k, form.role)));
+            const set = new Set(PRIV.templateKeys({ ...tpl, claves: tpl.claves || [] }, form.role).filter((k) => PRIV.itemOf(k) && PRIV.allowedFor(k, form.role)));
             const snap = () => JSON.stringify([form.name, form.role, form.description, [...set].sort()]);
             const baseline = snap();
             dirty = () => !readOnly && snap() !== baseline;
@@ -586,7 +586,7 @@ const SisdelPrivilegiosUI = (() => {
                 const act = event.target.closest('[data-act]');
                 if (!act) return;
                 const kind = act.dataset.act;
-                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.isOptIn(k)).forEach((k) => set.add(k)); draw(); }
+                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.explicitFor(k, form.role)).forEach((k) => set.add(k)); draw(); }
                 else if (kind === 'none') { set.clear(); draw(); }
                 else if (kind === 'discard') { mountForm(tpl); }
                 else if (kind === 'duplicate') {

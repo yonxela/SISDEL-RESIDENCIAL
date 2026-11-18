@@ -56,7 +56,7 @@ yes('las paginas piden claves que existen', P.PAGES.every((p) => p.role || p.any
 equal('el operador solo trae por defecto recibir mensajes (lo que ya leia) y ninguna pagina', [Object.keys(P.defaultsOf('operador')), P.landing('operador', {})], [['mensajes.recibir'], null]);
 yes('las dependencias por defecto se cumplen en cada rol (si tiene X tiene lo que X necesita)',
     P.ROLES.every((role) => keysOn(role).every((k) => (P.itemOf(k).requires || []).every((r) => keysOn(role).includes(r)))));
-yes('cada rol que tiene un paraguas recibe todas sus acciones (menos las que empiezan apagadas, optIn)', P.ROLES.every((role) => roots.filter((r) => P.has(role, {}, r.key)).every((r) => P.descendantsOf(r.key).every((c) => P.has(role, {}, c) === !P.isOptIn(c)))));
+yes('cada rol que tiene un paraguas recibe todas sus acciones (menos las que empiezan apagadas para ese rol: optIn o solo del administrador)', P.ROLES.every((role) => roots.filter((r) => P.has(role, {}, r.key)).every((r) => P.descendantsOf(r.key).every((c) => P.has(role, {}, c) === !P.explicitFor(c, role)))));
 equal('las claves delicadas estan marcadas como sensibles', ['usuarios.privilegios', 'usuarios.codigos', 'finanzas.usar', 'finanzas.residentes_crear', 'finanzas.deshacer', 'rondas.monitoreo_ver', 'rondas.alertas_eliminar', 'auditoria.exportar'].map((k) => !!P.itemOf(k).sensitive), Array(8).fill(true));
 yes('sensitiveKeys devuelve solo claves del catalogo', P.sensitiveKeys().length > 20 && P.sensitiveKeys().every((k) => P.KEYS.includes(k)));
 yes('los grupos cubren todas las claves una sola vez', (() => { const seen = P.GROUPS.flatMap((g) => g.items.map((i) => i.key)); return seen.length === P.KEYS.length && new Set(seen).size === P.KEYS.length; })());
@@ -71,7 +71,7 @@ equal('el operador con el paraguas y una accion apagada la pierde', P.has('opera
 equal('una accion apagada tambien apaga sus hijas', P.has('operador', { 'rondas.ver': true, 'rondas.monitoreo_ver': false }, 'rondas.monitoreo_historial'), false);
 equal('childrenOf / descendantsOf / ancestorsOf', [P.childrenOf('rondas.monitoreo_ver'), P.descendantsOf('rondas.panel_ver'), P.ancestorsOf('rondas.reportes_imprimir')], [['rondas.monitoreo_historial'], ['rondas.reportes_ver', 'rondas.reportes_imprimir'], ['rondas.ver', 'rondas.panel_ver', 'rondas.reportes_ver']]);
 yes('las acciones de usuarios.privilegios siguen siendo solo de administradores y operadores', P.descendantsOf('usuarios.privilegios').every((k) => !P.has('policia', { [k]: true, 'usuarios.privilegios': true }, k)));
-equal('las acciones heredan el rol por defecto de su paraguas (las optIn no: empiezan apagadas)', roots.every((r) => P.ROLES.every((role) => P.descendantsOf(r.key).every((k) => P.has(role, {}, k) === (P.has(role, {}, r.key) && !P.isOptIn(k))))), true);
+equal('las acciones heredan el rol por defecto de su paraguas (las optIn y las de solo el administrador, para otro rol, no: empiezan apagadas)', roots.every((r) => P.ROLES.every((role) => P.descendantsOf(r.key).every((k) => P.has(role, {}, k) === (P.has(role, {}, r.key) && !P.explicitFor(k, role))))), true);
 
 // Acciones que empiezan apagadas (optIn): "Cargar cuotas por mes" (pedido del dueno, 2026-11-16)
 console.log('\nAcciones optIn (empiezan apagadas)');
@@ -81,6 +81,31 @@ equal('toOverrides guarda la optIn solo si esta marcada', [P.toOverrides('admin'
 equal('effective y toOverrides van y vuelven con la optIn marcada', (() => { const o = { 'finanzas.cuotas_meses': true }; const e = P.effective('admin', o); return P.toOverrides('admin', Object.keys(e).filter((k) => e[k])); })(), { 'finanzas.cuotas_meses': true });
 equal('marcarla a mano trae su paraguas y lo que necesita', (() => { const set = new Set(); P.toggle(set, 'finanzas.cuotas_meses', true); return ['finanzas.cuotas_meses', 'finanzas.usar', 'finanzas.residentes_editar'].map((k) => set.has(k)); })(), [true, true, true]);
 equal('ninguna plantilla la trae (ni del sistema ni propia)', [P.TEMPLATES.some((t) => P.templateKeys(t).includes('finanzas.cuotas_meses')), P.templateKeys({ system: false, claves: ['finanzas.usar', 'finanzas.cuotas_meses'] }).includes('finanzas.cuotas_meses')], [false, false]);
+
+// Acciones que solo trae el administrador (autoRoles): finiquitar y eliminar residentes (pedido del dueno, 2026-11-17)
+console.log('\nAcciones que solo trae el administrador (autoRoles)');
+const AUTO = ['finanzas.residentes_finiquitar', 'finanzas.residentes_eliminar'];
+const otherRoles = P.ROLES.filter((r) => r !== 'admin');
+const todoOp = new Set(['usuarios.ver', 'mensajes.recibir']);
+P.toggle(todoOp, 'finanzas.usar', true, { children: true, role: 'operador' });
+equal('finiquitar y eliminar residentes llevan autoRoles ["admin"] y no son optIn', AUTO.map((k) => [P.itemOf(k).autoRoles, P.isOptIn(k), P.itemOf(k).sensitive === true]), [[['admin'], false, true], [['admin'], false, true]]);
+equal('el administrador las trae por defecto y el Master siempre', AUTO.map((k) => [P.has('admin', {}, k), k in P.defaultsOf('admin'), P.has('master', {}, k)]), [[true, true, true], [true, true, true]]);
+equal('ningun otro rol las trae por defecto ni aunque tenga el paraguas de todo el Sistema Financiero', otherRoles.every((role) => AUTO.every((k) => !(k in P.defaultsOf(role)) && !P.has(role, { 'finanzas.usar': true, 'finanzas.ver': true, 'usuarios.ver': true }, k))), true);
+equal('activar el paraguas con todas sus acciones para un operador no las trae', AUTO.map((k) => todoOp.has(k)), [false, false]);
+equal('ese operador, con todo lo demas de Finanzas, las tiene apagadas', AUTO.map((k) => P.has('operador', P.toOverrides('operador', todoOp), k)), [false, false]);
+equal('el operador conserva el resto de Finanzas (editar residentes, pagos, reportes)', ['finanzas.residentes_editar', 'finanzas.pagos_registrar', 'finanzas.reportes_exportar'].map((k) => P.has('operador', P.toOverrides('operador', todoOp), k)), [true, true, true]);
+equal('marcarlas a mano a un operador las enciende (con su paraguas) y se guardan como true', (() => { const set = new Set(todoOp); AUTO.forEach((k) => P.toggle(set, k, true)); const ov = P.toOverrides('operador', set); return [AUTO.map((k) => ov[k]), AUTO.map((k) => P.has('operador', ov, k))]; })(), [[true, true], [true, true]]);
+equal('sin el paraguas no valen aunque esten marcadas', AUTO.map((k) => P.has('operador', { 'finanzas.usar': false, [k]: true }, k)), [false, false]);
+equal('a un administrador se le pueden quitar (false) y vuelven con su rol; con todo marcado no se guarda nada', [AUTO.map((k) => P.has('admin', { [k]: false }, k)), P.toOverrides('admin', Object.keys(P.defaultsOf('admin'))), (() => { const set = new Set(Object.keys(P.defaultsOf('admin'))); P.toggle(set, AUTO[0], false); return P.toOverrides('admin', set); })()], [[false, false], {}, { 'finanzas.residentes_finiquitar': false }]);
+equal('effective y toOverrides van y vuelven en un operador con la accion marcada', (() => { const o = { 'finanzas.usar': true, 'finanzas.residentes_finiquitar': true }; const e = P.effective('operador', o); return P.toOverrides('operador', Object.keys(e).filter((k) => e[k]))['finanzas.residentes_finiquitar']; })(), true);
+equal('explicitFor: para el administrador no, para los demas roles si, sin rol si; las optIn siempre', [P.explicitFor(AUTO[0], 'admin'), P.explicitFor(AUTO[0], 'operador'), P.explicitFor(AUTO[0]), P.explicitFor('finanzas.cuotas_meses', 'admin'), P.explicitFor('finanzas.pagos_registrar', 'operador')], [false, true, true, true, false]);
+equal('la plantilla Contador (operador) ya no las trae, el administrador delegado si', [AUTO.map((k) => P.templateKeys(P.templateById('sys-contador')).includes(k)), AUTO.map((k) => P.templateKeys(P.templateById('sys-admin-delegado')).includes(k))], [[false, false], [true, true]]);
+equal('una plantilla de administrador aplicada a otro rol tampoco las trae', AUTO.map((k) => P.templateKeys(P.templateById('sys-admin-delegado'), 'operador').includes(k)), [false, false]);
+equal('una plantilla propia vieja (solo el paraguas) las amplia para un administrador y no para un operador', [AUTO.map((k) => P.templateKeys({ system: false, role: 'admin', claves: ['finanzas.usar'] }).includes(k)), AUTO.map((k) => P.templateKeys({ system: false, role: 'operador', claves: ['finanzas.usar'] }).includes(k)), AUTO.map((k) => P.expandTemplate(['finanzas.usar'], 'admin').includes(k)), AUTO.map((k) => P.expandTemplate(['finanzas.usar']).includes(k))], [[true, true], [false, false], [true, true], [false, false]]);
+equal('una plantilla propia que las nombra no se las da a un operador', AUTO.map((k) => P.templateKeys({ system: false, role: 'operador', claves: ['finanzas.usar', ...AUTO] }).includes(k)), [false, false]);
+yes('la pantalla de privilegios las trata como "se habilita aparte" para los demas roles (explicitFor con el rol) y ya no usa isOptIn', (() => { const ui = read('privilegios-ui.js'); return !/isOptIn/.test(ui) && /PRIV\.explicitFor\(i\.key, opts\.role\)/.test(ui) && /PRIV\.templateKeys\(tpl, role\)/.test(ui) && /templateKeys\(\{ \.\.\.tpl, claves: tpl\.claves \|\| \[\] \}, form\.role\)/.test(ui) && /role: opts\.role/.test(ui); })());
+yes('admin.html pasa el rol al aplicar una plantilla a un usuario nuevo', /PRIV\.toOverrides\(role, PRIV\.templateKeys\(template, role\)\)/.test(read('admin.html')));
+yes('OIKOS las protege en las tres capas con su privilegio: pantalla, subida a la nube y reglas', /\^\(openFiniquito\|reactivateResident\|handleFiniquitoSubmit\)/.test(read('finanzas-bloqueo.js')) && /\^deleteResident\\\(/.test(read('finanzas-bloqueo.js')) && /needs\.push\(\['finanzas\.residentes_finiquitar'\]\)/.test(read('finanzas-sync.js')) && /needs\.push\(\['finanzas\.residentes_eliminar'\]\)/.test(read('finanzas-sync.js')) && /pFinanzasResidentesFiniquitar\(condoId\)/.test(read('firestore.rules')) && /pFinanzasResidentesEliminar\(condoId\)/.test(read('firestore.rules')));
 
 // ───────── Copia en las functions ─────────
 console.log('\nCopia en las functions');
@@ -166,11 +191,11 @@ P.toggle(acciones, 'finanzas.usar', false);
 equal('quitar el paraguas quita sus acciones (y deja lo que necesitaba)', sorted([...acciones]), sorted(['finanzas.ver', 'usuarios.ver']));
 const todo = new Set();
 P.toggle(todo, 'finanzas.usar', true, { children: true });
-equal('activar el paraguas con { children: true } trae todas sus acciones menos las optIn', P.descendantsOf('finanzas.usar').every((k) => todo.has(k) === !P.isOptIn(k)), true);
+equal('activar el paraguas con { children: true } trae todas sus acciones menos las optIn y las de solo el administrador', P.descendantsOf('finanzas.usar').every((k) => todo.has(k) === !P.explicitFor(k)), true);
 const sin = new Set(todo);
 P.toggle(sin, 'finanzas.residentes_ver', false);
 equal('quitar una accion quita las que la necesitan (ver residentes)', ['finanzas.residentes_datos', 'finanzas.residentes_crear', 'finanzas.cuotas_mes'].map((k) => sin.has(k)), [false, false, false]);
-equal('expandTemplate amplia una plantilla vieja (solo paraguas) con todas sus acciones (menos las optIn)', sorted(P.expandTemplate(['usuarios.ver', 'finanzas.usar', 'finanzas.ver'])), sorted([...withKids('usuarios.ver'), 'finanzas.ver', ...withKids('finanzas.usar')].filter((k) => !P.isOptIn(k))));
+equal('expandTemplate amplia una plantilla vieja (solo paraguas) con todas sus acciones (menos las optIn)', sorted(P.expandTemplate(['usuarios.ver', 'finanzas.usar', 'finanzas.ver'])), sorted([...withKids('usuarios.ver'), 'finanzas.ver', ...withKids('finanzas.usar')].filter((k) => !P.explicitFor(k))));
 equal('expandTemplate respeta una plantilla que ya nombra acciones', sorted(P.expandTemplate(['finanzas.usar', 'finanzas.pagos_registrar'])), sorted(['finanzas.usar', 'finanzas.pagos_registrar']));
 equal('cascade avisa que se activaria', sorted(P.cascade(new Set(), 'garita.operar', true)), sorted(['usuarios.ver', 'visitas.ver', 'vehiculos.ver']));
 
@@ -225,15 +250,17 @@ const camel = (key) => 'p' + key.split('.').map((x) => x.split('_').map((w) => w
 // Paraguas: can(c, 'clave', [roles]); acciones: pPadre(c) && childOk(c, 'clave')
 const rootWrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return can\(c, '([a-z._]+)', \[([^\]]*)\]\); \}/g)]
     .map((m) => ({ fn: m[1], key: m[2], roles: m[3].split(',').map((r) => r.trim().replace(/'/g, '')).filter(Boolean) }));
-const childWrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return (p[A-Z]\w*)\(c\) && (childOk|childOn)\(c, '([a-z._]+)'\); \}/g)]
-    .map((m) => ({ fn: m[1], parentFn: m[2], check: m[3], key: m[4] }));
+const childWrappers = [...rules.matchAll(/function (p[A-Z]\w*)\(c\) \{ return (p[A-Z]\w*)\(c\) && (childOk|childOn|childAuto)\(c, '([a-z._]+)'(?:, \[([^\]]*)\])?\); \}/g)]
+    .map((m) => ({ fn: m[1], parentFn: m[2], check: m[3], key: m[4], roles: m[5] }));
 const wrappers = [...rootWrappers, ...childWrappers];
 const used = (fn) => (rules.match(new RegExp(`\\b${fn}\\(`, 'g')) || []).length;
 yes('las reglas definen can(condoId, clave, roles) y childOk(condoId, clave)', /function can\(condoId, key, roles\)/.test(rules) && /function childOk\(condoId, key\)/.test(rules));
 yes('can() lee el mapa privilegios del documento del usuario', /memberDoc\(condoId\)\.get\('privilegios', \{\}\)\.get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
 yes('childOk() deja pasar una accion salvo que este apagada (false) en el documento del usuario', /function childOk\(condoId, key\) \{[\s\S]*?get\(key, true\) == true/.test(rules));
 yes('childOn() deja pasar una accion optIn solo si esta marcada (true) en el documento del usuario', /function childOn\(condoId, key\) \{[\s\S]*?get\(key, false\) == true/.test(rules));
-yes('cada accion optIn usa childOn en las reglas y las demas childOk', childWrappers.every((w) => (w.check === 'childOn') === P.isOptIn(w.key)));
+yes('cada accion optIn usa childOn, cada una con autoRoles childAuto y las demas childOk', childWrappers.every((w) => w.check === (P.isOptIn(w.key) ? 'childOn' : P.itemOf(w.key).autoRoles ? 'childAuto' : 'childOk')));
+yes('childAuto() deja pasar a los roles de la lista salvo que se la quiten (false) y a los demas solo si la tienen marcada (true)', /function childAuto\(condoId, key, roles\) \{[\s\S]*?get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
+yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (finiquitar y eliminar residentes)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 2 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
 yes('cada funcion pXxx usa el nombre de su clave', wrappers.every((w) => w.fn === camel(w.key)));
 yes('cada clave de las reglas existe en el catalogo', wrappers.every((w) => P.KEYS.includes(w.key)));
 yes('los roles por defecto de las reglas son los del catalogo', rootWrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));

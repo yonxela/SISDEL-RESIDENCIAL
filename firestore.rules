@@ -59,10 +59,16 @@ service cloud.firestore {
       return isMember(condoId)
         && memberDoc(condoId).get('privilegios', {}).get(key, false) == true;
     }
+    // Una accion con autoRoles (finiquitar o eliminar un residente): los roles de la lista la tienen salvo que se la quiten
+    // (false) y cualquier otro rol solo si la tiene marcada (true), aunque tenga el paraguas
+    function childAuto(condoId, key, roles) {
+      return isMember(condoId)
+        && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
+    }
     // Las funciones pXxx (una por clave de privilegios.js que las reglas aplican) se generan con
     // `cd scripts && npm run reglas`; scripts/test-privilegios.mjs verifica que esten al dia.
     // ── BEGIN privilegios generados (scripts/generar-reglas-privilegios.mjs) ──
-    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada (una accion optIn, en cambio, solo si esta marcada: childOn).
+    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada (una accion optIn, en cambio, solo si esta marcada: childOn; una con autoRoles, la trae por defecto solo esos roles y los demas la necesitan marcada: childAuto).
     // Usuarios y vecinos
     function pUsuariosVer(c) { return can(c, 'usuarios.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
     function pUsuariosCrear(c) { return can(c, 'usuarios.crear', ['admin']); }
@@ -118,8 +124,8 @@ service cloud.firestore {
     function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
     function pFinanzasResidentesCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_crear'); }
     function pFinanzasResidentesEditar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_editar'); }
-    function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_finiquitar'); }
-    function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_eliminar'); }
+    function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_finiquitar', ['admin']); }
+    function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_eliminar', ['admin']); }
     function pFinanzasResidentesContactar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_contactar'); }
     function pFinanzasCuotasMes(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_mes'); }
     function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOn(c, 'finanzas.cuotas_meses'); }

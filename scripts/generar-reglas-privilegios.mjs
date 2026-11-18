@@ -24,12 +24,12 @@ export function buildBlock() {
         while (up.parent) { up = P.itemOf(up.parent); need.add(up.key); }
     });
     const lines = [BEGIN, '    // Raiz: lo que diga el mapa del usuario o, si no lo menciona, el rol. Accion: el paraguas activo y la accion no quitada'
-        + ' (una accion optIn, en cambio, solo si esta marcada: childOn).'];
+        + ' (una accion optIn, en cambio, solo si esta marcada: childOn; una con autoRoles, la trae por defecto solo esos roles y los demas la necesitan marcada: childAuto).'];
     let last = null;
     P.ITEMS.filter((i) => need.has(i.key)).forEach((i) => {
         if (i.groupTitle !== last) { lines.push(`    // ${i.groupTitle}`); last = i.groupTitle; }
         const body = i.parent
-            ? `${fnName(i.parent)}(c) && ${i.optIn ? 'childOn' : 'childOk'}(c, '${i.key}')`
+            ? `${fnName(i.parent)}(c) && ${i.optIn ? `childOn(c, '${i.key}')` : i.autoRoles ? `childAuto(c, '${i.key}', [${i.autoRoles.map((r) => `'${r}'`).join(', ')}])` : `childOk(c, '${i.key}')`}`
             : `can(c, '${i.key}', [${i.roles.map((r) => `'${r}'`).join(', ')}])`;
         lines.push(`    function ${fnName(i.key)}(c) { return ${body}; }`);
     });

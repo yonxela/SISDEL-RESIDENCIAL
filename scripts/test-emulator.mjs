@@ -1177,6 +1177,30 @@ async function run() {
     await denied('residentes: eliminar no edita el DPI', () => updateDoc(xref(resEl, 'res-t3'), { dpi: '9', updated_at: ts() }));
     await allowed('residentes: eliminar marca al residente como eliminado', () => updateDoc(xref(resEl, 'res-t3'), { deleted: true, updated_at: ts() }));
     await denied('residentes: nunca se borra el documento', () => deleteDoc(xref(resEl, 'res-t3')));
+
+    // Finiquitar y eliminar residentes los trae el administrador; a cualquier otro usuario hay que marcarselos
+    // (pedido del dueno, 2026-11-17): un operador con TODO el Sistema Financiero no los tiene si no se le marcaron
+    for (const id of ['res-t6', 'res-t7', 'res-t8', 'res-t9']) await setDoc(xref(admin, id), { id, dpi: '111', notes: '', status: 'active', feeFrom: '2026-11', updated_at: ts() });
+    const wantAllFin = new Set(['mensajes.recibir', 'usuarios.ver']);
+    PRIV.toggle(wantAllFin, 'finanzas.usar', true, { children: true, role: 'operador' });
+    await createUserAs(admin, mkUser('u-rtf', 'Operador con todo Finanzas', 'operador', { privilegios: PRIV.toOverrides('operador', wantAllFin) }), 'PRTF1');
+    const resAllFin = await loginAs('PRTF1');
+    await allowed('residentes: un operador con todo el Sistema Financiero si edita el DPI', () => updateDoc(xref(resAllFin, 'res-t6'), { dpi: '222', notes: 'n', updated_at: ts() }));
+    await denied('residentes: ese operador NO finiquita si no se le marco', () => updateDoc(xref(resAllFin, 'res-t6'), { status: 'closed', closedAt: ts(), closeReason: 'Mudanza', closeNotes: '', updated_at: ts() }));
+    await denied('residentes: ese operador NO elimina si no se le marco', () => updateDoc(xref(resAllFin, 'res-t6'), { deleted: true, updated_at: ts() }));
+    const wantMarked = new Set(wantAllFin);
+    ['finanzas.residentes_finiquitar', 'finanzas.residentes_eliminar'].forEach((k) => PRIV.toggle(wantMarked, k, true));
+    await createUserAs(admin, mkUser('u-rtm', 'Operador con finiquitar y eliminar marcados', 'operador', { privilegios: PRIV.toOverrides('operador', wantMarked) }), 'PRTM1');
+    const resMarked = await loginAs('PRTM1');
+    await allowed('residentes: al operador al que se le marco si finiquita', () => updateDoc(xref(resMarked, 'res-t7'), { status: 'closed', closedAt: ts(), closeReason: 'Mudanza', closeNotes: '', updated_at: ts() }));
+    await allowed('residentes: y si elimina', () => updateDoc(xref(resMarked, 'res-t8'), { deleted: true, updated_at: ts() }));
+    await allowed('residentes: el administrador (sin marcar nada) finiquita', () => updateDoc(xref(admin, 'res-t9'), { status: 'closed', closedAt: ts(), closeReason: 'Venta', closeNotes: '', updated_at: ts() }));
+    await allowed('residentes: el administrador reactiva', () => updateDoc(xref(admin, 'res-t9'), { status: 'active', reactivatedAt: ts(), feeFrom: '2026-12', updated_at: ts() }));
+    await createUserAs(admin, mkUser('u-adm9', 'Admin sin finiquitar ni eliminar', 'admin', { privilegios: { 'finanzas.residentes_finiquitar': false, 'finanzas.residentes_eliminar': false } }), 'PA090');
+    const adm9 = await loginAs('PA090');
+    await denied('residentes: un administrador al que se le quitaron no finiquita', () => updateDoc(xref(adm9, 'res-t9'), { status: 'closed', closedAt: ts(), closeReason: 'Venta', closeNotes: '', updated_at: ts() }));
+    await denied('residentes: ni elimina', () => updateDoc(xref(adm9, 'res-t9'), { deleted: true, updated_at: ts() }));
+    await allowed('residentes: pero conserva editar', () => updateDoc(xref(adm9, 'res-t9'), { dpi: '333', notes: 'n', updated_at: ts() }));
     const resCr = await opWith('u-rcr', 'PRCR1', 'Registra residentes', ['finanzas.residentes_crear']);
     await allowed('residentes: crear registra los datos financieros de uno nuevo', () => setDoc(xref(resCr, 'res-t5'), { id: 'res-t5', dpi: '555', notes: '', feeFrom: '2026-11', updated_at: ts() }));
     await denied('residentes: crear no edita a uno existente', () => updateDoc(xref(resCr, 'res-t4'), { dpi: '9', updated_at: ts() }));

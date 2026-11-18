@@ -943,9 +943,6 @@
                 <button type="button" id="rem-fase-assign" onclick="openAssignFases()" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition" title="Poner la fase de todos los lotes de cada sector (A, B, C...) de una vez"><i class="fas fa-layer-group mr-1"></i>Asignar fases por sector</button>
                 <span id="rem-fase-empty" class="hidden text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente o todas juntas con «Asignar fases por sector».</span>
             </div>
-            <!-- SISDEL: busqueda inteligente (sisdel-busqueda.js), la misma de Residentes -->
-            <div class="relative mb-2"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="rem-search" autocomplete="off" oninput="renderRemindersList(currentRemFilter)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar por nombre, casa, teléfono..."></div>
-            <p id="rem-count" class="text-xs text-slate-500 dark:text-slate-400 mb-3"></p>
             <!-- SISDEL: enviar a todos con un clic desde el WhatsApp del condominio. Lo manda el servidor, de a poco (una pausa de
                  6 a 10 segundos entre mensajes: WhatsApp bloquea los numeros que mandan cientos seguidos) y sigue aunque se cierre la ventana -->
             <div id="rem-bulk" class="hidden mb-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-900/10 p-3">
@@ -1008,6 +1005,10 @@
                     </div>
                 </div>
             </details>
+            <!-- SISDEL: busqueda inteligente (sisdel-busqueda.js), la misma de Residentes. Va INMEDIATAMENTE arriba de la lista de residentes
+                 (pedido del usuario el 2026-11-17), despues del editor del mensaje: asi se busca y se elige a quien se le manda el aviso -->
+            <div class="relative mb-2"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="rem-search" autocomplete="off" oninput="renderRemindersList(currentRemFilter)" class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Buscar por nombre, casa, teléfono..."></div>
+            <p id="rem-count" class="text-xs text-slate-500 dark:text-slate-400 mb-3"></p>
             <div class="overflow-y-auto shrink-0 pr-2 space-y-3 min-h-[120px] max-h-[60vh]" id="reminders-list"></div>
             <div class="mt-6 border-t border-slate-100 dark:border-slate-700 pt-4 flex justify-end shrink-0"><button type="button" onclick="closeModal('modal-reminders')" class="px-5 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 dark:text-white text-slate-700 rounded-lg font-medium transition" id="btn-rem-close">Cerrar</button></div>
         </div>

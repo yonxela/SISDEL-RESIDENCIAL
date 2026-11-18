@@ -59,10 +59,10 @@ const whatsapp = {
 const pauses = [];
 const sleep = async (ms) => { pauses.push(ms); };
 const pause = () => 0;
-const run = (extra = {}) => R.processQueue({ db, whatsapp, sleep, pause, ...extra });
+const run = (extra = {}) => R.processQueue({ db, whatsapp, sleep, pause, schedule: null, ...extra });
 
 async function wipe() {
-    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios', 'recordatorios_individuales']) {
+    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios', 'recordatorios_individuales', 'recordatorios_dia']) {
         for (const doc of (await condoRef.collection(col).get()).docs) await db.recursiveDelete(doc.ref);
     }
     for (const doc of (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).docs) await doc.ref.delete();
@@ -98,7 +98,7 @@ await user('g1', { role: 'policia', phone: '5555-0001' });
         data: { mode: 'mora', items: [...items(['v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'adm', 'g1', 'no-existe']).map((i) => ({ ...i, phone: '50299999999' })), { residentId: 'v1', text: 'repetido' }] }
     });
     equal('de 9 solo 3 se pueden enviar (los demas se omiten con su motivo)', [result.total, result.pending, result.skipped], [9, 3, 6]);
-    equal('el tiempo estimado sale de la pausa (3 mensajes = 1 minuto)', result.estimatedMinutes, 1);
+    equal('el tiempo estimado sale de la pausa (3 mensajes a ~40 s = 2 minutos) y, con UltraMsg, del tope por dia (1 dia, 120 por dia)', [result.estimatedMinutes, result.estimatedDays, result.dailyLimit], [2, 1, 120]);
     const c = await camp(result.id);
     equal('el envio queda en curso con sus contadores y quien lo hizo', [c.status, c.total, c.pending, c.sent, c.failed, c.skipped, c.createdBy.id, c.mode], ['running', 9, 3, 0, 0, 6, 'adm', 'mora']);
     equal('los motivos de los omitidos', [(await dest(result.id, 'v4')).reason, (await dest(result.id, 'v5')).reason, (await dest(result.id, 'v6')).reason, (await dest(result.id, 'adm')).reason, (await dest(result.id, 'no-existe')).reason], ['sin teléfono válido', 'vecino inactivo', 'quitado del Sistema Financiero', 'no es un vecino', 'no es un vecino']);
@@ -710,6 +710,45 @@ console.log('\nEnviar a UN residente (boton Enviar de la fila y Contactar)');
     provider = false;
     await rejects('sin WhatsApp conectado no se envia', () => one({ residentId: 'v1', text: 'x' }), 'failed-precondition');
     provider = true;
+}
+
+// ───────── Envio cuidadoso (pedido del usuario el 2026-11-17, tras el bloqueo temporal de WhatsApp) ─────────
+console.log('\nEnvio cuidadoso: pausas largas, solo en horario y con tope por dia');
+{
+    reset();
+    equal('el ritmo del servidor: pausas de 25 a 55 s, de 8:00 a 18:00 y hasta 120 por dia', [R.PAUSE_MIN_MS, R.PAUSE_MAX_MS, R.AVG_PAUSE_SECONDS, R.SEND_HOURS, R.DAILY_LIMIT], [25000, 55000, 40, { from: 8, to: 18 }, 120]);
+    const at = (iso) => Date.parse(iso);
+    const iso = (ms) => (ms == null ? null : new Date(ms).toISOString());
+    equal('horario de Guatemala (UTC-6): a las 22:00 y a las 5:00 espera hasta las 8:00; a las 10:00 y a las 17:59 se manda', [iso(R.waitFor(at('2026-03-03T04:00:00Z'), R.SEND_HOURS)), iso(R.waitFor(at('2026-03-03T11:00:00Z'), R.SEND_HOURS)), R.waitFor(at('2026-03-03T16:00:00Z'), R.SEND_HOURS), R.waitFor(at('2026-03-03T23:59:00Z'), R.SEND_HOURS)], ['2026-03-03T14:00:00.000Z', '2026-03-03T14:00:00.000Z', null, null]);
+    equal('el dia es el de Guatemala (las 22:00 del 2 de marzo son 04:00 UTC del 3)', R.gtDay(at('2026-03-03T04:00:00Z')), '2026-03-02');
+    for (const d of (await condoRef.collection('recordatorios_envios').where('status', 'in', ['running', 'paused']).get()).docs) await d.ref.update({ status: 'canceled' });
+    for (const [id, phone] of [['k1', '5555-7001'], ['k2', '5555-7002'], ['k3', '5555-7003']]) await user(id, { phone });
+    const k = await create(['k1', 'k2', 'k3']);
+    const sched = { hours: R.SEND_HOURS, dailyLimit: 2 };
+    const clock = (when) => () => at(when);
+    await run({ schedule: sched, nowMs: clock('2026-03-03T04:00:00Z') });   // 22:00 del 2 de marzo
+    let kc = await camp(k.id);
+    equal('fuera de horario no sale nada y el envio queda en espera hasta las 8:00', [sentLog.length, kc.status, kc.waitingReason, kc.waitingUntil, kc.pending, kc.lockUntil], [0, 'running', 'horario', '2026-03-03T14:00:00.000Z', 3, 0]);
+    await run({ schedule: sched, nowMs: clock('2026-03-03T13:00:00Z') });   // 7:00
+    equal('antes de su hora sigue en espera (ni toma el turno)', [sentLog.length, (await camp(k.id)).waitingReason, (await camp(k.id)).lockUntil], [0, 'horario', 0]);
+    await run({ schedule: sched, nowMs: clock('2026-03-03T16:00:00Z') });   // 10:00
+    kc = await camp(k.id);
+    equal('en horario salen hasta el tope del dia (2) y el resto espera al dia siguiente a las 8:00', [sentLog.length, kc.sent, kc.pending, kc.status, kc.waitingReason, kc.waitingUntil], [2, 2, 1, 'running', 'tope', '2026-03-04T14:00:00.000Z']);
+    equal('lo que salio en el dia se lleva en recordatorios_dia (dia de Guatemala)', (await condoRef.collection('recordatorios_dia').doc('2026-03-03').get()).data().count, 2);
+    await run({ schedule: sched, nowMs: clock('2026-03-03T20:00:00Z') });   // 14:00 del mismo dia
+    equal('el mismo dia ya no sale nada mas', sentLog.length, 2);
+    await run({ schedule: sched, nowMs: clock('2026-03-04T15:00:00Z') });   // 9:00 del dia siguiente
+    kc = await camp(k.id);
+    equal('al dia siguiente sale el que faltaba, el envio termina y deja de estar en espera', [sentLog.length, kc.status, kc.sent, kc.waitingUntil, kc.waitingReason], [3, 'done', 3, null, null]);
+    equal('y cuenta en el dia nuevo', (await condoRef.collection('recordatorios_dia').doc('2026-03-04').get()).data().count, 1);
+    // Un envio en espera se puede cancelar como siempre (y deja de estar en curso)
+    sentLog.length = 0;
+    const k2 = await create(['k1', 'k2']);
+    await run({ schedule: sched, nowMs: clock('2026-03-05T02:00:00Z') });   // 20:00 del 4 de marzo
+    equal('el envio nuevo de noche tambien espera', (await camp(k2.id)).waitingReason, 'horario');
+    await R.controlCampaign({ db, condominioId: CONDO, data: { campaignId: k2.id, action: 'cancel' } });
+    await run({ schedule: sched, nowMs: clock('2026-03-05T16:00:00Z') });   // 10:00 del 5 de marzo
+    equal('cancelado en espera: ya no sale nada', [sentLog.length, (await camp(k2.id)).status], [0, 'canceled']);
 }
 
 await wipe();

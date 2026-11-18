@@ -944,7 +944,8 @@
                 <span id="rem-fase-empty" class="hidden text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente o todas juntas con «Asignar fases por sector».</span>
             </div>
             <!-- SISDEL: enviar a todos con un clic desde el WhatsApp del condominio. Lo manda el servidor, de a poco (una pausa de
-                 6 a 10 segundos entre mensajes: WhatsApp bloquea los numeros que mandan cientos seguidos) y sigue aunque se cierre la ventana -->
+                 25 a 55 segundos entre mensajes, de 8:00 a 18:00 y, con UltraMsg, hasta 120 por dia: WhatsApp restringe los numeros que
+                 escriben a muchos contactos nuevos de golpe) y sigue aunque se cierre la ventana -->
             <div id="rem-bulk" class="hidden mb-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-900/10 p-3">
                 <!-- SISDEL: si el WhatsApp del condominio esta conectado (UltraMsg acepta los mensajes aunque este desconectado y los deja en cola) -->
                 <div id="rem-wa-status" class="flex flex-wrap items-center gap-2 mb-3 text-xs"></div>
@@ -952,7 +953,7 @@
                     <button type="button" id="rem-send-all" onclick="sendRemindersToAll()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow transition"><i class="fab fa-whatsapp mr-1.5"></i><span id="rem-send-all-label">Enviar a todos</span></button>
                     <button type="button" id="rem-rec-btn" onclick="showRemRecipients()" class="hidden px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-list-check mr-1.5"></i>Ver quiénes recibieron</button>
                     <button type="button" id="rem-send-test" onclick="sendReminderTest()" class="px-3 py-2.5 rounded-xl text-sm font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 transition"><i class="fas fa-vial mr-1.5"></i>Enviar prueba</button>
-                    <span class="text-xs text-slate-600 dark:text-slate-300">Sale del WhatsApp del condominio, un mensaje cada ~8 segundos.</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-300">Sale del WhatsApp del condominio de a poco para que WhatsApp no lo bloquee: un mensaje cada 25 a 55 segundos, de 8:00 a 18:00 y hasta 120 por día (lo demás sigue solo al día siguiente).</span>
                 </div>
                 <!-- SISDEL: "Por seleccion": casillas en cada fila, con el buscador; solo se ve con esa opcion de la barra -->
                 <div id="rem-pick-bar" class="hidden flex flex-wrap items-center gap-2 mt-3">
@@ -5062,7 +5063,25 @@
         var remCampaign = null;
         var remUnwatch = null;
         var remLastTestPhone = (() => { try { return localStorage.getItem('sisdel_rem_prueba') || ''; } catch (e) { return ''; } })();
-        const REM_PAUSE_SECONDS = 8;
+        // SISDEL: envio cuidadoso (el mismo ritmo del servidor, recordatorios-core.js): una pausa de 25 a 55 s (40 en promedio), de 8:00 a
+        // 18:00 y, con UltraMsg, hasta 120 por dia; un envio grande tarda dias
+        const REM_PAUSE_SECONDS = 40;
+        const REM_DAILY_LIMIT = 120;
+        function remEstimate(n) {
+            const count = Math.max(0, Number(n) || 0);
+            if (!remMetaMode() && count > REM_DAILY_LIMIT) return `unos ${Math.ceil(count / REM_DAILY_LIMIT)} días (hasta ${REM_DAILY_LIMIT} por día, de 8:00 a 18:00)`;
+            return `unos ${Math.max(1, Math.ceil((count * REM_PAUSE_SECONDS) / 60))} minutos (de 8:00 a 18:00)`;
+        }
+        // En espera: fuera de horario o con el tope del dia lleno (waitingUntil / waitingReason del envio)
+        function remWaitingText(c) {
+            if (!c || c.status !== 'running' || !c.waitingUntil || !(Date.parse(c.waitingUntil) > Date.now())) return '';
+            const at = new Date(c.waitingUntil);
+            const today = localDayKey(new Date()) === localDayKey(at);
+            const when = (today ? 'hoy' : at.toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long' })) + ' a las ' + at.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+            return c.waitingReason === 'tope'
+                ? `en espera: ya salieron los ${REM_DAILY_LIMIT} de hoy (para que WhatsApp no bloquee el número); sigue solo ${when}`
+                : `en espera: fuera del horario de envío (8:00 a 18:00); sigue solo ${when}`;
+        }
         function reminderSendable(list) { return list.filter(r => String(r.contact || '').replace(/[^0-9]/g, '')); }
         // Los elegidos con casilla que se pueden enviar (tienen telefono), en orden alfabetico
         function remSelectedSendable() {
@@ -5186,7 +5205,9 @@
             bar.className = 'h-full transition-all ' + (c.status === 'error' ? 'bg-rose-500' : c.status === 'canceled' ? 'bg-slate-400' : c.status === 'paused' ? 'bg-amber-500' : 'bg-emerald-500');
             const when = c.createdAt ? new Date(c.createdAt).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const parts = [`${c.sent || 0} enviados`, `${c.failed || 0} fallidos`, `${c.skipped || 0} sin teléfono`, `faltan ${c.pending || 0}`];
-            if (c.status === 'running' && c.pending) parts.push(`unos ${Math.max(1, Math.ceil((c.pending * REM_PAUSE_SECONDS) / 60))} min`);
+            const waitingText = remWaitingText(c);
+            if (waitingText) parts.push(waitingText);
+            if (c.status === 'running' && c.pending) parts.push('faltan ' + remEstimate(c.pending));
             if (c.status === 'paused') parts.push('en pausa' + (c.pausedAt ? ' desde ' + new Date(c.pausedAt).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' }) : '') + ': pulse Continuar para seguir');
             document.getElementById('rem-bulk-detail').textContent = parts.join(' · ') + (c.errorMessage ? ' — ' + c.errorMessage : '') + (when ? ` · iniciado ${when}${c.createdBy && c.createdBy.name ? ' por ' + c.createdBy.name : ''}` : '');
             const btnCls = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition';
@@ -5336,7 +5357,7 @@
             if (!confirm(`Se mandará de nuevo SOLO a los ${d.resend} residentes a los que el mensaje no llegó (los que sí lo recibieron no se tocan), con el mismo texto que tenían.${risky}\n\n¿Reenviar?`)) return;
             const result = await bridge.resend({ campaignId: remCampaign.id });
             if (!result.ok) return alert(result.error);
-            showToast(`Reenvío iniciado: ${result.pending} mensajes (unos ${result.estimatedMinutes} min).`);
+            showToast(`Reenvío iniciado: ${result.pending} mensajes (${remEstimate(result.pending)}).`);
         }
         function startReminderWatch() {
             const bridge = remBridge();
@@ -5366,18 +5387,17 @@
             if (!list.length) return alert(sel ? 'Marque al menos un residente con teléfono.' : 'No hay residentes con teléfono en esta lista.');
             if (!reminderTemplateReady(list[0])) return;
             const items = list.map(remItemFor);
-            const minutes = Math.max(1, Math.ceil((items.length * REM_PAUSE_SECONDS) / 60));
             const first = list[0];
             const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
             const names = list.slice(0, 5).map(r => (r.unit ? r.unit + ' ' : '') + (r.name || '')).join('\n');
             const who = sel ? `SOLO a los ${items.length} residentes que seleccionó:\n${names}${list.length > 5 ? '\n... y ' + (list.length - 5) + ' más' : ''}` : remScopeWho(items.length);
-            const ok = confirm(`Se enviarán ${items.length} mensajes de WhatsApp ${who}\n\nDesde el número del condominio, de a poco (uno cada ~${REM_PAUSE_SECONDS} segundos): unos ${minutes} minutos. Puede cerrar esta ventana, el envío sigue.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`);
+            const ok = confirm(`Se enviarán ${items.length} mensajes de WhatsApp ${who}\n\nDesde el número del condominio, de a poco para que WhatsApp no lo bloquee (uno cada 25 a 55 segundos, de 8:00 a 18:00 y hasta ${REM_DAILY_LIMIT} por día): ${remEstimate(items.length)}. Puede cerrar esta ventana, el envío sigue solo.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`);
             if (!ok) return;
             const btn = document.getElementById('rem-send-all');
             btn.disabled = true;
             const result = await bridge.start({ mode: currentRemMode, items });
             if (!result.ok) { paintReminderBulk(); return alert(result.error); }
-            showToast(`Envío iniciado: ${result.pending} mensajes (unos ${result.estimatedMinutes} min).` + (result.skipped ? ` ${result.skipped} sin teléfono válido.` : ''));
+            showToast(`Envío iniciado: ${result.pending} mensajes (${remEstimate(result.pending)}).` + (result.skipped ? ` ${result.skipped} sin teléfono válido.` : ''));
             // Ya salieron: se limpia la seleccion para no repetir el envio sin querer
             remSelected.clear();
             remOnlySelected = false;

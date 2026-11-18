@@ -325,6 +325,16 @@ async function run() {
         const noWaRows = await oikos(`[...document.querySelectorAll('#rem-rec-list > div')].map((d) => ({ text: d.textContent.replace(/\\s+/g, ' ').trim(), fix: !!d.querySelector('button[onclick^="editResident("]'), id: (d.querySelector('button[data-id]') || {}).dataset ? d.querySelector('button[data-id]').dataset.id : null }))`);
         record('en No recibieron, quien tiene el numero sin WhatsApp trae Corregir telefono (con su id) y el de bloqueo temporal no', noWaRows.length === 2 && noWaRows.find((r) => /Ana/.test(r.text)).fix === true && noWaRows.find((r) => /Ana/.test(r.text)).id === 'u-ana' && /número sin WhatsApp/.test(noWaRows.find((r) => /Ana/.test(r.text)).text) && noWaRows.find((r) => /Diana/.test(r.text)).fix === false, JSON.stringify(noWaRows));
         await oikos(`hideRemRecipients()`);
+        // Envio cuidadoso: un envio en espera dice por que y cuando sigue, y cuanto falta (en dias si pasa del tope)
+        const tomorrow8 = (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return d.toISOString(); })();
+        await panel('running', { id: 'envio-6', total: 420, pending: 300, sent: 120, waitingUntil: tomorrow8, waitingReason: 'tope' });
+        const waitTope = await oikos(`document.getElementById('rem-bulk-detail').textContent`);
+        record('un envio con el tope del dia lleno dice que ya salieron los 120 de hoy, cuando sigue y que faltan unos dias', /en espera: ya salieron los 120 de hoy/.test(waitTope) && /sigue solo/.test(waitTope) && /08:00/.test(waitTope) && /faltan unos 3 días/.test(waitTope), waitTope);
+        await panel('running', { id: 'envio-7', total: 50, pending: 50, sent: 0, waitingUntil: tomorrow8, waitingReason: 'horario' });
+        const waitHour = await oikos(`document.getElementById('rem-bulk-detail').textContent`);
+        record('fuera de horario dice que espera las 8:00', /fuera del horario de envío \(8:00 a 18:00\)/.test(waitHour) && /faltan unos 34 minutos/.test(waitHour), waitHour);
+        await panel('running', { id: 'envio-8', total: 50, pending: 50, sent: 0, waitingUntil: new Date(Date.now() - 60000).toISOString(), waitingReason: 'horario' });
+        record('una espera que ya paso no se muestra', !/en espera/.test(await oikos(`document.getElementById('rem-bulk-detail').textContent`)), '');
         // Sin haber comprobado: pregunta a UltraMsg y luego lista
         await page.evaluate(`window.__calls.length = 0`);
         await panel('done', { id: 'envio-3', pending: 0, sent: 10 });

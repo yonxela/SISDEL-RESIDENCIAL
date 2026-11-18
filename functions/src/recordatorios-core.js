@@ -5,8 +5,9 @@
 //     los lee de la ficha del vecino (usuarios/{id}.phone), asi nadie usa el numero del condominio para escribirle a un
 //     numero cualquiera. Guarda el envio en condominios/{c}/recordatorios_envios/{id} (un documento por residente en
 //     "destinatarios") y lo anota en la cola colas_envios.
-//  2. processQueue (cada minuto, ver recordatorios.js): manda de a poco, con una pausa de 6 a 10 segundos entre mensajes
-//     (WhatsApp bloquea los numeros que mandan cientos seguidos). Cada mensaje queda como enviado o fallido; despues de
+//  2. processQueue (cada minuto, ver recordatorios.js): manda de a poco, con una pausa al azar de 25 a 55 segundos entre
+//     mensajes, solo de 8:00 a 18:00 (hora de Guatemala) y, con UltraMsg, hasta 120 mensajes por dia y condominio: lo demas
+//     sigue solo al dia siguiente (envio cuidadoso, ver SCHEDULE). Cada mensaje queda como enviado o fallido; despues de
 //     5 fallos seguidos se detiene y avisa.
 //     Antes de mandar, y cada 10 mensajes, se comprueba que el WhatsApp del condominio este conectado (UltraMsg acepta los
 //     mensajes aunque su instancia este desconectada y los deja en cola: sin esta revision decia "enviado" y no salia nada).
@@ -23,9 +24,21 @@ const { normalizePhone } = require('./rondas/avisos');
 
 const MAX_RECIPIENTS = 1500;
 const MAX_TEXT = 1000;
-const PAUSE_MIN_MS = 6000;
-const PAUSE_MAX_MS = 10000;
-const AVG_PAUSE_SECONDS = 8;
+// Envio cuidadoso (pedido del usuario el 2026-11-17, despues de que WhatsApp restringiera el numero de La Perla por mandar
+// cientos de recordatorios seguidos a contactos nuevos: pagar UltraMsg paga el servicio, no el permiso de WhatsApp). WhatsApp
+// vigila sobre todo cuantos mensajes manda un numero a gente que no le ha escrito y que tan seguido: por eso los envios a
+// muchos salen despacio (una pausa al azar de 25 a 55 s, que no parezca una maquina), solo en horario de oficina de Guatemala
+// y, con UltraMsg, con un tope por dia y condominio; lo que pasa del tope o del horario sigue solo (el envio queda "en
+// espera" con waitingUntil y waitingReason). Con el WhatsApp oficial de Meta el tope por dia lo pone Meta y este no se aplica.
+// Ningun ritmo garantiza que WhatsApp no restrinja un numero no oficial: lo garantiza el canal oficial (Meta con plantillas).
+const PAUSE_MIN_MS = 25000;
+const PAUSE_MAX_MS = 55000;
+const AVG_PAUSE_SECONDS = 40;
+const SEND_HOURS = { from: 8, to: 18 };      // hora de Guatemala
+const DAILY_LIMIT = 120;                      // mensajes por dia y condominio con UltraMsg
+const SCHEDULE = { hours: SEND_HOURS, dailyLimit: DAILY_LIMIT };
+const DAY_COL = 'recordatorios_dia';          // condominios/{c}/recordatorios_dia/{AAAA-MM-DD}: { count } (lo escribe el servidor)
+const GT_OFFSET_MS = 6 * 60 * 60 * 1000;      // Guatemala: UTC-6 todo el ano (sin horario de verano)
 const RUN_BUDGET_MS = 12 * 60 * 1000;   // lo que trabaja cada corrida del minuto (la funcion tiene 15 min)
 const LOCK_MS = 14 * 60 * 1000;         // una sola corrida por envio; si una muere, el turno vence solo
 const FAIL_STREAK = 5;
@@ -41,6 +54,21 @@ function fail(code, message) {
 }
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const randomPause = () => PAUSE_MIN_MS + Math.floor(Math.random() * (PAUSE_MAX_MS - PAUSE_MIN_MS + 1));
+// La fecha de Guatemala de un instante: sus campos UTC son la hora local de Guatemala
+const gtDate = (ms) => new Date(ms - GT_OFFSET_MS);
+const gtDay = (ms) => gtDate(ms).toISOString().slice(0, 10);
+// La hora de abrir (hours.from) de Guatemala de ese dia o, con `tomorrow`, del siguiente (en ms)
+function nextOpening(ms, hours, tomorrow) {
+    const d = gtDate(ms);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (tomorrow ? 1 : 0), hours.from, 0, 0) + GT_OFFSET_MS;
+}
+// null si a esa hora se puede mandar; si no, cuando se puede (ms)
+function waitFor(ms, hours) {
+    const d = gtDate(ms);
+    const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+    if (h >= hours.from && h < hours.to) return null;
+    return nextOpening(ms, hours, h >= hours.to);
+}
 const campaignsOf = (db, condominioId) => db.collection('condominios').doc(condominioId).collection('recordatorios_envios');
 const queueDoc = (db, condominioId, campaignId) => db.collection(QUEUE).doc(`${condominioId}__${campaignId}`);
 const chunks = (list, size) => { const out = []; for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size)); return out; };
@@ -212,13 +240,15 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
     await queueDoc(db, condominioId, campRef.id).set({ condominioId, campaignId: campRef.id, status: 'running', createdAt });
     return {
         id: campRef.id, total: rows.length, pending: pending.length, skipped: rows.length - pending.length,
-        estimatedMinutes: Math.ceil((pending.length * AVG_PAUSE_SECONDS) / 60)
+        estimatedMinutes: Math.ceil((pending.length * AVG_PAUSE_SECONDS) / 60),
+        // Con UltraMsg salen hasta DAILY_LIMIT por dia: un envio grande tarda dias (con Meta, el tope es de Meta)
+        estimatedDays: tpl ? 1 : Math.max(1, Math.ceil(pending.length / DAILY_LIMIT)), dailyLimit: tpl ? null : DAILY_LIMIT
     };
 }
 
 // ───────── 2. Mandar (la corrida de cada minuto) ─────────
 async function processCampaign(ctx) {
-    const { db, whatsapp, sleep, pause, budgetMs, nowMs, started, condominioId, campaignId, queueRef } = ctx;
+    const { db, whatsapp, sleep, pause, budgetMs, nowMs, started, condominioId, campaignId, queueRef, schedule } = ctx;
     const campRef = campaignsOf(db, condominioId).doc(campaignId);
     const isoNow = () => new Date(nowMs()).toISOString();
 
@@ -229,12 +259,15 @@ async function processCampaign(ctx) {
         const camp = snap.data();
         if (camp.status !== 'running') return { status: camp.status };
         if ((camp.lockUntil || 0) > nowMs()) return { busy: true };
+        // En espera (fuera de horario o con el tope del dia lleno): ni se toma el turno hasta su hora
+        if (schedule && camp.waitingUntil && Date.parse(camp.waitingUntil) > nowMs()) return { waiting: true };
         tx.update(campRef, { lockUntil: nowMs() + LOCK_MS });
-        return { ok: true, mode: camp.mode, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
+        return { ok: true, mode: camp.mode, wasWaiting: !!camp.waitingUntil, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
     });
     if (claimed.gone) { await queueRef.delete(); return { campaignId, gone: true }; }
     if (claimed.status) { await queueRef.set({ status: claimed.status }, { merge: true }); return { campaignId, status: claimed.status }; }
     if (claimed.busy) return { campaignId, busy: true };
+    if (claimed.waiting) return { campaignId, waiting: true };
 
     const condoRef = db.collection('condominios').doc(condominioId);
     // Los contadores los escribe solo quien tiene el turno: se llevan aqui y se guardan completos cada vez
@@ -253,6 +286,24 @@ async function processCampaign(ctx) {
         await campRef.update({ status: 'error', lockUntil: 0, errorMessage: 'WhatsApp no está conectado. Pida al programador que lo conecte y use Reanudar.' });
         await queueRef.set({ status: 'error' }, { merge: true });
         return { campaignId, status: 'error' };
+    }
+    // Envio cuidadoso: solo en horario y, con UltraMsg, con un tope por dia (con Meta el tope lo pone Meta)
+    const capped = !!schedule && !templatesOn(whatsapp, config);
+    const dayRef = (day) => condoRef.collection(DAY_COL).doc(day);
+    const dayCount = async (day) => ((await dayRef(day).get()).data() || {}).count || 0;
+    const toWait = async (atMs, reason) => {
+        await campRef.update({ lockUntil: 0, waitingUntil: new Date(atMs).toISOString(), waitingReason: reason });
+        return { campaignId, waiting: reason, until: new Date(atMs).toISOString() };
+    };
+    let today = gtDay(nowMs());
+    let todayCount = 0;
+    if (schedule) {
+        const closedUntil = waitFor(nowMs(), schedule.hours);
+        if (closedUntil) return toWait(closedUntil, 'horario');
+    }
+    if (capped) {
+        todayCount = await dayCount(today);
+        if (todayCount >= schedule.dailyLimit) return toWait(nextOpening(nowMs(), schedule.hours, true), 'tope');
     }
     const startConn = await connectionOf(whatsapp, config);
     if (startConn.connected === false) {
@@ -277,7 +328,9 @@ async function processCampaign(ctx) {
         }
     }
 
+    if (claimed.wasWaiting) await campRef.update({ waitingUntil: null, waitingReason: null });
     let sent = 0; let failed = 0; let streak = 0; let sinceCheck = 0; let lostConn = null; let lostHealth = null; let finished = false; let stoppedBy = null;
+    let waitAt = null;
     outer: for (;;) {
         const page = await campRef.collection('destinatarios').where('status', '==', 'pending').limit(20).get();
         if (page.empty) { finished = true; break; }
@@ -286,6 +339,13 @@ async function processCampaign(ctx) {
             // El estado se mira antes de CADA mensaje: pausar o cancelar detiene el envio en cuanto sale el que esta en curso
             const current = await campRef.get();
             if (!current.exists || current.data().status !== 'running') { stoppedBy = 'estado'; break outer; }
+            // Se acabo el horario o el tope del dia: el envio queda en espera y sigue solo a su hora
+            if (schedule) {
+                const closedUntil = waitFor(nowMs(), schedule.hours);
+                if (closedUntil) { waitAt = closedUntil; stoppedBy = 'horario'; break outer; }
+                if (capped && gtDay(nowMs()) !== today) { today = gtDay(nowMs()); todayCount = await dayCount(today); }
+                if (capped && todayCount >= schedule.dailyLimit) { waitAt = nextOpening(nowMs(), schedule.hours, true); stoppedBy = 'tope'; break outer; }
+            }
             if (sinceCheck >= CONN_CHECK_EVERY) {
                 sinceCheck = 0;
                 const conn = await connectionOf(whatsapp, config);
@@ -313,6 +373,10 @@ async function processCampaign(ctx) {
                 await doc.ref.update({ status: 'sent', channel, sentAt: isoNow() });
                 await bump('sent');
                 sent++; streak = 0;
+                if (capped) {
+                    todayCount++;
+                    await dayRef(today).set({ day: today, count: todayCount, updatedAt: isoNow() }, { merge: true });
+                }
             } else {
                 await doc.ref.update({ status: 'failed', error: error || sendErrors.join('; ') || 'No salió por ningún proveedor de WhatsApp' });
                 await bump('failed');
@@ -335,6 +399,8 @@ async function processCampaign(ctx) {
         await recount(campRef);
         await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${healthText(whatsapp, lostHealth)} Cuando la prueba llegue, pulse Continuar.` });
         await queueRef.set({ status: 'error' }, { merge: true });
+    } else if (stoppedBy === 'horario' || stoppedBy === 'tope') {
+        await campRef.update({ lockUntil: 0, waitingUntil: new Date(waitAt).toISOString(), waitingReason: stoppedBy });
     } else if (stoppedBy === 'fallos') {
         await recount(campRef);
         await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `WhatsApp no está respondiendo (${FAIL_STREAK} fallos seguidos). Revise la conexión de UltraMsg y use Reanudar.` });
@@ -345,14 +411,14 @@ async function processCampaign(ctx) {
     return { campaignId, sent, failed, finished, stoppedBy };
 }
 
-async function processQueue({ db, whatsapp, sleep = realSleep, pause = randomPause, budgetMs = RUN_BUDGET_MS, nowMs = () => Date.now() }) {
+async function processQueue({ db, whatsapp, sleep = realSleep, pause = randomPause, budgetMs = RUN_BUDGET_MS, nowMs = () => Date.now(), schedule = SCHEDULE }) {
     const started = nowMs();
     const queued = await db.collection(QUEUE).where('status', '==', 'running').get();
     const results = [];
     for (const doc of queued.docs) {
         if (nowMs() - started >= budgetMs) break;
         const { condominioId, campaignId } = doc.data();
-        results.push(await processCampaign({ db, whatsapp, sleep, pause, budgetMs, nowMs, started, condominioId, campaignId, queueRef: doc.ref }));
+        results.push(await processCampaign({ db, whatsapp, sleep, pause, budgetMs, nowMs, started, condominioId, campaignId, queueRef: doc.ref, schedule }));
     }
     return results;
 }
@@ -599,5 +665,6 @@ async function resendCampaign({ db, whatsapp, condominioId, caller, data }) {
 module.exports = {
     CONN_CHECK_EVERY, connectionInfo, verifyDelivery, reconcileCampaign, resendCampaign,
     MAX_RECIPIENTS, MAX_TEXT, PAUSE_MIN_MS, PAUSE_MAX_MS, AVG_PAUSE_SECONDS, RUN_BUDGET_MS, LOCK_MS, FAIL_STREAK,
+    SEND_HOURS, DAILY_LIMIT, SCHEDULE, DAY_COL, gtDay, waitFor, nextOpening,
     fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest
 };

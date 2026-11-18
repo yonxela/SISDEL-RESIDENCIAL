@@ -1048,6 +1048,13 @@
         await loadLada();
         const changes = {};
         if (b.name) changes.name = b.name;
+        // El nombre de un residente solo lo cambia quien tiene "Cambiar el nombre de los residentes" (privilegio de gerente;
+        // las reglas tambien lo exigen): sin el se avisa antes de guardar nada
+        if (changes.name && !SISDEL.can('usuarios.vecinos_nombre')) {
+            const current = (await sisdelUsers()).find((x) => x.id === p.id);
+            if (current && String(current.name || '').trim() !== String(changes.name).trim()) throw err('Su usuario no tiene el privilegio para cambiar el nombre de un residente', 403);
+            delete changes.name;
+        }
         if (b.phone) changes.phone = localPhone(b.phone);
         if (b.reference !== undefined) changes.casa = b.reference;
         const u = await SISDEL.updateUser(p.id, changes);

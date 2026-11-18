@@ -26,11 +26,11 @@ equal('sin privilegios se bloquea todo lo que escribe o exporta', ['openFeeRun()
 equal('cada boton exige su privilegio', [
     blocked("openModal('modal-income')", only('pagos_registrar')),
     blocked("openModal('modal-expense')", only('pagos_registrar')),
-    blocked("openModal('modal-bulk-charge')", only('cargos_crear')),
+    blocked("openModal('modal-bulk-charge')", only('cargos_crear', 'saldos_modificar')),
     blocked('openFeeRun()', only('cuotas_mes')),
     blocked('openFeeRun()', only('cuotas_meses')),
-    blocked("openResidentFeeMonths('u1')", only('cuotas_meses')),
-    blocked('fixDuplicateFees()', only('cuotas_corregir')),
+    blocked("openResidentFeeMonths('u1')", only('cuotas_meses', 'saldos_modificar')),
+    blocked('fixDuplicateFees()', only('cuotas_corregir', 'saldos_modificar')),
     blocked("openFiniquito('u1')", only('residentes_finiquitar')),
     blocked("deleteResident('u1')", only('residentes_eliminar')),
     blocked("editResident('u1')", only('residentes_editar')),
@@ -167,6 +167,12 @@ equal('la navegacion y el buscador del formulario del residente solo los ve quie
 equal('el precio del agua (paja completa y media paja) tambien queda bloqueado sin config_cuota y libre con ella', [B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_general')).includes('#cfg-water-half'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-full'), B.cssFor(only('config_ver', 'config_cuota')).includes('#cfg-water-half')], [true, true, false, false]);
 equal('los campos del precio del agua se deshabilitan igual que el desglose', B.DISABLE.config_cuota.includes('#cfg-water-full') && B.DISABLE.config_cuota.includes('#cfg-water-half'), true);
 equal('los campos del desglose se deshabilitan (no se pueden quitar del DOM: saveSettings los lee)', B.DISABLE.config_cuota.includes('#cfg-fee-maintenance') && B.DISABLE.config_cuota.includes('#cfg-fee-other'), true);
+
+// Privilegios de gerente (2026-11-18): cargos, cuotas por mes y corregir duplicadas cuelgan de "Modificar saldos"; la fecha
+// del pago se oculta sin su privilegio
+equal('sin Modificar saldos no se crean cargos, no se cargan meses ni se corrigen duplicadas (aunque tenga la accion)', ["openModal('modal-bulk-charge')", 'applyBulkCharge()', "openResidentFeeMonths('u1')", 'fixDuplicateFees()'].map((a) => blocked(a, only('cargos_crear', 'cuotas_meses', 'cuotas_corregir'))), [true, true, true, true]);
+equal('la fecha del pago solo la ve quien puede cambiarla', [B.cssFor(only('pagos_registrar')).includes('#inc-date-wrap'), B.cssFor(only('pagos_registrar', 'pagos_fecha')).includes('#inc-date-wrap')], [true, false]);
+equal('el nombre del residente queda de solo lectura al editar sin usuarios.vecinos_nombre (envuelve editResident y openModal)', /if \(!can\('usuarios\.vecinos_nombre'\)\) \{[\s\S]*?field\.readOnly = locked[\s\S]*?\['editResident', 'openModal'\]\.forEach/.test(require('node:fs').readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')), true);
 
 console.log('\nCobertura del catalogo: ningun privilegio de OIKOS queda sin efecto en pantalla');
 const names = PRIV.ITEMS.filter((i) => i.key.startsWith('finanzas.')).map((i) => i.key.slice('finanzas.'.length));

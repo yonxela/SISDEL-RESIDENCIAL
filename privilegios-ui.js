@@ -44,6 +44,10 @@ const SisdelPrivilegiosUI = (() => {
         .pv-card { background:var(--bg-surface-solid); border:1px solid var(--border-strong); border-radius:var(--radius-lg); overflow:hidden; }
         .pv-card-head { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; padding:0.7rem 0.9rem; background:var(--info-bg); border-bottom:1px solid var(--border-strong); }
         .pv-card-head strong { font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-primary); }
+        /* Tarjeta "Privilegios de gerente": se marca a mano, usuario por usuario (borde ambar y una nota) */
+        .pv-card.is-hand { border-color:rgba(217,119,6,0.55); }
+        .pv-card.is-hand .pv-card-head { background:rgba(217,119,6,0.14); }
+        .pv-card-note { margin:0; padding:0.55rem 0.9rem; font-size:0.74rem; line-height:1.4; color:var(--text-secondary); border-bottom:1px solid var(--border-strong); }
         .pv-count { font-size:0.7rem; font-weight:700; color:var(--info); background:var(--info-bg); padding:0.15rem 0.55rem; border-radius:var(--radius-full); }
         .pv-all { font-size:0.68rem; font-weight:700; color:var(--primary-light); background:transparent; border:1px solid var(--primary); border-radius:var(--radius-sm); padding:0.15rem 0.5rem; cursor:pointer; }
         .pv-all:disabled { opacity:0.4; cursor:not-allowed; }
@@ -144,26 +148,29 @@ const SisdelPrivilegiosUI = (() => {
                 // Los privilegios que su rol no puede tener (onlyRoles) no cuentan ni se activan
                 const usable = full.items.filter((i) => PRIV.allowedFor(i.key, opts.role));
                 const active = usable.filter((i) => opts.set.has(i.key)).length;
-                // Las que empiezan apagadas (optIn, o de solo el administrador para otro rol) no cuentan para "Marcar todo": se marcan a mano
-                const allOn = usable.filter((i) => !PRIV.explicitFor(i.key, opts.role)).every((i) => opts.set.has(i.key));
-                return `<section class="pv-card">
+                // Las que empiezan apagadas (optIn, o de solo el administrador para otro rol) no cuentan para "Marcar todo": se marcan a mano.
+                // En la tarjeta de gerente (handPicked) su propio "Marcar todo" si las marca: es marcarlas a mano, en esa tarjeta
+                const bulkable = g.handPicked && !opts.template ? usable : usable.filter((i) => !PRIV.handOnly(i.key, opts.role));
+                const allOn = bulkable.every((i) => opts.set.has(i.key));
+                return `<section class="pv-card${g.handPicked ? ' is-hand' : ''}">
                     <div class="pv-card-head">
                         <strong>${esc(g.title)}</strong>
                         <span style="display:flex; gap:0.4rem; align-items:center;">
                             <span class="pv-count">${active} / ${usable.length}</span>
-                            ${opts.disabled || !usable.length ? '' : `<button type="button" class="pv-all" data-group="${g.id}" data-on="${allOn ? '0' : '1'}">${allOn ? 'Quitar todo' : 'Marcar todo'}</button>`}
+                            ${opts.disabled || !bulkable.length ? '' : `<button type="button" class="pv-all" data-group="${g.id}" data-on="${allOn ? '0' : '1'}">${allOn ? 'Quitar todo' : 'Marcar todo'}</button>`}
                         </span>
                     </div>
+                    ${g.note ? `<p class="pv-card-note">${esc(g.note)}</p>` : ''}
                     <div class="pv-rows">${g.items.map((i, index) => {
                         const subHeading = i.sub && (index === 0 || g.items[index - 1].sub !== i.sub) ? `<div class="pv-sub">${esc(i.sub)}</div>` : '';
-                        // En una plantilla, una accion que el rol debe marcar a mano no se puede marcar (se habilita usuario por usuario)
-                        const locked = !PRIV.allowedFor(i.key, opts.role) || (opts.template && PRIV.explicitFor(i.key, opts.role));
+                        // En una plantilla, lo que el rol debe marcar a mano (y lo que cuelga de ello) no se puede marcar: se habilita usuario por usuario
+                        const locked = !PRIV.allowedFor(i.key, opts.role) || (opts.template && PRIV.handOnly(i.key, opts.role));
                         const on = !locked && opts.set.has(i.key);
                         const inRole = defaults[i.key] === true;
                         const marks = opts.marks !== false;
                         const state = marks && on && !inRole ? ' is-added' : (marks && !on && inRole ? ' is-removed' : '');
                         const tag = marks && on && !inRole ? '<span class="pv-tag added">Agregado</span>' : (marks && !on && inRole ? '<span class="pv-tag removed">Quitado</span>' : '');
-                        const lockTag = locked ? (PRIV.explicitFor(i.key, opts.role) && PRIV.allowedFor(i.key, opts.role) ? '<span class="pv-tag removed">Se marca usuario por usuario</span>' : '<span class="pv-tag removed">Solo administradores y operadores</span>') : '';
+                        const lockTag = locked ? (PRIV.handOnly(i.key, opts.role) && PRIV.allowedFor(i.key, opts.role) ? '<span class="pv-tag removed">Se marca usuario por usuario</span>' : '<span class="pv-tag removed">Solo administradores y operadores</span>') : '';
                         const optTag = PRIV.explicitFor(i.key, opts.role) && !locked ? '<span class="pv-tag sens">Se habilita aparte</span>' : '';
                         return `${subHeading}<button type="button" class="pv-row${on ? ' is-on' : ''}${state}${i.parent ? ' pv-child' : ''}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}" ${i.depth > 1 ? `style="margin-left:${(i.depth - 1) * 1.1}rem;"` : ''}>
                             ${on ? ICONS.on : ICONS.off}
@@ -191,8 +198,10 @@ const SisdelPrivilegiosUI = (() => {
         container.querySelectorAll('.pv-all').forEach((button) => {
             button.addEventListener('click', () => {
                 const turnOn = button.dataset.on === '1';
-                PRIV.GROUPS.find((g) => g.id === button.dataset.group).items
-                    .filter((i) => PRIV.allowedFor(i.key, opts.role) && (!turnOn || !PRIV.explicitFor(i.key, opts.role)))
+                const group = PRIV.GROUPS.find((g) => g.id === button.dataset.group);
+                // La tarjeta de gerente marca todo lo suyo (a mano); las demas no encienden lo que se marca usuario por usuario
+                group.items
+                    .filter((i) => PRIV.allowedFor(i.key, opts.role) && (!turnOn || (group.handPicked && !opts.template) || !PRIV.handOnly(i.key, opts.role)))
                     .forEach((i) => PRIV.toggle(opts.set, i.key, turnOn, { children: turnOn, role: opts.role }));
                 opts.onChange(opts.set, { group: button.dataset.group, on: turnOn, cascade: [] });
             });
@@ -288,7 +297,7 @@ const SisdelPrivilegiosUI = (() => {
                 set.clear(); Object.keys(PRIV.defaultsOf(role)).forEach((k) => set.add(k));
                 draw('Se dejaron los privilegios del rol');
             } else if (kind === 'all') {
-                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role) && !PRIV.explicitFor(k, role)).forEach((k) => set.add(k));
+                PRIV.KEYS.filter((k) => PRIV.allowedFor(k, role) && !PRIV.handOnly(k, role)).forEach((k) => set.add(k));
                 draw();
             } else if (kind === 'none') {
                 set.clear(); draw();
@@ -586,7 +595,7 @@ const SisdelPrivilegiosUI = (() => {
                 const act = event.target.closest('[data-act]');
                 if (!act) return;
                 const kind = act.dataset.act;
-                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.explicitFor(k, form.role)).forEach((k) => set.add(k)); draw(); }
+                if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.handOnly(k, form.role)).forEach((k) => set.add(k)); draw(); }
                 else if (kind === 'none') { set.clear(); draw(); }
                 else if (kind === 'discard') { mountForm(tpl); }
                 else if (kind === 'duplicate') {

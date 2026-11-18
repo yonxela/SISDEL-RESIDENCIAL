@@ -758,6 +758,8 @@ async function run() {
     await denied('la secretaria no crea operadores', () => createUserAs(sec, mkUser('u-op-s', 'Operador falso', 'operador'), 'PA002'));
     await denied('la secretaria no asigna privilegios al crear', () => createUserAs(sec, mkUser('u-v2', 'Vecino con poder', 'vecino', { privilegios: { 'finanzas.usar': true } }), 'PV002'));
     await allowed('la secretaria edita a un vecino', () => updateDoc(uref(sec, 'u-v1'), { phone: '5555-9999' }));
+    // El nombre de un residente es privilegio de gerente (usuarios.vecinos_nombre): editar usuarios no alcanza
+    await denied('la secretaria no cambia el nombre de un vecino (privilegio de gerente)', () => updateDoc(uref(sec, 'u-v1'), { name: 'Otro nombre' }));
     await denied('la secretaria no edita a un administrador', () => updateDoc(uref(sec, 'u-fernando'), { phone: '5555-0000' }));
     await denied('la secretaria no elimina usuarios', () => deleteDoc(uref(sec, 'u-v1')));
     await denied('la secretaria no cambia privilegios de otros', () => setPriv(sec, 'u-v1', { 'finanzas.usar': true }));
@@ -1138,7 +1140,9 @@ async function run() {
     await denied('corregir cuotas: no anula cargos especiales', () => updateDoc(mref(corrige, 'fin-ch-3'), annul()));
     const deshace = await opWith('u-des', 'PDES1', 'Deshacer', ['finanzas.deshacer']);
     await allowed('deshacer: devuelve una anulacion', () => updateDoc(mref(deshace, 'fin-in-2'), unannul()));
-    await allowed('deshacer: quita un alta (la anula)', () => updateDoc(mref(deshace, 'fin-in-3'), annul()));
+    // Anular pagos y egresos es privilegio de gerente (2026-11-18): deshacer ya no los anula; si quita el alta de un cargo
+    await denied('deshacer: ya no quita el alta de un pago (anular pagos es privilegio de gerente)', () => updateDoc(mref(deshace, 'fin-in-3'), annul()));
+    await allowed('deshacer: quita el alta de un cargo reciente (lo anula)', () => updateDoc(mref(deshace, 'fin-ch-3'), annul()));
     await denied('deshacer: no anula un pago viejo (solo alcanza lo hecho en las ultimas 2 horas)', () => updateDoc(mref(deshace, 'fin-in-old'), annul()));
     await denied('deshacer: no cambia montos', () => updateDoc(mref(deshace, 'fin-in-4'), { amount: 1, updated_at: ts() }));
     await denied('deshacer: no registra pagos', () => setDoc(mref(deshace, 'des-in'), mv('des-in', { type: 'income' })));
@@ -1205,11 +1209,61 @@ async function run() {
     await allowed('residentes: crear registra los datos financieros de uno nuevo', () => setDoc(xref(resCr, 'res-t5'), { id: 'res-t5', dpi: '555', notes: '', feeFrom: '2026-11', updated_at: ts() }));
     await denied('residentes: crear no edita a uno existente', () => updateDoc(xref(resCr, 'res-t4'), { dpi: '9', updated_at: ts() }));
 
+    // ───── Privilegios de gerente (pedido del dueno, 2026-11-18): eliminar residentes, cambiar la fecha de un pago, modificar
+    // saldos, cambiar nombres, anular pagos y egresos y ver claves. Solo los tiene a quien se le marcan (el administrador los trae)
+    console.log('\nPrivilegios de gerente');
+    const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+    // La fecha del pago es la de su registro (created_at, con 10 minutos de margen), salvo con "cambiar la fecha"
+    await denied('gerente: el cajero no registra un pago con fecha de hace 3 dias', () => setDoc(mref(cajero, 'caj-atras'), mv('caj-atras', { type: 'income', date: daysAgo(3) })));
+    await denied('gerente: ni cambiando tambien la fecha de registro a hace 10 dias', () => setDoc(mref(cajero, 'caj-atras2'), mv('caj-atras2', { type: 'income', date: daysAgo(10), created_at: daysAgo(10), updated_at: daysAgo(10) })));
+    await denied('gerente: ni un pago sin fecha de registro', () => setDoc(mref(cajero, 'caj-sinreg'), { id: 'caj-sinreg', type: 'income', amount: 100, concept: 'Prueba', resiId: 'u-ana', date: ts() }));
+    await allowed('gerente: el cajero si registra el pago de hoy (unos minutos de diferencia con su registro)', () => setDoc(mref(cajero, 'caj-hoy'), mv('caj-hoy', { type: 'income', date: new Date(Date.now() - 5 * 60 * 1000).toISOString() })));
+    await allowed('gerente: un equipo que tuvo el pago pendiente 3 dias lo sube con su fecha de registro', () => setDoc(mref(cajero, 'caj-pend'), mv('caj-pend', { type: 'income', date: daysAgo(3), created_at: daysAgo(3), updated_at: daysAgo(3) })));
+    await allowed('gerente: el administrador registra un pago con fecha de hace 3 dias', () => setDoc(mref(admin, 'adm-atras'), mv('adm-atras', { type: 'income', date: daysAgo(3) })));
+    const fechador = await opWith('u-fec', 'PFEC1', 'Cambia la fecha de pagos', ['finanzas.pagos_fecha']);
+    await allowed('gerente: a quien se le marco "cambiar la fecha" registra un pago de hace 3 dias', () => setDoc(mref(fechador, 'fec-atras'), mv('fec-atras', { type: 'income', date: daysAgo(3) })));
+    // El nombre de un residente
+    const editorUs = await opWith('u-edn', 'PEDN1', 'Edita usuarios', ['usuarios.editar']);
+    await allowed('gerente: quien edita usuarios cambia el telefono de un vecino', () => updateDoc(uref(editorUs, 'u-v1'), { phone: '5555-1212', updatedAt: ts() }));
+    await denied('gerente: pero no su nombre', () => updateDoc(uref(editorUs, 'u-v1'), { name: 'Vecino Renombrado', updatedAt: ts() }));
+    const renombra = await opWith('u-ren', 'PREN1', 'Cambia nombres', ['usuarios.vecinos_nombre']);
+    await allowed('gerente: a quien se le marco "cambiar el nombre de los residentes" si lo cambia', () => updateDoc(uref(renombra, 'u-v1'), { name: 'Vecino Renombrado', updatedAt: ts() }));
+    await allowed('gerente: el administrador cambia el nombre de un vecino', () => updateDoc(uref(admin, 'u-v1'), { name: 'Vecino de la secretaria', updatedAt: ts() }));
+    await allowed('gerente: el nombre de un guardia no es de un residente: basta editar usuarios', async () => {
+        await createUserAs(admin, mkUser('u-gnm', 'Guardia Nombre', 'policia'), 'PGNM1');
+        await updateDoc(uref(editorUs, 'u-gnm'), { name: 'Guardia Renombrado', updatedAt: ts() });
+    });
+    // Modificar saldos: un operador con TODO el Sistema Financiero no crea cargos ni anula sin que se le marque
+    const oldIso = '2026-01-01T10:00:00.000Z';
+    for (const d of [mv('ger-ch', { type: 'charge', kind: 'extra', created_at: oldIso, updated_at: oldIso }), mv('ger-in', { type: 'income', receiptNum: 'G-1', date: oldIso, created_at: oldIso, updated_at: oldIso }), mv('ger-eg', { type: 'expense', resiId: null, created_at: oldIso, updated_at: oldIso })]) await setDoc(mref(admin, d.id), d);
+    await denied('gerente: un operador con todo el Sistema Financiero no crea cargos sin "Modificar saldos"', () => setDoc(mref(resAllFin, 'rtf-ch'), mv('rtf-ch', { type: 'charge', kind: 'extra' })));
+    await denied('gerente: ni anula un cargo', () => updateDoc(mref(resAllFin, 'ger-ch'), annul()));
+    await denied('gerente: ni anula un pago', () => updateDoc(mref(resAllFin, 'ger-in'), annul()));
+    await denied('gerente: ni anula un egreso', () => updateDoc(mref(resAllFin, 'ger-eg'), annul()));
+    await denied('gerente: ni registra un pago con otra fecha', () => setDoc(mref(resAllFin, 'rtf-atras'), mv('rtf-atras', { type: 'income', date: daysAgo(2) })));
+    await allowed('gerente: pero registra pagos y egresos y aplica la cuota del mes', async () => {
+        await setDoc(mref(resAllFin, 'rtf-in'), mv('rtf-in', { type: 'income' }));
+        await setDoc(mref(resAllFin, 'rtf-eg'), mv('rtf-eg', { type: 'expense', resiId: null }));
+        await setDoc(mref(resAllFin, 'fee_u-ana_2032-01'), mv('fee_u-ana_2032-01', { type: 'charge', kind: 'fee', period: '2032-01', manual: true, auto: false }));
+    });
+    const gerente = await opWith('u-ger', 'PGER1', 'Gerente', ['finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.pagos_anular', 'finanzas.egresos_anular']);
+    await allowed('gerente: con "Modificar saldos" marcado crea un cargo', () => setDoc(mref(gerente, 'ger-ch2'), mv('ger-ch2', { type: 'charge', kind: 'extra' })));
+    await allowed('gerente: y anula un cargo, un pago y un egreso', async () => {
+        await updateDoc(mref(gerente, 'ger-ch'), annul());
+        await updateDoc(mref(gerente, 'ger-in'), annul());
+        await updateDoc(mref(gerente, 'ger-eg'), annul());
+    });
+    await createUserAs(admin, mkUser('u-adm10', 'Admin sin modificar saldos', 'admin', { privilegios: { 'finanzas.saldos_modificar': false, 'finanzas.pagos_fecha': false } }), 'PA100');
+    const adm10 = await loginAs('PA100');
+    await denied('gerente: un administrador al que se le quito "Modificar saldos" no crea cargos', () => setDoc(mref(adm10, 'adm10-ch'), mv('adm10-ch', { type: 'charge', kind: 'extra' })));
+    await denied('gerente: ni registra un pago con otra fecha si se le quito "cambiar la fecha"', () => setDoc(mref(adm10, 'adm10-atras'), mv('adm10-atras', { type: 'income', date: daysAgo(3) })));
+    await allowed('gerente: pero conserva registrar pagos', () => setDoc(mref(adm10, 'adm10-in'), mv('adm10-in', { type: 'income' })));
+
     // Un administrador con una accion quitada conserva todo lo demas
     await allowed('admin: crea un administrador sin "anular pagos"', () => createUserAs(admin, mkUser('u-adm5', 'Admin sin anular', 'admin', { privilegios: { 'finanzas.pagos_anular': false } }), 'PA050'));
     const adm5 = await loginAs('PA050');
     await denied('admin sin "anular pagos" no anula un pago viejo (aunque tenga "deshacer")', () => updateDoc(mref(adm5, 'fin-in-old'), annul()));
-    await allowed('pero si deshace un pago que acaba de registrar', () => updateDoc(mref(adm5, 'fin-in-4'), annul()));
+    await denied('ni deshace un pago que acaba de registrar (deshacer ya no anula pagos)', () => updateDoc(mref(adm5, 'fin-in-4'), annul()));
     await allowed('pero anula un egreso', () => updateDoc(mref(adm5, 'fin-eg-3'), annul()));
     await allowed('y registra pagos', () => setDoc(mref(adm5, 'adm5-in'), mv('adm5-in', { type: 'income' })));
     await allowed('y cambia la cuota', () => patchCfg(adm5, { fee: 320 }));

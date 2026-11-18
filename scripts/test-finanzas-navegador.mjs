@@ -491,6 +491,27 @@ async function run() {
         await oikos(`(() => { closeModal('modal-voucher-options'); closeModal('modal-income'); window.alert = window.__real.alert; window.open = window.__real.open; if (window.__real.jsPdfSave) window.jspdf.jsPDF.API.save = window.__real.jsPdfSave; })()`);
         await idle();
 
+        console.log('\nPrivilegios de gerente: la fecha del pago');
+        await oikos(`(() => { window.__real = { alert: window.alert }; window.__alerts = []; window.alert = (m) => { window.__alerts.push(String(m)); }; navigate('accounting'); openModal('modal-income'); })()`);
+        const todayKey = await oikos(`localDayKey(new Date())`);
+        equal('el administrador ve la fecha del pago, en hoy y sin poder pasar de hoy', await oikos(`(() => { const el = document.getElementById('inc-date'); return [getComputedStyle(document.getElementById('inc-date-wrap')).display !== 'none', el.value, el.max]; })()`), [true, todayKey, todayKey]);
+        const threeDaysAgo = await oikos(`localDayKey(new Date(Date.now() - 3 * 86400000))`);
+        const dateHint = await oikos(`(() => { document.getElementById('inc-resident').value = 'u-maria'; updateIncomeConcepts(); document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Pago con fecha cambiada'; document.getElementById('inc-amount').value = '33'; document.getElementById('inc-receipt-num').value = 'FECHA-1'; document.getElementById('inc-date').value = '${threeDaysAgo}'; checkIncomeDate(); const m = document.getElementById('inc-date-msg'); return [!m.classList.contains('hidden'), m.textContent]; })()`);
+        record('al elegir otro dia avisa que la mora se calcula hasta ese dia', dateHint[0] && /quedará con fecha/.test(dateHint[1]) && /mora/.test(dateHint[1]), JSON.stringify(dateHint));
+        await oikos(`handleTransactionSubmit({ preventDefault() {} }, 'income')`);
+        const backTx = await oikos(`(() => { const t = Store.get('transactions').find((x) => x.docNum === 'FECHA-1'); return t ? { id: t.id, date: t.date, day: localDayKey(t.date), hour: new Date(t.date).getHours(), created: localDayKey(t.created_at), changed: txDateChanged(t) } : null; })()`);
+        equal('el pago queda con esa fecha (a mediodia), registrado hoy', backTx && [backTx.day, backTx.hour, backTx.created, backTx.changed], [threeDaysAgo, 12, todayKey, true]);
+        equal('se guarda en la nube (el administrador puede cambiar la fecha)', await idle(), 'ok');
+        equal('la nube tiene la fecha elegida', backTx && ((await txRef(backTx.id).get()).data() || {}).date, backTx && backTx.date);
+        equal('el detalle del movimiento dice que la fecha se cambio al registrarlo', await oikos(`(() => { closeModal('modal-voucher-options'); openTxDetail(${JSON.stringify(backTx && backTx.id)}); return document.getElementById('tx-detail-body').textContent.includes('Fecha del pago cambiada al registrarlo'); })()`), true);
+        const paysBefore = await oikos(`Store.get('transactions').filter((t) => t.type === 'income').length`);
+        const future = await oikos(`(() => { closeModal('modal-tx-detail'); window.__alerts.length = 0; openModal('modal-income'); document.getElementById('inc-resident').value = 'u-maria'; updateIncomeConcepts(); document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Pago a futuro'; document.getElementById('inc-amount').value = '7'; document.getElementById('inc-date').value = localDayKey(new Date(Date.now() + 2 * 86400000)); handleTransactionSubmit({ preventDefault() {} }, 'income'); return [Store.get('transactions').filter((t) => t.type === 'income').length, window.__alerts[0] || '']; })()`);
+        equal('una fecha posterior a hoy no se registra y avisa', future, [paysBefore, 'La fecha del pago no puede ser posterior a hoy.']);
+        const todayTx = await oikos(`(() => { document.getElementById('inc-date').value = localDayKey(new Date()); document.getElementById('inc-receipt-num').value = 'FECHA-HOY'; handleTransactionSubmit({ preventDefault() {} }, 'income'); const t = Store.get('transactions').find((x) => x.docNum === 'FECHA-HOY'); return t ? [txDateChanged(t), Math.abs(Date.parse(t.date) - Date.parse(t.created_at)) < 60000] : null; })()`);
+        equal('con la fecha de hoy queda la hora exacta del registro (no se marca como cambiada)', todayTx, [false, true]);
+        await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; })()`);
+        await idle();
+
         console.log('\nClave del residente bajo el nombre (solo con el privilegio de ver codigos)');
         const anaCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs[0].id;
         await oikos(`(() => { navigate('residents'); const s = document.getElementById('res-search'); if (s) { s.value = ''; resSearchChanged(); } resTypeChanged(''); renderResidents(); })()`);
@@ -670,6 +691,16 @@ async function run() {
         equal('con "No cambiar a los que ya tienen fase" marcado no se pisa la fase que ya existe', await oikos(`(() => { openAssignFases(); document.querySelector('#af-body input[data-sector="CASA"]').value = '5'; document.getElementById('af-keep').checked = true; applyAssignFases(); const out = [...new Set(Store.get('residents').map((r) => r.fase))]; closeModal('modal-assign-fases'); return out; })()`), ['4']);
         equal('sin esa marca si se cambia', await oikos(`(() => { openAssignFases(); document.querySelector('#af-body input[data-sector="CASA"]').value = '5'; document.getElementById('af-keep').checked = false; applyAssignFases(); return [...new Set(Store.get('residents').map((r) => r.fase))]; })()`), ['5']);
         await oikos(`closeModal('modal-reminders')`);
+
+        console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
+        // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
+        // OIKOS de nuevo con los privilegios reales del administrador
+        await inside(`window.SisdelFinanzasBloqueo.install(w, (k) => k !== 'usuarios.vecinos_nombre' && k !== 'finanzas.pagos_fecha' && SISDEL.can(k), { notify() {} }); return true;`);
+        equal('al editar a un residente el nombre queda de solo lectura', await oikos(`(() => { navigate('residents'); editResident('u-ana'); const f = document.getElementById('res-name'); return [f.readOnly, f.value.length > 0, f.title.includes('privilegio')]; })()`), [true, true, true]);
+        equal('pasar al siguiente residente lo deja igual', await oikos(`(() => { const nx = resNeighbors('u-ana').next; if (nx) editResident(nx.id); return document.getElementById('res-name').readOnly; })()`), true);
+        equal('al registrar un residente nuevo el nombre si se escribe', await oikos(`(() => { closeModal('modal-resident'); openModal('modal-resident'); return document.getElementById('res-name').readOnly; })()`), false);
+        equal('sin "cambiar la fecha" el Ingreso no muestra la fecha del pago', await oikos(`(() => { closeModal('modal-resident'); navigate('accounting'); openModal('modal-income'); return getComputedStyle(document.getElementById('inc-date-wrap')).display; })()`), 'none');
+        await oikos(`closeModal('modal-income')`);
 
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);

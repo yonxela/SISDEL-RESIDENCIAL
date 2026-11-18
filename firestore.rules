@@ -49,21 +49,22 @@ service cloud.firestore {
         && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
     }
     // Una accion dentro de un paraguas vale si el usuario no la tiene quitada en su mapa de privilegios
-    // (el paraguas se comprueba aparte, en la propia funcion pXxx)
+    // (el paraguas se comprueba aparte, en la propia funcion pXxx).
+    // childOk, childOn y childAuto NO vuelven a preguntar si es miembro: solo se usan como `pParaguas(c) && childX(...)` (las
+    // genera scripts/generar-reglas-privilegios.mjs) y el paraguas raiz (can) ya lo pregunto. Repetirlo en cada nivel gastaba
+    // expresiones: Firestore evalua como maximo 1000 por peticion y, con el paraguas "Modificar saldos" (2026-11-18), anular una
+    // cuota pasaba ese limite y se rechazaba. Una prueba exige que no se llamen sueltas.
     function childOk(condoId, key) {
-      return isMember(condoId)
-        && memberDoc(condoId).get('privilegios', {}).get(key, true) == true;
+      return memberDoc(condoId).get('privilegios', {}).get(key, true) == true;
     }
     // Una accion optIn (empieza apagada, p. ej. cargar cuotas por mes) vale solo si el usuario la tiene marcada
     function childOn(condoId, key) {
-      return isMember(condoId)
-        && memberDoc(condoId).get('privilegios', {}).get(key, false) == true;
+      return memberDoc(condoId).get('privilegios', {}).get(key, false) == true;
     }
     // Una accion con autoRoles (finiquitar o eliminar un residente): los roles de la lista la tienen salvo que se la quiten
     // (false) y cualquier otro rol solo si la tiene marcada (true), aunque tenga el paraguas
     function childAuto(condoId, key, roles) {
-      return isMember(condoId)
-        && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
+      return memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
     }
     // Las funciones pXxx (una por clave de privilegios.js que las reglas aplican) se generan con
     // `cd scripts && npm run reglas`; scripts/test-privilegios.mjs verifica que esten al dia.
@@ -78,8 +79,6 @@ service cloud.firestore {
     function pUsuariosPago(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.pago'); }
     function pUsuariosFicha(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.ficha'); }
     function pUsuariosEmergencia(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.emergencia'); }
-    function pUsuariosEliminar(c) { return can(c, 'usuarios.eliminar', ['admin']); }
-    function pUsuariosCodigos(c) { return can(c, 'usuarios.codigos', ['admin']); }
     function pUsuariosPrivilegios(c) { return can(c, 'usuarios.privilegios', ['admin']); }
     function pPlantillasGestionar(c) { return pUsuariosPrivilegios(c) && childOk(c, 'plantillas.gestionar'); }
     // Mensajes
@@ -124,18 +123,10 @@ service cloud.firestore {
     function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
     function pFinanzasResidentesCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_crear'); }
     function pFinanzasResidentesEditar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_editar'); }
-    function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_finiquitar', ['admin']); }
-    function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_eliminar', ['admin']); }
     function pFinanzasResidentesContactar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.residentes_contactar'); }
     function pFinanzasCuotasMes(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_mes'); }
-    function pFinanzasCuotasMeses(c) { return pFinanzasUsar(c) && childOn(c, 'finanzas.cuotas_meses'); }
-    function pFinanzasCuotasCorregir(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
-    function pFinanzasCargosCrear(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_crear'); }
-    function pFinanzasCargosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.cargos_anular'); }
     function pFinanzasPagosRegistrar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.pagos_registrar'); }
-    function pFinanzasPagosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.pagos_anular'); }
     function pFinanzasEgresosRegistrar(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_registrar'); }
-    function pFinanzasEgresosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.egresos_anular'); }
     function pFinanzasBancosCuentas(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_cuentas'); }
     function pFinanzasBancosMovimientos(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_movimientos'); }
     function pFinanzasBancosAnular(c) { return pFinanzasUsar(c) && childOk(c, 'finanzas.bancos_anular'); }
@@ -176,6 +167,20 @@ service cloud.firestore {
     function pRondasPatrullaTerminar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_terminar'); }
     function pRondasPatrullaMarcar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_marcar'); }
     function pRondasPatrullaRastrear(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_rastrear'); }
+    // Privilegios de gerente
+    function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_eliminar', ['admin']); }
+    function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_finiquitar', ['admin']); }
+    function pUsuariosVecinosNombre(c) { return pUsuariosEditar(c) && childAuto(c, 'usuarios.vecinos_nombre', ['admin']); }
+    function pFinanzasSaldosModificar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.saldos_modificar', ['admin']); }
+    function pFinanzasCargosCrear(c) { return pFinanzasSaldosModificar(c) && childOk(c, 'finanzas.cargos_crear'); }
+    function pFinanzasCargosAnular(c) { return pFinanzasSaldosModificar(c) && childOk(c, 'finanzas.cargos_anular'); }
+    function pFinanzasCuotasMeses(c) { return pFinanzasSaldosModificar(c) && childOn(c, 'finanzas.cuotas_meses'); }
+    function pFinanzasCuotasCorregir(c) { return pFinanzasSaldosModificar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
+    function pFinanzasPagosFecha(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.pagos_fecha', ['admin']); }
+    function pFinanzasPagosAnular(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.pagos_anular', ['admin']); }
+    function pFinanzasEgresosAnular(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.egresos_anular', ['admin']); }
+    function pUsuariosCodigos(c) { return can(c, 'usuarios.codigos', ['admin']); }
+    function pUsuariosEliminar(c) { return can(c, 'usuarios.eliminar', ['admin']); }
     // ── END privilegios generados ──
 
     // Rondas: administran quienes tienen rondas.gestionar, patrullan quienes tienen rondas.patrullar,
@@ -332,6 +337,13 @@ service cloud.firestore {
           return resource.data.role != 'admin'
             || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name', 'previousName', 'renamedAt']);
         }
+        // El nombre de un residente (vecino) solo lo cambia quien tiene "Cambiar el nombre de los residentes" (privilegio de
+        // gerente, usuarios.vecinos_nombre): desde OIKOS, la ficha del vecino o RONDIN. Al crearlo si se escribe.
+        function vecinoNameOk() {
+          return resource.data.role != 'vecino'
+            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['name'])
+            || pUsuariosVecinosNombre(condoId);
+        }
         // Cada miembro lee su propia ficha (de ahi salen sus privilegios); las demas, con usuarios.ver
         allow read: if isMaster()
           || (isMember(condoId) && request.auth.uid == userId)
@@ -342,7 +354,7 @@ service cloud.firestore {
           || (userId != 'master' && validUser() && canCreateRole(condoId, request.resource.data.role)
               && (request.resource.data.get('privilegios', {}).size() == 0 || pUsuariosPrivilegios(condoId)));
         allow update: if (isMaster() && adminNameKept())
-          || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights() && adminNameKept()
+          || (pUsuariosEditar(condoId) && validUser() && paymentByHand() && stateRights() && adminNameKept() && vecinoNameOk()
               && manageable(condoId, resource.data.role) && manageable(condoId, request.resource.data.role)
               && (!touchesPower() || (pUsuariosPrivilegios(condoId) && userId != request.auth.uid)))
           // El vecino, desde su ficha (vecino.ficha), cambia solo su telefono y su correo
@@ -495,6 +507,19 @@ service cloud.firestore {
               || (ownFicha(docId) && finChanged().hasOnly(selfOwnerKeys().concat(['updated_at'])) && ownerGroupOk()));
         allow delete: if false;
       }
+      // La fecha de un pago es la de su registro (created_at, que el equipo sella al guardarlo), con 10 minutos de margen,
+      // salvo para quien puede cambiarla (finanzas.pagos_fecha, privilegio de gerente). Para que la fecha tampoco se cambie
+      // desde la consola reescribiendo las dos, el registro no puede venir de mas de 7 dias atras (lo que un equipo tuvo
+      // pendiente de subir) ni de mas de un dia adelante (reloj del equipo).
+      function incomeDateOk() {
+        let d = request.resource.data;
+        return pFinanzasPagosFecha(condoId)
+          || (d.get('date', null) is string && d.get('created_at', null) is string
+              && timestamp.value(d.date) > timestamp.value(d.created_at) - duration.value(10, 'm')
+              && timestamp.value(d.date) < timestamp.value(d.created_at) + duration.value(10, 'm')
+              && timestamp.value(d.created_at) > request.time - duration.value(7, 'd')
+              && timestamp.value(d.created_at) < request.time + duration.value(1, 'd'));
+      }
       // Movimientos: cada tipo tiene su privilegio (cargo, pago, egreso) y anular es otro aparte
       function movementCreateOk() {
         // Todo movimiento nace con un monto numerico mayor que cero (un pago negativo seria un cargo escondido)
@@ -503,7 +528,7 @@ service cloud.firestore {
         return request.resource.data.get('amount', 0) is number && request.resource.data.amount > 0
           && !('server_at' in request.resource.data)
           && request.resource.data.get('serverGenerated', false) != true
-          && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId))
+          && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId) && incomeDateOk())
           || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,
           // meses de un residente o cargo con concepto de cuota) llevan manual:true y no se distinguen entre si en las reglas
@@ -530,10 +555,11 @@ service cloud.firestore {
         return finChanged().hasOnly(['updated_at', 'server_at'])
           // OIKOS le pone periodo y tipo a un cargo viejo que no lo tiene (migracion); uno que ya lo tiene no se reasigna
           || (resource.data.get('type', '') == 'charge' && resource.data.get('period', '') == '' && finChanged().hasOnly(['period', 'kind', 'updated_at', 'server_at']))
-          // Anular: el mismo documento con deleted:true (nunca se borra)
+          // Anular: el mismo documento con deleted:true (nunca se borra). Anular pagos y egresos es privilegio de gerente:
+          // "deshacer" solo quita el alta de un cargo o una cuota recien hecha, nunca un pago ni un egreso
           || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
               && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at', 'server_at'])
-              && ((pFinanzasDeshacer(condoId) && undoWindow('created_at'))
+              && ((resource.data.get('type', '') == 'charge' && undoWindow('created_at') && pFinanzasDeshacer(condoId))
                   || (resource.data.get('type', '') == 'income' && pFinanzasPagosAnular(condoId))
                   || (resource.data.get('type', '') == 'expense' && pFinanzasEgresosAnular(condoId))
                   || (resource.data.get('type', '') == 'charge'

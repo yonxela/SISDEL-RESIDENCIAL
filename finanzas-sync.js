@@ -325,6 +325,14 @@ const SisdelFinanzas = (() => {
     const MOVEMENT_ANNUL_KEYS = ['deleted', 'deleted_at', 'deleted_reason', 'restored_at', 'updated_at'];
     // "Deshacer" solo alcanza lo hecho hace poco (igual que firestore.rules): la pila de deshacer vive en la memoria de la pagina
     const UNDO_WINDOW_MS = 2 * 60 * 60 * 1000;
+    // Un pago sin el privilegio de cambiar su fecha (finanzas.pagos_fecha) lleva la de su registro (created_at), con este
+    // margen (igual que incomeDateOk de las reglas)
+    const PAY_DATE_MARGIN_MS = 10 * 60 * 1000;
+    function paymentDateMoved(tx) {
+        const date = Date.parse((tx && tx.date) || '');
+        const created = Date.parse((tx && tx.created_at) || '');
+        return !(Number.isFinite(date) && Number.isFinite(created) && Math.abs(date - created) < PAY_DATE_MARGIN_MS);
+    }
     const SETTINGS_FEE_KEYS = ['fee', 'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'chargeDay', 'graceDays', 'feeMode'];
     const SETTINGS_GENERAL_KEYS = ['currency', 'lang', 'name', 'theme'];
     const SETTINGS_OPERATION_KEYS = ['receiptCounter', 'chargedMonths', 'lastChargedMonth'];
@@ -393,8 +401,10 @@ const SisdelFinanzas = (() => {
         // Un residente nuevo crea tambien al vecino de SISDEL (usuarios + codigos): exige ambos privilegios
         if (!userExists || !prev) return [['finanzas.residentes_crear'], ['usuarios.crear']];
         const needs = [];
-        // Nombre, casa y telefono viven en el vecino de SISDEL
-        if (changedKeys(next, prev).some((k) => CORE_FIELDS.includes(k))) needs.push(['finanzas.residentes_editar'], ['usuarios.editar']);
+        // Nombre, casa y telefono viven en el vecino de SISDEL; el nombre, ademas, es privilegio de gerente
+        const coreChanged = changedKeys(next, prev).filter((k) => CORE_FIELDS.includes(k));
+        if (coreChanged.length) needs.push(['finanzas.residentes_editar'], ['usuarios.editar']);
+        if (coreChanged.includes('name')) needs.push(['usuarios.vecinos_nombre']);
         const keys = changedKeys(extraOf(next), extraOf(prev)).filter((k) => !TOUCH_KEYS.includes(k));
         if (keys.some((k) => RESIDENT_STATE_KEYS.includes(k))) needs.push(['finanzas.residentes_finiquitar']);
         if (keys.some((k) => RESIDENT_DELETE_KEYS.includes(k))) needs.push(['finanzas.residentes_eliminar']);
@@ -408,7 +418,8 @@ const SisdelFinanzas = (() => {
         if (!prev) {
             // Todo movimiento nace con un monto numerico mayor que cero (igual que las reglas)
             if (!(typeof next.amount === 'number' && next.amount > 0)) return [[]];
-            if (type === 'income') return [['finanzas.pagos_registrar']];
+            // Un pago con otra fecha que la de su registro exige ademas cambiar la fecha (privilegio de gerente)
+            if (type === 'income') return paymentDateMoved(next) ? [['finanzas.pagos_registrar'], ['finanzas.pagos_fecha']] : [['finanzas.pagos_registrar']];
             if (type === 'expense') return [['finanzas.egresos_registrar']];
             if (type === 'charge') {
                 if (next.kind === 'fee') {
@@ -426,7 +437,8 @@ const SisdelFinanzas = (() => {
                 const own = prev.type === 'income' ? ['finanzas.pagos_anular']
                     : prev.type === 'expense' ? ['finanzas.egresos_anular']
                         : prev.type === 'charge' ? (prev.kind === 'fee' ? ['finanzas.cargos_anular', 'finanzas.cuotas_corregir'] : ['finanzas.cargos_anular']) : [];
-                return [[...(recent(prev.created_at) ? ['finanzas.deshacer'] : []), ...own]];
+                // "Deshacer" solo quita el alta de un cargo o una cuota; un pago o un egreso solo los anula quien tiene ese privilegio
+                return [[...(prev.type === 'charge' && recent(prev.created_at) ? ['finanzas.deshacer'] : []), ...own]];
             }
             if (prev.deleted === true && next.deleted !== true) return recent(prev.updated_at) ? [['finanzas.deshacer']] : [[]];
         }
@@ -1202,7 +1214,7 @@ const SisdelFinanzas = (() => {
         internals: {
             oikosCompanyId, storageKey, pendingKey, docIdOf, stampOf, periodOf, canon, parseArray,
             toContact, toResident, splitResident, mergeList, diffList, INITIAL_SETTINGS,
-            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, pick, changedFields, dropResurrected,
+            changedKeys, extraOf, satisfied, residentNeeds, movementNeeds, settingsNeeds, paymentDateMoved, pick, changedFields, dropResurrected,
             overlayList, stampValue, laterStamp, stampMinus, saneStamp, mirrorPlan, PAGE_SIZE, MIRROR_MAX_AGE_MS, RESUME_MAX_AGE_MS,
             revivedFields, changedData, withoutServerStamp
         }

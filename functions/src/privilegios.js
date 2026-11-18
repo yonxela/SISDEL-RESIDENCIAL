@@ -40,8 +40,39 @@
     // Cada clave: label (lo que ve el administrador), description, sub (subgrupo de la tarjeta), roles (quienes la tienen
     // por defecto: solo las claves raiz), parent (paraguas), requires (otras claves que necesita), sensitive (poder amplio:
     // asignar con cuidado), onlyRoles (solo ciertos roles pueden tenerla), enforce ('reglas' o 'pantalla').
-    // Los padres van siempre antes que sus hijos.
+    // Los padres van siempre antes que sus hijos (la tarjeta de gerente, con `handPicked`, se procesa al final: ver ITEMS).
     const GROUPS = [
+        // ── Privilegios de gerente (pedido del dueno, 2026-11-18) ──
+        // Lo que cambia lo que debe un residente o su historial: eliminar y finiquitar residentes, cambiarles el nombre, modificar
+        // sus saldos (cargos, cuotas por mes, anular cargos), cambiar la fecha de un pago, anular pagos y egresos, ver las claves
+        // y eliminar usuarios. Va PRIMERO en la pantalla. Solo lo tiene el usuario al que se le marca aqui, uno por uno: el
+        // administrador lo trae (y se le puede quitar); a cualquier otro rol no se lo dan el paraguas, "Marcar todos" ni las
+        // plantillas (`handPicked`: las acciones llevan autoRoles ['admin'] u optIn, y los paraguas se marcan a mano para
+        // cualquier rol que no los traiga). Las reglas de Firestore los exigen todos.
+        {
+            id: 'gerente', title: 'Privilegios de gerente', handPicked: true,
+            note: 'Solo los tiene el usuario al que se le marquen aquí, uno por uno: no los dan el acceso al Sistema Financiero, "Marcar todos" ni las plantillas. El administrador los trae y se le pueden quitar.',
+            items: [
+                { key: 'finanzas.residentes_eliminar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Eliminar residentes', description: 'Quitar del Sistema Financiero a un residente que no tiene movimientos.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'finanzas.residentes_finiquitar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Finiquitar y reactivar residentes', description: 'Cerrar la relación con un residente (deja de cobrársele) o reactivarlo.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'usuarios.vecinos_nombre', sub: 'Residentes', parent: 'usuarios.editar', label: 'Cambiar el nombre de los residentes', description: 'Corregir o cambiar el nombre de un residente, en el Sistema Financiero, en la ficha del vecino o en Rondas. Sin este privilegio el nombre se ve pero no se cambia (al registrar un residente nuevo sí se escribe).', requires: ['usuarios.ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+
+                { key: 'finanzas.saldos_modificar', sub: 'Saldos', parent: 'finanzas.usar', label: 'Modificar saldos de residentes', description: 'Todo lo que cambia lo que debe un residente fuera de sus pagos: cargos especiales y multas, cuotas por mes, anular cargos y cuotas y corregir cuotas duplicadas (cada uno se puede quitar abajo). Registrar pagos y la Cuota del mes de todos no lo necesitan.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'finanzas.cargos_crear', sub: 'Saldos', parent: 'finanzas.saldos_modificar', label: 'Crear cargos especiales y multas', description: 'Un cargo a todos los residentes o a uno solo, con el concepto que se elija.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.cargos_anular', sub: 'Saldos', parent: 'finanzas.saldos_modificar', label: 'Anular cargos y cuotas', description: 'Anular una cuota o un cargo especial desde el estado de cuenta.', requires: ['finanzas.residentes_estado'], sensitive: true, enforce: 'reglas' },
+                // optIn (pedido del dueno, 2026-11-16): empieza apagado para todos, tambien para el administrador; solo lo
+                // tiene quien lo tenga marcado en Configuracion (al administrador se lo marca el Master)
+                { key: 'finanzas.cuotas_meses', sub: 'Saldos', parent: 'finanzas.saldos_modificar', label: 'Cargar cuotas por mes a un residente', description: 'Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí.', requires: ['finanzas.residentes_editar'], enforce: 'reglas', optIn: true },
+                { key: 'finanzas.cuotas_corregir', sub: 'Saldos', parent: 'finanzas.saldos_modificar', label: 'Corregir cuotas duplicadas', description: 'Anular en bloque las cuotas repetidas.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
+
+                { key: 'finanzas.pagos_fecha', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Cambiar la fecha de un pago al registrarlo', description: 'Registrar un pago con una fecha anterior a hoy (por ejemplo, una boleta de días atrás); la fecha cuenta para la mora. Sin este privilegio el pago queda con la fecha y la hora en que se registra.', requires: ['finanzas.pagos_registrar'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'finanzas.pagos_anular', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Anular pagos (ingresos)', description: 'Anular un pago ya registrado (queda con su motivo; nunca se borra).', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'finanzas.egresos_anular', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Anular egresos', description: 'Anular un gasto ya registrado (queda con su motivo; nunca se borra).', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+
+                { key: 'usuarios.codigos', sub: 'Claves y usuarios', label: 'Ver y cambiar las claves de acceso', description: 'Ver y reemplazar la clave (código de acceso) de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'usuarios.eliminar', sub: 'Claves y usuarios', label: 'Eliminar usuarios', description: 'Borrar usuarios (también vecinos) con su código, vehículos y visitas desde el panel de administración (necesita poder ver las claves).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true, enforce: 'reglas' }
+            ]
+        },
         {
             id: 'usuarios', title: 'Usuarios y vecinos', items: [
                 { key: 'usuarios.panel', sub: 'Acceso', label: 'Entrar al panel de administración', description: 'Abre admin.html: lista de usuarios, estadísticas y mensajes.', roles: ['admin'], requires: ['usuarios.ver'], enforce: 'pantalla' },
@@ -56,10 +87,9 @@
                 { key: 'usuarios.pago', sub: 'Editar', parent: 'usuarios.editar', label: 'Cambiar el estado de pago', description: 'Marcar a un vecino como moroso o al día a mano (con la mora automática lo calcula el Sistema Financiero).', sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.ficha', sub: 'Editar', parent: 'usuarios.editar', label: 'Botón Editar de la ficha del vecino', description: 'La ventana del vecino se abre en solo lectura y este botón la desbloquea. Además deja ver y cambiar los datos del propietario (nombre, NIT, dirección, DPI y observaciones) aunque no use el Sistema Financiero. El agua, el cobro y las cuotas siguen pidiendo sus privilegios del Sistema Financiero.', sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.emergencia', sub: 'Editar', parent: 'usuarios.editar', label: 'Editar contactos de emergencia de vecinos', description: 'Los familiares a quienes avisa el botón de pánico de un vecino.', enforce: 'reglas' },
-                { key: 'usuarios.eliminar', sub: 'Eliminar', label: 'Eliminar usuarios', description: 'Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true, enforce: 'reglas' },
-                { key: 'usuarios.codigos', sub: 'Códigos y privilegios', label: 'Ver y cambiar códigos de acceso', description: 'Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true, enforce: 'reglas' },
-                { key: 'usuarios.privilegios', sub: 'Códigos y privilegios', label: 'Asignar privilegios', description: 'Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador.', roles: ['admin'], onlyRoles: ['admin', 'operador'], requires: ['usuarios.ver', 'usuarios.editar'], sensitive: true, enforce: 'reglas' },
-                { key: 'plantillas.gestionar', sub: 'Códigos y privilegios', parent: 'usuarios.privilegios', label: 'Crear, editar y borrar plantillas', description: 'Las plantillas de privilegios propias del condominio (las del sistema no se pueden cambiar).', enforce: 'reglas' }
+                // Ver y cambiar codigos y eliminar usuarios estan en la tarjeta "Privilegios de gerente" (al final de GROUPS)
+                { key: 'usuarios.privilegios', sub: 'Privilegios', label: 'Asignar privilegios', description: 'Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador.', roles: ['admin'], onlyRoles: ['admin', 'operador'], requires: ['usuarios.ver', 'usuarios.editar'], sensitive: true, enforce: 'reglas' },
+                { key: 'plantillas.gestionar', sub: 'Privilegios', parent: 'usuarios.privilegios', label: 'Crear, editar y borrar plantillas', description: 'Las plantillas de privilegios propias del condominio (las del sistema no se pueden cambiar).', enforce: 'reglas' }
             ]
         },
         {
@@ -134,26 +164,20 @@
                 { key: 'finanzas.residentes_estado', sub: 'Residentes', parent: 'finanzas.usar', label: 'Ver estado de cuenta y detalle de movimientos', description: 'Abrir el estado de cuenta de un residente y el detalle de cada movimiento.', requires: ['finanzas.residentes_ver'], enforce: 'pantalla' },
                 { key: 'finanzas.residentes_crear', sub: 'Residentes', parent: 'finanzas.usar', label: 'Registrar residentes nuevos', description: 'Crea también al vecino en SISDEL con su código de acceso (que se muestra al guardar): equivale a poder entrar como ese vecino.', requires: ['finanzas.residentes_ver', 'usuarios.crear'], sensitive: true, enforce: 'reglas' },
                 { key: 'finanzas.residentes_editar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Editar residentes', description: 'Cambiar nombre, teléfono, DPI, lote y observaciones.', requires: ['finanzas.residentes_ver', 'usuarios.editar'], enforce: 'reglas' },
-                { key: 'finanzas.residentes_finiquitar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Finiquitar y reactivar residentes', description: 'Cerrar la relación con un residente (deja de cobrársele) o reactivarlo. Solo la trae el administrador; a cualquier otro usuario hay que marcársela aquí (no la da el acceso al Sistema Financiero ni las plantillas).', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
-                { key: 'finanzas.residentes_eliminar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Eliminar residentes', description: 'Quitar del Sistema Financiero a un residente que no tiene movimientos. Solo la trae el administrador; a cualquier otro usuario hay que marcársela aquí (no la da el acceso al Sistema Financiero ni las plantillas).', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                // Finiquitar y eliminar residentes estan en la tarjeta "Privilegios de gerente"
                 { key: 'finanzas.residentes_contactar', sub: 'Residentes', parent: 'finanzas.usar', label: 'Recordatorios y WhatsApp', description: 'Avisar por WhatsApp a los residentes: uno por uno, o a todos con un clic desde el WhatsApp del condominio (lo envía el servidor, de a poco).', requires: ['finanzas.residentes_ver'], enforce: 'reglas' },
 
                 { key: 'finanzas.cuotas_mes', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cuota del mes: aplicarla a todos los residentes', description: 'El botón Cuota del mes de Residentes y la generación automática de cuotas: carga la cuota de un mes a todos los residentes. Con el cobro manual activado en Configuración, cada vez pide la clave de quien la aplica. Quitarlo deja a ese usuario sin el botón.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
-                // optIn (pedido del dueno, 2026-11-16): empieza apagado para todos, tambien para el administrador; solo lo
-                // tiene quien lo tenga marcado en Configuracion (al administrador se lo marca el Master)
-                { key: 'finanzas.cuotas_meses', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Cargar cuotas por mes a un residente', description: 'Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí.', requires: ['finanzas.residentes_editar'], enforce: 'reglas', optIn: true },
-                { key: 'finanzas.cuotas_corregir', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Corregir cuotas duplicadas', description: 'Anular en bloque las cuotas repetidas.', requires: ['finanzas.residentes_ver'], sensitive: true, enforce: 'reglas' },
-                { key: 'finanzas.cargos_crear', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Crear cargos especiales y multas', description: 'Un cargo a todos los residentes o a uno solo, con el concepto que se elija.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
-                { key: 'finanzas.cargos_anular', sub: 'Cuotas y cargos', parent: 'finanzas.usar', label: 'Anular cargos', description: 'Anular una cuota o un cargo especial desde el estado de cuenta.', requires: ['finanzas.residentes_estado'], sensitive: true, enforce: 'reglas' },
+                // Cargos y multas, cuotas por mes, anular cargos y corregir cuotas duplicadas cuelgan de "Modificar saldos de
+                // residentes", en la tarjeta "Privilegios de gerente"
 
                 { key: 'finanzas.contabilidad_ver', sub: 'Contabilidad', parent: 'finanzas.usar', label: 'Ver la contabilidad', description: 'La lista de pagos y egresos con sus filtros y detalle.', requires: ['finanzas.ver'], enforce: 'pantalla' },
                 { key: 'finanzas.comprobantes', sub: 'Contabilidad', parent: 'finanzas.usar', label: 'Imprimir y descargar comprobantes', description: 'El comprobante de un ingreso o egreso y la imagen del documento adjunto.', requires: ['finanzas.contabilidad_ver'], enforce: 'pantalla' },
 
                 { key: 'finanzas.pagos_registrar', sub: 'Pagos', parent: 'finanzas.usar', label: 'Registrar pagos', description: 'Registrar el pago de un residente, con su documento y observaciones.', requires: ['finanzas.contabilidad_ver'], enforce: 'reglas' },
-                { key: 'finanzas.pagos_anular', sub: 'Pagos', parent: 'finanzas.usar', label: 'Anular pagos', description: 'Anular un pago ya registrado.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
 
                 { key: 'finanzas.egresos_registrar', sub: 'Egresos', parent: 'finanzas.usar', label: 'Registrar egresos', description: 'Registrar un gasto del condominio, con su categoría y documento.', requires: ['finanzas.contabilidad_ver'], enforce: 'reglas' },
-                { key: 'finanzas.egresos_anular', sub: 'Egresos', parent: 'finanzas.usar', label: 'Anular egresos', description: 'Anular un gasto ya registrado.', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas' },
+                // Cambiar la fecha de un pago y anular pagos y egresos estan en la tarjeta "Privilegios de gerente"
 
                 { key: 'finanzas.reportes_ingresos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de ingresos por período', description: 'Ingresos por mes con el detalle de cada uno.', requires: ['finanzas.ver'], enforce: 'pantalla' },
                 { key: 'finanzas.reportes_morosos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de morosos', description: 'Residentes en mora y meses adeudados, y las listas de al día y morosos.', requires: ['finanzas.ver'], enforce: 'pantalla' },
@@ -172,7 +196,7 @@
                 { key: 'finanzas.config_cuota', sub: 'Configuración', parent: 'finanzas.usar', label: 'Cambiar la cuota y el cobro', description: 'Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora.', requires: ['finanzas.config_ver'], sensitive: true, enforce: 'reglas' },
                 { key: 'finanzas.config_conceptos', sub: 'Configuración', parent: 'finanzas.usar', label: 'Editar los conceptos frecuentes', description: 'Los conceptos de ingresos y egresos que se repiten.', requires: ['finanzas.config_ver'], enforce: 'reglas' },
 
-                { key: 'finanzas.deshacer', sub: 'Datos', parent: 'finanzas.usar', label: 'Deshacer y rehacer', description: 'Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas.', requires: ['finanzas.ver'], sensitive: true, enforce: 'reglas' },
+                { key: 'finanzas.deshacer', sub: 'Datos', parent: 'finanzas.usar', label: 'Deshacer y rehacer', description: 'Los botones Deshacer y Rehacer (y Ctrl+Z): quitan el alta de un cargo o una cuota o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas. Un pago o un egreso solo se anula con su privilegio de gerente.', requires: ['finanzas.ver'], sensitive: true, enforce: 'reglas' },
                 // Chat de WhatsApp con los residentes (pedido del dueno, 2026-11-17): paraguas propio, del administrador por defecto;
                 // a cualquier otro usuario se le da en Configuracion. Las reglas solo dejan leer; escribe el servidor (whatsapp-chat.js).
                 { key: 'finanzas.whatsapp_chat', sub: 'WhatsApp', label: 'Chat de WhatsApp con residentes', description: 'La pantalla Chats WhatsApp de OIKOS: ver las conversaciones con los residentes (lo que se les envió, si les llegó y si lo leyeron, y lo que respondieron) y contestarles desde el WhatsApp del condominio. Son conversaciones privadas.', roles: ['admin'], sensitive: true, enforce: 'reglas' },
@@ -259,7 +283,10 @@
         }
     ];
 
-    const ITEMS = GROUPS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.id, groupTitle: g.title })));
+    // La tarjeta de gerente va primero en la pantalla, pero sus claves cuelgan de paraguas de otras tarjetas (finanzas.usar,
+    // usuarios.editar): el motor (padres antes que hijos) procesa las tarjetas `handPicked` al final
+    const ITEMS = [...GROUPS.filter((g) => !g.handPicked), ...GROUPS.filter((g) => g.handPicked)]
+        .flatMap((g) => g.items.map((i) => ({ ...i, group: g.id, groupTitle: g.title, ...(g.handPicked ? { handPicked: true } : {}) })));
     // Sin prototipo: una clave como "constructor" no existe en el catalogo
     const BY_KEY = Object.assign(Object.create(null), Object.fromEntries(ITEMS.map((i) => [i.key, i])));
     const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
@@ -278,11 +305,15 @@
     // por defecto SOLO esos roles (el administrador, que puede quitarsela con { clave: false }); para cualquier otro rol
     // empieza APAGADA aunque tenga el paraguas: solo vale con { clave: true } guardado en el usuario (como una optIn), y
     // no la encienden el paraguas, "Marcar todo" ni las plantillas de ese rol: se marca a mano, usuario por usuario.
+    // La tarjeta "Privilegios de gerente" (`handPicked`) junta lo que solo se marca a mano: cada accion suya lleva autoRoles u
+    // optIn, o cuelga de otra de la misma tarjeta (las de "Modificar saldos"), y un paraguas suyo (ver claves, eliminar
+    // usuarios) se marca a mano para todo rol que no lo traiga por defecto.
     // Los padres van antes que sus hijos en el catalogo (se verifica al cargar).
     ITEMS.forEach((item, index) => {
         if (item.parent && !(BY_KEY[item.parent] && KEYS.indexOf(item.parent) < index)) throw new Error(`privilegios: ${item.key} necesita su paraguas ${item.parent} definido antes`);
         if (item.optIn && (!item.parent || item.roles)) throw new Error(`privilegios: ${item.key} es optIn y solo puede ser una accion sin roles`);
         if (item.autoRoles && (!item.parent || item.roles || item.optIn || !Array.isArray(item.autoRoles) || !item.autoRoles.length)) throw new Error(`privilegios: ${item.key} lleva autoRoles y solo puede ser una accion sin roles ni optIn`);
+        if (item.handPicked && item.parent && !item.optIn && !item.autoRoles && !BY_KEY[item.parent].handPicked) throw new Error(`privilegios: ${item.key} esta en la tarjeta de gerente y debe marcarse a mano (autoRoles u optIn) o colgar de otra de la tarjeta`);
         let root = item;
         while (root.parent) root = BY_KEY[root.parent];
         item.root = root.key;
@@ -295,10 +326,18 @@
     const isOptIn = (key) => !!(BY_KEY[key] && BY_KEY[key].optIn);
     // Para ese rol la accion empieza apagada y solo vale marcada a mano: una optIn siempre; una con autoRoles, todo rol que
     // no sea de la lista. Sin rol (un conjunto que no se sabe para quien es), toda accion que algun rol deba marcar a mano.
-    const markOnlyItem = (item, role) => !!item && (!!item.optIn || (!!item.autoRoles && (role === undefined || !item.autoRoles.includes(role))));
+    // Un paraguas de la tarjeta de gerente (ver claves, eliminar usuarios) ya solo lo tiene quien lo trae por su rol o lo
+    // tiene marcado: para los demas roles tampoco se enciende en bloque.
+    const markOnlyItem = (item, role) => !!item && (!!item.optIn
+        || (!!item.autoRoles && (role === undefined || !item.autoRoles.includes(role)))
+        || (!!item.handPicked && !item.parent && (role === undefined || !(item.roles || []).includes(role))));
     const explicitFor = (key, role) => markOnlyItem(BY_KEY[key], role);
-    const bulkDescendantsOf = (key, role) => descendantsOf(key).filter((d) => !explicitFor(d, role));
+    // Lo que se enciende en bloque con un paraguas: sus acciones, salvo las que se marcan a mano y todo lo que cuelga de ellas
+    // (las de "Modificar saldos" llegan solo con el)
+    const bulkDescendantsOf = (key, role) => (CHILDREN[key] || []).filter((c) => !explicitFor(c, role)).flatMap((c) => [c, ...bulkDescendantsOf(c, role)]);
     const ancestorsOf = (key) => (BY_KEY[key] && BY_KEY[key].parent ? [...ancestorsOf(BY_KEY[key].parent), BY_KEY[key].parent] : []);
+    // Para ese rol no se enciende en bloque ("Marcar todos", plantillas): se marca a mano o cuelga de una que se marca a mano
+    const handOnly = (key, role) => explicitFor(key, role) || ancestorsOf(key).some((a) => explicitFor(a, role));
 
     // Algunos privilegios solo los puede tener ciertos roles (onlyRoles, en el paraguas raiz): asignarlos a otro rol no tiene efecto
     const allowedFor = (key, role) => {
@@ -340,7 +379,7 @@
         },
         {
             id: 'sys-contador', name: 'Contador / tesorero', role: 'operador', system: true,
-            description: 'Solo el Sistema Financiero (residentes, cargos, pagos, egresos y reportes) y los datos de los vecinos que necesita.',
+            description: 'Solo el Sistema Financiero (residentes, pagos, egresos y reportes) y los datos de los vecinos que necesita. Los privilegios de gerente (cargos y saldos, anular, cambiar fechas y nombres, eliminar) se le marcan aparte.',
             claves: [...tree('usuarios.ver'), 'usuarios.crear', 'usuarios.editar', 'usuarios.ficha', 'mensajes.recibir', ...tree('finanzas.ver', 'finanzas.usar')]
         },
         {
@@ -545,18 +584,19 @@
     }
 
     // Claves de una plantilla: las del sistema son exactas; las propias guardadas antes de las acciones se amplian.
-    // Las acciones optIn nunca vienen en una plantilla, ni las de autoRoles para un rol que no sea de la lista: se marcan
-    // a mano, usuario por usuario. `role` es el rol de quien recibe la plantilla (sin el, el rol sugerido de la plantilla).
+    // Las acciones optIn nunca vienen en una plantilla, ni las de autoRoles para un rol que no sea de la lista, ni los
+    // privilegios de gerente que ese rol no trae (ni lo que cuelga de ellos): se marcan a mano, usuario por usuario.
+    // `role` es el rol de quien recibe la plantilla (sin el, el rol sugerido de la plantilla).
     function templateKeys(template, role) {
         const forRole = role || template.role;
         const keys = template.system ? (template.claves || []).filter((k) => BY_KEY[k]) : expandTemplate(template.claves, forRole);
-        return keys.filter((k) => !explicitFor(k, forRole));
+        return keys.filter((k) => !handOnly(k, forRole));
     }
 
     return {
         ROLES, ROLE_LABELS, GROUPS, ITEMS, KEYS, PAGES, ROLE_HOME, TEMPLATES,
         defaultsOf, cleanOverrides, effective, has, allowedFor, toOverrides, toggle, cascade,
-        canEnter, pagesFor, landing, itemOf, sensitiveKeys, templateById, templateKeys, expandTemplate, isOptIn, explicitFor,
+        canEnter, pagesFor, landing, itemOf, sensitiveKeys, templateById, templateKeys, expandTemplate, isOptIn, explicitFor, handOnly,
         childrenOf: (key) => (CHILDREN[key] || []).slice(), descendantsOf, ancestorsOf
     };
 }));

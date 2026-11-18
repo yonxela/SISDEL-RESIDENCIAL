@@ -41,7 +41,25 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-151 privilegios: 32 paraguas y 119 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+154 privilegios: 32 paraguas y 122 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+
+### Privilegios de gerente
+
+| Privilegio | Qué permite | Por defecto | Garantía |
+| --- | --- | --- | --- |
+| `finanzas.residentes_eliminar` | Eliminar residentes **(sensible)**. Quitar del Sistema Financiero a un residente que no tiene movimientos. | los de su paraguas | Reglas |
+| `finanzas.residentes_finiquitar` | Finiquitar y reactivar residentes **(sensible)**. Cerrar la relación con un residente (deja de cobrársele) o reactivarlo. | los de su paraguas | Reglas |
+| `usuarios.vecinos_nombre` | Cambiar el nombre de los residentes **(sensible)**. Corregir o cambiar el nombre de un residente, en el Sistema Financiero, en la ficha del vecino o en Rondas. Sin este privilegio el nombre se ve pero no se cambia (al registrar un residente nuevo sí se escribe). | los de su paraguas | Reglas |
+| `finanzas.saldos_modificar` | Modificar saldos de residentes **(sensible)**. Todo lo que cambia lo que debe un residente fuera de sus pagos: cargos especiales y multas, cuotas por mes, anular cargos y cuotas y corregir cuotas duplicadas (cada uno se puede quitar abajo). Registrar pagos y la Cuota del mes de todos no lo necesitan. | los de su paraguas | Reglas |
+| `finanzas.cargos_crear` | Crear cargos especiales y multas **(sensible)**. Un cargo a todos los residentes o a uno solo, con el concepto que se elija. | los de su paraguas | Reglas |
+| `finanzas.cargos_anular` | Anular cargos y cuotas **(sensible)**. Anular una cuota o un cargo especial desde el estado de cuenta. | los de su paraguas | Reglas |
+| `finanzas.cuotas_meses` | Cargar cuotas por mes a un residente. Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí. | los de su paraguas | Reglas |
+| `finanzas.cuotas_corregir` | Corregir cuotas duplicadas **(sensible)**. Anular en bloque las cuotas repetidas. | los de su paraguas | Reglas |
+| `finanzas.pagos_fecha` | Cambiar la fecha de un pago al registrarlo **(sensible)**. Registrar un pago con una fecha anterior a hoy (por ejemplo, una boleta de días atrás); la fecha cuenta para la mora. Sin este privilegio el pago queda con la fecha y la hora en que se registra. | los de su paraguas | Reglas |
+| `finanzas.pagos_anular` | Anular pagos (ingresos) **(sensible)**. Anular un pago ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
+| `finanzas.egresos_anular` | Anular egresos **(sensible)**. Anular un gasto ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
+| `usuarios.codigos` | Ver y cambiar las claves de acceso **(sensible)**. Ver y reemplazar la clave (código de acceso) de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios. | `admin` | Reglas |
+| `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios (también vecinos) con su código, vehículos y visitas desde el panel de administración (necesita poder ver las claves). | `admin` | Reglas |
 
 ### Usuarios y vecinos
 
@@ -59,8 +77,6 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `usuarios.pago` | Cambiar el estado de pago **(sensible)**. Marcar a un vecino como moroso o al día a mano (con la mora automática lo calcula el Sistema Financiero). | los de su paraguas | Reglas |
 | `usuarios.ficha` | Botón Editar de la ficha del vecino **(sensible)**. La ventana del vecino se abre en solo lectura y este botón la desbloquea. Además deja ver y cambiar los datos del propietario (nombre, NIT, dirección, DPI y observaciones) aunque no use el Sistema Financiero. El agua, el cobro y las cuotas siguen pidiendo sus privilegios del Sistema Financiero. | los de su paraguas | Reglas |
 | `usuarios.emergencia` | Editar contactos de emergencia de vecinos. Los familiares a quienes avisa el botón de pánico de un vecino. | los de su paraguas | Reglas |
-| `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios con su código, vehículos y visitas (necesita poder ver los códigos de acceso). | `admin` | Reglas |
-| `usuarios.codigos` | Ver y cambiar códigos de acceso **(sensible)**. Ver y reemplazar el código de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios. | `admin` | Reglas |
 | `usuarios.privilegios` | Asignar privilegios **(sensible)**. Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador. | `admin` | Reglas |
 | `plantillas.gestionar` | Crear, editar y borrar plantillas. Las plantillas de privilegios propias del condominio (las del sistema no se pueden cambiar). | los de su paraguas | Reglas |
 
@@ -141,20 +157,12 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.residentes_estado` | Ver estado de cuenta y detalle de movimientos. Abrir el estado de cuenta de un residente y el detalle de cada movimiento. | los de su paraguas | Pantalla |
 | `finanzas.residentes_crear` | Registrar residentes nuevos **(sensible)**. Crea también al vecino en SISDEL con su código de acceso (que se muestra al guardar): equivale a poder entrar como ese vecino. | los de su paraguas | Reglas |
 | `finanzas.residentes_editar` | Editar residentes. Cambiar nombre, teléfono, DPI, lote y observaciones. | los de su paraguas | Reglas |
-| `finanzas.residentes_finiquitar` | Finiquitar y reactivar residentes **(sensible)**. Cerrar la relación con un residente (deja de cobrársele) o reactivarlo. Solo la trae el administrador; a cualquier otro usuario hay que marcársela aquí (no la da el acceso al Sistema Financiero ni las plantillas). | los de su paraguas | Reglas |
-| `finanzas.residentes_eliminar` | Eliminar residentes **(sensible)**. Quitar del Sistema Financiero a un residente que no tiene movimientos. Solo la trae el administrador; a cualquier otro usuario hay que marcársela aquí (no la da el acceso al Sistema Financiero ni las plantillas). | los de su paraguas | Reglas |
 | `finanzas.residentes_contactar` | Recordatorios y WhatsApp. Avisar por WhatsApp a los residentes: uno por uno, o a todos con un clic desde el WhatsApp del condominio (lo envía el servidor, de a poco). | los de su paraguas | Reglas |
 | `finanzas.cuotas_mes` | Cuota del mes: aplicarla a todos los residentes **(sensible)**. El botón Cuota del mes de Residentes y la generación automática de cuotas: carga la cuota de un mes a todos los residentes. Con el cobro manual activado en Configuración, cada vez pide la clave de quien la aplica. Quitarlo deja a ese usuario sin el botón. | los de su paraguas | Reglas |
-| `finanzas.cuotas_meses` | Cargar cuotas por mes a un residente. Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí. | los de su paraguas | Reglas |
-| `finanzas.cuotas_corregir` | Corregir cuotas duplicadas **(sensible)**. Anular en bloque las cuotas repetidas. | los de su paraguas | Reglas |
-| `finanzas.cargos_crear` | Crear cargos especiales y multas **(sensible)**. Un cargo a todos los residentes o a uno solo, con el concepto que se elija. | los de su paraguas | Reglas |
-| `finanzas.cargos_anular` | Anular cargos **(sensible)**. Anular una cuota o un cargo especial desde el estado de cuenta. | los de su paraguas | Reglas |
 | `finanzas.contabilidad_ver` | Ver la contabilidad. La lista de pagos y egresos con sus filtros y detalle. | los de su paraguas | Pantalla |
 | `finanzas.comprobantes` | Imprimir y descargar comprobantes. El comprobante de un ingreso o egreso y la imagen del documento adjunto. | los de su paraguas | Pantalla |
 | `finanzas.pagos_registrar` | Registrar pagos. Registrar el pago de un residente, con su documento y observaciones. | los de su paraguas | Reglas |
-| `finanzas.pagos_anular` | Anular pagos **(sensible)**. Anular un pago ya registrado. | los de su paraguas | Reglas |
 | `finanzas.egresos_registrar` | Registrar egresos. Registrar un gasto del condominio, con su categoría y documento. | los de su paraguas | Reglas |
-| `finanzas.egresos_anular` | Anular egresos **(sensible)**. Anular un gasto ya registrado. | los de su paraguas | Reglas |
 | `finanzas.reportes_ingresos` | Reporte de ingresos por período. Ingresos por mes con el detalle de cada uno. | los de su paraguas | Pantalla |
 | `finanzas.reportes_morosos` | Reporte de morosos. Residentes en mora y meses adeudados, y las listas de al día y morosos. | los de su paraguas | Pantalla |
 | `finanzas.reportes_gastos` | Reporte de gastos por categoría. En qué se gasta el dinero del condominio. | los de su paraguas | Pantalla |
@@ -169,7 +177,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.config_general` | Cambiar nombre, idioma, moneda y tema. Estos datos son comunes a todos los usuarios del condominio. | los de su paraguas | Reglas |
 | `finanzas.config_cuota` | Cambiar la cuota y el cobro **(sensible)**. Cuota mensual, día de cobro, días de gracia y cobro automático o manual: decide lo que se cobra y quién está en mora. | los de su paraguas | Reglas |
 | `finanzas.config_conceptos` | Editar los conceptos frecuentes. Los conceptos de ingresos y egresos que se repiten. | los de su paraguas | Reglas |
-| `finanzas.deshacer` | Deshacer y rehacer **(sensible)**. Los botones Deshacer y Rehacer (y Ctrl+Z): quitan un alta o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas. | los de su paraguas | Reglas |
+| `finanzas.deshacer` | Deshacer y rehacer **(sensible)**. Los botones Deshacer y Rehacer (y Ctrl+Z): quitan el alta de un cargo o una cuota o devuelven una anulación, solo de movimientos hechos en las últimas 2 horas. Un pago o un egreso solo se anula con su privilegio de gerente. | los de su paraguas | Reglas |
 | `finanzas.whatsapp_chat` | Chat de WhatsApp con residentes **(sensible)**. La pantalla Chats WhatsApp de OIKOS: ver las conversaciones con los residentes (lo que se les envió, si les llegó y si lo leyeron, y lo que respondieron) y contestarles desde el WhatsApp del condominio. Son conversaciones privadas. | `admin` | Reglas |
 
 ### Rondas de vigilancia (RONDIN)

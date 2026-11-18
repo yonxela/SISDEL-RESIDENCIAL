@@ -80,6 +80,9 @@
         [/^bankExport\(/, ['reportes_exportar']],
         [/^fixDuplicateFees\(/, ['cuotas_corregir']],
         [/^(openModal\('modal-bulk-charge'\)|applyBulkCharge\()/, ['cargos_crear']],
+        // Cargos, cuotas por mes y corregir duplicadas cambian lo que debe un residente: cuelgan de "Modificar saldos de
+        // residentes" (privilegio de gerente); sin el, ninguno vale aunque este marcado
+        [/^(openModal\('modal-bulk-charge'\)|applyBulkCharge\(|fixDuplicateFees\(|openResidentFeeMonths\(|toggleResRetro\(|setAllResRetroMonths\()/, ['saldos_modificar']],
         [/^(openModal\('modal-income'\)|handleTransactionSubmit\(\s*event\s*,\s*'income'\s*\))/, ['pagos_registrar']],
         [/^(openModal\('modal-expense'\)|handleTransactionSubmit\(\s*event\s*,\s*'expense'\s*\))/, ['egresos_registrar']],
         [/deleteTransaction\(/, ANNUL_KEYS],
@@ -136,6 +139,8 @@
         [['cuotas_corregir'], ['.dup-fee-banner button[onclick="fixDuplicateFees()"]']],
         [['cargos_crear'], ['#view-accounting button[onclick="openModal(\'modal-bulk-charge\')"]', '#modal-bulk-charge']],
         [['pagos_registrar'], ['#view-accounting button[onclick="openModal(\'modal-income\')"]', '#modal-income']],
+        // La fecha del pago (privilegio de gerente): sin el, el pago queda con la fecha y la hora en que se registra
+        [['pagos_fecha'], ['#inc-date-wrap']],
         [['egresos_registrar'], ['#view-accounting button[onclick="openModal(\'modal-expense\')"]', '#modal-expense']],
         [ANNUL_KEYS, ['#tx-detail-footer button[onclick*="deleteTransaction("]', '#ec-table-body button[onclick*="deleteTransaction("]']],
         [['contabilidad_ver'], ['#view-accounting > div:has(#accounting-table-body)', '#filter-all', '#filter-income', '#filter-expense']],
@@ -238,7 +243,8 @@
         // 1. Estilos
         let style = doc.getElementById('sisdel-privilegios');
         if (!style) { style = doc.createElement('style'); style.id = 'sisdel-privilegios'; doc.head.appendChild(style); }
-        style.textContent = cssFor(can);
+        // (el nombre bloqueado de un residente se ve atenuado: ver "Nombre del residente" abajo)
+        style.textContent = cssFor(can) + '\n#res-name.sisdel-name-locked { opacity: 0.7 !important; cursor: not-allowed !important; }';
 
         // 2. Campos de configuracion sin permiso
         Object.entries(DISABLE).forEach(([name, selectors]) => {
@@ -328,6 +334,29 @@
             deny();
             return false;
         });
+        // Nombre del residente: solo lo cambia quien tiene "Cambiar el nombre de los residentes" (privilegio de gerente,
+        // usuarios.vecinos_nombre; no es finanzas.*). Al editar a uno que ya existe el campo queda de solo lectura; al
+        // registrar uno nuevo se escribe. finanzas-sync.js y las reglas tambien lo exigen.
+        if (!can('usuarios.vecinos_nombre')) {
+            const NAME_LOCKED = 'Su usuario no tiene el privilegio para cambiar el nombre de un residente.';
+            const lockName = (locked) => {
+                const field = doc.getElementById('res-name');
+                if (!field) return;
+                field.readOnly = locked;
+                field.title = locked ? NAME_LOCKED : '';
+                field.classList.toggle('sisdel-name-locked', locked);
+            };
+            const editing = () => { try { return win.eval('typeof residentBeingEditedId !== "undefined" && residentBeingEditedId !== null'); } catch (e) { return false; } };
+            ['editResident', 'openModal'].forEach((name) => {
+                const original = win[name];
+                if (typeof original !== 'function') return;
+                win[name] = function sisdelNameLock(...args) {
+                    const result = original.apply(this, args);
+                    if (name === 'editResident' || args[0] === 'modal-resident') lockName(editing());
+                    return result;
+                };
+            });
+        }
         // Cuotas por mes de un residente y cuotas automaticas: silenciosas (no son una accion del usuario)
         wrap('applyRetroactiveChargesToResident', () => (can(PREFIX + 'cuotas_meses') ? true : { value: 0 }));
         wrap('checkMonthlyFees', () => (can(PREFIX + 'cuotas_mes') ? true : false));

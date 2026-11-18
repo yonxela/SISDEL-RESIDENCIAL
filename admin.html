@@ -354,10 +354,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261117z"></script>
-    <script src="sisdel-core.js?v=20261117z"></script>
+    <script src="privilegios.js?v=20261118m"></script>
+    <script src="sisdel-core.js?v=20261118m"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
-    <script src="privilegios-ui.js?v=20261117z"></script>
+    <script src="privilegios-ui.js?v=20261118m"></script>
     <script src="reportes-export.js?v=20261115a"></script>
     <script src="reportes-ui.js?v=20261116e"></script>
     <script src="rondas-core.js?v=20261117c"></script>
@@ -765,10 +765,15 @@
                 // Activar o desactivar y cambiar el estado de pago son privilegios aparte (usuarios.estado y usuarios.pago)
                 document.getElementById('editUserActive').disabled = !editable || !caps.estado;
                 document.getElementById('editUserPayment').disabled = !editable || !caps.pago;
-                // El nombre de un administrador solo lo cambia el programador con la clave master (renameAdmin)
+                // El nombre de un administrador solo lo cambia el programador con la clave master (renameAdmin), y el de un
+                // residente (vecino) solo quien tiene "Cambiar el nombre de los residentes" (privilegio de gerente)
                 const adminName = user.role === SISDEL.ROLES.ADMIN;
-                if (adminName) document.getElementById('editUserName').disabled = true;
-                document.getElementById('editUserNameHelp').style.display = adminName ? '' : 'none';
+                const vecinoName = nameLockedFor(user);
+                if (adminName || vecinoName) document.getElementById('editUserName').disabled = true;
+                const nameHelp = document.getElementById('editUserNameHelp');
+                nameHelp.textContent = adminName ? 'El nombre de un administrador solo lo cambia el programador con la clave master.'
+                    : 'Su usuario no tiene el privilegio para cambiar el nombre de un residente (privilegios de gerente).';
+                nameHelp.style.display = adminName || (vecinoName && editable) ? '' : 'none';
                 // Nadie se desactiva a si mismo
                 if (user.id === session.userId) {
                     document.getElementById('editUserActive').disabled = true;
@@ -807,6 +812,9 @@
                 document.getElementById('editLockedHelp').style.display = editable && !canUnlock ? '' : 'none';
                 modalEditUser.style.display = 'flex';
             };
+
+            // El nombre de un residente solo lo cambia quien tiene usuarios.vecinos_nombre (las reglas tambien lo exigen)
+            function nameLockedFor(user) { return !!user && user.role === SISDEL.ROLES.VECINO && !SISDEL.can('usuarios.vecinos_nombre'); }
 
             // Solo lectura: cada campo recuerda si se podra cambiar (data-allowed) y queda bloqueado; sin Guardar ni
             // acciones de escritura (placas, cargar meses) hasta pulsar Editar
@@ -895,8 +903,9 @@
                     casa: document.getElementById('editUserCasa').value,
                     cargo: document.getElementById('editUserCargo').value.trim().slice(0, 60)
                 };
-                // El nombre de un administrador no se manda: solo lo cambia el programador con la clave master
-                if (editing && editing.role === SISDEL.ROLES.ADMIN) delete updates.name;
+                // El nombre de un administrador no se manda: solo lo cambia el programador con la clave master; el de un
+                // residente, solo con el privilegio de gerente
+                if (editing && (editing.role === SISDEL.ROLES.ADMIN || nameLockedFor(editing))) delete updates.name;
                 // La fase solo se envia si cambio (los usuarios de antes no la tienen)
                 const fase = document.getElementById('editUserFase').value.trim().slice(0, 40);
                 if (editing && fase !== (editing.fase || '')) updates.fase = fase;

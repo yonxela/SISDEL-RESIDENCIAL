@@ -107,7 +107,13 @@ const ok = (needs, ...keys) => F.satisfied(needs, allow(...keys));
 
 console.log('\nPrivilegios: movimientos');
 const income = { id: 'p1', type: 'income', amount: 500, resiId: 'u1', updated_at: T1 };
-equal('registrar un pago exige pagos_registrar', [ok(F.movementNeeds(income, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds(income, null), 'finanzas.egresos_registrar')], [true, false]);
+// Un pago nuevo lleva la fecha de su registro (date = created_at, como lo guarda OIKOS)
+const incomeNew = { ...income, date: T1, created_at: T1 };
+equal('registrar un pago exige pagos_registrar', [ok(F.movementNeeds(incomeNew, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds(incomeNew, null), 'finanzas.egresos_registrar')], [true, false]);
+// Privilegio de gerente (2026-11-18): un pago con otra fecha que la de su registro exige ademas cambiar la fecha
+const backdated = { ...incomeNew, date: '2026-10-15T18:00:00.000Z' };
+equal('un pago con otra fecha que la de su registro exige ademas cambiar la fecha (pagos_fecha)', [ok(F.movementNeeds(backdated, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds(backdated, null), 'finanzas.pagos_registrar', 'finanzas.pagos_fecha'), ok(F.movementNeeds(backdated, null), 'finanzas.pagos_fecha')], [false, true, false]);
+equal('hasta 10 minutos de diferencia con su registro es la misma fecha; sin fecha o sin registro, la pide', [F.paymentDateMoved({ date: '2026-11-18T10:09:00.000Z', created_at: '2026-11-18T10:00:00.000Z' }), F.paymentDateMoved({ date: '2026-11-18T10:11:00.000Z', created_at: '2026-11-18T10:00:00.000Z' }), F.paymentDateMoved({ date: T1 }), F.paymentDateMoved({ created_at: T1 })], [false, true, true, true]);
 const expense = { id: 'e1', type: 'expense', amount: 90, concept: 'Luz', updated_at: T1 };
 equal('registrar un egreso exige egresos_registrar', [ok(F.movementNeeds(expense, null), 'finanzas.egresos_registrar'), ok(F.movementNeeds(expense, null), 'finanzas.pagos_registrar')], [true, false]);
 equal('un movimiento nuevo en cero, negativo o con monto como texto no se sube (las reglas lo rechazan)', [ok(F.movementNeeds({ ...income, amount: 0 }, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds({ ...income, amount: -5 }, null), 'finanzas.pagos_registrar'), ok(F.movementNeeds({ ...income, amount: '500' }, null), 'finanzas.pagos_registrar')], [false, false, false]);
@@ -121,11 +127,14 @@ equal('un tipo desconocido no se acepta', ok(F.movementNeeds({ id: 'x', type: 'o
 const annulled = (tx, extra = {}) => ({ ...tx, deleted: true, deleted_at: T2, deleted_reason: 'error', updated_at: T2, ...extra });
 const hoy = new Date().toISOString();
 const reciente = { ...income, created_at: hoy };
-equal('anular un pago exige anular pagos o deshacer (quitar un alta reciente)', [ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.pagos_anular'), ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.egresos_anular', 'finanzas.cargos_anular')], [true, true, false]);
+// Anular pagos y egresos es privilegio de gerente: "deshacer" ya no los anula, ni recientes (2026-11-18)
+equal('anular un pago exige anular pagos (deshacer ya no alcanza, aunque sea reciente)', [ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.pagos_anular'), ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(reciente), reciente), 'finanzas.egresos_anular', 'finanzas.cargos_anular')], [true, false, false]);
+const cargoReciente = { ...extraCharge, created_at: hoy };
+equal('deshacer si quita el alta de un cargo reciente', [ok(F.movementNeeds(annulled(cargoReciente), cargoReciente), 'finanzas.deshacer'), ok(F.movementNeeds(annulled({ ...expense, created_at: hoy }), { ...expense, created_at: hoy }), 'finanzas.deshacer')], [true, false]);
 const viejo = { ...income, created_at: '2026-01-01T10:00:00.000Z' };
 equal('deshacer no anula un movimiento viejo (pasaron mas de 2 horas)', [ok(F.movementNeeds(annulled(viejo), viejo), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(viejo), viejo), 'finanzas.pagos_anular')], [false, true]);
 equal('deshacer sin fecha de alta no anula (los movimientos sin created_at no son recientes)', ok(F.movementNeeds(annulled(income), income), 'finanzas.deshacer'), false);
-equal('la ventana de deshacer se mide con la hora dada', [ok(F.movementNeeds(annulled(reciente), reciente, Date.parse(hoy) + 60 * 60 * 1000), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(reciente), reciente, Date.parse(hoy) + 3 * 60 * 60 * 1000), 'finanzas.deshacer')], [true, false]);
+equal('la ventana de deshacer se mide con la hora dada', [ok(F.movementNeeds(annulled(cargoReciente), cargoReciente, Date.parse(hoy) + 60 * 60 * 1000), 'finanzas.deshacer'), ok(F.movementNeeds(annulled(cargoReciente), cargoReciente, Date.parse(hoy) + 3 * 60 * 60 * 1000), 'finanzas.deshacer')], [true, false]);
 equal('anular un egreso exige su propio privilegio', [ok(F.movementNeeds(annulled(expense), expense), 'finanzas.egresos_anular'), ok(F.movementNeeds(annulled(expense), expense), 'finanzas.pagos_anular', 'finanzas.cargos_anular')], [true, false]);
 equal('anular un cargo especial exige anular cargos', [ok(F.movementNeeds(annulled(extraCharge), extraCharge), 'finanzas.cargos_anular'), ok(F.movementNeeds(annulled(extraCharge), extraCharge), 'finanzas.cuotas_corregir', 'finanzas.pagos_anular')], [true, false]);
 equal('corregir cuotas duplicadas alcanza para anular una cuota', ok(F.movementNeeds(annulled(autoFee), autoFee), 'finanzas.cuotas_corregir'), true);
@@ -142,7 +151,9 @@ console.log('\nPrivilegios: residentes');
 const resNow = { id: 'u1', name: 'Ana', unit: 'Casa 1', contact: '+50255555678', dpi: '111', status: 'active', feeFrom: '2026-11', createdAt: T1, updated_at: T1 };
 equal('registrar un residente nuevo exige residentes_crear y crear usuarios (crea al vecino)', [ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear', 'usuarios.crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_crear'), ok(F.residentNeeds(resNow, null, false), 'finanzas.residentes_editar', 'usuarios.crear')], [true, false, false]);
 equal('cambiar el DPI exige residentes_editar', [ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, dpi: '222', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false]);
-equal('cambiar el nombre (vive en SISDEL) exige residentes_editar y editar usuarios', [ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false, false]);
+// El nombre es ademas privilegio de gerente (usuarios.vecinos_nombre, 2026-11-18); la casa y el telefono no
+equal('cambiar el nombre (vive en SISDEL) exige residentes_editar, editar usuarios y cambiar el nombre de los residentes', [ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar', 'usuarios.vecinos_nombre'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), ok(F.residentNeeds({ ...resNow, name: 'Ana M.', updated_at: T2 }, resNow, true), 'finanzas.residentes_finiquitar')], [true, false, false, false]);
+equal('cambiar la casa o el telefono no pide cambiar el nombre', [ok(F.residentNeeds({ ...resNow, unit: 'Casa 2', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar'), ok(F.residentNeeds({ ...resNow, contact: '+50255550000', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar', 'usuarios.editar')], [true, true]);
 equal('cambiar solo el DPI no exige editar usuarios', ok(F.residentNeeds({ ...resNow, dpi: '333', updated_at: T2 }, resNow, true), 'finanzas.residentes_editar'), true);
 
 console.log('\nEscrituras por campo y vecinos eliminados');

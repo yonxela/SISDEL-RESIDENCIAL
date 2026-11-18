@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 151 privilegios: 32 paraguas y 119 acciones', [P.KEYS.length, roots.length, kids.length], [151, 32, 119]);
+equal('hay 154 privilegios: 32 paraguas y 122 acciones', [P.KEYS.length, roots.length, kids.length], [154, 32, 122]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -76,7 +76,7 @@ equal('las acciones heredan el rol por defecto de su paraguas (las optIn y las d
 // Acciones que empiezan apagadas (optIn): "Cargar cuotas por mes" (pedido del dueno, 2026-11-16)
 console.log('\nAcciones optIn (empiezan apagadas)');
 equal('cargar cuotas por mes es optIn y nadie lo trae por defecto (ni el administrador)', [P.isOptIn('finanzas.cuotas_meses'), P.has('admin', {}, 'finanzas.cuotas_meses'), 'finanzas.cuotas_meses' in P.defaultsOf('admin'), P.has('operador', { 'finanzas.usar': true }, 'finanzas.cuotas_meses')], [true, false, false, false]);
-equal('marcado en el usuario si lo tiene (con su paraguas), sin el paraguas no', [P.has('admin', { 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses'), P.has('operador', { 'finanzas.usar': true, 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses'), P.has('admin', { 'finanzas.usar': false, 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses')], [true, true, false]);
+equal('marcado en el usuario si lo tiene (con su paraguas, Modificar saldos), sin el paraguas no', [P.has('admin', { 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses'), P.has('operador', { 'finanzas.usar': true, 'finanzas.saldos_modificar': true, 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses'), P.has('operador', { 'finanzas.usar': true, 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses'), P.has('admin', { 'finanzas.usar': false, 'finanzas.cuotas_meses': true }, 'finanzas.cuotas_meses')], [true, true, false, false]);
 equal('toOverrides guarda la optIn solo si esta marcada', [P.toOverrides('admin', Object.keys(P.defaultsOf('admin'))), P.toOverrides('admin', [...Object.keys(P.defaultsOf('admin')), 'finanzas.cuotas_meses'])], [{}, { 'finanzas.cuotas_meses': true }]);
 equal('effective y toOverrides van y vuelven con la optIn marcada', (() => { const o = { 'finanzas.cuotas_meses': true }; const e = P.effective('admin', o); return P.toOverrides('admin', Object.keys(e).filter((k) => e[k])); })(), { 'finanzas.cuotas_meses': true });
 equal('marcarla a mano trae su paraguas y lo que necesita', (() => { const set = new Set(); P.toggle(set, 'finanzas.cuotas_meses', true); return ['finanzas.cuotas_meses', 'finanzas.usar', 'finanzas.residentes_editar'].map((k) => set.has(k)); })(), [true, true, true]);
@@ -106,6 +106,51 @@ equal('una plantilla propia que las nombra no se las da a un operador', AUTO.map
 yes('la pantalla de privilegios las trata como "se habilita aparte" para los demas roles (explicitFor con el rol) y ya no usa isOptIn', (() => { const ui = read('privilegios-ui.js'); return !/isOptIn/.test(ui) && /PRIV\.explicitFor\(i\.key, opts\.role\)/.test(ui) && /PRIV\.templateKeys\(tpl, role\)/.test(ui) && /templateKeys\(\{ \.\.\.tpl, claves: tpl\.claves \|\| \[\] \}, form\.role\)/.test(ui) && /role: opts\.role/.test(ui); })());
 yes('admin.html pasa el rol al aplicar una plantilla a un usuario nuevo', /PRIV\.toOverrides\(role, PRIV\.templateKeys\(template, role\)\)/.test(read('admin.html')));
 yes('OIKOS las protege en las tres capas con su privilegio: pantalla, subida a la nube y reglas', /\^\(openFiniquito\|reactivateResident\|handleFiniquitoSubmit\)/.test(read('finanzas-bloqueo.js')) && /\^deleteResident\\\(/.test(read('finanzas-bloqueo.js')) && /needs\.push\(\['finanzas\.residentes_finiquitar'\]\)/.test(read('finanzas-sync.js')) && /needs\.push\(\['finanzas\.residentes_eliminar'\]\)/.test(read('finanzas-sync.js')) && /pFinanzasResidentesFiniquitar\(condoId\)/.test(read('firestore.rules')) && /pFinanzasResidentesEliminar\(condoId\)/.test(read('firestore.rules')));
+
+// Privilegios de gerente (pedido del dueno, 2026-11-18): eliminar residentes, cambiar la fecha de un pago, modificar saldos,
+// cambiar nombres, anular ingresos y egresos y ver claves. Solo los tiene el usuario al que se le marcan
+console.log('\nPrivilegios de gerente');
+const GER = P.GROUPS.find((g) => g.id === 'gerente');
+const GER_KEYS = ['finanzas.residentes_eliminar', 'finanzas.residentes_finiquitar', 'usuarios.vecinos_nombre', 'finanzas.saldos_modificar', 'finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_meses', 'finanzas.cuotas_corregir', 'finanzas.pagos_fecha', 'finanzas.pagos_anular', 'finanzas.egresos_anular', 'usuarios.codigos', 'usuarios.eliminar'];
+equal('la tarjeta de gerente va primero en la pantalla, con su nota, y trae exactamente lo pedido', [P.GROUPS[0].id, GER.handPicked, !!GER.note, GER.items.map((i) => i.key)], ['gerente', true, true, GER_KEYS]);
+yes('cada privilegio de gerente lo hacen cumplir las reglas y es sensible (menos cuotas por mes, que ya era asi)', GER.items.every((i) => i.enforce === 'reglas' && (i.sensitive || i.key === 'finanzas.cuotas_meses')));
+yes('el motor la procesa al final (sus paraguas estan en otras tarjetas)', GER.items.every((i) => !i.parent || P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)) && P.KEYS.indexOf('finanzas.usar') < P.KEYS.indexOf('finanzas.saldos_modificar'));
+equal('el administrador los trae todos (salvo cuotas por mes, que empieza apagado para todos)', GER_KEYS.filter((k) => !P.has('admin', {}, k)), ['finanzas.cuotas_meses']);
+const opAllFin = new Set(['usuarios.ver', 'mensajes.recibir']);
+['finanzas.usar', 'usuarios.editar', 'usuarios.panel'].forEach((k) => P.toggle(opAllFin, k, true, { children: true, role: 'operador' }));
+equal('un operador con TODO Finanzas y Editar usuarios no tiene ninguno', GER_KEYS.filter((k) => P.has('operador', P.toOverrides('operador', opAllFin), k)), []);
+equal('"Marcar todos" (todo lo que no se marca a mano) tampoco los da', (() => { const set = new Set(P.KEYS.filter((k) => P.allowedFor(k, 'operador') && !P.handOnly(k, 'operador'))); return GER_KEYS.filter((k) => P.has('operador', P.toOverrides('operador', set), k)); })(), []);
+equal('ni las plantillas de operador, ni una propia que los nombre', [P.TEMPLATES.filter((t) => t.role === 'operador').some((t) => P.templateKeys(t).some((k) => GER_KEYS.includes(k))), P.templateKeys({ system: false, role: 'operador', claves: ['usuarios.ver', 'usuarios.codigos', 'finanzas.usar', 'finanzas.saldos_modificar', 'finanzas.cargos_crear', 'finanzas.pagos_fecha'] }).filter((k) => GER_KEYS.includes(k))], [false, []]);
+equal('marcados a mano a un operador si valen y se guardan como true (los paraguas de claves y eliminar tambien)', (() => { const set = new Set(opAllFin); GER_KEYS.forEach((k) => P.toggle(set, k, true)); const ov = P.toOverrides('operador', set); return [GER_KEYS.filter((k) => !P.has('operador', ov, k)), ['finanzas.pagos_fecha', 'finanzas.saldos_modificar', 'usuarios.vecinos_nombre', 'usuarios.codigos'].map((k) => ov[k])]; })(), [[], [true, true, true, true]]);
+equal('Modificar saldos es el paraguas de cargos, cuotas por mes, anular cargos y corregir duplicadas: marcarlo trae sus acciones (no las optIn)', [P.childrenOf('finanzas.saldos_modificar'), (() => { const set = new Set(opAllFin); P.toggle(set, 'finanzas.saldos_modificar', true, { children: true, role: 'operador' }); return ['finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_corregir', 'finanzas.cuotas_meses'].map((k) => set.has(k)); })()], [['finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_meses', 'finanzas.cuotas_corregir'], [true, true, true, false]]);
+equal('sin Modificar saldos no vale ninguna de sus acciones aunque esten marcadas', ['finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_corregir', 'finanzas.cuotas_meses'].map((k) => P.has('operador', { 'finanzas.usar': true, [k]: true }, k)), [false, false, false, false]);
+equal('marcar una accion de saldos marca su paraguas (Modificar saldos)', (() => { const set = new Set(); P.toggle(set, 'finanzas.cargos_crear', true); return set.has('finanzas.saldos_modificar'); })(), true);
+equal('a un administrador se le pueden quitar uno por uno', ['finanzas.pagos_fecha', 'finanzas.saldos_modificar', 'usuarios.vecinos_nombre', 'finanzas.pagos_anular'].map((k) => P.has('admin', { [k]: false }, k)), [false, false, false, false]);
+equal('quitarle Modificar saldos al administrador le quita cargos y anular cargos', ['finanzas.cargos_crear', 'finanzas.cargos_anular'].map((k) => P.has('admin', { 'finanzas.saldos_modificar': false }, k)), [false, false]);
+equal('handOnly: para un operador si, para el administrador no; tambien lo que cuelga de Modificar saldos', [P.handOnly('finanzas.cargos_crear', 'operador'), P.handOnly('finanzas.cargos_crear', 'admin'), P.handOnly('usuarios.codigos', 'operador'), P.handOnly('usuarios.codigos', 'admin'), P.handOnly('finanzas.pagos_registrar', 'operador')], [true, false, true, false, false]);
+equal('el Contador ya no trae cargos ni anular (se le marcan aparte); el administrador delegado trae los de gerente de su rol, sin claves', [['finanzas.cargos_crear', 'finanzas.pagos_anular'].map((k) => P.templateKeys(P.templateById('sys-contador')).includes(k)), ['finanzas.pagos_fecha', 'finanzas.saldos_modificar', 'usuarios.vecinos_nombre', 'usuarios.codigos'].map((k) => P.templateKeys(P.templateById('sys-admin-delegado')).includes(k))], [[false, false], [true, true, true, false]]);
+yes('la pantalla de privilegios: la tarjeta de gerente se pinta con su nota y su "Marcar todo" si la marca; "Marcar todos" usa handOnly', (() => { const ui = read('privilegios-ui.js'); return /g\.note \? `<p class="pv-card-note">/.test(ui) && /g\.handPicked && !opts\.template \? usable/.test(ui) && /group\.handPicked && !opts\.template/.test(ui) && (ui.match(/!PRIV\.handOnly\(k, (form\.)?role\)/g) || []).length === 2; })());
+yes('OIKOS: la fecha del pago la oculta el bloqueo sin el privilegio y la sube solo quien lo tiene; el nombre se bloquea en OIKOS, admin.html y RONDIN', (() => {
+    const bloqueo = read('finanzas-bloqueo.js'), sync = read('finanzas-sync.js'), oikos = read('finanzas/index.html'), admin = read('admin.html'), rondin = read('rondin/js/sisdel-api.js');
+    return /\[\['pagos_fecha'\], \['#inc-date-wrap'\]\]/.test(bloqueo) && /if \(!can\('usuarios\.vecinos_nombre'\)\)/.test(bloqueo)
+        && /\['finanzas\.pagos_fecha'\]/.test(sync) && /needs\.push\(\['usuarios\.vecinos_nombre'\]\)/.test(sync)
+        && /id="inc-date-wrap"/.test(oikos) && /date: payDate \|\| new Date\(\)\.toISOString\(\)/.test(oikos)
+        && /SISDEL\.can\('usuarios\.vecinos_nombre'\)/.test(admin) && /SISDEL\.can\('usuarios\.vecinos_nombre'\)/.test(rondin);
+})());
+yes('reglas: la fecha de un pago (incomeDateOk), el nombre de un vecino (vecinoNameOk) y deshacer ya no anula pagos ni egresos', (() => {
+    const r = read('firestore.rules');
+    return /pFinanzasPagosRegistrar\(condoId\) && incomeDateOk\(\)/.test(r) && /function incomeDateOk\(\) \{[\s\S]*?pFinanzasPagosFecha\(condoId\)/.test(r)
+        && /adminNameKept\(\) && vecinoNameOk\(\)/.test(r) && /function vecinoNameOk\(\) \{[\s\S]*?pUsuariosVecinosNombre\(condoId\)/.test(r)
+        && /resource\.data\.get\('type', ''\) == 'charge' && undoWindow\('created_at'\) && pFinanzasDeshacer\(condoId\)/.test(r);
+})());
+// Firestore evalua como maximo 1000 expresiones por peticion: las funciones de una accion (childOk, childOn, childAuto) no
+// vuelven a preguntar si es miembro (lo pregunta el paraguas raiz), asi que nunca pueden usarse sueltas
+yes('reglas: childOk, childOn y childAuto no repiten isMember y solo se usan detras de su paraguas (pParaguas(c) && childX)', (() => {
+    const r = read('firestore.rules');
+    const defs = ['childOk', 'childOn', 'childAuto'].map((f) => (r.match(new RegExp(`function ${f}\\([^)]*\\) \\{([\\s\\S]*?)\\n    \\}`)) || [])[1] || 'x');
+    const calls = [...r.matchAll(/^.*\b(childOk|childOn|childAuto)\(.*$/gm)].map((m) => m[0]).filter((line) => !/^\s*function child/.test(line));
+    return defs.every((body) => body !== 'x' && !/isMember/.test(body)) && calls.length > 50 && calls.every((line) => /^    function p[A-Z]\w*\(c\) \{ return p[A-Z]\w*\(c\) && child(Ok|On|Auto)\(c, '[a-z._]+'(, \[[^\]]*\])?\); \}$/.test(line));
+})());
 
 // ───────── Copia en las functions ─────────
 console.log('\nCopia en las functions');
@@ -191,11 +236,11 @@ P.toggle(acciones, 'finanzas.usar', false);
 equal('quitar el paraguas quita sus acciones (y deja lo que necesitaba)', sorted([...acciones]), sorted(['finanzas.ver', 'usuarios.ver']));
 const todo = new Set();
 P.toggle(todo, 'finanzas.usar', true, { children: true });
-equal('activar el paraguas con { children: true } trae todas sus acciones menos las optIn y las de solo el administrador', P.descendantsOf('finanzas.usar').every((k) => todo.has(k) === !P.explicitFor(k)), true);
+equal('activar el paraguas con { children: true } trae todas sus acciones menos las que se marcan a mano (optIn, de solo el administrador) y lo que cuelga de ellas', P.descendantsOf('finanzas.usar').every((k) => todo.has(k) === !P.handOnly(k)), true);
 const sin = new Set(todo);
 P.toggle(sin, 'finanzas.residentes_ver', false);
 equal('quitar una accion quita las que la necesitan (ver residentes)', ['finanzas.residentes_datos', 'finanzas.residentes_crear', 'finanzas.cuotas_mes'].map((k) => sin.has(k)), [false, false, false]);
-equal('expandTemplate amplia una plantilla vieja (solo paraguas) con todas sus acciones (menos las optIn)', sorted(P.expandTemplate(['usuarios.ver', 'finanzas.usar', 'finanzas.ver'])), sorted([...withKids('usuarios.ver'), 'finanzas.ver', ...withKids('finanzas.usar')].filter((k) => !P.explicitFor(k))));
+equal('expandTemplate amplia una plantilla vieja (solo paraguas) con todas sus acciones (menos las que se marcan a mano y lo que cuelga de ellas)', sorted(P.expandTemplate(['usuarios.ver', 'finanzas.usar', 'finanzas.ver'])), sorted([...withKids('usuarios.ver'), 'finanzas.ver', ...withKids('finanzas.usar')].filter((k) => !P.handOnly(k))));
 equal('expandTemplate respeta una plantilla que ya nombra acciones', sorted(P.expandTemplate(['finanzas.usar', 'finanzas.pagos_registrar'])), sorted(['finanzas.usar', 'finanzas.pagos_registrar']));
 equal('cascade avisa que se activaria', sorted(P.cascade(new Set(), 'garita.operar', true)), sorted(['usuarios.ver', 'visitas.ver', 'vehiculos.ver']));
 
@@ -260,7 +305,7 @@ yes('childOk() deja pasar una accion salvo que este apagada (false) en el docume
 yes('childOn() deja pasar una accion optIn solo si esta marcada (true) en el documento del usuario', /function childOn\(condoId, key\) \{[\s\S]*?get\(key, false\) == true/.test(rules));
 yes('cada accion optIn usa childOn, cada una con autoRoles childAuto y las demas childOk', childWrappers.every((w) => w.check === (P.isOptIn(w.key) ? 'childOn' : P.itemOf(w.key).autoRoles ? 'childAuto' : 'childOk')));
 yes('childAuto() deja pasar a los roles de la lista salvo que se la quiten (false) y a los demas solo si la tienen marcada (true)', /function childAuto\(condoId, key, roles\) \{[\s\S]*?get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
-yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (finiquitar y eliminar residentes)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 2 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
+yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (las siete de la tarjeta de gerente)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 7 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
 yes('cada funcion pXxx usa el nombre de su clave', wrappers.every((w) => w.fn === camel(w.key)));
 yes('cada clave de las reglas existe en el catalogo', wrappers.every((w) => P.KEYS.includes(w.key)));
 yes('los roles por defecto de las reglas son los del catalogo', rootWrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));
@@ -799,7 +844,7 @@ console.log('\nNombre del condominio (solo el programador, con la clave master)'
     yes('las reglas no dejan cambiar el nombre directo', /allow update: if isMaster\(\) && !request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['name'/.test(rules) && /request\.resource\.data\.name == officialName\(\)/.test(rules));
     yes('en OIKOS el nombre es de solo lectura y no se guarda desde el campo', /id="cfg-name" readonly/.test(oikosHtml) && /name: oldS\.name,/.test(oikosHtml) && !/name: document\.getElementById\('cfg-name'\)\.value/.test(oikosHtml));
     yes('el nombre de un administrador tambien se cambia solo con la clave master', /data-rename-admin=/.test(masterHtml) && /SISDEL\.renameAdmin\(/.test(masterHtml) && /httpsCallable\('renameAdmin'\)/.test(read('sisdel-core.js')) && /function adminNameKept\(\)/.test(rules) && /allow update: if \(isMaster\(\) && adminNameKept\(\)\)/.test(rules));
-    yes('las ventanas Editar no mandan el nombre de un administrador', /isAdminUser \? \{ accessCode: code, casa \}/.test(masterHtml) && /editing\.role === SISDEL\.ROLES\.ADMIN\) delete updates\.name/.test(read('admin.html')));
+    yes('las ventanas Editar no mandan el nombre de un administrador', /isAdminUser \? \{ accessCode: code, casa \}/.test(masterHtml) && /editing\.role === SISDEL\.ROLES\.ADMIN \|\| nameLockedFor\(editing\)\)\) delete updates\.name/.test(read('admin.html')));
     yes('la ventana de cambio de nombre queda por encima de las demas', /id="modalRenameCondo" style="display:none; z-index:1100;"/.test(masterHtml));
     yes('el Sistema Financiero abre con el nombre vigente del condominio', /SISDEL\.getCondominio\(condoId\)/.test(read('finanzas.html')) && /msname: condoName/.test(read('finanzas.html')));
 }

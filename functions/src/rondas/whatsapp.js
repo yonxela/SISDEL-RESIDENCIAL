@@ -83,6 +83,9 @@ module.exports = {
     // Lo que UltraMsg dice de cada mensaje (en cola, rechazado, enviado, entregado): ver ultramsg-estado.js
     listMessages: (config, options) => (meta.usesMeta(config) ? null : estado.listMessages(config, options)),
     classify: estado.classify, describeReason: estado.describeReason, deliveryFor: estado.deliveryFor, matchCampaign: estado.matchCampaign,
+    // Si WhatsApp esta dejando salir los mensajes de UltraMsg (palomitas), para frenar los envios con el numero restringido
+    health: (config) => (meta.usesMeta(config) ? { confirming: null } : estado.health(config)),
+    describeHealth: estado.describeHealth,
     // WhatsApp oficial de Meta con plantillas aprobadas (ver meta-estado.js)
     usesTemplates: meta.usesMeta, templateFor: meta.templateFor, templateParams: meta.templateParams, renderTemplate: meta.renderTemplate
 };

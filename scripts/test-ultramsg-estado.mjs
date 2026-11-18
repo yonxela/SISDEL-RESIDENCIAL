@@ -104,6 +104,36 @@ equal('con un error de red devuelve null', await E.listMessages(config, {}, asyn
 equal('el proveedor simulado no tiene listado', await E.listMessages({ provider: 'simulado' }), null);
 ok('el token va en la direccion del listado y no en el resultado', pages.length === 1 && !JSON.stringify(stopped).includes('TOKEN-SECRETO'));
 
+console.log('\nNumero restringido por WhatsApp (los mensajes salen "enviados" y nunca reciben palomita)');
+{
+    const NOW = 1800000000;
+    const old = (o = {}) => ({ status: 'sent', ack: 'pending', created_at: NOW - 600, to: '50255551111@c.us', ...o });
+    const H = (rows) => E.healthFrom(rows, NOW);
+    equal('el caso de La Perla (16 y 17/11/2026): 3 o mas sin palomita = no deja salir', H([old(), old({ created_at: NOW - 900 }), old({ created_at: NOW - 1200 })]).confirming, false);
+    equal('desde cuando: el mas viejo de los atorados', H([old(), old({ created_at: NOW - 900 }), old({ created_at: NOW - 1200 })]).since, NOW - 1200);
+    equal('un mensaje con una palomita (server) despues de los atorados = ya salen', H([old({ ack: 'server', created_at: NOW - 5 }), old(), old(), old()]).confirming, true);
+    for (const ack of ['device', 'read', 'played']) equal(`la palomita ${ack} tambien cuenta como que salio`, H([old({ ack }), old(), old(), old()]).confirming, true);
+    equal('lo de antes del ultimo bueno no importa', H([old({ ack: 'server', created_at: NOW - 100 }), ...Array.from({ length: 10 }, (_, i) => old({ created_at: NOW - 1000 - i }))]).stuck, 0);
+    equal('dos atorados no bastan (puede ser algo suelto)', H([old(), old({ created_at: NOW - 700 }), old({ ack: 'server', created_at: NOW - 800 })]).confirming, true);
+    equal('dos atorados sin ningun bueno: no se sabe (null), se deja seguir', H([old(), old({ created_at: NOW - 700 })]).confirming, null);
+    equal('un mensaje de menos de 3 minutos todavia puede estar en camino: no cuenta', H([old({ created_at: NOW - 30 }), old({ created_at: NOW - 60 }), old({ created_at: NOW - 170 })]).confirming, null);
+    equal('el bloqueo temporal (temporary_block) basta solo', H([{ status: 'unsent', failed_reason: 'temporary_block', ack: 'pending', created_at: NOW - 30 }]).confirming, false);
+    equal('y lo dice como bloqueo', H([{ status: 'unsent', failed_reason: 'temporary_block', ack: 'pending', created_at: NOW - 30 }]).blocked, 1);
+    equal('un numero sin WhatsApp (invalid) no dice nada del numero del condominio', H([old({ status: 'invalid' }), old({ status: 'invalid' }), old({ status: 'invalid' }), old({ ack: 'server', created_at: NOW - 900 })]).confirming, true);
+    equal('lo que sigue en cola (eso lo ve la conexion) o vencio tampoco', H([old({ status: 'queue' }), old({ status: 'expired' }), old({ status: 'queue' })]).confirming, null);
+    equal('lo de hace mas de 48 horas ya no cuenta', H([old({ created_at: NOW - 49 * 3600 }), old({ created_at: NOW - 50 * 3600 }), old({ created_at: NOW - 51 * 3600 })]).confirming, null);
+    equal('sin mensajes no se sabe', H([]).confirming, null);
+    equal('sin listado tampoco', E.healthFrom(null, NOW).confirming, null);
+    const text = E.describeHealth(H([old(), old({ created_at: NOW - 900 }), old({ created_at: NOW - 1200 })]));
+    ok('el aviso empieza como lo reconoce OIKOS y dice cuantos', text.startsWith('WhatsApp no está dejando salir los mensajes') && text.includes('los últimos 3 mensajes'));
+    ok('el aviso dice que hacer: no enviar, mirar el telefono y probar', /no se envía nada/.test(text) && /WhatsApp Business/.test(text) && /Enviar prueba/.test(text));
+    ok('el aviso del bloqueo temporal lo nombra', E.describeHealth({ confirming: false, blocked: 1 }).includes('temporary_block'));
+    const fromApi = await E.health(config, reply({ messages: [old({ created_at: Math.floor(Date.now() / 1000) - 600 }), old({ created_at: Math.floor(Date.now() / 1000) - 700 }), old({ created_at: Math.floor(Date.now() / 1000) - 800 })] }));
+    equal('health pregunta el listado de UltraMsg', fromApi.confirming, false);
+    equal('health sin poder leer el listado: no se sabe', (await E.health(config, async () => { throw new Error('red caida'); })).confirming, null);
+    equal('health del proveedor simulado: no se sabe', (await E.health({ provider: 'simulado' })).confirming, null);
+}
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

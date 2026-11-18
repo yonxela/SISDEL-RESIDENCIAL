@@ -371,6 +371,21 @@ async function run() {
         await sleep(300);
         const unknown = await wa();
         record('si no se pudo comprobar, lo dice y deja seguir (el servidor vuelve a comprobar)', unknown.texto.includes('No se pudo comprobar') && !unknown.enviar, JSON.stringify(unknown));
+        // Conectado pero con el numero restringido por WhatsApp (La Perla, 16 y 17/11/2026: los mensajes salian sin palomita)
+        await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 }, confirming: false, healthMessage: 'WhatsApp no está dejando salir los mensajes del número del condominio: los últimos 16 mensajes siguen sin una sola palomita. Después use "Enviar prueba" a su propio teléfono.' }`);
+        await oikos(`checkRemConnection()`);
+        await sleep(300);
+        const restricted = await wa();
+        record('numero restringido: lo avisa en rojo, no deja enviar a todos y SI deja la prueba (es como se sabe que ya paso)', restricted.texto.includes('no está dejando salir los mensajes: no se puede enviar') && restricted.texto.includes('16 mensajes') && restricted.enviar && !restricted.prueba, JSON.stringify(restricted));
+        const sentBeforeRestricted = await page.evaluate(`window.__sent.length`);
+        const restrictedAlerts = await oikos(`(async () => { const seen = []; const real = window.alert; window.alert = (m) => seen.push(String(m)); try { await sendRemindersToAll(); } finally { window.alert = real; } return seen; })()`);
+        record('y aunque se fuerce el clic en Enviar a todos, se detiene con el aviso (no sale nada)', restrictedAlerts.length === 1 && restrictedAlerts[0].includes('no está dejando salir') && (await page.evaluate(`window.__sent.length`)) === sentBeforeRestricted, JSON.stringify(restrictedAlerts));
+        // La prueba sale y, si llega, el aviso se quita solo
+        await page.evaluate(`window.sisdelWhatsApp.test = async (d) => { window.__calls.push(['test', d]); window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 }, confirming: true, healthMessage: '' }; return { ok: true, sent: true, delivery: 'entregado', phoneTail: '1111' }; }`);
+        await oikos(`(async () => { const realPrompt = window.prompt; const realAlert = window.alert; window.prompt = () => '5555-1111'; window.alert = () => {}; try { await sendReminderTest(); } finally { window.prompt = realPrompt; window.alert = realAlert; } })()`);
+        await sleep(400);
+        const afterTest = await wa();
+        record('con el numero restringido la prueba sale y, cuando llega, el aviso se quita y se puede enviar otra vez', (await page.evaluate(`window.__calls.filter((c) => c[0] === 'test').length`)) === 1 && afterTest.texto.includes('WhatsApp conectado') && !afterTest.enviar, JSON.stringify(afterTest));
         await page.evaluate(`window.__conn = { ok: true, connected: true, state: 'authenticated', message: '', queue: { queued: 0 } }`);
         await oikos(`checkRemConnection()`);
         // WhatsApp OFICIAL de Meta: el texto lo fija la plantilla aprobada y a cada residente se le mandan sus datos

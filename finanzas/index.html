@@ -4803,8 +4803,9 @@
             if (!confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return;
             const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
             if (!result.ok) {
-                if (/no está conectado/i.test(result.error) && confirm(result.error + '\n\n¿Abrir WhatsApp para enviarlo a mano?')) return manual();
-                if (!/no está conectado/i.test(result.error)) alert(result.error);
+                const blocked = /no está conectado|no está dejando salir/i.test(result.error);
+                if (blocked && confirm(result.error + '\n\n¿Abrir WhatsApp para enviarlo a mano?')) return manual();
+                if (!blocked) alert(result.error);
                 return;
             }
             // "Enviado" solo decia que UltraMsg lo acepto (el 2026-11-16 los mensajes salian "enviados" y no llegaban): el servidor mira
@@ -5037,7 +5038,7 @@
             try { r = await bridge.status({}); } catch (e) { r = null; }
             remConnBusy = false;
             remConn = r && r.ok
-                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null, channel: r.channel || 'ultramsg', templates: r.templates || null, meta: r.meta || null }
+                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null, channel: r.channel || 'ultramsg', templates: r.templates || null, meta: r.meta || null, confirming: r.confirming === undefined ? null : r.confirming, healthMessage: r.healthMessage || '' }
                 : { connected: null, state: 'sin-respuesta', message: '', queue: null };
             paintRemConnection();
             paintRemMeta();
@@ -5052,6 +5053,11 @@
             if (!c || c.checking) { el.innerHTML = '<span class="text-slate-500 dark:text-slate-400"><i class="fas fa-circle-notch fa-spin mr-1"></i>Comprobando la conexión de WhatsApp...</span>'; return; }
             const queued = c.queue && c.queue.queued > 0 ? c.queue.queued : 0;
             const queueTag = queued ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-semibold">${queued} en la cola de UltraMsg</span>` : '';
+            // SISDEL: conectado, pero WhatsApp no deja salir los mensajes (numero restringido; La Perla, 16 y 17/11/2026): no se envia
+            if (c.connected === true && c.confirming === false) {
+                el.innerHTML = `<div id="rem-wa-restricted" class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp no está dejando salir los mensajes: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.healthMessage || '')}</p><div class="mt-2">${again}</div></div>`;
+                return;
+            }
             if (c.connected === true) {
                 const officialTag = c.channel === 'meta' ? `<span class="text-slate-600 dark:text-slate-300">${SisdelBusqueda.escapeHtml(((c.meta && c.meta.number) || '') + (c.meta && c.meta.quality ? ' · calidad ' + c.meta.quality : ''))}</span>` : '';
                 el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold"><i class="fas fa-circle-check mr-1"></i>${c.channel === 'meta' ? 'WhatsApp oficial de Meta conectado' : 'WhatsApp conectado'}</span>${officialTag}${queueTag}${queued ? '<span class="text-slate-500 dark:text-slate-400">salen solos, de 1 a 15 segundos entre cada uno</span>' : ''}${again}`;
@@ -5081,10 +5087,11 @@
             const selTab = document.getElementById('tab-rem-seleccion');
             if (selTab) selTab.textContent = remSelected.size ? `Por selección (${remSelected.size})` : 'Por selección';
             const down = !!(remConn && remConn.connected === false);
-            btn.disabled = !n || running || down;
+            const restricted = !!(remConn && remConn.confirming === false);
+            btn.disabled = !n || running || down || restricted;
             btn.classList.toggle('opacity-50', btn.disabled);
             btn.classList.toggle('cursor-not-allowed', btn.disabled);
-            btn.title = down ? 'WhatsApp está desconectado: no se puede enviar' : (!n && sel) ? 'Marque al menos un residente con teléfono' : running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
+            btn.title = down ? 'WhatsApp está desconectado: no se puede enviar' : restricted ? 'WhatsApp no está dejando salir los mensajes: use Enviar prueba para saber cuándo vuelve' : (!n && sel) ? 'Marque al menos un residente con teléfono' : running ? (remCampaign.status === 'paused' ? 'Hay un envío en pausa: continúelo o cancélelo' : 'Ya hay un envío en curso') : '';
             const testBtn = document.getElementById('rem-send-test');
             if (testBtn) { testBtn.disabled = down; testBtn.classList.toggle('opacity-50', down); testBtn.classList.toggle('cursor-not-allowed', down); }
         }
@@ -5249,6 +5256,7 @@
             if (!bridge || typeof bridge.resend !== 'function' || !remCampaign || !remCampaign.delivery) return;
             await checkRemConnection();
             if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
+            if (remConn && remConn.confirming === false) return alert(remConn.healthMessage || 'WhatsApp no está dejando salir los mensajes: no se puede enviar.');
             const d = remCampaign.delivery;
             const risky = (d.reasons && d.reasons.temporary_block) ? '\n\nOJO: WhatsApp rechazó mensajes por bloqueo temporal. Si el bloqueo sigue, volverán a rechazarse y puede alargarse. Mejor pruebe antes con unos pocos.' : '';
             if (!confirm(`Se mandará de nuevo SOLO a los ${d.resend} residentes a los que el mensaje no llegó (los que sí lo recibieron no se tocan), con el mismo texto que tenían.${risky}\n\n¿Reenviar?`)) return;
@@ -5277,6 +5285,7 @@
             if (!bridge) return;
             await checkRemConnection();
             if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
+            if (remConn && remConn.confirming === false) return alert(remConn.healthMessage || 'WhatsApp no está dejando salir los mensajes: no se puede enviar.');
             // A la lista que se ve en la opcion de la barra; con "Por seleccion", SOLO a los marcados (sin marcar a nadie no se envia)
             const sel = currentRemFilter === 'seleccion';
             const list = sel ? remSelectedSendable() : reminderSendable(remShownList);
@@ -5321,6 +5330,8 @@
             else if (outcome === 'rejected') alert(`La prueba al teléfono que termina en ${result.phoneTail} NO llegó: ${result.deliveryText}`);
             else if (outcome === 'unconfirmed') alert(`UltraMsg aceptó la prueba para el teléfono que termina en ${result.phoneTail}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}). Revise el teléfono en un momento.`);
             else alert('No se pudo enviar la prueba. Revise que WhatsApp esté conectado en UltraMsg.');
+            // Si la prueba salio, el aviso de "no deja salir los mensajes" se quita solo (se vuelve a preguntar)
+            if (remConn && remConn.confirming === false) checkRemConnection();
         }
         async function controlRemCampaign(action) {
             const bridge = remBridge();

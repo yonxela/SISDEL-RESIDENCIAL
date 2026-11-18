@@ -38,6 +38,7 @@ const SIMULADO = { provider: 'simulado' };
 const ULTRAMSG = { ultramsgInstance: 'instancia', ultramsgToken: 'token' };
 let cfg = SIMULADO;            // la configuracion de WhatsApp que ve el servidor
 let uRows = null;              // lo que "dice UltraMsg" de los mensajes (null = no se puede leer)
+let healthState = { confirming: null };   // si WhatsApp deja salir los mensajes (null = no se sabe)
 const whatsapp = {
     loadConfig: async () => cfg,
     hasProvider: () => provider,
@@ -47,6 +48,7 @@ const whatsapp = {
         return 'SIMULADO';
     },
     connection: async () => connState,
+    health: async () => healthState, describeHealth: E.describeHealth,
     describeConnection: (conn) => `WhatsApp no está conectado (estado: ${conn.state}). Revise la instancia.`,
     queueStats: async () => ({ queued: 7, sent: 1, unsent: 0, invalid: 0, expired: 0 }),
     // Lo que UltraMsg dice de cada mensaje: el listado es de mentira, el resto es el codigo de verdad
@@ -73,7 +75,7 @@ const create = (ids, extra = {}) => R.createCampaign({ db, whatsapp, condominioI
 const camp = async (id) => (await condoRef.collection('recordatorios_envios').doc(id).get()).data();
 const dest = async (id, rid) => (await condoRef.collection('recordatorios_envios').doc(id).collection('destinatarios').doc(rid).get()).data();
 const queue = async (id) => (await db.collection('colas_envios').doc(`${CONDO}__${id}`).get()).data();
-const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; connState = CONNECTED; cfg = SIMULADO; uRows = null; };
+const reset = () => { sentLog.length = 0; failTo.clear(); pauses.length = 0; provider = true; connState = CONNECTED; cfg = SIMULADO; uRows = null; healthState = { confirming: null }; };
 
 await condoRef.set({ id: CONDO, name: 'Condominio de pruebas de recordatorios', active: true, createdAt: now });
 await wipe();
@@ -313,6 +315,81 @@ console.log('\nControl de conexion de WhatsApp (UltraMsg acepta y deja en cola s
     provider = false;
     const none = await R.connectionInfo({ whatsapp });
     equal('sin claves de WhatsApp dice que no esta configurado', [none.configured, none.connected], [false, false]);
+    reset();
+}
+
+console.log('\nNumero restringido por WhatsApp: conectado, pero los mensajes no salen (La Perla, 16 y 17/11/2026)');
+{
+    const control = (id, action) => R.controlCampaign({ db, whatsapp, condominioId: CONDO, data: { campaignId: id, action } });
+    const envios = async () => (await condoRef.collection('recordatorios_envios').get()).size;
+    const RESTRICTED = { confirming: false, stuck: 16, blocked: 0, since: Math.floor(Date.now() / 1000) - 86400, lastOkAt: 0 };
+    const ids = Array.from({ length: 12 }, (_, i) => `h${i + 1}`);
+    for (const [i, id] of ids.entries()) await user(id, { phone: `5577-${1001 + i}` });
+
+    reset();
+    healthState = RESTRICTED;
+    const antes = await envios();
+    let aviso = '';
+    try { await create(['h1', 'h2']); } catch (e) { aviso = e.message; }
+    ok('con el numero restringido no se crea el envio a todos y el aviso lo explica', /no está dejando salir los mensajes/.test(aviso) && /Enviar prueba/.test(aviso) && (await envios()) === antes, aviso);
+    await rejects('tampoco se manda a un residente', () => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'h1', text: 'hola' } }), 'failed-precondition');
+    const test = await R.sendTest({ whatsapp, data: { phone: '5555-1111', text: 'prueba' } });
+    equal('la prueba SI sale: es la forma de saber que ya paso el castigo', [test.sent, sentLog.length], [true, 1]);
+
+    // Si no se puede saber, se deja seguir (como con la conexion)
+    reset();
+    healthState = { confirming: null };
+    const unknown = await create(['h1']);
+    await run();
+    equal('si no se sabe si salen, se deja seguir', [sentLog.length, (await camp(unknown.id)).status], [1, 'done']);
+    reset();
+    whatsapp.health = async () => { throw new Error('UltraMsg no responde'); };
+    const failing = await create(['h2']);
+    await run();
+    equal('si la consulta falla, tambien se deja seguir', [sentLog.length, (await camp(failing.id)).status], [1, 'done']);
+    whatsapp.health = async () => healthState;
+
+    // Se restringe DESPUES de crear el envio: la corrida no manda nada y avisa
+    reset();
+    const a = await create(['h1', 'h2', 'h3']);
+    healthState = RESTRICTED;
+    await run();
+    const stopped = await camp(a.id);
+    equal('si al empezar la corrida el numero esta restringido no manda nada y queda detenido', [sentLog.length, stopped.status, stopped.pending, stopped.lockUntil, (await queue(a.id)).status], [0, 'error', 3, 0, 'error']);
+    ok('el motivo lo explica y dice que se pulse Continuar cuando la prueba llegue', /no está dejando salir/.test(stopped.errorMessage) && /pulse Continuar/.test(stopped.errorMessage), stopped.errorMessage);
+    await rejects('no se puede continuar mientras siga restringido', () => control(a.id, 'resume'), 'failed-precondition');
+    await rejects('ni reintentar', () => control(a.id, 'retry'), 'failed-precondition');
+    healthState = { confirming: true };
+    await control(a.id, 'resume');
+    await run();
+    equal('cuando vuelven a salir se continua y salen los 3 una sola vez', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(a.id)).status], [3, 3, 'done']);
+
+    // Se restringe A MITAD del envio: se comprueba cada 10 mensajes junto con la conexion
+    reset();
+    const b = await create(ids);
+    whatsapp.health = async () => (sentLog.length >= R.CONN_CHECK_EVERY ? RESTRICTED : { confirming: true });
+    await run();
+    const mid = await camp(b.id);
+    equal(`a mitad del envio se detiene al comprobar (cada ${R.CONN_CHECK_EVERY} mensajes): salieron ${R.CONN_CHECK_EVERY} de 12`, [sentLog.length, mid.status, mid.sent, mid.pending, mid.lockUntil], [R.CONN_CHECK_EVERY, 'error', R.CONN_CHECK_EVERY, 2, 0]);
+    ok('y dice por que', /no está dejando salir/.test(mid.errorMessage), mid.errorMessage);
+    whatsapp.health = async () => healthState;
+    healthState = { confirming: true };
+    await control(b.id, 'resume');
+    await run();
+    equal('al volver salen los 2 que faltaban, sin repetir ninguno', [sentLog.length, new Set(sentLog.map((s) => s.to)).size, (await camp(b.id)).status], [12, 12, 'done']);
+
+    // Lo que ve OIKOS arriba de los botones
+    reset();
+    healthState = RESTRICTED;
+    const info = await R.connectionInfo({ whatsapp });
+    equal('OIKOS recibe conectado pero sin salir, con el aviso', [info.connected, info.confirming, /no está dejando salir/.test(info.healthMessage)], [true, false, true]);
+    healthState = { confirming: true };
+    const fine = await R.connectionInfo({ whatsapp });
+    equal('cuando salen, sin aviso', [fine.confirming, fine.healthMessage], [true, '']);
+    connState = { connected: false, state: 'standby', provider: 'ultramsg' };
+    healthState = RESTRICTED;
+    const downInfo = await R.connectionInfo({ whatsapp });
+    equal('desconectado manda el aviso de la conexion, no el de las palomitas', [downInfo.connected, downInfo.confirming, downInfo.healthMessage], [false, null, '']);
     reset();
 }
 

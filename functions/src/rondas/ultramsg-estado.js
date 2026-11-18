@@ -143,6 +143,54 @@ function matchCampaign(rows, recipients, toleranceSec = 300) {
     return out;
 }
 
+// ───────── ¿WhatsApp esta dejando salir los mensajes? ─────────
+// Un mensaje que de verdad sale recibe al menos una palomita (ack "server") en segundos, aunque el telefono del residente este
+// apagado. Si los ultimos mensajes aceptados siguen sin palomita minutos despues, o WhatsApp los rechaza por bloqueo temporal,
+// el numero del condominio esta restringido por WhatsApp aunque la instancia diga "authenticated": pasó en La Perla del 16 al
+// 17/11/2026 (despues de un envio masivo, todos los mensajes de un dia quedaron sin una sola palomita y new_chat_limit en cero).
+// Mandar mas solo alarga el castigo, asi que el servidor frena los envios (recordatorios-core.js) hasta que una prueba llegue.
+const HEALTH_MIN_AGE_SEC = 180;        // un mensaje mas nuevo puede seguir en camino: todavia no cuenta como atorado
+const HEALTH_WINDOW_SEC = 48 * 3600;   // lo de antes ya no dice nada del estado de hoy
+const HEALTH_STUCK = 3;                // cuantos sin palomita, seguidos y sin ninguno bueno despues, bastan para frenar
+const OK_ACKS = new Set(['server', 'device', 'read', 'played']);
+
+// rows: el listado de UltraMsg (listMessages). Se recorre del mas nuevo al mas viejo hasta el primer mensaje con palomita: lo de
+// antes ya no importa. -> { confirming: true | false | null, stuck, blocked, since, lastOkAt } (since y lastOkAt en segundos
+// unix; since = el mas viejo de los atorados). null = no hay con que saberlo (sin mensajes recientes, o pocos atorados).
+// Un numero sin WhatsApp (invalid), lo vencido en la cola (expired) o lo que sigue en cola (queue, eso lo ve la conexion) no dicen
+// nada de si el numero del condominio esta restringido.
+function healthFrom(rows, nowSec = Math.floor(Date.now() / 1000)) {
+    const recent = (rows || [])
+        .filter((m) => Number(m.created_at) >= nowSec - HEALTH_WINDOW_SEC)
+        .sort((a, b) => Number(b.created_at) - Number(a.created_at));
+    let stuck = 0; let blocked = 0; let since = 0; let lastOkAt = 0;
+    for (const m of recent) {
+        const status = String(m.status || '');
+        const at = Number(m.created_at);
+        if (status === 'sent' && OK_ACKS.has(String(m.ack || ''))) { lastOkAt = at; break; }
+        if (status === 'unsent' && String(m.failed_reason || '') === 'temporary_block') { blocked++; since = at; continue; }
+        if (status === 'sent' && at <= nowSec - HEALTH_MIN_AGE_SEC) { stuck++; since = at; }
+    }
+    const confirming = blocked || stuck >= HEALTH_STUCK ? false : lastOkAt ? true : null;
+    return { confirming, stuck, blocked, since, lastOkAt };
+}
+
+async function health(config, fetchImpl = fetch, nowSec = Math.floor(Date.now() / 1000)) {
+    if (!config || config.provider === 'simulado' || !config.ultramsgInstance || !config.ultramsgToken) return { confirming: null };
+    const rows = await listMessages(config, { sinceSec: nowSec - HEALTH_WINDOW_SEC, maxPages: 1 }, fetchImpl);
+    if (!rows) return { confirming: null };
+    return healthFrom(rows, nowSec);
+}
+
+// Texto para quien usa OIKOS (siempre empieza con "WhatsApp no está dejando salir los mensajes": la pantalla lo reconoce)
+function describeHealth(h) {
+    const when = (sec) => new Date(sec * 1000).toLocaleString('es-GT', { timeZone: 'America/Guatemala', day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const detail = h && h.blocked
+        ? 'rechazó mensajes por bloqueo temporal (temporary_block)'
+        : `los últimos ${(h && h.stuck) || 'varios'} mensajes enviados${h && h.since ? ` (desde el ${when(h.since)})` : ''} siguen sin una sola palomita`;
+    return `WhatsApp no está dejando salir los mensajes del número del condominio: ${detail}. Lo más probable es que WhatsApp haya restringido el número por mandar muchos mensajes seguidos. Mientras tanto no se envía nada: cada intento puede alargar el castigo. En el teléfono del condominio abra WhatsApp Business para ver cuánto falta. Después use "Enviar prueba" a su propio teléfono: cuando la prueba llegue, se vuelve a poder enviar.`;
+}
+
 // Texto para quien usa OIKOS (siempre empieza con "WhatsApp no está conectado": la pantalla ofrece enviarlo a mano con wa.me)
 function describeConnection(conn) {
     const state = conn && conn.state ? conn.state : 'desconocido';
@@ -152,4 +200,7 @@ function describeConnection(conn) {
     return `WhatsApp no está conectado (estado: ${state}). ${how}`;
 }
 
-module.exports = { connection, queueStats, describeConnection, listMessages, classify, describeReason, deliveryFor, matchCampaign };
+module.exports = {
+    connection, queueStats, describeConnection, listMessages, classify, describeReason, deliveryFor, matchCampaign,
+    health, healthFrom, describeHealth, HEALTH_MIN_AGE_SEC, HEALTH_WINDOW_SEC, HEALTH_STUCK
+};

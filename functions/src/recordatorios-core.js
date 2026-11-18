@@ -10,6 +10,8 @@
 //     5 fallos seguidos se detiene y avisa.
 //     Antes de mandar, y cada 10 mensajes, se comprueba que el WhatsApp del condominio este conectado (UltraMsg acepta los
 //     mensajes aunque su instancia este desconectada y los deja en cola: sin esta revision decia "enviado" y no salia nada).
+//     Tambien se comprueba que WhatsApp deje salir los mensajes (palomitas): con el numero restringido por WhatsApp la instancia
+//     sigue conectada y nada llega, asi que se frena (healthOf; La Perla, 16 y 17/11/2026).
 //     "Enviado" = UltraMsg lo ACEPTO. Lo que llego de verdad se pregunta a UltraMsg: reconcileCampaign marca cada destinatario como
 //     entregado / enviado / pendiente / en cola / rechazado / desconocido (ver ultramsg-estado.js) y resendCampaign manda de nuevo
 //     solo a los que no recibieron. Los envios a UN residente y la prueba se verifican a los pocos segundos.
@@ -69,6 +71,19 @@ async function requireConnected(whatsapp, config) {
     if (conn.connected === false) throw fail('failed-precondition', connectionText(whatsapp, conn));
     return conn;
 }
+// ¿WhatsApp deja salir los mensajes? Conectado no basta: con el numero restringido UltraMsg sigue "authenticated" y los mensajes
+// se quedan sin palomita (ver health en ultramsg-estado.js; La Perla, 16 y 17/11/2026). Con el numero asi se frena el envio a
+// todos, el reenvio, continuar y el envio a uno; la prueba NO (es la forma de saber que ya paso). Si no se puede saber, se sigue.
+async function healthOf(whatsapp, config) {
+    if (typeof whatsapp.health !== 'function') return { confirming: null };
+    try { return (await whatsapp.health(config)) || { confirming: null }; } catch (e) { return { confirming: null }; }
+}
+const healthText = (whatsapp, h) => (typeof whatsapp.describeHealth === 'function' ? whatsapp.describeHealth(h) : 'WhatsApp no está dejando salir los mensajes del número del condominio.');
+async function requireConfirming(whatsapp, config) {
+    const h = await healthOf(whatsapp, config);
+    if (h.confirming === false) throw fail('failed-precondition', healthText(whatsapp, h));
+    return h;
+}
 
 // WhatsApp OFICIAL de Meta: los avisos van con una plantilla aprobada (un texto fijo con huecos) y OIKOS manda los datos de cada
 // residente (`vars`: nombre, casa, saldo...) en vez de un texto. El texto que queda anotado es el de la plantilla ya llena.
@@ -122,6 +137,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     }
     await requireConnected(whatsapp, config);
+    await requireConfirming(whatsapp, config);
     const items = Array.isArray(data && data.items) ? data.items : [];
     if (!items.length) throw fail('invalid-argument', 'No hay a quién enviar.');
     if (items.length > MAX_RECIPIENTS) throw fail('invalid-argument', `Se pueden enviar hasta ${MAX_RECIPIENTS} mensajes a la vez.`);
@@ -244,6 +260,12 @@ async function processCampaign(ctx) {
         await queueRef.set({ status: 'error' }, { merge: true });
         return { campaignId, status: 'error', stoppedBy: 'conexion' };
     }
+    const startHealth = await healthOf(whatsapp, config);
+    if (startHealth.confirming === false) {
+        await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${healthText(whatsapp, startHealth)} Cuando la prueba llegue, pulse Continuar.` });
+        await queueRef.set({ status: 'error' }, { merge: true });
+        return { campaignId, status: 'error', stoppedBy: 'restringido' };
+    }
     // Con el WhatsApp oficial de Meta cada mensaje sale con la plantilla del tipo de aviso (si falta, se detiene con el motivo)
     let tpl = null;
     if (templatesOn(whatsapp, config)) {
@@ -255,7 +277,7 @@ async function processCampaign(ctx) {
         }
     }
 
-    let sent = 0; let failed = 0; let streak = 0; let sinceCheck = 0; let lostConn = null; let finished = false; let stoppedBy = null;
+    let sent = 0; let failed = 0; let streak = 0; let sinceCheck = 0; let lostConn = null; let lostHealth = null; let finished = false; let stoppedBy = null;
     outer: for (;;) {
         const page = await campRef.collection('destinatarios').where('status', '==', 'pending').limit(20).get();
         if (page.empty) { finished = true; break; }
@@ -268,6 +290,10 @@ async function processCampaign(ctx) {
                 sinceCheck = 0;
                 const conn = await connectionOf(whatsapp, config);
                 if (conn.connected === false) { lostConn = conn; stoppedBy = 'conexion'; break outer; }
+                // Los mensajes de esta misma corrida cuentan cuando pasan 3 minutos sin palomita: asi, con el numero restringido,
+                // el envio se detiene tras unos 30 mensajes en vez de seguir con cientos
+                const h = await healthOf(whatsapp, config);
+                if (h.confirming === false) { lostHealth = h; stoppedBy = 'restringido'; break outer; }
             }
             const user = await condoRef.collection('usuarios').doc(doc.id).get();
             const phone = user.exists && user.data().active !== false ? normalizePhone(user.data().phone) : '';
@@ -304,6 +330,10 @@ async function processCampaign(ctx) {
     } else if (stoppedBy === 'conexion') {
         await recount(campRef);
         await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${connectionText(whatsapp, lostConn)} Cuando esté conectado, pulse Continuar.` });
+        await queueRef.set({ status: 'error' }, { merge: true });
+    } else if (stoppedBy === 'restringido') {
+        await recount(campRef);
+        await campRef.update({ status: 'error', lockUntil: 0, errorMessage: `${healthText(whatsapp, lostHealth)} Cuando la prueba llegue, pulse Continuar.` });
         await queueRef.set({ status: 'error' }, { merge: true });
     } else if (stoppedBy === 'fallos') {
         await recount(campRef);
@@ -355,8 +385,12 @@ async function controlCampaign({ db, condominioId, data, whatsapp, now = () => n
     }
     if (action === 'resume' || action === 'retry') {
         if (camp.status === 'running') throw fail('failed-precondition', 'Ese envío ya está en curso.');
-        // Continuar con WhatsApp desconectado solo dejaria mas mensajes en la cola de UltraMsg
-        if (whatsapp) await requireConnected(whatsapp, await whatsapp.loadConfig());
+        // Continuar con WhatsApp desconectado solo dejaria mas mensajes en la cola de UltraMsg; con el numero restringido, sin palomita
+        if (whatsapp) {
+            const config = await whatsapp.loadConfig();
+            await requireConnected(whatsapp, config);
+            await requireConfirming(whatsapp, config);
+        }
         if (await hasRunning(db, condominioId, campaignId)) throw fail('failed-precondition', 'Ya hay otro envío en curso.');
         if (action === 'retry') {
             const failedDocs = await campRef.collection('destinatarios').where('status', '==', 'failed').get();
@@ -383,6 +417,7 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     await requireConnected(whatsapp, config);
+    await requireConfirming(whatsapp, config);
     const residentId = String((data && data.residentId) || '').trim();
     const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data && data.mode) : null;
     const params = tpl ? paramsOf(whatsapp, tpl, data) : null;
@@ -452,6 +487,8 @@ async function connectionInfo({ whatsapp }) {
     const conn = await connectionOf(whatsapp, config);
     let queue = null;
     if (typeof whatsapp.queueStats === 'function') { try { queue = await whatsapp.queueStats(config); } catch (e) { queue = null; } }
+    // Conectado, pero ¿salen los mensajes? (numero restringido por WhatsApp: ver healthOf)
+    const health = conn.connected === false ? { confirming: null } : await healthOf(whatsapp, config);
     // Con Meta: las plantillas (para mostrar el texto y saber que dato va en cada hueco) y la calidad del numero
     const onMeta = templatesOn(whatsapp, config);
     const templates = onMeta && typeof whatsapp.templateFor === 'function'
@@ -461,7 +498,9 @@ async function connectionInfo({ whatsapp }) {
         configured: true, connected: conn.connected, state: conn.state, provider: conn.provider || null,
         channel: onMeta ? 'meta' : 'ultramsg', templates,
         ...(onMeta ? { meta: { quality: conn.quality || '', name: conn.name || '', number: conn.number || '' } } : {}),
-        message: conn.connected === false ? connectionText(whatsapp, conn) : '', queue
+        message: conn.connected === false ? connectionText(whatsapp, conn) : '', queue,
+        confirming: health.confirming === undefined ? null : health.confirming,
+        healthMessage: health.confirming === false ? healthText(whatsapp, health) : ''
     };
 }
 

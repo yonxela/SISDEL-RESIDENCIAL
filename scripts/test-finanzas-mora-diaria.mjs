@@ -105,6 +105,16 @@ equal('un pago anulado no cuenta: la mora vuelve sola', brief([nov, pay('p', '20
 equal('una cuota anulada no debe nada', brief([{ ...nov, deleted: true }], '2026-12-20'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
 equal('un pago posterior al dia que se consulta todavia no existe', brief([nov, pay('p', '2026-12-25', 300)], '2026-12-20'), { capital: 300, overdue: 300, mora: 6, balance: -306 });
 equal('un pago adelantado cubre las cuotas que vienen', (({ capital, mora, credit, balance }) => ({ capital, mora, credit, balance }))(state([pay('p', '2026-10-01', 1000), fee('f10', '2026-10'), nov], '2026-12-20')), { capital: 0, mora: 0, credit: 400, balance: 400 });
+// Pago de mas (pedido del usuario el 2026-11-18): quien debe y paga de mas deja el resto a favor, y el saldo a favor se
+// descuenta SOLO de las cuotas que se cargan despues: no quedan pendientes ni generan mora aunque se consulte ya vencidas
+const overpay = [nov, pay('p', '2026-12-20', 906)];   // debe Q 300 + Q 6 de mora y paga Q 906: Q 600 a favor
+equal('pago de mas: cubre la cuota y su mora y deja el resto a favor', brief(overpay, '2026-12-20'), { capital: 0, overdue: 0, mora: 0, balance: 600 });
+const covered = overpay.concat([fee('f12', '2026-12', 300, '2026-12-28'), fee('f01', '2027-01', 300, '2027-01-05')]);
+equal('las cuotas de diciembre y enero se cargan despues y el saldo a favor las paga solo: nada pendiente ni mora, ya vencidas', brief(covered, '2027-03-15'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
+equal('la de febrero ya no la cubre: la mora corre solo sobre ella (15 dias de marzo sobre Q 300)', brief(covered.concat([fee('f02', '2027-02', 300, '2027-02-05')]), '2027-03-15'), { capital: 300, overdue: 300, mora: 4.5, balance: -304.5 });
+const halfCovered = [nov, pay('p', '2026-12-20', 756), fee('f12', '2026-12', 300, '2026-12-28'), fee('f01', '2027-01', 300, '2027-01-05')];
+equal('Q 450 a favor: paga diciembre entero y Q 150 de enero; la mora corre solo sobre los Q 150 que faltan', brief(halfCovered, '2027-02-20'), { capital: 150, overdue: 150, mora: 3, balance: -153 });
+equal('el servidor tampoco lo marca moroso (con y sin regla de mora)', [M.moraOf('r1', covered, S, new Date('2027-03-15T18:00:00Z')).moroso, M.moraOf('r1', covered, { fee: 300 }, new Date('2027-03-15T18:00:00Z')).moroso, M.moraOf('r1', covered, { fee: 300 }, new Date('2027-03-15T18:00:00Z')).balance], [false, false, 6]);
 equal('en el mismo dia, el cargo entra antes que el pago aunque llegue despues en la lista', brief([pay('p', '2026-12-10', 100), extra('e', '2026-12-10', 100)], '2026-12-20'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
 equal('montos invalidos o en cero no cuentan', brief([{ ...nov, amount: 'abc' }, pay('p', '2026-12-01', 0), pay('q', '2026-12-01', -50)], '2026-12-20'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
 

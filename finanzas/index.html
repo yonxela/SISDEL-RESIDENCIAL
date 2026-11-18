@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261117a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261116c"></script>
+    <script src="./sisdel-reportes.js?v=20261118a"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -1333,6 +1333,8 @@
                     </div>
                     <p class="mt-1 text-[11px] opacity-80" id="inc-bal-detail"></p>
                     <p class="hidden mt-1 text-xs font-bold" id="inc-bal-after"></p>
+                    <!-- SISDEL: a que meses llega el saldo a favor (el que ya tiene o el que deja este pago): se aplica solo -->
+                    <p class="hidden mt-1 text-xs leading-snug text-emerald-800 dark:text-emerald-200" id="inc-bal-cover"></p>
                 </div>
                 <!-- SISDEL: dos pestanas: Pago (lo de siempre) y Detalle por concepto (de lo que debe, cuanto es de cada concepto, y
                      donde se anota cuanto del pago va a cada uno cuando el residente no paga todo). Ver "detalle del pago por concepto" -->
@@ -1579,6 +1581,11 @@
                     </div>
                 </div>
                 <p class="mt-2 text-[11px] text-slate-500 dark:text-slate-400" id="ec-mora-note"></p>
+            </div>
+            <!-- SISDEL: el saldo a favor del residente (hoy) y a que meses llega: se descuenta solo de las proximas cuotas -->
+            <div id="ec-credit-cover" class="hidden mb-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+                <p class="font-bold"><i class="fas fa-piggy-bank mr-1.5"></i>Saldo a favor <span id="ec-credit-amount" class="font-mono">Q0.00</span></p>
+                <p class="text-xs mt-0.5" id="ec-credit-text"></p>
             </div>
             <div class="grid grid-cols-3 gap-3 mb-4">
                 <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50 p-3 rounded-xl text-center"><p class="text-xs text-emerald-600 font-semibold uppercase">Pagos</p><p class="text-lg font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap" id="ec-total-inc">$0.00</p></div>
@@ -3726,6 +3733,50 @@
             });
             return { count, pending: pending / 100, mora: mora / 100, total: (pending + mora) / 100 };
         }
+        // ───────── SISDEL: saldo a favor aplicado a los meses siguientes (pedido del usuario el 2026-11-18) ─────────
+        // Un pago de mas no se devuelve ni se pierde: queda como saldo a favor y se descuenta SOLO de las cuotas que se carguen
+        // despues (el saldo del libro, la mora por dia de sisdel-mora.js y el servidor ya lo hacen: esa cuota no queda pendiente,
+        // no genera mora y el residente no sale moroso). Aqui solo se dice a que meses llega (SisdelReportesOikos.creditCoverage):
+        // en el Ingreso, el comprobante, el detalle del movimiento, la lista de Residentes y el Estado de cuenta.
+        // El ultimo mes con cuota cargada (viva) de cada residente: Map(id -> 'AAAA-MM'), una vez por cambio de la lista
+        function lastFeePeriods() {
+            const build = (txs) => {
+                const out = new Map();
+                txs.forEach(t => {
+                    if (!t || t.deleted) return;
+                    const p = txFeePeriod(t);
+                    if (!p) return;
+                    const k = String(t.resiId);
+                    if (!out.has(k) || out.get(k) < p) out.set(k, p);
+                });
+                return out;
+            };
+            const mem = sisdelMem();
+            return mem ? sisdelDerived(mem, 'lastFeePeriod', build) : build(Store.get('transactions') || []);
+        }
+        // El primer mes al que llega el saldo a favor: el que sigue a la ultima cuota cargada, nunca antes del mes en curso (si
+        // la de este mes aun no se carga, es la primera) ni antes de su "cobrar desde" (feeFrom)
+        function creditFirstPeriod(r) {
+            const cur = currentFeePeriod();
+            const last = lastFeePeriods().get(String(r.id));
+            let first = last && last >= cur ? SisdelReportesOikos.addMonths(last, 1) : cur;
+            if (/^\d{4}-\d{2}$/.test(String(r.feeFrom || '')) && first < r.feeFrom) first = r.feeFrom;
+            return first;
+        }
+        // A que meses llega un saldo a favor de `credit` (creditCoverage: { text, until, months... }); null sin saldo. Un residente
+        // finiquitado ya no recibe cuotas: su saldo no se aplica solo (closed)
+        function creditCoverageOf(r, credit) {
+            if (!r || !(credit > 0.004) || typeof SisdelReportesOikos === 'undefined') return null;
+            if (!isResidentActive(r)) return { closed: true, credit, fullMonths: 0, partial: null, months: [], text: 'residente finiquitado: no se aplica solo', until: 'finiquitado' };
+            return SisdelReportesOikos.creditCoverage(credit, SisdelCuotas.residentFee(Store.get('settings'), r), creditFirstPeriod(r), { money: formatMoney });
+        }
+        // La frase para quien cobra y para el residente
+        function creditCoverText(cov) {
+            if (!cov || !cov.text) return '';
+            if (cov.closed) return 'El residente está finiquitado: ya no se le cargan cuotas, así que este saldo a favor no se aplica solo.';
+            if (!cov.fullMonths && !cov.partial) return 'Se aplica solo a sus próximas cuotas y cargos.';
+            return `Se aplica solo a las próximas cuotas: ${cov.text}.`;
+        }
         // SISDEL: la lista que muestra OIKOS: sin busqueda, todos en el orden elegido (resOrder): alfabetico por nombre (sin
         // importar acentos ni mayusculas; a igual nombre, por casa), de mayor a menor morosidad (lo que debe con la mora del
         // dia) o por casa; con busqueda, las coincidencias con las mejores primero. Se ve de
@@ -3819,6 +3870,9 @@
                 const ms = balanceOf.get(r.id).ms;
                 const shownBalance = balanceOf.get(r.id).shown;
                 const moraLine = ms && ms.mora > 0.005 ? `<span class="block text-[10px] font-semibold text-amber-600 dark:text-amber-400">incl. mora ${formatMoney(ms.mora)}</span>` : '';
+                // SISDEL: un saldo a favor dice hasta que mes cubre (se descuenta solo de las proximas cuotas)
+                const creditCov = shownBalance > 0.004 ? creditCoverageOf(r, shownBalance) : null;
+                const creditLine = creditCov && creditCov.until ? `<span class="resident-credit block text-[10px] font-semibold text-emerald-600 dark:text-emerald-400" title="${esc(creditCoverText(creditCov))}">a favor · ${esc(creditCov.until)}</span>` : '';
                 const balCls = shownBalance < -0.005 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400';
                 const closedBadge = closed
                     ? `<span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 align-middle" title="Finiquitado el ${r.closedAt ? new Date(r.closedAt).toLocaleDateString('es-MX') : '—'}${r.closeReason ? ' · ' + esc(r.closeReason) : ''}">Finiquitado</span>`
@@ -3841,7 +3895,7 @@
                     <td class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">${esc(r.contact || '-')}</td>
                     <td class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">${esc(r.lot || '-')}</td>
                     <td class="py-4 px-6 text-right font-bold font-mono text-sm ${balCls}">
-                        <button onclick="openEstadoCuenta('${r.id}')" class="hover:underline" title="Ver estado de cuenta">${formatMoney(shownBalance)}</button>${moraLine}
+                        <button onclick="openEstadoCuenta('${r.id}')" class="hover:underline" title="Ver estado de cuenta">${formatMoney(shownBalance)}</button>${moraLine}${creditLine}
                     </td>
                     <td class="py-4 px-6 text-center relative">
                         <button onclick="editResident('${r.id}')" title="Editar" class="text-slate-400 hover:text-blue-600 px-2"><i class="fas fa-edit"></i></button>
@@ -5630,6 +5684,14 @@
                 const allocCents = Object.values(alloc).reduce((a, v) => a + Math.round(v * 100), 0);
                 if (!allocCents || allocCents !== Math.round(amt * 100)) { alert('Lo anotado en el Detalle por concepto no suma el monto del pago. Revise la pestaña Detalle.'); setIncTab('detalle'); return; }
             }
+            // SISDEL: un pago que deja saldo a favor anota cuanto queda (creditAfter) y a que meses llega (creditNote): es lo que se le
+            // dijo al residente al pagar y lo que dice su comprobante. No mueve nada: el saldo se descuenta solo de las proximas cuotas
+            let creditInfo = null;
+            if (type === 'income') {
+                const payer = Store.get('residents').find(x => String(x.id) === String(document.getElementById('inc-resident').value));
+                const left = payer ? Math.round((residentShownBalance(payer).shown + amt) * 100) / 100 : 0;
+                if (left > 0.004) creditInfo = { after: left, note: creditCoverText(creditCoverageOf(payer, left)) };
+            }
             const txs = Store.get('transactions');
             let conceptVal = '';
             if (type === 'income') {
@@ -5655,6 +5717,7 @@
             History.push();
             let tx = { id: Date.now().toString(), date: payDate || new Date().toISOString(), type, amount: amt, concept: conceptVal };
             if (alloc) tx.alloc = alloc;
+            if (creditInfo) { tx.creditAfter = creditInfo.after; if (creditInfo.note) tx.creditNote = creditInfo.note; }
             // Document number (manual - payment doc like transfer, check, etc.)
             const prefix = type.substring(0, 3);
             const docNum = document.getElementById(prefix + '-receipt-num').value.trim();
@@ -5684,7 +5747,7 @@
             txs.push(tx); Store.set('transactions', txs);
             if (type === 'income') { const regBtn = document.getElementById('btn-inc-reg'); if (regBtn) regBtn.disabled = true; }
             closeModal(`modal-${type}`); renderAccounting();
-            showToast('Registrado - Ref: ' + tx.receiptNum);
+            showToast('Registrado - Ref: ' + tx.receiptNum + (creditInfo ? ' · queda un saldo a favor de ' + formatMoney(creditInfo.after) + ' para las próximas cuotas' : ''));
             // Tras guardar, abrimos el modal con opciones de Imprimir/Descargar
             // del comprobante recién creado. El usuario decide qué hacer —
             // YA NO auto-descargamos nada. Un pequeño timeout asegura que el
@@ -7413,8 +7476,16 @@
             const isInc = tx.type === 'income';
             // SISDEL: un pago dirigido a conceptos (alloc) lleva abajo "Aplicado a:" con cada concepto: la hoja crece lo que haga falta
             const allocLines = isInc && tx.alloc ? allocLinesOf(tx.alloc) : [];
-            const W = 148, H = 115 + (allocLines.length ? 7 + allocLines.length * 5 : 0), pad = 10;
-            const { jsPDF } = window.jspdf; const doc = new jsPDF({ unit: 'mm', format: [W, H], orientation: 'landscape' }); // SISDEL: horizontal: sin esto jsPDF giraba la hoja a 115 x 148 y el comprobante, pensado para 148 de ancho, se cortaba a la derecha
+            const { jsPDF } = window.jspdf;
+            // SISDEL: un pago que dejo saldo a favor lo dice, con a que meses llega (tx.creditAfter y tx.creditNote, anotados al pagar)
+            const W = 148, pad = 10;
+            const hasCredit = isInc && parseFloat(tx.creditAfter) > 0.004;
+            const creditLines = hasCredit && tx.creditNote ? (() => { const probe = new jsPDF({ unit: 'mm' }); probe.setFontSize(8); return probe.splitTextToSize(String(tx.creditNote), W - 2 * pad - 4); })() : [];
+            const H = 115 + (allocLines.length ? 7 + allocLines.length * 5 : 0) + (hasCredit ? (allocLines.length ? 7 : 0) + 6 + creditLines.length * 4 : 0);
+            // SISDEL: la hoja siempre mide W de ancho y H de alto: jsPDF pone el lado mayor segun la orientacion, asi que es horizontal
+            // mientras H < W (sin esto giraba la hoja a 115 x 148 y el comprobante se cortaba a la derecha) y vertical si las lineas
+            // de "Aplicado a" y del saldo a favor la hacen mas alta que ancha (si no, se cortaba abajo)
+            const doc = new jsPDF({ unit: 'mm', format: [W, H], orientation: H > W ? 'portrait' : 'landscape' });
             const aR = isInc ? 16 : 220, aG = isInc ? 185 : 38, aB = isInc ? 129 : 38;
             // Header bar
             doc.setFillColor(aR, aG, aB); doc.rect(0, 0, W, 30, 'F');
@@ -7444,6 +7515,13 @@
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 120, 140); doc.text('Aplicado a:', pad, y);
                 allocLines.forEach(([label, value]) => { y += 5; doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(40, 40, 60); doc.text(label, pad + 4, y); doc.text(value, W - pad, y, { align: 'right' }); });
             }
+            if (hasCredit) {
+                if (allocLines.length) y += 7;
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 120, 140); doc.text('Saldo a favor después de este pago:', pad, y);
+                doc.setTextColor(16, 185, 129); doc.text(formatMoney(tx.creditAfter), W - pad, y, { align: 'right' });
+                doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 40, 60);
+                creditLines.forEach(line => { y += 4; doc.text(line, pad + 4, y); });
+            }
             doc.setDrawColor(220, 220, 230); doc.setLineWidth(0.3); doc.line(pad, H - 15, W - pad, H - 15);
             doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(160, 160, 180); doc.text('Generado el ' + new Date().toLocaleString('es-MX'), W / 2, H - 8, { align: 'center' });
             const fileName = (isInc ? 'Ingreso_' : 'Egreso_') + receiptCode + '_' + (rName || 'general').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20) + '.pdf';
@@ -7471,7 +7549,7 @@
             document.getElementById('voucher-opts-title').textContent =
                 (isInc ? 'Comprobante de Ingreso' : 'Comprobante de Egreso') + ' · No. ' + code;
             document.getElementById('voucher-opts-subtitle').textContent =
-                tx.concept + ' · ' + formatMoney(tx.amount);
+                tx.concept + ' · ' + formatMoney(tx.amount) + (isInc && parseFloat(tx.creditAfter) > 0.004 ? ' · deja un saldo a favor de ' + formatMoney(tx.creditAfter) : '');
             // SISDEL: el estado de cuenta del residente de este pago (ecQuick*), solo si es un pago de un residente que existe
             const ecBox = document.getElementById('voucher-ec');
             const ecRes = isInc && tx.resiId ? (Store.get('residents') || []).find(r => String(r.id) === String(tx.resiId)) : null;
@@ -7805,11 +7883,20 @@
             document.getElementById('inc-bal-fill').classList.toggle('hidden', !owes);
             const after = document.getElementById('inc-bal-after');
             const amt = parseFloat((document.getElementById('inc-amount') || {}).value);
+            // SISDEL: el saldo a favor que deja el pago (o el que ya tiene) y a que meses llega: se aplica solo a las proximas cuotas
+            let creditLeft = credit ? shown : 0;
             if (amt > 0) {
                 const left = Math.round((shown + amt) * 100) / 100;
                 after.textContent = left < -0.004 ? `Con este pago quedaría debiendo ${formatMoney(-left)}` : left > 0.004 ? `Con este pago queda un saldo a favor de ${formatMoney(left)}` : 'Con este pago queda al día';
+                creditLeft = left > 0.004 ? left : 0;
             }
             after.classList.toggle('hidden', !(amt > 0));
+            const cover = document.getElementById('inc-bal-cover');
+            if (cover) {
+                const coverText = creditCoverText(creditCoverageOf(r, creditLeft));
+                cover.textContent = coverText;
+                cover.classList.toggle('hidden', !coverText);
+            }
             syncIncAlloc(r);
         }
 
@@ -7906,7 +7993,7 @@
             }
             if (String(r.id) !== incAlloc.rid) buildIncAlloc(r);
             if (!incAlloc.rows.length) {
-                empty.textContent = 'No debe nada: lo que pague quedará como saldo a favor.';
+                empty.textContent = 'No debe nada: lo que pague quedará como saldo a favor y se aplicará solo a sus próximas cuotas.';
                 empty.classList.remove('hidden'); wrap.classList.add('hidden');
                 if (hint) hint.classList.add('hidden');
                 return;
@@ -7939,7 +8026,7 @@
             const order = rule && rule.payFirst === 'mora' ? 'primero la mora y después las cuotas más antiguas' : (rules.length ? 'primero las cuotas más antiguas y después la mora' : 'primero lo más antiguo');
             const note = document.getElementById('inc-alloc-note');
             if (incAlloc.manual) note.textContent = 'El monto del pago es la suma de lo que anota aquí. Cada concepto admite hasta lo que debe; para pagar de más, escriba el monto en la pestaña Pago.';
-            else if (amt > 0) note.textContent = `Así se aplicará el monto escrito (${order}). Para decidir a qué concepto va cada parte, anote los montos en la columna Pagar.` + (extra > 0.004 ? ` Sobran ${formatMoney(extra)}: quedan a favor del residente.` : '');
+            else if (amt > 0) note.textContent = `Así se aplicará el monto escrito (${order}). Para decidir a qué concepto va cada parte, anote los montos en la columna Pagar.` + (extra > 0.004 ? ` Sobran ${formatMoney(extra)}: quedan a favor del residente y se aplican solos a sus próximas cuotas.` : '');
             else note.textContent = `Escriba el monto en la pestaña Pago y aquí verá cómo se aplica (${order}), o anote cuánto va a cada concepto en la columna Pagar.`;
             if (hint) {
                 hint.textContent = incAlloc.manual ? 'Suma de lo anotado en el detalle por concepto. Si cambia el monto, el reparto vuelve a ser automático.' : '';
@@ -8413,6 +8500,16 @@
                 }
             }
             renderEcPending(dd);
+            // SISDEL: el saldo a favor de hoy y a que meses llega (no depende del rango de fechas de la lista)
+            const creditBox = document.getElementById('ec-credit-cover');
+            if (creditBox) {
+                const cov = ecCreditCover(r);
+                creditBox.classList.toggle('hidden', !cov);
+                if (cov) {
+                    document.getElementById('ec-credit-amount').textContent = formatMoney(cov.credit);
+                    document.getElementById('ec-credit-text').textContent = creditCoverText(cov);
+                }
+            }
             const tbody = document.getElementById('ec-table-body');
             const openingRow = Math.abs(opening) >= 0.005
                 ? `<tr class="bg-slate-50 dark:bg-slate-700/40"><td colspan="4" class="py-2 px-4 text-xs text-slate-500 dark:text-slate-400">Saldo anterior al ${document.getElementById('ec-date-from').value}</td><td class="py-2 px-4 text-right font-mono text-xs ${opening >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${formatMoney(opening)}</td><td></td></tr>`
@@ -8608,6 +8705,7 @@
                     ${isCharge && tx.breakdown ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>${esc(SisdelCuotas.listParts(tx.breakdown, (Store.get('settings') || {}).currency))}</p>` : ''}
                     ${tx.type === 'income' && tx.alloc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>Aplicado a: ${esc(allocLinesOf(tx.alloc).map(([label, value]) => label + ' ' + value).join(' · '))}</p>` : ''}
                     ${txDateChanged(tx) ? `<p class="text-[11px] font-semibold text-amber-700 dark:text-amber-300 mt-0.5"><i class="fas fa-calendar-day mr-1"></i>Fecha del pago cambiada al registrarlo: se registró el ${esc(new Date(tx.created_at).toLocaleString('es-MX'))}</p>` : ''}
+                    ${tx.type === 'income' && parseFloat(tx.creditAfter) > 0.004 ? `<p class="tx-credit-note text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5"><i class="fas fa-piggy-bank mr-1"></i>Dejó un saldo a favor de ${esc(formatMoney(tx.creditAfter))}${tx.creditNote ? '. ' + esc(tx.creditNote) : ''}</p>` : ''}
                 </div>
                 <span class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap ${tipoBadge}">${tipoLabel}</span>
             </div>`;
@@ -8724,6 +8822,19 @@
                 const note = doc.splitTextToSize(L(`Al ${new Date().toLocaleDateString('es-MX')}: lo pendiente y la mora son de hoy, no dependen del período. Mora: ${sisdelMoraRuleText()}.`), 182);
                 doc.text(note, 14, y); y += note.length * 3 + 4;
             }
+            // SISDEL: el saldo a favor de hoy y a que meses llega (se descuenta solo de las proximas cuotas)
+            const creditCov = ecCreditCover(r);
+            if (creditCov) {
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); // el corte de las lineas se mide con la letra con que se escriben
+                const lines = doc.splitTextToSize(L(creditCoverText(creditCov)), 174);
+                const h = 10 + lines.length * 3.6;
+                doc.setFillColor(236, 253, 245); doc.setDrawColor(167, 243, 208); doc.setLineWidth(0.4); doc.roundedRect(14, y, 182, h, 2, 2, 'FD');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(6, 95, 70);
+                doc.text(L('Saldo a favor ' + formatMoney(creditCov.credit)), 18, y + 6);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+                doc.text(lines, 18, y + 10.5);
+                y += h + 5;
+            }
             // Pagos, cargos y saldo del periodo elegido
             doc.setFillColor(236, 253, 245); doc.roundedRect(14, y, 55, 18, 2, 2, 'F'); // emerald bg
             doc.setFillColor(255, 241, 242); doc.roundedRect(77, y, 55, 18, 2, 2, 'F'); // rose bg
@@ -8775,6 +8886,13 @@
         // impresion (getEcData: solo movimientos vivos, con el saldo anterior al rango y la mora a hoy).
         // La mora sale igual en las cuatro salidas: la de la pantalla (saldo del libro de movimientos)
         function ecMora() { return sisdelMoraOf(ecResidentId, sisdelLedgerBalance(ecResidentId)); }
+        // SISDEL: el saldo a favor de hoy del residente y a que meses llega (creditCoverageOf); null si no tiene
+        function ecCreditCover(r) {
+            const res = r || (Store.get('residents') || []).find(x => String(x.id) === String(ecResidentId));
+            if (!res) return null;
+            const shown = residentShownBalance(res).shown;
+            return shown > 0.004 ? creditCoverageOf(res, shown) : null;
+        }
         // forText = true: para el mensaje de WhatsApp (montos con formato y solo los ultimos movimientos);
         // false: para el Excel (montos como numeros, con signo, y todos los movimientos)
         function ecReportModel(forText) {
@@ -8796,8 +8914,10 @@
                 kpis.push({ label: 'De ellas, vencidas', value: money(d.overdue) });
                 if (d.upcoming > 0) kpis.push({ label: 'De ellas, por vencer', value: money(d.upcoming) });
                 kpis.push({ label: 'Mora a hoy', value: money(d.mora) }, { label: 'TOTAL QUE DEBE', value: money(d.total) });
-                if (d.credit > 0) kpis.push({ label: 'Saldo a favor', value: money(d.credit) });
             }
+            // SISDEL: el saldo a favor de hoy y a que meses llega (con o sin regla de mora)
+            const creditCov = ecCreditCover(r);
+            if (creditCov) kpis.push({ label: 'Saldo a favor', value: money(creditCov.credit) }, { label: 'Aplicación del saldo a favor', value: creditCoverText(creditCov) });
             if (hasOpening) kpis.push({ label: 'Saldo anterior', value: money(opening) });
             kpis.push({ label: 'Pagos', value: money(totInc) }, { label: 'Cargos', value: money(totChg) }, { label: dd ? 'Saldo sin mora' : 'Saldo', value: money(balance) });
             const day = (iso) => new Date(iso).toLocaleDateString('es-MX');
@@ -8885,10 +9005,14 @@
                 <tfoot><tr style="background:#e2e8f0;font-weight:700"><td style="${cell}">TOTAL</td><td style="${cell};text-align:right">${formatMoney(dd.list.capital)}</td><td style="${cell}"></td><td style="${cell};text-align:right">${formatMoney(dd.list.mora)}</td><td style="${cell};text-align:right;color:#9f1239">${formatMoney(dd.list.total)}</td></tr></tfoot></table>
                 <h3 style="margin:0 0 6px;font-size:14px;color:#4f46e5">Movimientos del período</h3>`;
             })() : '';
+            // SISDEL: el saldo a favor de hoy y a que meses llega (se descuenta solo de las proximas cuotas)
+            const creditCov = ecCreditCover(r);
+            const creditHtml = creditCov ? `<div class="ec-credit-print" style="background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 14px;border-radius:10px;margin-bottom:16px;color:#065f46"><p style="margin:0;font-size:13px;font-weight:700">Saldo a favor <span style="white-space:nowrap">${formatMoney(creditCov.credit)}</span></p><p style="margin:3px 0 0;font-size:11px">${esc(creditCoverText(creditCov))}</p></div>` : '';
             const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${esc(r.name)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}thead{display:table-header-group}tfoot{display:table-footer-group}tr{page-break-inside:avoid}@media print{body{padding:15px}}</style></head><body>
                 <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${esc(s.name || 'OIKOS')}</p></div>
                 <div style="margin-bottom:16px"><h2 style="margin:0;font-size:18px">${esc(r.unit)} - ${esc(r.name)}</h2><p style="color:#64748b;font-size:13px;margin:4px 0">Período: ${from} al ${to}</p></div>
                 ${debtHtml}
+                ${creditHtml}
                 <div style="display:flex;gap:12px;margin-bottom:20px">
                     <div style="flex:1;background:#ecfdf5;border:1px solid #a7f3d0;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#059669;margin:0">PAGOS</p><p style="font-size:18px;font-weight:700;color:#166534;margin:4px 0 0;white-space:nowrap">${formatMoney(totInc)}</p></div>
                     <div style="flex:1;background:#fff1f2;border:1px solid #fecdd3;padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:#e11d48;margin:0">CARGOS</p><p style="font-size:18px;font-weight:700;color:#9f1239;margin:4px 0 0;white-space:nowrap">${formatMoney(totChg)}</p></div>

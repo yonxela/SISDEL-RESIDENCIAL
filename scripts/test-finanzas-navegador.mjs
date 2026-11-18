@@ -537,6 +537,52 @@ async function run() {
         await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; })()`);
         await idle();
 
+        // ───────── Saldo a favor (pedido del usuario el 2026-11-18) ─────────
+        console.log('\nPagos: un pago de mas queda a favor y se aplica solo a las proximas cuotas');
+        await oikos(`(() => { window.__real = { alert: window.alert, confirm: window.confirm }; window.alert = () => {}; window.confirm = () => true; navigate('accounting'); openModal('modal-income'); document.getElementById('inc-resident').value = 'u-maria'; updateIncomeConcepts(); })()`);
+        // Maria paga lo que debe mas dos cuotas y Q 50: le quedan dos cuotas y Q 50 a favor
+        const over = await oikos(`(() => {
+            const r = Store.get('residents').find((x) => x.id === 'u-maria');
+            const fee = SisdelCuotas.residentFee(Store.get('settings'), r);
+            const shown = residentShownBalance(r).shown;
+            const target = 2 * fee + 50;
+            const amount = Math.round((target - shown) * 100) / 100;
+            document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Pago adelantado';
+            document.getElementById('inc-amount').value = amount.toFixed(2); renderIncomeBalance();
+            const first = creditFirstPeriod(r);
+            const cover = document.getElementById('inc-bal-cover');
+            const R = SisdelReportesOikos;
+            return { fee, target, amount, first, cur: currentFeePeriod(), after: document.getElementById('inc-bal-after').textContent, afterOk: document.getElementById('inc-bal-after').textContent === 'Con este pago queda un saldo a favor de ' + formatMoney(target),
+                cover: cover.textContent, hidden: cover.classList.contains('hidden'),
+                expected: 'Se aplica solo a las próximas cuotas: cubre las cuotas de ' + R.monthLong(first) + ' y ' + R.monthLong(R.addMonths(first, 1)) + ', y ' + formatMoney(50) + ' de la de ' + R.monthLong(R.addMonths(first, 2)) + '.',
+                until: 'a favor · hasta ' + R.periodLabel(R.addMonths(first, 1)) };
+        })()`);
+        record('la cuota del lote de la prueba es mayor que cero (si no, no hay meses que cubrir)', over.fee > 0, JSON.stringify(over));
+        record('al escribir un monto mayor que lo que debe, dice el saldo a favor que queda y a que meses llega', over.afterOk && !over.hidden && over.cover === over.expected, JSON.stringify(over));
+        record('el primer mes es el que sigue a la ultima cuota cargada, nunca antes del mes en curso', over.first >= over.cur, JSON.stringify([over.first, over.cur]));
+        const incBefore = await paymentsNow();
+        await oikos(`handleTransactionSubmit({ preventDefault() {} }, 'income')`);
+        await sleep(500);
+        const saved = await oikos(`(() => { const tx = Store.get('transactions').filter((t) => t.type === 'income' && t.resiId === 'u-maria').pop(); return { creditAfter: tx.creditAfter, creditNote: tx.creditNote, id: tx.id, subtitle: document.getElementById('voucher-opts-subtitle').textContent }; })()`);
+        equal('el pago se registra y anota el saldo a favor que dejo y a que meses llega (lo que dice el comprobante)', [await paymentsNow(), saved.creditAfter, saved.creditNote], [incBefore + 1, over.target, over.expected]);
+        record('las opciones del comprobante dicen que deja saldo a favor', saved.subtitle.includes('deja un saldo a favor de'), saved.subtitle);
+        const voucher = await oikos(`(() => { const b = _buildVoucherPdf(${JSON.stringify(saved.id)}); const raw = b.doc.output(); return { text: raw.includes('Saldo a favor despu'), cover: raw.includes('Se aplica solo a las pr'), h: Math.round(b.doc.internal.pageSize.getHeight()), w: Math.round(b.doc.internal.pageSize.getWidth()) }; })()`);
+        record('el comprobante en PDF dice el saldo a favor y a que meses llega, con la hoja de 148 de ancho y mas alta', voucher.text && voucher.cover && voucher.w === 148 && voucher.h > 115, JSON.stringify(voucher));
+        const tall = await oikos(`(() => { const id = ${JSON.stringify(saved.id)}; const realGet = Store.get; Store.get = (k) => { const v = realGet(k); if (k === 'transactions') { const t = v.find((x) => x.id === id); if (t) t.alloc = { maintenance: 1, water: 1, garbage: 1, electricity: 1, other: 1, fee: 1, extra: 1, mora: 1 }; } return v; }; let b; try { b = _buildVoucherPdf(id); } finally { Store.get = realGet; } return [Math.round(b.doc.internal.pageSize.getWidth()), Math.round(b.doc.internal.pageSize.getHeight()) > 148, b.doc.output().includes('Aplicado a:')]; })()`);
+        equal('con muchas lineas (Aplicado a y saldo a favor) la hoja pasa a vertical y sigue midiendo 148 de ancho (no se corta abajo)', tall, [148, true, true]);
+        await oikos(`closeModal('modal-voucher-options')`);
+        const creditDetail = await oikos(`(() => { openTxDetail(${JSON.stringify(saved.id)}); const el = document.querySelector('#tx-detail-body .tx-credit-note'); const t = el ? el.textContent : ''; closeModal('modal-tx-detail'); return t; })()`);
+        record('el detalle del movimiento dice el saldo a favor que dejo', creditDetail.includes('Dejó un saldo a favor de') && creditDetail.includes(over.expected), creditDetail);
+        await idle();
+        const listLine = await oikos(`(() => { navigate('residents'); const s = document.getElementById('res-search'); if (s) { s.value = ''; resSearchChanged(); } resTypeChanged(''); renderResidents(); const row = [...document.querySelectorAll('#residents-table-body tr')].find((tr) => tr.innerHTML.includes("openEstadoCuenta('u-maria')")); const el = row && row.querySelector('.resident-credit'); return el ? [el.textContent, el.title] : null; })()`);
+        equal('la lista de Residentes dice hasta que mes cubre el saldo a favor (y el detalle al pasar el mouse)', listLine, [over.until, over.expected]);
+        const ec = await oikos(`(() => { openEstadoCuenta('u-maria'); const box = document.getElementById('ec-credit-cover'); const out = [!box.classList.contains('hidden'), document.getElementById('ec-credit-amount').textContent === formatMoney(${over.target}), document.getElementById('ec-credit-text').textContent]; const model = ecReportModel(true); out.push((model.kpis || []).some((k) => k.label === 'Aplicación del saldo a favor' && k.value === document.getElementById('ec-credit-text').textContent)); return out; })()`);
+        equal('el estado de cuenta muestra el saldo a favor y a que meses llega, y lo lleva a Excel y WhatsApp', ec, [true, true, over.expected, true]);
+        const noCredit = await oikos(`(() => { openEstadoCuenta('u-ana'); const hidden = document.getElementById('ec-credit-cover').classList.contains('hidden'); const r = Store.get('residents').find((x) => x.id === 'u-ana'); return [hidden, residentShownBalance(r).shown > 0.004]; })()`);
+        equal('quien no tiene saldo a favor no ve el recuadro', noCredit[0], !noCredit[1]);
+        await oikos(`(() => { closeModal('modal-estado-cuenta'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);
+        await idle();
+
         console.log('\nClave del residente bajo el nombre (solo con el privilegio de ver codigos)');
         const anaCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs[0].id;
         await oikos(`(() => { navigate('residents'); const s = document.getElementById('res-search'); if (s) { s.value = ''; resSearchChanged(); } resTypeChanged(''); renderResidents(); })()`);
@@ -629,7 +675,7 @@ async function run() {
         equal('el detalle del movimiento dice a que conceptos se aplico', txShows, true);
         await oikos(`closeModal('modal-tx-detail')`);
         const pdfHeights = await oikos(`(() => {
-            const plain = Store.get('transactions').filter((t) => t.type === 'income' && !t.alloc).pop();
+            const plain = Store.get('transactions').filter((t) => t.type === 'income' && !t.alloc && !t.creditAfter).pop();
             const withAlloc = _buildVoucherPdf(window.__allocTx);
             const without = plain ? _buildVoucherPdf(plain.id) : null;
             return [withAlloc && Math.round(withAlloc.doc.internal.pageSize.getHeight()), without && Math.round(without.doc.internal.pageSize.getHeight()), without && Math.round(without.doc.internal.pageSize.getWidth()), withAlloc && Math.round(withAlloc.doc.internal.pageSize.getWidth())];
@@ -637,7 +683,7 @@ async function run() {
         equal('el comprobante es horizontal (148 x 115, como se dibuja: antes jsPDF lo giraba y se cortaba a la derecha) y el de un pago dirigido es mas alto (lleva "Aplicado a:")', [pdfHeights[0] > pdfHeights[1], pdfHeights[1], pdfHeights[2], pdfHeights[3]], [true, 115, 148, 148]);
         // Un residente sin deuda: el Detalle dice que no debe nada
         const none = await oikos(`(() => { openModal('modal-income'); setIncTab('detalle'); syncIncAlloc({ id: '__sin_deuda__', name: 'Nadie' }); return [document.getElementById('inc-alloc-empty').textContent, document.getElementById('inc-alloc-empty').classList.contains('hidden'), document.getElementById('inc-alloc-wrap').classList.contains('hidden')]; })()`);
-        equal('sin deuda, el Detalle dice que no debe nada y que lo que pague queda a favor', none, ['No debe nada: lo que pague quedará como saldo a favor.', false, true]);
+        equal('sin deuda, el Detalle dice que no debe nada y que lo que pague queda a favor', none, ['No debe nada: lo que pague quedará como saldo a favor y se aplicará solo a sus próximas cuotas.', false, true]);
         // Un detalle que no suma el monto no se registra
         const mismatch = await oikos(`(() => {
             openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts();

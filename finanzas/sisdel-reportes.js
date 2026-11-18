@@ -532,5 +532,55 @@
         };
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel };
+    // ── Saldo a favor: a que cuotas se aplica (pedido del usuario el 2026-11-18) ──
+    // Un pago de mas no se devuelve ni se pierde: queda como saldo a favor del residente y el sistema lo aplica SOLO a las
+    // cuotas que se carguen despues (el saldo del libro de OIKOS, el motor de mora y el servidor lo descuentan en cuanto la
+    // cuota existe: esa cuota no queda pendiente, no genera mora y el residente no sale moroso). creditCoverage solo dice a
+    // que meses llega, para que quien cobra y el residente lo vean: desde `firstPeriod` (el primer mes que todavia no tiene su
+    // cuota cargada), una cuota de `monthlyFee` por mes, en centavos.
+    // { credit, monthlyFee, firstPeriod, fullMonths, lastFull, partial: { period, amount } | null,
+    //   months: [{ period, amount, full }] (a lo mas MAX_MONTHS), text, until }
+    //   text  'cubre las cuotas de diciembre de 2026 y enero de 2027' (o 'se aplica solo a sus próximas cuotas y cargos'
+    //         sin cuota mensual o sin mes de inicio)
+    //   until 'hasta Ene 2027' / 'parte de Dic 2026': la version corta para la lista de Residentes
+    // opts: { money: (monto) => texto } (formatMoney de OIKOS; por defecto 'Q1,234.50')
+    const MONTHS_LONG = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const monthLong = (period) => `${MONTHS_LONG[Number(period.slice(5, 7)) - 1]} de ${period.slice(0, 4)}`;
+    // El mes que queda `n` meses despues de `key` ('AAAA-MM')
+    function addMonths(key, n) {
+        const index = Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7)) - 1 + n;
+        return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+    }
+    const defaultMoney = (value) => `Q${value.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
+    function creditCoverage(credit, monthlyFee, firstPeriod, opts) {
+        const options = opts || {};
+        const money = typeof options.money === 'function' ? options.money : defaultMoney;
+        const c = Math.max(0, cents(credit));
+        const fee = Math.max(0, cents(monthlyFee));
+        const first = validMonth(String(firstPeriod || '')) ? String(firstPeriod) : null;
+        const out = { credit: fromCents(c), monthlyFee: fromCents(fee), firstPeriod: first, fullMonths: 0, lastFull: null, partial: null, months: [], text: '', until: '' };
+        if (!c) return out;
+        if (!fee || !first) {
+            out.text = 'se aplica solo a sus próximas cuotas y cargos';
+            return out;
+        }
+        const full = Math.floor(c / fee);
+        const rest = c - full * fee;
+        out.fullMonths = full;
+        for (let i = 0; i < full && out.months.length < MAX_MONTHS; i++) out.months.push({ period: addMonths(first, i), amount: fromCents(fee), full: true });
+        if (full) out.lastFull = addMonths(first, full - 1);
+        if (rest > 0) {
+            out.partial = { period: addMonths(first, full), amount: fromCents(rest) };
+            if (out.months.length < MAX_MONTHS) out.months.push({ period: out.partial.period, amount: out.partial.amount, full: false });
+        }
+        if (full === 0) out.text = `cubre ${money(fromCents(rest))} de la cuota de ${monthLong(first)} (${money(fromCents(fee))})`;
+        else if (full === 1) out.text = `cubre la cuota de ${monthLong(first)}`;
+        else if (full === 2) out.text = `cubre las cuotas de ${monthLong(first)} y ${monthLong(out.lastFull)}`;
+        else out.text = `cubre las cuotas de ${monthLong(first)} a ${monthLong(out.lastFull)} (${full} meses)`;
+        if (full > 0 && rest > 0) out.text += `${full === 1 ? ' y' : ', y'} ${money(fromCents(rest))} de la de ${monthLong(out.partial.period)}`;
+        out.until = full > 0 ? `hasta ${periodLabel(out.lastFull)}` : `parte de ${periodLabel(first)}`;
+        return out;
+    }
+
+    return { MAX_MONTHS, NO_FASE, monthBalance, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage };
 });

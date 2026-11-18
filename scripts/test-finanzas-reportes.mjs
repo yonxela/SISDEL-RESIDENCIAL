@@ -313,6 +313,33 @@ equal('por periodo y por fase, de mayor a menor deuda', view({ from: '2026-02', 
 equal('los centavos se suman sin errores de redondeo', R.ownersList([{ id: 'z', name: 'Zeta', unit: 'C1' }], [], { owedOf: () => ({ pending: 0.1, mora: 0.2, total: 0.3 }) }).totals, { count: 1, owing: 1, pending: 0.1, mora: 0.2, total: 0.3 });
 equal('sin residentes o sin datos de deuda, el listado sale vacio o en cero', [R.ownersList([], [], {}).rows, R.ownersList([{ id: 'q', name: 'Q', unit: 'C9' }], [], {}).rows.map((x) => x.total)], [[], [0]]);
 
+// ───────── Saldo a favor (pedido del usuario el 2026-11-18) ─────────
+console.log('\nSaldo a favor: a que cuotas se aplica');
+const cov = (credit, fee, first) => R.creditCoverage(credit, fee, first);
+equal('Q 700 con cuota de Q 350 desde diciembre: dos cuotas enteras', [cov(700, 350, '2026-12').text, cov(700, 350, '2026-12').until, cov(700, 350, '2026-12').fullMonths, cov(700, 350, '2026-12').partial], ['cubre las cuotas de diciembre de 2026 y enero de 2027', 'hasta Ene 2027', 2, null]);
+equal('una cuota exacta', cov(350, 350, '2026-12').text, 'cubre la cuota de diciembre de 2026');
+equal('menos de una cuota: cuanto cubre de la primera', [cov(200, 350, '2026-12').text, cov(200, 350, '2026-12').until], ['cubre Q200.00 de la cuota de diciembre de 2026 (Q350.00)', 'parte de Dic 2026']);
+equal('una cuota y parte de la siguiente', cov(500, 350, '2026-12').text, 'cubre la cuota de diciembre de 2026 y Q150.00 de la de enero de 2027');
+equal('tres o mas: el rango, cuantos meses y lo que sobra de la siguiente', cov(1100, 350, '2026-11').text, 'cubre las cuotas de noviembre de 2026 a enero de 2027 (3 meses), y Q50.00 de la de febrero de 2027');
+equal('los meses uno por uno (el ultimo, parcial)', cov(750, 350, '2026-12').months, [{ period: '2026-12', amount: 350, full: true }, { period: '2027-01', amount: 350, full: true }, { period: '2027-02', amount: 50, full: false }]);
+equal('cruza el ano', [cov(4200, 350, '2026-12').text, cov(4200, 350, '2026-12').lastFull], ['cubre las cuotas de diciembre de 2026 a noviembre de 2027 (12 meses)', '2027-11']);
+equal('sin cuota mensual o sin mes de inicio: se aplica a lo que venga', [cov(100, 0, '2026-12').text, cov(100, 350, 'x').text], ['se aplica solo a sus próximas cuotas y cargos', 'se aplica solo a sus próximas cuotas y cargos']);
+equal('sin saldo a favor no dice nada', [cov(0, 350, '2026-12').text, cov(-50, 350, '2026-12').text], ['', '']);
+equal('el formato del dinero lo pone OIKOS', R.creditCoverage(200, 350, '2026-12', { money: (v) => `$ ${v}` }).text, 'cubre $ 200 de la cuota de diciembre de 2026 ($ 350)');
+equal('en centavos, sin errores de redondeo', [cov(0.3, 0.1, '2026-12').fullMonths, cov(0.3, 0.1, '2026-12').partial], [3, null]);
+equal('un saldo enorme no arma una lista sin fin (a lo mas MAX_MONTHS meses) pero dice hasta donde llega', [cov(350 * 1000, 350, '2026-12').months.length, cov(350 * 1000, 350, '2026-12').fullMonths, cov(350 * 1000, 350, '2026-12').lastFull], [R.MAX_MONTHS, 1000, '2110-03']);
+equal('el mes que sigue', [R.addMonths('2026-12', 1), R.addMonths('2026-01', 23), R.addMonths('2026-05', 0)], ['2027-01', '2027-12', '2026-05']);
+// La Tabla general reparte los pagos igual: un pago adelantado deja pagados los meses que se cargan despues
+const prepaid = [
+    tx('a1', 'charge', '2026-01-05T18:00:00.000Z', 300, { kind: 'fee', period: '2026-01', resiId: 'ad' }),
+    tx('ap', 'income', '2026-01-10T18:00:00.000Z', 1000, { resiId: 'ad' }),
+    tx('a2', 'charge', '2026-02-05T18:00:00.000Z', 300, { kind: 'fee', period: '2026-02', resiId: 'ad' }),
+    tx('a3', 'charge', '2026-03-05T18:00:00.000Z', 300, { kind: 'fee', period: '2026-03', resiId: 'ad' }),
+    tx('a4', 'charge', '2026-04-05T18:00:00.000Z', 300, { kind: 'fee', period: '2026-04', resiId: 'ad' })
+];
+const pmPrepaid = R.paymentMap([{ id: 'ad', name: 'Adelantado' }], prepaid, { today: '2026-05-20' });
+equal('Tabla general: Q 1,000 en enero pagan enero, febrero y marzo enteros (verde) y Q 100 de abril, que sigue en rojo', ['2026-01', '2026-02', '2026-03', '2026-04'].map((k) => [pmPrepaid.rows[0].cells[k].status, pmPrepaid.rows[0].cells[k].owed]), [['paid', 0], ['paid', 0], ['paid', 0], ['owed', 200]]);
+
 const sandbox = { self: {} };
 vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-reportes.js'), sandbox);

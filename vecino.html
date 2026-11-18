@@ -9,7 +9,11 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        .panic-card { margin-bottom: 2rem; padding: 1.25rem; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-strong); }
+        /* Boton de panico: arriba a la derecha de la bienvenida, encima del nombre del residente */
+        .panic-top { display: none; flex-direction: column; align-items: flex-end; gap: 0.4rem; margin-bottom: 1rem; }
+        .panic-top .panic-hold { width: auto; padding: 0.7rem 1.25rem; font-size: 0.95rem; box-shadow: 0 6px 16px rgba(220,38,38,0.35); }
+        .panic-top .panic-hint { max-width: 17rem; text-align: right; font-size: 0.72rem; line-height: 1.3; }
+        .panic-top .panic-status { align-self: stretch; text-align: left; margin-top: 0.25rem; }
         .panic-hold { position: relative; overflow: hidden; width: 100%; padding: 1.15rem; border: none; border-radius: 999px; background: #dc2626; color: #fff;
             font-weight: 900; font-size: 1.1rem; letter-spacing: 0.06em; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
             display: flex; align-items: center; justify-content: center; gap: 0.6rem; box-shadow: 0 10px 25px rgba(220,38,38,0.35); }
@@ -70,6 +74,19 @@
         <div class="page-content">
             <div class="welcome-hero"
                 style="text-align:left; margin-bottom:2rem; padding:1.5rem; background:var(--bg-surface); border-radius:var(--radius-lg); border:1px solid var(--border-strong);">
+                <!-- Boton de panico: avisa a la garita, la administracion y sus contactos de emergencia (solo si RONDIN lo activa y el vecino tiene panico.activar) -->
+                <div class="panic-top" id="panicCard">
+                    <button class="panic-hold" id="btnPanicHold" type="button" aria-label="Botón de pánico: mantener presionado 2 segundos">
+                        <div class="fill" id="panicFill"></div>
+                        <span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            PÁNICO
+                        </span>
+                    </button>
+                    <p class="text-muted panic-hint" title="Avisa a la garita, la administración y sus contactos de emergencia">Mantenga presionado 2 segundos</p>
+                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
+                    <div class="panic-status" id="panicStatus" style="display:none;"></div>
+                </div>
                 <h2 style="font-size:1.75rem; margin-bottom:0.5rem; color:var(--text-primary);">¡Hola, <span
                         id="userName">...</span>!</h2>
                 <p style="color:var(--text-secondary);">Bienvenido a su centro de gestión residencial. Casa/Lote: <span
@@ -78,25 +95,6 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     Mi ficha
                 </button>
-            </div>
-
-            <!-- Boton de panico: avisa a la garita, la administracion y sus contactos de emergencia -->
-            <div class="panic-card" id="panicCard" style="display:none;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.75rem;">
-                    <div>
-                        <h3 style="font-size:1.1rem;">Emergencia</h3>
-                        <p class="text-xs text-muted">Mantenga presionado 2 segundos. Avisa a la garita, la administración y sus contactos de emergencia.</p>
-                    </div>
-                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button">Mis contactos de emergencia</button>
-                </div>
-                <button class="panic-hold" id="btnPanicHold" type="button" aria-label="Botón de pánico: mantener presionado">
-                    <div class="fill" id="panicFill"></div>
-                    <span>
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-5px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                        BOTÓN DE PÁNICO
-                    </span>
-                </button>
-                <div class="panic-status" id="panicStatus" style="display:none;"></div>
             </div>
 
             <div class="stats-grid">
@@ -453,7 +451,7 @@
             SisdelRondas.init(session);
             // El boton de panico del vecino se activa en RONDIN > Configuracion ("Vecinos usaran boton de panico")
             SisdelRondas.neighborPanicEnabled().then((enabled) => {
-                document.getElementById('panicCard').style.display = enabled && canPanic ? 'block' : 'none';
+                document.getElementById('panicCard').style.display = enabled && canPanic ? 'flex' : 'none';
             });
             const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const panicBtn = document.getElementById('btnPanicHold');

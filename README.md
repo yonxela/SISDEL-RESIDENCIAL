@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-154 privilegios: 32 paraguas y 122 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+156 privilegios: 32 paraguas y 124 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -58,6 +58,8 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.pagos_fecha` | Cambiar la fecha de un pago al registrarlo **(sensible)**. Registrar un pago con una fecha anterior a hoy (por ejemplo, una boleta de días atrás); la fecha cuenta para la mora. Sin este privilegio el pago queda con la fecha y la hora en que se registra. | los de su paraguas | Reglas |
 | `finanzas.pagos_anular` | Anular pagos (ingresos) **(sensible)**. Anular un pago ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
 | `finanzas.egresos_anular` | Anular egresos **(sensible)**. Anular un gasto ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
+| `finanzas.mora_descontar` | Descontar mora a un residente **(sensible)**. La pestaña Descontar mora del Ingreso: quitar la mora de los meses que se marquen, o escribir un total que se descuenta de los meses más recientes con mora. Baja lo que debe el residente sin registrar dinero; cada descuento queda con su motivo y quién lo hizo, y se puede anular. | los de su paraguas | Reglas |
+| `finanzas.reportes_descuentos` | Reporte de descuentos de mora **(sensible)**. Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo, con gráfica, Imprimir, PDF, Excel y WhatsApp. | los de su paraguas | Pantalla |
 | `usuarios.codigos` | Ver y cambiar las claves de acceso **(sensible)**. Ver y reemplazar la clave (código de acceso) de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios. | `admin` | Reglas |
 | `usuarios.eliminar` | Eliminar usuarios **(sensible)**. Borrar usuarios (también vecinos) con su código, vehículos y visitas desde el panel de administración (necesita poder ver las claves). | `admin` | Reglas |
 

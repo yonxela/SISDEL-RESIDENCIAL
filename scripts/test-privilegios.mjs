@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 154 privilegios: 32 paraguas y 122 acciones', [P.KEYS.length, roots.length, kids.length], [154, 32, 122]);
+equal('hay 156 privilegios: 32 paraguas y 124 acciones', [P.KEYS.length, roots.length, kids.length], [156, 32, 124]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -111,9 +111,9 @@ yes('OIKOS las protege en las tres capas con su privilegio: pantalla, subida a l
 // cambiar nombres, anular ingresos y egresos y ver claves. Solo los tiene el usuario al que se le marcan
 console.log('\nPrivilegios de gerente');
 const GER = P.GROUPS.find((g) => g.id === 'gerente');
-const GER_KEYS = ['finanzas.residentes_eliminar', 'finanzas.residentes_finiquitar', 'usuarios.vecinos_nombre', 'finanzas.saldos_modificar', 'finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_meses', 'finanzas.cuotas_corregir', 'finanzas.pagos_fecha', 'finanzas.pagos_anular', 'finanzas.egresos_anular', 'usuarios.codigos', 'usuarios.eliminar'];
+const GER_KEYS = ['finanzas.residentes_eliminar', 'finanzas.residentes_finiquitar', 'usuarios.vecinos_nombre', 'finanzas.saldos_modificar', 'finanzas.cargos_crear', 'finanzas.cargos_anular', 'finanzas.cuotas_meses', 'finanzas.cuotas_corregir', 'finanzas.pagos_fecha', 'finanzas.pagos_anular', 'finanzas.egresos_anular', 'finanzas.mora_descontar', 'finanzas.reportes_descuentos', 'usuarios.codigos', 'usuarios.eliminar'];
 equal('la tarjeta de gerente va primero en la pantalla, con su nota, y trae exactamente lo pedido', [P.GROUPS[0].id, GER.handPicked, !!GER.note, GER.items.map((i) => i.key)], ['gerente', true, true, GER_KEYS]);
-yes('cada privilegio de gerente lo hacen cumplir las reglas y es sensible (menos cuotas por mes, que ya era asi)', GER.items.every((i) => i.enforce === 'reglas' && (i.sensitive || i.key === 'finanzas.cuotas_meses')));
+yes('cada privilegio de gerente es sensible (menos cuotas por mes, que ya era asi) y lo hacen cumplir las reglas (menos el reporte de descuentos de mora, de pantalla)', GER.items.every((i) => (i.enforce === 'reglas' || i.key === 'finanzas.reportes_descuentos') && (i.sensitive || i.key === 'finanzas.cuotas_meses')));
 yes('el motor la procesa al final (sus paraguas estan en otras tarjetas)', GER.items.every((i) => !i.parent || P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)) && P.KEYS.indexOf('finanzas.usar') < P.KEYS.indexOf('finanzas.saldos_modificar'));
 equal('el administrador los trae todos (salvo cuotas por mes, que empieza apagado para todos)', GER_KEYS.filter((k) => !P.has('admin', {}, k)), ['finanzas.cuotas_meses']);
 const opAllFin = new Set(['usuarios.ver', 'mensajes.recibir']);
@@ -151,6 +151,35 @@ yes('reglas: childOk, childOn y childAuto no repiten isMember y solo se usan det
     const calls = [...r.matchAll(/^.*\b(childOk|childOn|childAuto)\(.*$/gm)].map((m) => m[0]).filter((line) => !/^\s*function child/.test(line));
     return defs.every((body) => body !== 'x' && !/isMember/.test(body)) && calls.length > 50 && calls.every((line) => /^    function p[A-Z]\w*\(c\) \{ return p[A-Z]\w*\(c\) && child(Ok|On|Auto)\(c, '[a-z._]+'(, \[[^\]]*\])?\); \}$/.test(line));
 })());
+
+// Descontar mora y su reporte (pedido del dueno, 2026-11-18): en la tarjeta de gerente, solo los trae el administrador (autoRoles)
+console.log('\nDescontar mora y su reporte (tarjeta de gerente)');
+const DISC = ['finanzas.mora_descontar', 'finanzas.reportes_descuentos'];
+equal('estan en la tarjeta de gerente (subgrupo Mora), cuelgan de Usar el Sistema Financiero (no de Modificar saldos), son sensibles y solo los trae el administrador', DISC.map((k) => [P.itemOf(k).group, P.itemOf(k).sub, P.itemOf(k).parent, P.itemOf(k).sensitive === true, P.itemOf(k).autoRoles, P.isOptIn(k)]), [['gerente', 'Mora', 'finanzas.usar', true, ['admin'], false], ['gerente', 'Mora', 'finanzas.usar', true, ['admin'], false]]);
+equal('no los da Modificar saldos: se marcan uno por uno', (() => { const set = new Set(todoOp); P.toggle(set, 'finanzas.saldos_modificar', true); return DISC.map((k) => P.has('operador', P.toOverrides('operador', set), k)); })(), [false, false]);
+equal('descontar mora la aplican las reglas; el reporte es de pantalla (los datos los protege finanzas.ver)', DISC.map((k) => P.itemOf(k).enforce), ['reglas', 'pantalla']);
+equal('el administrador los trae y el Master siempre; un operador con todo Finanzas no', [DISC.map((k) => P.has('admin', {}, k)), DISC.map((k) => P.has('master', {}, k)), DISC.map((k) => todoOp.has(k)), DISC.map((k) => P.has('operador', P.toOverrides('operador', todoOp), k))], [[true, true], [true, true], [false, false], [false, false]]);
+equal('marcados a mano a un operador se guardan como true y valen', (() => { const set = new Set(todoOp); DISC.forEach((k) => P.toggle(set, k, true)); const ov = P.toOverrides('operador', set); return [DISC.map((k) => ov[k]), DISC.map((k) => P.has('operador', ov, k))]; })(), [[true, true], [true, true]]);
+equal('la pantalla de privilegios los marca "se habilita aparte" para los demas roles', DISC.map((k) => [P.explicitFor(k, 'admin'), P.explicitFor(k, 'operador')]), [[false, true], [false, true]]);
+equal('descontar mora arrastra registrar pagos y ver estados de cuenta (la pestana esta en el Ingreso)', P.itemOf('finanzas.mora_descontar').requires, ['finanzas.pagos_registrar', 'finanzas.residentes_estado']);
+{
+    const rules = read('firestore.rules');
+    const sync = read('finanzas-sync.js');
+    const bloq = read('finanzas-bloqueo.js');
+    const ui = read('finanzas/index.html');
+    yes('reglas: el descuento lo crea solo quien puede descontar mora, con residente, cuotas, motivo y su propia cuenta como autor', /\(request\.resource\.data\.get\('type', ''\) == 'mora_discount' && moraDiscountOk\(\)\)/.test(rules) && /function moraDiscountOk\(\) \{[\s\S]*?pFinanzasMoraDescontar\(condoId\)[\s\S]*?d\.moraItems\.size\(\) <= 120[\s\S]*?d\.reason\.size\(\) >= 3[\s\S]*?d\.get\('byId', ''\) == request\.auth\.uid;/.test(rules));
+    yes('reglas: anularlo pide descontar mora', /resource\.data\.get\('type', ''\) == 'mora_discount' && pFinanzasMoraDescontar\(condoId\)/.test(rules));
+    yes('subida: finanzas-sync.js exige descontar mora para subirlo y para anularlo', /if \(type === 'mora_discount'\) return \[\['finanzas\.mora_descontar'\]\];/.test(sync) && /prev\.type === 'mora_discount' \? \['finanzas\.mora_descontar'\]/.test(sync));
+    yes('pantalla: la pestana, su panel y el reporte se ocultan sin su privilegio; anular por tipo', /\[\['mora_descontar'\], \['#inc-tab-descuento', '#inc-pane-descuento'\]\]/.test(bloq) && /\[\['reportes_descuentos'\], \['#rep-tab-mora-discounts', '#disc-report-link'\]\]/.test(bloq) && /type === 'mora_discount' \? 'mora_descontar'/.test(bloq));
+    yes('OIKOS: el Ingreso tiene la pestana Descontar mora junto a Pago y Detalle por concepto', (() => { const tabs = ui.slice(ui.indexOf('id="inc-tabs"'), ui.indexOf('id="inc-pane-descuento"')); return ['inc-tab-pago', 'inc-tab-detalle', 'inc-tab-descuento'].every((id) => tabs.includes(`id="${id}"`)) && /onclick="setIncTab\('descuento'\)"/.test(tabs); })());
+    yes('OIKOS: la pestana trae la tabla de cuotas con casilla, la suma marcada, el total a descontar y el motivo', ['id="disc-all"', 'id="disc-rows"', 'id="disc-total"', 'id="disc-after"', 'id="disc-amount"', 'id="disc-reason"', 'onclick="applyMoraDiscount()"'].every((x) => ui.includes(x)) && /<th[^>]*>Cuota<\/th>[\s\S]*?>Pendiente<\/th>[\s\S]*?>Vence<\/th>[\s\S]*?>Mora<\/th>[\s\S]*?>A descontar<\/th>[\s\S]*?>Total<\/th>/.test(ui));
+    yes('OIKOS: un total se reparte con el motor (los meses mas recientes primero) y lo marcado tambien', /SisdelMora\.discountPlan\(view\.ms, \{ amount:/.test(ui) && /SisdelMora\.discountPlan\(view\.ms, \{ ids: \[\.\.\.disc\.selected\] \}\)/.test(ui));
+    yes('OIKOS: el descuento se guarda como mora_discount con sus cuotas, motivo, quien lo hizo y lo que debia antes y despues', /type: 'mora_discount', amount: plan\.total, resiId: String\(r\.id\)/.test(ui) && /moraItems: items, mode:/.test(ui) && /byId: who \? String\(who\.id \|\| ''\) : '', byName:/.test(ui) && /before, after/.test(ui));
+    yes('OIKOS: lo que debe resta la mora descontada (tambien la fija) y el descuento no entra en caja ni en el libro del estado de cuenta', /- \(ms\.moraDaily \|\| 0\) \+ \(ms\.moraWaived \|\| 0\)/.test(ui) && /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\); \}/.test(ui) && !/filter\(t => t\.type !== 'charge'\)/.test(ui) && !/&& t\.type !== 'charge'; \}/.test(ui) && /if \(t\.type === 'mora_discount'\) return false;/.test(ui));
+    yes('OIKOS: el reporte Descuentos de mora lista todos (tambien anulados) con motivo y quien lo hizo, y abre el detalle', /function buildMoraDiscountReport\(\)/.test(ui) && /headers: \['Fecha', 'Residente', 'Meses', 'Mora descontada', 'Debía', 'Quedó debiendo', 'Motivo', 'Registró', 'Estado'\]/.test(ui) && /kind: 'tx', txId: t\.id/.test(ui) && /m\.kind === 'tx' && m\.txId/.test(ui));
+    yes('finanzas.html le dice a OIKOS quien lo usa (el Master con su id reservado) y abre el reporte desde el panel', /window\.sisdelWho = session\.role === 'master'/.test(read('finanzas.html')) && /owners\|mora-discounts\|account-statement/.test(read('finanzas.html')));
+    yes('OIKOS carga el motor nuevo (sisdel-mora.js?v=20261118a)', ui.includes('sisdel-mora.js?v=20261118a'));
+}
 
 // ───────── Copia en las functions ─────────
 console.log('\nCopia en las functions');
@@ -305,7 +334,7 @@ yes('childOk() deja pasar una accion salvo que este apagada (false) en el docume
 yes('childOn() deja pasar una accion optIn solo si esta marcada (true) en el documento del usuario', /function childOn\(condoId, key\) \{[\s\S]*?get\(key, false\) == true/.test(rules));
 yes('cada accion optIn usa childOn, cada una con autoRoles childAuto y las demas childOk', childWrappers.every((w) => w.check === (P.isOptIn(w.key) ? 'childOn' : P.itemOf(w.key).autoRoles ? 'childAuto' : 'childOk')));
 yes('childAuto() deja pasar a los roles de la lista salvo que se la quiten (false) y a los demas solo si la tienen marcada (true)', /function childAuto\(condoId, key, roles\) \{[\s\S]*?get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
-yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (las siete de la tarjeta de gerente)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 7 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
+yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (las ocho de la tarjeta de gerente que aplican las reglas)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 8 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
 yes('cada funcion pXxx usa el nombre de su clave', wrappers.every((w) => w.fn === camel(w.key)));
 yes('cada clave de las reglas existe en el catalogo', wrappers.every((w) => P.KEYS.includes(w.key)));
 yes('los roles por defecto de las reglas son los del catalogo', rootWrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));
@@ -406,10 +435,10 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Cada clave que usa el modulo existe en el catalogo
     const used = [...rp.matchAll(/can\('([a-z_]+\.[a-z_]+)'\)/g)].map((m) => m[1]);
     yes('reportes-ui.js solo usa privilegios del catalogo', used.length > 10 && used.every((k) => P.itemOf(k)));
-    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 8);
+    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 9);
     // Los accesos directos llegan a pantallas que existen en OIKOS
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
-    equal('los ocho reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'account-statement', 'resumen']);
+    equal('los nueve reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'mora-discounts', 'account-statement', 'resumen']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
     // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
     const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
@@ -490,7 +519,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const repDetail = oikos.slice(oikos.indexOf('id="rep-detail"'), oikos.indexOf('id="rep-table-wrap"'));
     yes('la pantalla de Reportes trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleReportChart()', 'printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].every((f) => repDetail.includes(`onclick="${f}"`)));
     yes('la ventana del reporte financiero trae grafica, Imprimir, PDF, Excel y WhatsApp', ['toggleSummaryChart()', 'printReport()', 'downloadReportPDF()', 'exportReportExcel()', 'shareReportWhatsApp()'].every((f) => oikos.includes(`onclick="${f}"`)));
-    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 7);
+    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 8);
     // Dos funciones con el mismo nombre: la segunda pisa a la primera (asi Imprimir y PDF de Reportes sacaban la ventana del reporte financiero)
     const fnNames = [...oikos.matchAll(/^        (?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]);
     equal('OIKOS no repite nombres de funciones', fnNames.filter((n, i) => fnNames.indexOf(n) !== i), []);
@@ -589,11 +618,11 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar la lectura del historial de la camara oculta la seccion de garita', sectionsFor('admin', { 'garita.camara': false }), ['morosos', 'finanzas', 'rondas']);
     // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
     const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
-    equal('el administrador ve cuatro categorias, con 7, 1, 8 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:8', 'rondas:1']);
+    equal('el administrador ve cuatro categorias, con 7, 1, 9 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:9', 'rondas:1']);
     equal('la plantilla de consulta ve solo la categoria de garita, con sus 7 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:7']);
-    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:7', 'rondas:1']);
-    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:6', 'rondas:1']);
-    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:7', 'morosos:1', 'finanzas:5', 'rondas:1']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:8', 'rondas:1']);
+    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:7', 'rondas:1']);
+    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:7', 'morosos:1', 'finanzas:6', 'rondas:1']);
     equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
     equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
     const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);

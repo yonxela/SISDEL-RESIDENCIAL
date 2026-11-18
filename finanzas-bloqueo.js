@@ -31,8 +31,8 @@
     const PREFIX = 'finanzas.';
     // SISDEL: el reporte financiero (reportes_resumen) tambien abre Reportes: ahi estan el de ingresos, egresos y saldo
     // por mes y el acceso a su ventana
-    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen'];
-    const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular'];
+    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen', 'reportes_descuentos'];
+    const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular', 'mora_descontar'];
     const CONFIG_WRITE_KEYS = ['config_general', 'config_cuota', 'config_conceptos'];
 
     // Pantallas del menu y el privilegio (basta uno) que abre cada una
@@ -47,8 +47,8 @@
     };
     const VIEW_ORDER = ['dashboard', 'residents', 'chats', 'accounting', 'banks', 'reports', 'settings'];
 
-    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos' };
-    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'account-statement'];
+    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos', 'mora-discounts': 'reportes_descuentos' };
+    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'mora-discounts', 'account-statement'];
 
     // Atributo onclick / onsubmit (cada sentencia) -> privilegios de los que basta UNO.
     const ACTIONS = [
@@ -95,6 +95,9 @@
         [/^selectReport\('expense-cat'\)/, ['reportes_gastos']],
         [/^selectReport\('account-statement'\)/, ['reportes_libro']],
         [/^selectReport\('month-balance'\)/, ['reportes_resumen']],
+        [/^selectReport\('mora-discounts'\)/, ['reportes_descuentos']],
+        // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
+        [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
         [/^openResidentStatusReport\(/, ['reportes_morosos']],
         [/^(openReportModal|shareReportWhatsApp|setReportMode)\(/, ['reportes_resumen']],
@@ -155,6 +158,8 @@
         ]],
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement']],
+        [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
+        [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share']],
         [['reportes_exportar'], [
             '#view-reports button[onclick="printCurrentReport()"]', '#view-reports button[onclick="downloadCurrentReportPDF()"]',
@@ -329,7 +334,7 @@
                 const tx = win.eval('Store').getRaw('transactions').find((t) => t && String(t.id) === String(args[0]));
                 type = tx && tx.type;
             } catch (e) { /* ignorar */ }
-            const key = type === 'income' ? 'pagos_anular' : type === 'expense' ? 'egresos_anular' : 'cargos_anular';
+            const key = type === 'income' ? 'pagos_anular' : type === 'expense' ? 'egresos_anular' : type === 'mora_discount' ? 'mora_descontar' : 'cargos_anular';
             if (can(PREFIX + key)) return true;
             deny();
             return false;

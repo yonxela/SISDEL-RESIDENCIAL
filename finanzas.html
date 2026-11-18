@@ -98,11 +98,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261118m"></script>
-    <script src="sisdel-core.js?v=20261118m"></script>
+    <script src="privilegios.js?v=20261118n"></script>
+    <script src="sisdel-core.js?v=20261118n"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261118n"></script>
-    <script src="finanzas-bloqueo.js?v=20261118n"></script>
+    <script src="finanzas-sync.js?v=20261118o"></script>
+    <script src="finanzas-bloqueo.js?v=20261118o"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -116,6 +116,12 @@
             let condoName = session.condominioName || '';
             try { const condo = await SISDEL.getCondominio(condoId); if (condo && condo.name) condoName = condo.name; } catch { /* se queda el de la sesion */ }
             document.getElementById('condoName').textContent = condoName || 'Sistema Financiero';
+
+            // Quien usa OIKOS: el descuento de mora guarda quien lo hizo (las reglas exigen que sea la sesion: el id de la
+            // cuenta, 'master' para el Master) y el reporte de descuentos lo muestra
+            window.sisdelWho = session.role === 'master'
+                ? { id: 'master', name: 'Master (programador)', role: 'master' }
+                : { id: String(session.userId || ''), name: session.userName || '', role: session.role || '' };
 
             // OIKOS (el iframe) pide aqui confirmar la clave de quien lo usa antes de aplicar la cuota del mes en cobro
             // manual: la verifica el servidor (confirmOwnCode, functions/src/auth.js) y solo dice si es la clave de esa persona
@@ -192,7 +198,7 @@
             function openReportFromHash(win) {
                 if (deepLinkDone) return;
                 deepLinkDone = true;
-                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|pay-map|owners|account-statement|resumen)$/.exec(window.location.hash);
+                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|pay-map|owners|mora-discounts|account-statement|resumen)$/.exec(window.location.hash);
                 if (!match) return;
                 try {
                     if (match[1] === 'resumen') {

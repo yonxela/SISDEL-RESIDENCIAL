@@ -29,6 +29,7 @@ const SisdelReportes = (() => {
         { id: 'morosos', key: 'finanzas.reportes_morosos', title: 'Morosos y meses adeudados', text: 'Cada residente en mora con los meses que debe y el total; también la lista de los que están al día.' },
         { id: 'pay-map', key: 'finanzas.reportes_morosos', title: 'Tabla general', text: 'Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó; arriba los que más tiempo llevan en mora.' },
         { id: 'owners', key: 'finanzas.reportes_morosos', title: 'Listado general de propietarios', text: 'Número de lote, nombre y teléfono de cada propietario con su deuda por cuotas, su mora y su saldo total; por período, por fase, en orden alfabético o de mayor a menor deuda.' },
+        { id: 'mora-discounts', key: 'finanzas.reportes_descuentos', title: 'Descuentos de mora', text: 'Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo.' },
         { id: 'account-statement', key: 'finanzas.reportes_libro', title: 'Estado de cuenta general', text: 'El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período.' },
         { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' }
     ];

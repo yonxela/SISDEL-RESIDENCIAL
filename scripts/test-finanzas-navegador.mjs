@@ -797,6 +797,71 @@ async function run() {
         equal('sin esa marca si se cambia', await oikos(`(() => { openAssignFases(); document.querySelector('#af-body input[data-sector="CASA"]').value = '5'; document.getElementById('af-keep').checked = false; applyAssignFases(); return [...new Set(Store.get('residents').map((r) => r.fase))]; })()`), ['5']);
         await oikos(`closeModal('modal-reminders')`);
 
+        // ───────── Descontar mora (pedido del dueno el 2026-11-18) ─────────
+        console.log('\nDescontar mora: pestana del Ingreso, reporte y nube');
+        equal('sin regla de mora por dia la pestana Descontar mora no se ve', await oikos(`(() => { navigate('accounting'); openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); const t = document.getElementById('inc-tab-descuento'); const out = t.classList.contains('hidden'); closeModal('modal-income'); return out; })()`), true);
+        await sleep(350);
+        // La regla de mora de La Perla solo en la pantalla (no se guarda) y dos cuotas viejas de Ana, de verdad (van a la nube)
+        await oikos(`(() => {
+            window.__real = { alert: window.alert, confirm: window.confirm, prompt: window.prompt, get: Store.get };
+            window.__alerts = []; window.__confirms = [];
+            window.alert = (m) => { window.__alerts.push(String(m)); }; window.confirm = (m) => { window.__confirms.push(String(m)); return true; }; window.prompt = () => 'prueba';
+            Store.get = (k) => (k === 'settings' ? Object.assign({}, window.__real.get(k), { moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] }) : window.__real.get(k));
+            const txs = Store.get('transactions');
+            ['07', '08'].forEach((m) => txs.push({ id: 'disc-test-' + m, date: '2026-' + m + '-05T12:00:00.000Z', type: 'charge', kind: 'fee', period: '2026-' + m, amount: 300, manual: true, concept: 'Cuota de prueba ' + m, resiId: 'u-ana' }));
+            Store.set('transactions', txs);
+        })()`);
+        equal('las cuotas de prueba se guardan', await idle(), 'ok');
+        const discStart = await oikos(`(() => {
+            navigate('accounting'); openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts();
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            const st = SisdelMora.stateOf('u-ana', Store.get('transactions'), Store.get('settings'), localDayKey(new Date()));
+            const mora = (id) => (st.items.find((i) => i.id === id) || {}).mora || 0;
+            const tab = document.getElementById('inc-tab-descuento');
+            return { tab: !tab.classList.contains('hidden') && getComputedStyle(tab).display !== 'none', owed: sisdelOwedOf(r), m07: mora('disc-test-07'), m08: mora('disc-test-08'), all: st.mora };
+        })()`);
+        record('con regla de mora la pestana Descontar mora se ve y Ana debe mora de julio y agosto', discStart.tab && discStart.m07 > discStart.m08 && discStart.m08 > 0 && discStart.owed.mora >= discStart.m07 + discStart.m08 - 0.01, JSON.stringify(discStart));
+        equal('la pestana se abre mas ancha, sin el boton Registrar, con la tabla de cuotas (casilla solo en los meses con mora)', await oikos(`(() => { setIncTab('descuento'); const rows = [...document.querySelectorAll('#disc-rows tr')]; return [!document.getElementById('inc-pane-descuento').classList.contains('hidden'), document.getElementById('inc-pane-pago').classList.contains('hidden'), document.getElementById('inc-modal-box').classList.contains('max-w-3xl'), document.getElementById('btn-inc-reg').classList.contains('hidden'), rows.length >= 2, document.querySelectorAll('#disc-rows input[data-id="disc-test-07"]').length, document.querySelectorAll('#disc-rows input[data-id="disc-test-08"]').length, document.getElementById('inc-tab-descuento').getAttribute('aria-selected')]; })()`), [true, true, true, true, true, 1, 1, 'true']);
+        const markJul = await oikos(`(() => { document.querySelector('#disc-rows input[data-id="disc-test-07"]').click(); return [document.getElementById('disc-total').textContent, document.getElementById('disc-count').textContent, document.getElementById('disc-after').textContent, document.getElementById('disc-owed').textContent]; })()`);
+        equal('marcar julio suma su mora y dice cuanto deberia con el descuento', markJul, await oikos(`[formatMoney(${discStart.m07}), '1 mes marcado', formatMoney(Math.round((${discStart.owed.total} - ${discStart.m07}) * 100) / 100), formatMoney(${discStart.owed.total})]`));
+        equal('Marcar todos suma toda la mora', await oikos(`(() => { document.getElementById('disc-all').click(); return document.getElementById('disc-total').textContent === formatMoney(${discStart.owed.mora}); })()`), true);
+        const byAmount = Math.round((discStart.m08 + 1) * 100) / 100;
+        const amountRows = await oikos(`(() => { const el = document.getElementById('disc-amount'); el.value = '${byAmount.toFixed(2)}'; el.dispatchEvent(new Event('input', { bubbles: true })); const cell = (id) => { const row = document.querySelector('#disc-rows input[data-id="' + id + '"]').closest('tr'); return row.children[5].textContent; }; return [document.getElementById('disc-total').textContent, cell('disc-test-08'), cell('disc-test-07'), document.getElementById('disc-amount-note').textContent.startsWith('Se descuenta de:')]; })()`);
+        equal('un total se descuenta primero del mes mas reciente con mora (agosto entero) y lo que falta del anterior (julio Q1.00)', amountRows, await oikos(`[formatMoney(${byAmount}), '-' + formatMoney(${discStart.m08}), '-' + formatMoney(1), true]`));
+        const txCount = () => oikos(`Store.get('transactions').filter((t) => t.type === 'mora_discount').length`);
+        const d0 = await txCount();
+        equal('sin motivo el boton esta apagado y no se registra nada', await oikos(`(() => { window.__alerts.length = 0; const off = document.getElementById('disc-apply').disabled; applyMoraDiscount(); return [off, window.__alerts.some((m) => m.includes('motivo'))]; })()`), [true, true]);
+        equal('(nada se guardo)', await txCount(), d0);
+        const applied = await oikos(`(() => {
+            const reason = document.getElementById('disc-reason'); reason.value = 'Acuerdo de pago de prueba'; reason.dispatchEvent(new Event('input', { bubbles: true }));
+            const on = !document.getElementById('disc-apply').disabled;
+            window.__confirms.length = 0;
+            document.getElementById('disc-apply').click();
+            const tx = Store.get('transactions').filter((t) => t.type === 'mora_discount').pop();
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            return { on, confirm: window.__confirms[0] || '', tx, owed: sisdelOwedOf(r), who: window.parent.sisdelWho, done: document.getElementById('disc-done').textContent, cash: isCashTx(tx) };
+        })()`);
+        record('con el motivo se enciende, pide confirmar (monto, meses y motivo) y lo registra', applied.on && applied.confirm.includes('Descontar') && applied.confirm.includes('Acuerdo de pago de prueba') && applied.tx && applied.tx.type === 'mora_discount', JSON.stringify([applied.on, applied.confirm.slice(0, 160)]));
+        equal('el descuento guarda sus cuotas (agosto entero y Q1.00 de julio), el motivo, quien lo hizo y lo que debia antes y despues', [applied.tx.amount, applied.tx.moraItems.map((x) => [x.id, x.amount]), applied.tx.reason, applied.tx.byId === applied.who.id && !!applied.who.id, applied.tx.before.total, applied.tx.after.total, applied.tx.mode],
+            [byAmount, [['disc-test-08', discStart.m08], ['disc-test-07', 1]], 'Acuerdo de pago de prueba', true, discStart.owed.total, Math.round((discStart.owed.total - byAmount) * 100) / 100, 'monto']);
+        equal('lo que debe Ana baja exactamente lo descontado (y solo la mora: lo pendiente no cambia)', [applied.owed.total, applied.owed.pending], [Math.round((discStart.owed.total - byAmount) * 100) / 100, discStart.owed.pending]);
+        record('la pestana dice que quedo registrado y cuanto debe ahora; no es un movimiento de caja', applied.done.startsWith('Descuento registrado') && !applied.cash, applied.done);
+        equal('el descuento llega a la nube (las reglas lo aceptan con la cuenta de quien lo hizo)', await idle(), 'ok');
+        const cloudDisc = await txRef(applied.tx.id).get();
+        equal('en la nube: tipo, cuotas, motivo y autor', [cloudDisc.exists, cloudDisc.get('type'), (cloudDisc.get('moraItems') || []).length, cloudDisc.get('reason'), cloudDisc.get('byId') === applied.who.id], [true, 'mora_discount', 2, 'Acuerdo de pago de prueba', true]);
+        const ecDisc = await oikos(`(() => { closeModal('modal-income'); openEstadoCuenta('u-ana'); const out = [getEcData().rows.some((x) => x.id === ${JSON.stringify(applied.tx.id)}), document.getElementById('ec-mora-note').textContent.includes('Mora descontada: ' + formatMoney(${byAmount})), (ecReportModel(true).kpis || []).some((k) => k.label === 'Mora descontada')]; closeModal('modal-estado-cuenta'); return out; })()`);
+        equal('el estado de cuenta no lo lista como movimiento del libro y dice la mora descontada (tambien en Excel, PDF y WhatsApp)', ecDisc, [false, true, true]);
+        equal('no aparece en Contabilidad (no es dinero)', await oikos(`(() => { navigate('accounting'); renderAccounting(); return document.getElementById('accounting-table-body').innerHTML.includes(${JSON.stringify(applied.tx.id)}); })()`), false);
+        const discRep = await oikos(`(() => { navigate('reports'); selectReport('mora-discounts'); const d = currentReportData; const row = d.rows[d.rows.length - 1]; return { title: document.getElementById('rep-current').textContent, n: d.rows.length, row: row.map(stripCellHtml), meta: d.rowsMeta[d.rows.length - 1], high: d.highlights[0].value, wa: SisdelReportExport.whatsappText(currentReportModel(false)).slice(0, 200), xlsx: currentReportModel(true).fileName }; })()`);
+        record('el reporte Descuentos de mora lo lista con residente, meses, monto, motivo y quien lo hizo', discRep.title === 'Descuentos de mora' && discRep.n >= 1 && discRep.row[1].includes('Ana') && discRep.row[6] === 'Acuerdo de pago de prueba' && discRep.row[8] === 'Vigente' && discRep.meta.kind === 'tx', JSON.stringify(discRep));
+        equal('con la mora descontada arriba y su salida a WhatsApp y Excel', [discRep.high === await oikos(`formatMoney(${byAmount})`), /Descuentos de mora/i.test(discRep.wa), !!discRep.xlsx], [true, true, true]);
+        // Anularlo: la mora vuelve y el reporte lo muestra anulado
+        const annulDisc = await oikos(`(() => { deleteTransaction(${JSON.stringify(applied.tx.id)}); const r = Store.get('residents').find((x) => x.id === 'u-ana'); selectReport('mora-discounts'); const d = currentReportData; return [sisdelOwedOf(r).total, stripCellHtml(d.rows[d.rows.length - 1][8]).startsWith('Anulado'), d.highlights[3].value]; })()`);
+        equal('anular el descuento devuelve la mora y el reporte lo muestra anulado', annulDisc, [discStart.owed.total, true, '1']);
+        // Limpieza: se anulan las cuotas de prueba y se quita la regla de mora de la pantalla
+        await oikos(`(() => { deleteTransaction('disc-test-07'); deleteTransaction('disc-test-08'); Store.get = window.__real.get; window.alert = window.__real.alert; window.confirm = window.__real.confirm; window.prompt = window.__real.prompt; navigate('accounting'); })()`);
+        equal('todo queda guardado en la nube', await idle(), 'ok');
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador
@@ -827,14 +892,30 @@ async function run() {
             // El rastro de una anulacion devuelta (restored_at y, en un registro vivo, el motivo y la fecha de la
             // anulacion) lo conserva la nube y llega al volver a abrir: no es un cambio del movimiento
             const trace = (o, k) => k === 'restored_at' || (o.deleted !== true && ['deleted', 'deleted_at', 'deleted_reason'].includes(k));
-            const sorted = (o) => Object.keys(o).filter((k) => !trace(o, k)).sort().reduce((out, k) => { out[k] = o[k]; return out; }, {});
+            // Las claves de los mapas de adentro (antes y despues de un descuento de mora, sus cuotas, alloc, breakdown) tambien
+            // en orden: la nube no guarda el orden en que se escribieron
+            const deep = (v) => (Array.isArray(v) ? v.map(deep) : v && typeof v === 'object' ? Object.keys(v).sort().reduce((out, k) => { out[k] = deep(v[k]); return out; }, {}) : v);
+            const sorted = (o) => Object.keys(o).filter((k) => !trace(o, k)).sort().reduce((out, k) => { out[k] = deep(o[k]); return out; }, {});
             const byId = (list) => list.map(sorted).sort((a, b) => (String(a.id) < String(b.id) ? -1 : 1));
             const s = Store.get('settings');
             return JSON.stringify([byId(Store.getRaw('transactions')), byId(Store.get('residents')).map(r => [r.id, r.name, r.unit, r.contact, r.dpi, r.balance]), [s.fee, s.receiptCounter, s.chargeDay]]);
         })()`;
         const listBefore = await oikos(SNAPSHOT);
         equal('abre de nuevo', await openFinance(), 'ok');
-        equal('con los mismos movimientos (campo por campo), saldos y contador de recibos', await oikos(SNAPSHOT) === listBefore, true);
+        const listAfter = await oikos(SNAPSHOT);
+        // Si difiere, el detalle dice el primer movimiento (o la parte) que cambio
+        const firstDiff = (() => {
+            if (listAfter === listBefore) return '';
+            const [a, b] = [JSON.parse(listBefore), JSON.parse(listAfter)];
+            const ids = new Set([...a[0], ...b[0]].map((t) => String(t.id)));
+            for (const id of ids) {
+                const x = JSON.stringify(a[0].find((t) => String(t.id) === id) || null);
+                const y = JSON.stringify(b[0].find((t) => String(t.id) === id) || null);
+                if (x !== y) return `movimiento ${id}: antes ${x} / despues ${y}`;
+            }
+            return JSON.stringify(a[1]) !== JSON.stringify(b[1]) ? `residentes: ${JSON.stringify(a[1])} / ${JSON.stringify(b[1])}` : `configuracion: ${JSON.stringify(a[2])} / ${JSON.stringify(b[2])}`;
+        })();
+        record('con los mismos movimientos (campo por campo), saldos y contador de recibos', listAfter === listBefore, firstDiff.slice(0, 900));
         equal('la cuota que se anulo y se devolvio sigue viva y trae el rastro de su anulacion', await oikos(`(() => { const t = Store.getRaw('transactions').find(x => x.id === ${JSON.stringify(feeId)}); return [Store.get('transactions').some(x => x.id === t.id), t.deleted, t.deleted_reason, typeof t.restored_at]; })()`), [true, false, 'prueba', 'string']);
         equal('y el pago que se devolvio y se volvio a anular trae su rastro desde la nube', await oikos(`(() => { const t = Store.getRaw('transactions').find(x => x.id === ${JSON.stringify(payment.id)}); return [t.deleted, t.deleted_reason, typeof t.restored_at]; })()`), [true, 'prueba', 'string']);
         copy = await page.evaluate(COPY);

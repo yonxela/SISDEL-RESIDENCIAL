@@ -18,7 +18,7 @@
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="./sisdel-cuotas.js?v=20261115c"></script>
     <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
-    <script src="./sisdel-mora.js?v=20261117a"></script>
+    <script src="./sisdel-mora.js?v=20261118a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
     <script src="./sisdel-reportes.js?v=20261118a"></script>
@@ -753,6 +753,7 @@
                                 <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('mora-discounts')" id="rep-tab-mora-discounts" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo."><span>Descuentos de mora</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
@@ -1306,7 +1307,7 @@
         </div>
     </div>
     <div id="modal-income" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-emerald-500">
+        <div id="inc-modal-box" class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-emerald-500 max-h-[94vh] overflow-y-auto">
             <div class="flex items-start mb-4"><h3 class="text-xl font-bold dark:text-white" id="title-modal-inc"><i class="fas fa-arrow-down text-emerald-500 mr-2"></i>Ingreso</h3><button type="button" onclick="closeModal('modal-income')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
             <form onsubmit="handleTransactionSubmit(event, 'income')"><div class="space-y-4">
                 <select id="inc-resident" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg" required onchange="updateIncomeConcepts()"></select>
@@ -1341,6 +1342,61 @@
                 <div id="inc-tabs" class="flex gap-1 border-b border-slate-200 dark:border-slate-700 -mb-1" role="tablist">
                     <button type="button" id="inc-tab-pago" onclick="setIncTab('pago')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Pago</button>
                     <button type="button" id="inc-tab-detalle" onclick="setIncTab('detalle')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Detalle por concepto</button>
+                    <!-- SISDEL: descontar mora (privilegio finanzas.mora_descontar; solo con regla de mora por dia) -->
+                    <button type="button" id="inc-tab-descuento" onclick="setIncTab('descuento')" role="tab" class="hidden px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Descontar mora</button>
+                </div>
+                <!-- SISDEL: Descontar mora (pedido del dueno el 2026-11-18): las cuotas que deben, como en el estado de cuenta, con una
+                     casilla para quitarle la mora a cada mes; o un total que se descuenta de los meses mas recientes con mora. No es
+                     dinero: baja lo que debe el residente y queda en el reporte de descuentos de mora con su motivo y quien lo hizo -->
+                <div id="inc-pane-descuento" class="hidden space-y-3" role="tabpanel">
+                    <p id="disc-empty" class="hidden text-sm text-slate-500 dark:text-slate-400 py-3"></p>
+                    <div id="disc-wrap" class="space-y-3">
+                        <p class="text-xs text-slate-500 dark:text-slate-400 leading-snug">Marque los meses a los que se les quita la mora, o escriba abajo el total a descontar (se descuenta de los meses más recientes con mora). No se registra dinero: solo baja lo que debe el residente.</p>
+                        <div class="overflow-x-auto max-h-72 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                            <table class="w-full text-sm" id="disc-table">
+                                <thead class="sticky top-0 bg-amber-50 dark:bg-slate-700 text-[11px] uppercase text-amber-900 dark:text-amber-200">
+                                    <tr>
+                                        <th class="py-2 pl-3 pr-1 w-8"><input type="checkbox" id="disc-all" onclick="discToggleAll(this.checked)" class="w-4 h-4 accent-amber-600 cursor-pointer" title="Marcar todos los meses con mora" aria-label="Marcar todos los meses con mora"></th>
+                                        <th class="py-2 px-2 text-left font-semibold">Cuota</th>
+                                        <th class="py-2 px-2 text-right font-semibold">Pendiente</th>
+                                        <th class="py-2 px-2 text-left font-semibold">Vence</th>
+                                        <th class="py-2 px-2 text-right font-semibold">Mora</th>
+                                        <th class="py-2 px-2 text-right font-semibold">A descontar</th>
+                                        <th class="py-2 px-2 pr-3 text-right font-semibold">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="disc-rows"></tbody>
+                                <tfoot class="bg-slate-100 dark:bg-slate-700/60 font-bold text-slate-800 dark:text-white">
+                                    <tr><td></td><td class="py-2 px-2">TOTAL</td><td class="py-2 px-2 text-right font-mono whitespace-nowrap" id="disc-sum-pending"></td><td></td><td class="py-2 px-2 text-right font-mono whitespace-nowrap" id="disc-sum-mora"></td><td class="py-2 px-2 text-right font-mono whitespace-nowrap text-amber-700 dark:text-amber-300" id="disc-sum-disc"></td><td class="py-2 px-2 pr-3 text-right font-mono whitespace-nowrap" id="disc-sum-total"></td></tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2"><p class="text-[11px] font-bold uppercase text-amber-800 dark:text-amber-200">Mora a descontar</p><p class="text-xl font-extrabold text-amber-700 dark:text-amber-300 whitespace-nowrap" id="disc-total">Q0.00</p><p class="text-[11px] text-amber-800/80 dark:text-amber-200/80" id="disc-count"></p></div>
+                            <div class="rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2"><p class="text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">Debe hoy</p><p class="text-xl font-extrabold text-rose-700 dark:text-rose-300 whitespace-nowrap" id="disc-owed">Q0.00</p><p class="text-[11px] text-slate-500 dark:text-slate-400" id="disc-owed-mora"></p></div>
+                            <div class="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 px-3 py-2"><p class="text-[11px] font-bold uppercase text-emerald-800 dark:text-emerald-200">Con el descuento debe</p><p class="text-xl font-extrabold text-emerald-700 dark:text-emerald-300 whitespace-nowrap" id="disc-after">Q0.00</p></div>
+                        </div>
+                        <div>
+                            <label for="disc-amount" class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">O escriba el total de mora a descontar</label>
+                            <div class="flex gap-2">
+                                <input type="number" step="0.01" min="0" id="disc-amount" oninput="discAmountInput()" onkeydown="if (event.key === 'Enter') event.preventDefault()" placeholder="0.00" class="flex-1 min-w-0 px-3 py-2 text-right font-mono bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-amber-500" autocomplete="off">
+                                <button type="button" onclick="discClear()" class="px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 border border-slate-300 dark:border-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 transition">Limpiar</button>
+                            </div>
+                            <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400" id="disc-amount-note">Se descuenta primero de los meses más recientes que tienen mora.</p>
+                        </div>
+                        <div>
+                            <label for="disc-reason" class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Motivo <span class="text-rose-500">*</span></label>
+                            <textarea id="disc-reason" rows="2" maxlength="500" oninput="renderDiscPane()" placeholder="Ej.: acuerdo de pago aprobado por la junta directiva" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none resize-y text-sm" autocomplete="off"></textarea>
+                        </div>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Se descuenta la mora acumulada hasta hoy. Si las cuotas siguen sin pagarse, su mora vuelve a correr desde mañana. Cada descuento queda en el reporte de descuentos de mora y se puede anular.</p>
+                        <div class="flex justify-end">
+                            <button type="button" id="disc-apply" onclick="applyMoraDiscount()" class="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-percent mr-1.5"></i>Aplicar descuento de mora</button>
+                        </div>
+                    </div>
+                    <p id="disc-done" class="hidden rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 px-3 py-2 text-sm font-semibold text-emerald-800 dark:text-emerald-200" role="status"></p>
+                    <div class="flex justify-end">
+                        <button type="button" id="disc-report-link" onclick="openDiscountReport()" class="px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-slate-700 transition"><i class="fas fa-file-alt mr-1.5"></i>Ver reporte de descuentos de mora</button>
+                    </div>
                 </div>
                 <div id="inc-pane-detalle" class="hidden space-y-3" role="tabpanel">
                     <p id="inc-alloc-empty" class="hidden text-sm text-slate-500 dark:text-slate-400 py-3"></p>
@@ -3463,10 +3519,14 @@
         function sisdelMoraOf(residentId, ledgerBalance) {
             const states = sisdelMoraStates();
             if (!states) return null;
-            const ms = states[String(residentId)] || { capital: 0, overdueCapital: 0, mora: 0, moraDaily: 0, credit: 0, balance: 0 };
+            const ms = states[String(residentId)] || { capital: 0, overdueCapital: 0, mora: 0, moraDaily: 0, moraWaived: 0, credit: 0, balance: 0 };
             if (ledgerBalance === undefined) return ms;
-            return Object.assign({}, ms, { total: Math.round(((parseFloat(ledgerBalance) || 0) - (ms.moraDaily || 0) + Number.EPSILON) * 100) / 100 });
+            // SISDEL: la mora descontada (descuentos de mora) no la debe: tambien la de la mora fija, que si esta en el libro
+            return Object.assign({}, ms, { total: Math.round(((parseFloat(ledgerBalance) || 0) - (ms.moraDaily || 0) + (ms.moraWaived || 0) + Number.EPSILON) * 100) / 100 });
         }
+        // SISDEL: un movimiento de dinero (pago o egreso). Las cuotas y cargos no lo son, y un descuento de mora tampoco: las
+        // listas de caja (Contabilidad, ingresos del mes, exportar) solo muestran estos
+        function isCashTx(t) { return !!t && (t.type === 'income' || t.type === 'expense'); }
         // El saldo del libro de un residente (todos sus movimientos vivos, como r.balance)
         function sisdelLedgerBalance(residentId) {
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
@@ -3932,11 +3992,11 @@
                 txs = sisdelDerived(mem, 'byDateDesc', all => {
                     const live = all.filter(x => x && !x.deleted);
                     const time = new Map(live.map(t => [t, new Date(t.date) - 0]));
-                    return live.sort((a, b) => time.get(b) - time.get(a)).filter(t => t.type !== 'charge');
+                    return live.sort((a, b) => time.get(b) - time.get(a)).filter(isCashTx);
                 });
             } else {
                 txs = Store.get('transactions').sort((a, b) => new Date(b.date) - new Date(a.date));
-                txs = txs.filter(t => t.type !== 'charge');
+                txs = txs.filter(isCashTx);
             }
             if (currentTxFilter !== 'all') txs = txs.filter(t => t.type === currentTxFilter);
             const res = Store.get('residents');
@@ -3976,7 +4036,7 @@
             const raw = Store.getRaw('transactions');
             const tx = raw.find(t => t && String(t.id) === String(id));
             if (!tx || tx.deleted) return;
-            const what = tx.type === 'charge' ? 'el cargo' : tx.type === 'income' ? 'el pago' : 'el egreso';
+            const what = tx.type === 'charge' ? 'el cargo' : tx.type === 'income' ? 'el pago' : tx.type === 'mora_discount' ? 'el descuento de mora' : 'el egreso';
             const reason = prompt(`Anular ${what} "${tx.concept}" por ${formatMoney(tx.amount)}.\n\nEscriba el motivo (ej. "agregado por error") y presione Aceptar para confirmar.\nCancelar = no anular.`, (opts && opts.reason) || '');
             if (reason === null) return;
             History.push();
@@ -6009,6 +6069,7 @@
             morosos: 'Morosos y meses adeudados',
             'pay-map': 'Tabla general',
             owners: 'Listado general de propietarios',
+            'mora-discounts': 'Descuentos de mora',
             'account-statement': 'Estado de cuenta general'
         };
 
@@ -6033,7 +6094,7 @@
             // El filtro de fechas aplica a todos menos 'morosos'.
             const periodWrap = document.getElementById('rep-period-wrap');
             const periodWrapTo = document.getElementById('rep-period-wrap-to');
-            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance';
+            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance' || key === 'mora-discounts';
             if (periodWrap) periodWrap.style.display = showPeriod ? '' : 'none';
             if (periodWrapTo) periodWrapTo.style.display = showPeriod ? '' : 'none';
             // SISDEL: el Listado general de propietarios trae sus propios filtros (periodo por meses, fase, orden y a quienes mostrar)
@@ -6059,6 +6120,7 @@
             else if (currentReportKey === 'month-balance') currentReportData = buildMonthBalanceReport();
             else if (currentReportKey === 'pay-map') currentReportData = buildPayMapReport();
             else if (currentReportKey === 'owners') currentReportData = buildOwnersReport();
+            else if (currentReportKey === 'mora-discounts') currentReportData = buildMoraDiscountReport();
             paintReportTable();
             if (repChartVisible) paintReportChart();
         }
@@ -6158,6 +6220,12 @@
                     hoverCls = 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer transition';
                     chevronColor = 'text-emerald-400';
                     title = 'Ver ingresos del mes';
+                } else if (m && m.kind === 'tx' && m.txId) {
+                    // SISDEL: abre el detalle del movimiento (un descuento de mora: meses, motivo, quien lo hizo y Anular)
+                    onclick = 'openTxDetail(\'' + String(m.txId).replace(/[^A-Za-z0-9_-]/g, '') + '\')';
+                    hoverCls = 'hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer transition';
+                    chevronColor = 'text-amber-500';
+                    title = 'Ver el detalle del descuento';
                 } else if (m && m.kind === 'subtotal') {
                     // SISDEL: fila de total de un ano (reporte de ingresos, egresos y saldo por mes)
                     hoverCls = 'bg-slate-50 dark:bg-slate-700/40 font-bold text-slate-900 dark:text-white';
@@ -6624,6 +6692,70 @@
                 chartLabel: 'Total que debe, con mora (' + formatMoney(0).charAt(0) + ')' + (rows.length > 30 ? ' — los 30 mayores' : ''),
                 chartColors: 'rgba(244,63,94,0.7)',
                 chartColorsBorder: '#E11D48',
+            };
+        }
+
+        // ─── SISDEL: Descuentos de mora (pedido del dueno el 2026-11-18) ───
+        // Cada vez que se descuenta mora a un residente (pestana Descontar mora del Ingreso) queda un movimiento
+        // type 'mora_discount'; este reporte los lista todos en el periodo, tambien los anulados (con su motivo): fecha,
+        // residente, meses, mora descontada, lo que debia y lo que quedo debiendo, motivo y quien lo hizo. Los totales son
+        // solo de los vigentes. Privilegio finanzas.reportes_descuentos (solo el administrador, salvo que se le de a otro).
+        function buildMoraDiscountReport() {
+            const from = document.getElementById('rep-from')?.value || '';
+            const to = document.getElementById('rep-to')?.value || '';
+            const residents = new Map((Store.getRaw('residents') || []).filter(Boolean).map(function (r) { return [String(r.id), r]; }));
+            const list = (Store.getRaw('transactions') || []).filter(function (t) {
+                if (!t || t.type !== 'mora_discount' || !t.date) return false;
+                const d = localDayKey(t.date);
+                return (!from || d >= from) && (!to || d <= to);
+            }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+            const e = ecEsc;
+            const cents = function (v) { return Math.round((parseFloat(v) || 0) * 100); };
+            const live = list.filter(function (t) { return !t.deleted; });
+            const total = live.reduce(function (a, t) { return a + cents(t.amount); }, 0) / 100;
+            const who = new Set(live.map(function (t) { return String(t.resiId); }));
+            const nameOf = function (t) { const r = residents.get(String(t.resiId)); return r ? (r.unit ? r.unit + ' · ' : '') + (r.name || '') : 'Residente ' + t.resiId; };
+            const when = function (iso) { const d = new Date(iso); return d.toLocaleDateString('es-MX') + ' ' + d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }); };
+            const state = function (t) { return t.deleted ? 'Anulado' + (t.deleted_at ? ' el ' + new Date(t.deleted_at).toLocaleDateString('es-MX') : '') + (t.deleted_reason ? ': ' + t.deleted_reason : '') : 'Vigente'; };
+            // Grafica: mora descontada por mes (solo vigentes)
+            const byMonth = new Map();
+            live.forEach(function (t) { const k = localDayKey(t.date).slice(0, 7); byMonth.set(k, (byMonth.get(k) || 0) + cents(t.amount)); });
+            const months = Array.from(byMonth.keys()).sort();
+            return {
+                title: 'Descuentos de mora',
+                summary: (from || to ? (from || '...') + ' → ' + (to || '...') + ' · ' : '') + live.length + ' descuento(s) vigentes por ' + formatMoney(total) + (list.length > live.length ? ' · ' + (list.length - live.length) + ' anulado(s)' : ''),
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [
+                    { tone: 'mora', value: formatMoney(total), label: 'mora descontada' },
+                    { tone: 'total', value: String(live.length), label: live.length === 1 ? 'descuento' : 'descuentos' },
+                    { tone: 'owed', value: String(who.size), label: who.size === 1 ? 'residente' : 'residentes' },
+                    { tone: 'none', value: String(list.length - live.length), label: list.length - live.length === 1 ? 'anulado' : 'anulados' }
+                ],
+                highlightsNote: 'Un descuento de mora no es dinero: baja lo que debe el residente. Los totales son de los vigentes; los anulados se muestran con su motivo.',
+                hint: 'Toque un descuento para ver su detalle o anularlo',
+                headers: ['Fecha', 'Residente', 'Meses', 'Mora descontada', 'Debía', 'Quedó debiendo', 'Motivo', 'Registró', 'Estado'],
+                leftCols: [1, 2, 6, 7, 8],
+                rows: list.map(function (t) {
+                    return [when(t.date), e(nameOf(t)), e(discMonthsText(t, false)), formatMoney(t.amount), t.before ? formatMoney(t.before.total) : '—', t.after ? formatMoney(t.after.total) : '—', e(t.reason || ''), e(t.byName || t.byId || ''), e(state(t))];
+                }),
+                rowsMeta: list.map(function (t) { return { kind: 'tx', txId: t.id }; }),
+                totals: ['TOTAL', String(who.size) + ' residente(s)', String(live.length) + ' vigente(s)', formatMoney(total), '', '', '', '', ''],
+                numericCols: [3, 4, 5],
+                notice: '',
+                emptyText: 'No hay descuentos de mora en este período.',
+                compact: {
+                    headers: ['Fecha', 'Residente', 'Mora descontada', 'Registró'],
+                    rows: live.map(function (t) { return [new Date(t.date).toLocaleDateString('es-MX'), e(nameOf(t)), formatMoney(t.amount), e(t.byName || t.byId || '')]; }),
+                    totals: ['TOTAL', String(who.size) + ' residente(s)', formatMoney(total), ''],
+                    numericCols: [2]
+                },
+                chartType: 'bar',
+                chartLabels: months.map(function (k) { return SisdelReportesOikos.periodLabel(k); }),
+                chartValues: months.map(function (k) { return byMonth.get(k) / 100; }),
+                chartLabel: 'Mora descontada',
+                chartColors: 'rgba(245,158,11,0.7)',
+                chartColorsBorder: '#D97706',
             };
         }
 
@@ -7288,11 +7420,11 @@
             const txs = Store.get('transactions');
             if (reportMode === 'monthly') {
                 const mk = document.getElementById('rep-month-select').value;
-                return txs.filter(t => { const td = new Date(t.date); const key = td.getFullYear() + '-' + String(td.getMonth() + 1).padStart(2, '0'); return key === mk && t.type !== 'charge'; }).sort((a, b) => new Date(a.date) - new Date(b.date));
+                return txs.filter(t => { const td = new Date(t.date); const key = td.getFullYear() + '-' + String(td.getMonth() + 1).padStart(2, '0'); return key === mk && isCashTx(t); }).sort((a, b) => new Date(a.date) - new Date(b.date));
             } else {
                 const from = document.getElementById('rep-date-from').value;
                 const to = document.getElementById('rep-date-to').value;
-                return txs.filter(t => { const td = localDayKey(t.date); return td >= from && td <= to && t.type !== 'charge'; }).sort((a, b) => new Date(a.date) - new Date(b.date));
+                return txs.filter(t => { const td = localDayKey(t.date); return td >= from && td <= to && isCashTx(t); }).sort((a, b) => new Date(a.date) - new Date(b.date));
             }
         }
 
@@ -7769,7 +7901,7 @@
         }
 
         function exportCSV() {
-            const txs = Store.get('transactions').filter(t => t.type !== 'charge');
+            const txs = Store.get('transactions').filter(isCashTx);
             let str = '\uFEFF';
             str += 'Fecha;Tipo;Monto;Concepto\n';
             txs.forEach(t => str += `${new Date(t.date).toLocaleDateString()};${t.type === 'income' ? 'Ingreso' : 'Egreso'};${t.amount.toFixed(2)};${t.concept}\n`);
@@ -7865,7 +7997,7 @@
             // SISDEL: cambiar el monto o el residente fuera del detalle vuelve al reparto automatico (el detalle manual se
             // anota con sus propias casillas: incAllocInput)
             if (!incAlloc.driving) incAlloc.manual = false;
-            if (!r) { toggleEcQuickMenu(false); syncIncAlloc(null); return; }
+            if (!r) { toggleEcQuickMenu(false); syncIncAlloc(null); syncDisc(null); return; }
             const o = sisdelOwedOf(r);
             const shown = residentShownBalance(r).shown;
             const owes = o.total > 0.004;
@@ -7898,6 +8030,7 @@
                 cover.classList.toggle('hidden', !coverText);
             }
             syncIncAlloc(r);
+            syncDisc(r);
         }
 
         // ───────── SISDEL: detalle del pago por concepto (pestana "Detalle por concepto" del ingreso) ─────────
@@ -7955,15 +8088,227 @@
             return SisdelMora.ALLOC_KEYS.filter(k => alloc && alloc[k] > 0).map(k => [incAllocLabel(k), formatMoney(alloc[k])]);
         }
         function setIncTab(tab) {
-            const detail = tab === 'detalle';
-            document.getElementById('inc-pane-pago').classList.toggle('hidden', detail);
-            document.getElementById('inc-pane-detalle').classList.toggle('hidden', !detail);
-            [['inc-tab-pago', !detail], ['inc-tab-detalle', detail]].forEach(([id, on]) => {
+            // SISDEL: tres pestanas: Pago, Detalle por concepto y Descontar mora (esta, mas ancha: su tabla tiene siete columnas)
+            const which = tab === 'detalle' || tab === 'descuento' ? tab : 'pago';
+            document.getElementById('inc-pane-pago').classList.toggle('hidden', which !== 'pago');
+            document.getElementById('inc-pane-detalle').classList.toggle('hidden', which !== 'detalle');
+            const discPane = document.getElementById('inc-pane-descuento');
+            if (discPane) discPane.classList.toggle('hidden', which !== 'descuento');
+            const box = document.getElementById('inc-modal-box');
+            if (box) { box.classList.toggle('max-w-md', which !== 'descuento'); box.classList.toggle('max-w-3xl', which === 'descuento'); }
+            // En Descontar mora no se registra un pago: el boton Registrar se oculta (el descuento tiene el suyo)
+            const reg = document.getElementById('btn-inc-reg');
+            if (reg) reg.classList.toggle('hidden', which === 'descuento');
+            [['inc-tab-pago', 'pago'], ['inc-tab-detalle', 'detalle'], ['inc-tab-descuento', 'descuento']].forEach(([id, key]) => {
                 const el = document.getElementById(id);
                 if (!el) return;
+                const on = which === key;
+                const hidden = el.classList.contains('hidden');
                 el.setAttribute('aria-selected', on ? 'true' : 'false');
-                el.className = 'px-4 py-2 text-sm font-bold border-b-2 -mb-px transition ' + (on ? 'border-emerald-500 text-emerald-700 dark:text-emerald-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200');
+                el.className = 'px-4 py-2 text-sm font-bold border-b-2 -mb-px transition ' + (on ? (key === 'descuento' ? 'border-amber-500 text-amber-700 dark:text-amber-400' : 'border-emerald-500 text-emerald-700 dark:text-emerald-400') : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200');
+                if (hidden) el.classList.add('hidden');
             });
+            if (which === 'descuento') renderDiscPane();
+        }
+
+        // ───────── SISDEL: Descontar mora (pestana del ingreso; pedido del dueno el 2026-11-18) ─────────
+        // Las cuotas que debe el residente (las de "Cuotas pendientes y su mora" del estado de cuenta) con una casilla para quitar
+        // la mora de cada mes, o un total que se descuenta de los meses mas recientes con mora (SisdelMora.discountPlan). Al
+        // aplicarlo se guarda un movimiento type 'mora_discount' con las cuotas (moraItems), el motivo, quien lo hizo y lo que
+        // debia antes y despues: no es dinero (no entra en caja, bancos ni el libro) y el motor de mora lo resta de la mora, tambien
+        // en el servidor. Privilegio finanzas.mora_descontar (pantalla, subida y reglas). Solo con regla de mora por dia.
+        var disc = { rid: null, selected: new Set(), mode: 'months', done: '' };
+        function discAvailable() { return typeof SisdelMora !== 'undefined' && typeof SisdelReportesOikos !== 'undefined' && SisdelMora.enabled(Store.get('settings')); }
+        function discResident() {
+            const resId = (document.getElementById('inc-resident') || {}).value;
+            return resId ? (Store.get('residents') || []).find(x => String(x.id) === String(resId)) || null : null;
+        }
+        // Lo que debe hoy y sus cuotas con mora (lo mismo que el estado de cuenta: accountDebt y pendingRows)
+        function discView(r) {
+            const ms = sisdelMoraOf(r.id, r.balance);
+            if (!ms || typeof SisdelReportesOikos === 'undefined') return null;
+            const debt = SisdelReportesOikos.accountDebt(ms);
+            let own = null;
+            const conceptOf = (id) => {
+                if (!own) { own = new Map(); (Store.get('transactions') || []).forEach(t => { if (t && String(t.resiId) === String(r.id)) own.set(t.id, t); }); }
+                return (own.get(id) || {}).concept;
+            };
+            const short = (text) => { const v = String(text == null ? '' : text).replace(/\s+/g, ' ').trim(); return v.length > 40 ? v.slice(0, 39) + '...' : v; };
+            const label = (item) => {
+                if (item.kind === 'fee' && item.period) return SisdelReportesOikos.periodLabel(item.period);
+                return (item.kind === 'mora' ? 'Mora: ' : 'Cargo: ') + (short(conceptOf(item.id)) || 'sin concepto');
+            };
+            const list = SisdelReportesOikos.pendingRows(ms, { label, total: debt.total, adjustLabel: 'Movimientos con fecha posterior a hoy' });
+            return { ms, debt, list };
+        }
+        function discPlan(view) {
+            if (disc.mode === 'amount') return SisdelMora.discountPlan(view.ms, { amount: parseFloat((document.getElementById('disc-amount') || {}).value) || 0 });
+            return SisdelMora.discountPlan(view.ms, { ids: [...disc.selected] });
+        }
+        // "Jul 2026, Ago 2026 y Sep 2026" (con montos: "Jul 2026 Q33.00 · Ago 2026 Q23.70"): los meses de un descuento, del mas antiguo
+        function discMonthsText(tx, withAmounts) {
+            const items = (Array.isArray(tx && tx.moraItems) ? tx.moraItems : []).slice().sort((a, b) => String(a.period || '').localeCompare(String(b.period || '')));
+            const name = (x) => x.label || (x.period ? SisdelReportesOikos.periodLabel(x.period) : 'Mora');
+            if (withAmounts) return items.map(x => name(x) + ' ' + formatMoney(x.amount)).join(' · ');
+            if (items.length > 4) return items.length + ' meses, de ' + name(items[0]) + ' a ' + name(items[items.length - 1]);
+            return SisdelCuotas.joinList(items.map(name));
+        }
+        function syncDisc(r) {
+            const tab = document.getElementById('inc-tab-descuento');
+            if (tab) tab.classList.toggle('hidden', !discAvailable());
+            const rid = r ? String(r.id) : null;
+            if (rid !== disc.rid) {
+                disc = { rid, selected: new Set(), mode: 'months', done: '' };
+                const amount = document.getElementById('disc-amount'); if (amount) amount.value = '';
+            }
+            renderDiscPane();
+        }
+        function renderDiscPane() {
+            const empty = document.getElementById('disc-empty');
+            const wrap = document.getElementById('disc-wrap');
+            const done = document.getElementById('disc-done');
+            if (!empty || !wrap) return;
+            if (done) { done.textContent = disc.done; done.classList.toggle('hidden', !disc.done); }
+            const r = discResident();
+            const view = r && discAvailable() ? discView(r) : null;
+            const showEmpty = (text) => { empty.textContent = text; empty.classList.remove('hidden'); wrap.classList.add('hidden'); };
+            if (!r) return showEmpty('Elija un residente para ver sus cuotas con mora.');
+            if (!view) return showEmpty('Este condominio no cobra mora por día: no hay mora que descontar.');
+            if (!(view.debt.mora > 0.004)) return showEmpty(disc.done ? 'Ya no tiene mora pendiente.' : 'Este residente no tiene mora pendiente.');
+            empty.classList.add('hidden'); wrap.classList.remove('hidden');
+            // Lo marcado que ya no tiene mora (se desconto u otro equipo la cambio) se suelta
+            const withMora = new Set(view.list.rows.filter(x => x.id && x.kind !== 'ajuste' && x.mora > 0.004).map(x => String(x.id)));
+            [...disc.selected].forEach(id => { if (!withMora.has(id)) disc.selected.delete(id); });
+            const plan = discPlan(view);
+            const take = new Map(plan.items.map(x => [x.id, x.amount]));
+            const cents = (v) => Math.round((parseFloat(v) || 0) * 100);
+            document.getElementById('disc-rows').innerHTML = view.list.rows.map(row => {
+                const id = row.id ? String(row.id) : '';
+                const can = !!id && withMora.has(id);
+                const off = take.get(id) || 0;
+                const on = off > 0.004;
+                const total = (cents(row.total) - cents(off)) / 100;
+                return `<tr class="border-t border-slate-100 dark:border-slate-700 ${on ? 'bg-amber-50 dark:bg-amber-900/20' : ''}">
+                    <td class="py-1.5 pl-3 pr-1">${can ? `<input type="checkbox" class="disc-check w-4 h-4 accent-amber-600 cursor-pointer" data-id="${ecEsc(id)}" onclick="discToggle(this)" ${on ? 'checked' : ''} aria-label="Descontar la mora de ${ecEsc(row.label)}">` : ''}</td>
+                    <td class="py-1.5 px-2 whitespace-nowrap text-slate-800 dark:text-slate-100">${ecEsc(row.label)}</td>
+                    <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap text-slate-700 dark:text-slate-200">${formatMoney(row.capital)}</td>
+                    <td class="py-1.5 px-2 whitespace-nowrap text-xs ${row.overdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(row))}</td>
+                    <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap ${row.mora > 0.004 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'} ${on && off >= row.mora - 0.004 ? 'line-through' : ''}">${formatMoney(row.mora)}</td>
+                    <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap font-bold text-amber-700 dark:text-amber-300">${on ? '-' + formatMoney(off) : ''}</td>
+                    <td class="py-1.5 px-2 pr-3 text-right font-mono whitespace-nowrap font-bold text-slate-800 dark:text-white">${formatMoney(total)}</td>
+                </tr>`;
+            }).join('');
+            document.getElementById('disc-sum-pending').textContent = formatMoney(view.list.capital);
+            document.getElementById('disc-sum-mora').textContent = formatMoney(view.list.mora);
+            document.getElementById('disc-sum-disc').textContent = plan.total > 0 ? '-' + formatMoney(plan.total) : formatMoney(0);
+            document.getElementById('disc-sum-total').textContent = formatMoney((cents(view.list.total) - cents(plan.total)) / 100);
+            document.getElementById('disc-total').textContent = formatMoney(plan.total);
+            document.getElementById('disc-count').textContent = plan.items.length ? (plan.items.length === 1 ? '1 mes marcado' : plan.items.length + ' meses marcados') : 'Ningún mes marcado';
+            document.getElementById('disc-owed').textContent = formatMoney(view.debt.total);
+            document.getElementById('disc-owed-mora').textContent = 'mora ' + formatMoney(view.debt.mora);
+            document.getElementById('disc-after').textContent = formatMoney((cents(view.debt.total) - cents(plan.total)) / 100);
+            const all = document.getElementById('disc-all');
+            if (all) {
+                const marked = view.list.rows.filter(x => x.id && take.has(String(x.id))).length;
+                all.checked = withMora.size > 0 && marked === withMora.size;
+                all.indeterminate = marked > 0 && marked < withMora.size;
+            }
+            const note = document.getElementById('disc-amount-note');
+            if (note) {
+                const labels = new Map(view.list.rows.map(x => [String(x.id), x.label]));
+                if (disc.mode === 'amount' && plan.items.length) {
+                    note.textContent = (plan.left > 0.004 ? `Solo tiene ${formatMoney(plan.total)} de mora: se descuenta eso. ` : '') + 'Se descuenta de: ' + plan.items.map(x => (labels.get(x.id) || x.period) + ' ' + formatMoney(x.amount)).join(' · ') + '.';
+                } else note.textContent = 'Se descuenta primero de los meses más recientes que tienen mora.';
+            }
+            const reason = String((document.getElementById('disc-reason') || {}).value || '').trim();
+            const btn = document.getElementById('disc-apply');
+            if (btn) {
+                const ready = plan.total > 0.004 && reason.length >= 3;
+                btn.disabled = !ready;
+                btn.title = ready ? '' : (plan.total > 0.004 ? 'Escriba el motivo del descuento' : 'Marque los meses o escriba el total a descontar');
+            }
+        }
+        function discToggle(el) {
+            const id = String(el && el.dataset ? el.dataset.id : '');
+            if (!id) return;
+            if (disc.mode === 'amount') {
+                // Pasar de un total a marcar meses: se parte de los meses que tomaba el total
+                const r = discResident(); const view = r ? discView(r) : null;
+                disc.selected = new Set(view ? discPlan(view).items.map(x => x.id) : []);
+                disc.mode = 'months';
+                document.getElementById('disc-amount').value = '';
+            }
+            if (el.checked) disc.selected.add(id); else disc.selected.delete(id);
+            disc.done = '';
+            renderDiscPane();
+        }
+        function discToggleAll(on) {
+            const r = discResident(); const view = r ? discView(r) : null;
+            disc.mode = 'months';
+            document.getElementById('disc-amount').value = '';
+            disc.selected = new Set(on && view ? view.list.rows.filter(x => x.id && x.kind !== 'ajuste' && x.mora > 0.004).map(x => String(x.id)) : []);
+            disc.done = '';
+            renderDiscPane();
+        }
+        function discAmountInput() {
+            const el = document.getElementById('disc-amount');
+            let v = parseFloat(el.value);
+            if (v < 0) { el.value = ''; v = 0; }
+            disc.mode = v > 0 ? 'amount' : 'months';
+            disc.selected = new Set();
+            disc.done = '';
+            renderDiscPane();
+        }
+        function discClear() {
+            document.getElementById('disc-amount').value = '';
+            disc.selected = new Set(); disc.mode = 'months'; disc.done = '';
+            renderDiscPane();
+        }
+        function applyMoraDiscount() {
+            const r = discResident();
+            const view = r && discAvailable() ? discView(r) : null;
+            if (!view) return;
+            const plan = discPlan(view);
+            const reasonEl = document.getElementById('disc-reason');
+            const reason = String(reasonEl.value || '').trim();
+            if (!(plan.total > 0.004)) { alert('Marque los meses o escriba el total de mora a descontar.'); return; }
+            if (reason.length < 3) { alert('Escriba el motivo del descuento (queda en el reporte de descuentos de mora).'); reasonEl.focus(); return; }
+            if (plan.items.length > 120) { alert('Son más de 120 meses: haga el descuento en dos partes.'); return; }
+            // Quien lo hace: la sesion de SISDEL (las reglas exigen que sea la misma cuenta)
+            let who = null;
+            try { who = window.parent && window.parent !== window ? window.parent.sisdelWho : null; } catch (e) { who = null; }
+            if (sisdelMem() && !(who && who.id)) { alert('No se pudo saber quién está usando el sistema. Salga, vuelva a entrar e intente de nuevo.'); return; }
+            const labels = new Map(view.list.rows.map(x => [String(x.id), x.label]));
+            // (las claves de cada objeto en orden alfabetico, siempre el mismo; la nube puede devolverlas en otro orden)
+            const items = plan.items.map(x => ({ amount: x.amount, id: x.id, label: labels.get(x.id) || '', mora: x.mora, period: x.period || null }));
+            const money = (v) => Math.round((parseFloat(v) || 0) * 100);
+            const before = { mora: view.debt.mora, pending: view.debt.pending, total: view.debt.total };
+            const after = { mora: Math.max(0, (money(view.debt.mora) - money(plan.total)) / 100), pending: view.debt.pending, total: (money(view.debt.total) - money(plan.total)) / 100 };
+            const tx = {
+                id: Date.now().toString(), date: new Date().toISOString(), type: 'mora_discount', amount: plan.total, resiId: String(r.id),
+                concept: '', moraItems: items, mode: disc.mode === 'amount' ? 'monto' : 'meses', reason,
+                byId: who ? String(who.id || '') : '', byName: who ? String(who.name || '') : '', before, after
+            };
+            tx.concept = 'Descuento de mora: ' + discMonthsText(tx, false);
+            if (!confirm(`¿Descontar ${formatMoney(plan.total)} de mora a ${r.unit} - ${r.name}?\n\nMeses: ${discMonthsText(tx, true)}\nDebe hoy ${formatMoney(before.total)}; con el descuento quedará debiendo ${formatMoney(after.total)}.\nMotivo: ${reason}\n\nNo se registra dinero. Queda en el reporte de descuentos de mora con su nombre y se puede anular.`)) return;
+            History.push();
+            const txs = Store.get('transactions');
+            txs.push(tx);
+            Store.set('transactions', txs);
+            const fresh = (Store.get('residents') || []).find(x => String(x.id) === String(r.id));
+            const nowOwes = fresh ? sisdelOwedOf(fresh).total : after.total;
+            reasonEl.value = '';
+            document.getElementById('disc-amount').value = '';
+            disc.selected = new Set(); disc.mode = 'months';
+            disc.done = `Descuento registrado: ${formatMoney(plan.total)} de mora (${items.length === 1 ? '1 mes' : items.length + ' meses'}). Ahora debe ${formatMoney(nowOwes)}.`;
+            incAlloc.rid = null;   // el detalle por concepto se vuelve a armar con la mora nueva
+            renderIncomeBalance();
+            try { renderResidents(); } catch (e) { /* la lista se pinta al volver */ }
+            showToast('Descuento de mora registrado: ' + formatMoney(plan.total));
+        }
+        function openDiscountReport() {
+            closeModal('modal-income');
+            setTimeout(() => { navigate('reports'); selectReport('mora-discounts'); }, 320);
         }
         // Dibuja las filas del residente elegido (una vez por residente: asi no se pierde el foco al escribir)
         function buildIncAlloc(r) {
@@ -8105,6 +8450,8 @@
                 incAlloc = { rid: null, rows: [], own: [], manual: false, driving: false }; setIncTab('pago');   // SISDEL: sin detalle anotado, en la pestana Pago
                 const incDate = document.getElementById('inc-date');   // SISDEL: la fecha del pago empieza en hoy y no pasa de hoy
                 if (incDate) { incDate.value = localDayKey(new Date()); incDate.max = localDayKey(new Date()); checkIncomeDate(); }
+                disc = { rid: null, selected: new Set(), mode: 'months', done: '' };   // SISDEL: sin descuento de mora a medias
+                ['disc-amount', 'disc-reason'].forEach(fid => { const el = document.getElementById(fid); if (el) el.value = ''; });
                 renderIncomeBalance(); checkIncomeDoc();   // SISDEL: sin saldo ni aviso de boleta, y el boton Registrar encendido
                 toggleEcQuickMenu(false);   // SISDEL: el menu del estado de cuenta empieza cerrado
             }
@@ -8443,6 +8790,7 @@
             const to = new Date(document.getElementById('ec-date-to').value + 'T23:59:59');
             let txs = (includeDeleted ? Store.getRaw('transactions') : Store.get('transactions')).filter(t => {
                 if (!t || String(t.resiId) !== String(ecResidentId)) return false;
+                if (t.type === 'mora_discount') return false;   // SISDEL: no es un movimiento del libro (baja la mora: se ve arriba)
                 const d = new Date(t.date);
                 return d >= from && d <= to;
             }).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -8496,7 +8844,7 @@
                     document.getElementById('ec-mora').textContent = formatMoney(debt.mora);
                     document.getElementById('ec-total-due').textContent = formatMoney(debt.total);
                     document.getElementById('ec-credit-note').textContent = debt.credit > 0 ? `Saldo a favor ${formatMoney(debt.credit)}` : 'cuotas + mora, a hoy';
-                    document.getElementById('ec-mora-note').textContent = `Al ${new Date().toLocaleDateString('es-MX')}: lo pendiente y la mora son de hoy, no dependen del período elegido. Mora: ${sisdelMoraRuleText()}.`;
+                    document.getElementById('ec-mora-note').textContent = `Al ${new Date().toLocaleDateString('es-MX')}: lo pendiente y la mora son de hoy, no dependen del período elegido. Mora: ${sisdelMoraRuleText()}.` + (dd.ms && dd.ms.moraWaived > 0.004 ? ` Mora descontada: ${formatMoney(dd.ms.moraWaived)} (ya no la debe).` : '');
                 }
             }
             renderEcPending(dd);
@@ -8670,7 +9018,7 @@
             const isInc = tx.type === 'income';
             const isExp = tx.type === 'expense';
             const isCharge = tx.type === 'charge';
-            const tipoLabel = isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type;
+            const tipoLabel = isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type === 'mora_discount' ? 'Descuento de mora' : tx.type;
             const tipoBadge = isInc
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
                 : isCharge
@@ -8706,6 +9054,12 @@
                     ${tx.type === 'income' && tx.alloc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>Aplicado a: ${esc(allocLinesOf(tx.alloc).map(([label, value]) => label + ' ' + value).join(' · '))}</p>` : ''}
                     ${txDateChanged(tx) ? `<p class="text-[11px] font-semibold text-amber-700 dark:text-amber-300 mt-0.5"><i class="fas fa-calendar-day mr-1"></i>Fecha del pago cambiada al registrarlo: se registró el ${esc(new Date(tx.created_at).toLocaleString('es-MX'))}</p>` : ''}
                     ${tx.type === 'income' && parseFloat(tx.creditAfter) > 0.004 ? `<p class="tx-credit-note text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5"><i class="fas fa-piggy-bank mr-1"></i>Dejó un saldo a favor de ${esc(formatMoney(tx.creditAfter))}${tx.creditNote ? '. ' + esc(tx.creditNote) : ''}</p>` : ''}
+                    ${tx.type === 'mora_discount' ? `<div class="tx-disc-detail mt-1 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                        <p><i class="fas fa-calendar-alt mr-1"></i>Meses: ${esc(discMonthsText(tx, true))}</p>
+                        <p><i class="fas fa-comment mr-1"></i>Motivo: ${esc(tx.reason || '')}</p>
+                        <p><i class="fas fa-user mr-1"></i>Lo hizo: ${esc(tx.byName || tx.byId || '')}</p>
+                        ${tx.before ? `<p><i class="fas fa-scale-balanced mr-1"></i>Debía ${esc(formatMoney(tx.before.total))} (mora ${esc(formatMoney(tx.before.mora))}) y quedó debiendo ${esc(formatMoney(tx.after ? tx.after.total : 0))}. No se registró dinero.</p>` : ''}
+                    </div>` : ''}
                 </div>
                 <span class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap ${tipoBadge}">${tipoLabel}</span>
             </div>`;
@@ -8914,6 +9268,8 @@
                 kpis.push({ label: 'De ellas, vencidas', value: money(d.overdue) });
                 if (d.upcoming > 0) kpis.push({ label: 'De ellas, por vencer', value: money(d.upcoming) });
                 kpis.push({ label: 'Mora a hoy', value: money(d.mora) }, { label: 'TOTAL QUE DEBE', value: money(d.total) });
+                // SISDEL: la mora que se le desconto (descuentos de mora): ya no la debe
+                if (dd.ms && dd.ms.moraWaived > 0.004) kpis.push({ label: 'Mora descontada', value: money(dd.ms.moraWaived) });
             }
             // SISDEL: el saldo a favor de hoy y a que meses llega (con o sin regla de mora)
             const creditCov = ecCreditCover(r);

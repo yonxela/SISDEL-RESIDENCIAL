@@ -427,6 +427,8 @@ const SisdelFinanzas = (() => {
                 }
                 if (next.kind === 'extra') return [['finanzas.cargos_crear']];
             }
+            // Descuento de mora: no es dinero, baja la mora de un residente (las reglas exigen ademas motivo y quien lo hizo)
+            if (type === 'mora_discount') return [['finanzas.mora_descontar']];
             return [[]];
         }
         const keys = changedKeys(next, prev);
@@ -436,8 +438,10 @@ const SisdelFinanzas = (() => {
             if (next.deleted === true && prev.deleted !== true) {
                 const own = prev.type === 'income' ? ['finanzas.pagos_anular']
                     : prev.type === 'expense' ? ['finanzas.egresos_anular']
-                        : prev.type === 'charge' ? (prev.kind === 'fee' ? ['finanzas.cargos_anular', 'finanzas.cuotas_corregir'] : ['finanzas.cargos_anular']) : [];
-                // "Deshacer" solo quita el alta de un cargo o una cuota; un pago o un egreso solo los anula quien tiene ese privilegio
+                        : prev.type === 'charge' ? (prev.kind === 'fee' ? ['finanzas.cargos_anular', 'finanzas.cuotas_corregir'] : ['finanzas.cargos_anular'])
+                            : prev.type === 'mora_discount' ? ['finanzas.mora_descontar'] : [];
+                // "Deshacer" solo quita el alta de un cargo o una cuota; un pago, un egreso o un descuento de mora solo los anula
+                // quien tiene ese privilegio
                 return [[...(prev.type === 'charge' && recent(prev.created_at) ? ['finanzas.deshacer'] : []), ...own]];
             }
             if (prev.deleted === true && next.deleted !== true) return recent(prev.updated_at) ? [['finanzas.deshacer']] : [[]];

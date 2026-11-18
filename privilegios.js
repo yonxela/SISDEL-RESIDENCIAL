@@ -48,7 +48,8 @@
         // y eliminar usuarios. Va PRIMERO en la pantalla. Solo lo tiene el usuario al que se le marca aqui, uno por uno: el
         // administrador lo trae (y se le puede quitar); a cualquier otro rol no se lo dan el paraguas, "Marcar todos" ni las
         // plantillas (`handPicked`: las acciones llevan autoRoles ['admin'] u optIn, y los paraguas se marcan a mano para
-        // cualquier rol que no los traiga). Las reglas de Firestore los exigen todos.
+        // cualquier rol que no los traiga). Las reglas de Firestore los exigen todos (menos el reporte de descuentos de mora,
+        // que es de pantalla: los datos los protege finanzas.ver).
         {
             id: 'gerente', title: 'Privilegios de gerente', handPicked: true,
             note: 'Solo los tiene el usuario al que se le marquen aquí, uno por uno: no los dan el acceso al Sistema Financiero, "Marcar todos" ni las plantillas. El administrador los trae y se le pueden quitar.',
@@ -68,6 +69,11 @@
                 { key: 'finanzas.pagos_fecha', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Cambiar la fecha de un pago al registrarlo', description: 'Registrar un pago con una fecha anterior a hoy (por ejemplo, una boleta de días atrás); la fecha cuenta para la mora. Sin este privilegio el pago queda con la fecha y la hora en que se registra.', requires: ['finanzas.pagos_registrar'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
                 { key: 'finanzas.pagos_anular', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Anular pagos (ingresos)', description: 'Anular un pago ya registrado (queda con su motivo; nunca se borra).', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
                 { key: 'finanzas.egresos_anular', sub: 'Pagos y egresos', parent: 'finanzas.usar', label: 'Anular egresos', description: 'Anular un gasto ya registrado (queda con su motivo; nunca se borra).', requires: ['finanzas.contabilidad_ver'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+
+                // Descontar mora (pedido del dueno, 2026-11-18): la pestana Descontar mora del Ingreso y su reporte. Cada uno se marca
+                // a mano (autoRoles: el administrador los trae); no cuelgan de "Modificar saldos" para que se den uno por uno
+                { key: 'finanzas.mora_descontar', sub: 'Mora', parent: 'finanzas.usar', label: 'Descontar mora a un residente', description: 'La pestaña Descontar mora del Ingreso: quitar la mora de los meses que se marquen, o escribir un total que se descuenta de los meses más recientes con mora. Baja lo que debe el residente sin registrar dinero; cada descuento queda con su motivo y quién lo hizo, y se puede anular.', requires: ['finanzas.pagos_registrar', 'finanzas.residentes_estado'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
+                { key: 'finanzas.reportes_descuentos', sub: 'Mora', parent: 'finanzas.usar', label: 'Reporte de descuentos de mora', description: 'Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo, con gráfica, Imprimir, PDF, Excel y WhatsApp.', requires: ['finanzas.ver'], sensitive: true, enforce: 'pantalla', autoRoles: ['admin'] },
 
                 { key: 'usuarios.codigos', sub: 'Claves y usuarios', label: 'Ver y cambiar las claves de acceso', description: 'Ver y reemplazar la clave (código de acceso) de los vecinos, guardias, auditores y supervisores; también muestra la clave de cada residente, bajo su nombre, en la lista de Residentes del Sistema Financiero. Equivale a poder entrar como cualquiera de ellos; los de administradores y operadores solo con Asignar privilegios.', roles: ['admin'], requires: ['usuarios.ver'], sensitive: true, enforce: 'reglas' },
                 { key: 'usuarios.eliminar', sub: 'Claves y usuarios', label: 'Eliminar usuarios', description: 'Borrar usuarios (también vecinos) con su código, vehículos y visitas desde el panel de administración (necesita poder ver las claves).', roles: ['admin'], requires: ['usuarios.ver', 'usuarios.codigos'], sensitive: true, enforce: 'reglas' }

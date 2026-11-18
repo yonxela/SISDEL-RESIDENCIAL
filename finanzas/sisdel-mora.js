@@ -36,6 +36,13 @@
    unica excepcion a payFirst. Solo vale si suma lo mismo que el pago; lo que sobra de un concepto (pago de mas) se
    reparte como un pago normal. Sin alloc nada cambia respecto a antes.
 
+   Descuento de mora (pedido del dueno el 2026-11-18): un movimiento type 'mora_discount' quita mora de cuotas concretas
+   (`moraItems: [{ id: <id del cargo>, amount }]`): el dia del descuento, a cada cuota se le descuenta hasta lo que debe de
+   mora ese dia (lo de mas no va a ningun lado: un descuento nunca es saldo a favor). No es dinero ni esta en el libro de
+   OIKOS: solo baja la mora (`moraWaived` de la cuota y del total). Va antes que los pagos del mismo dia (asi un pago que
+   llega el mismo dia no se lleva primero la mora que se descontaba). Si la cuota sigue sin pagarse, su mora vuelve a correr
+   desde el dia siguiente. Anulado (deleted) no cuenta. `discountPlan` dice como se reparte un descuento.
+
    Lo carga OIKOS en el navegador y lo usa el servidor (functions/src/finanzas/mora.js) para decidir quien es
    moroso. functions/src/finanzas/mora-diaria.js es una COPIA IDENTICA de este archivo (la prueba
    scripts/test-finanzas-mora-diaria.mjs falla si difieren): al cambiar uno, copiarlo al otro.
@@ -51,6 +58,7 @@
     const DAY_MS = 86400000;
     const UTC_OFFSET_HOURS = -6; // Guatemala: UTC-6 todo el ano
     const PAY_FIRST = ['fee', 'mora'];
+    const DISCOUNT_TYPE = 'mora_discount';
     // Los conceptos de una cuota (los mismos de sisdel-cuotas.js) y los que acepta un pago dirigido (alloc)
     const PART_KEYS = ['maintenance', 'water', 'garbage', 'electricity', 'other'];
     const ALLOC_KEYS = PART_KEYS.concat(['fee', 'extra', 'mora']);
@@ -163,7 +171,7 @@
         }
         item.accruedTo = day;
     }
-    const moraDue = (item) => round2(round2(item.moraRaw) - item.moraPaid);
+    const moraDue = (item) => round2(round2(item.moraRaw) - item.moraPaid - item.moraWaived);
     const isOpen = (item) => item.capital > EPS || moraDue(item) > EPS;
     // Del mas antiguo al mas nuevo; en el mismo dia, la cuota antes que el cargo extra
     const byAge = (a, b) => a.sortDay - b.sortDay || (a.kind === 'fee' ? 0 : 1) - (b.kind === 'fee' ? 0 : 1) || a.index - b.index;
@@ -235,6 +243,31 @@
         return sum > 0 && Math.abs(sum - amount) < EPS ? out : null;
     }
 
+    // Las cuotas de un descuento de mora y cuanto se le quita a cada una: [{ id, amount }] (solo montos mayores que cero),
+    // o null si no trae ninguna valida
+    function discountOf(t) {
+        const raw = t && Array.isArray(t.moraItems) ? t.moraItems : [];
+        const out = [];
+        raw.forEach((x) => {
+            const amount = round2(parseFloat(x && x.amount));
+            if (x && x.id !== undefined && x.id !== null && x.id !== '' && amount > 0) out.push({ id: String(x.id), amount });
+        });
+        return out.length ? out : null;
+    }
+
+    // Aplica un descuento de mora el dia `day`: a cada cuota, hasta la mora que debe ese dia. No devuelve nada: lo que no tuvo
+    // de donde descontarse (la cuota ya no debia tanta mora, o esta anulada) se pierde, nunca es saldo a favor.
+    function applyDiscount(open, list, day, rules) {
+        list.forEach((entry) => {
+            const item = open.find((x) => String(x.id) === entry.id);
+            if (!item) return;
+            accrue(item, day, rules); // la mora al dia antes de descontarla
+            const due = moraDue(item);
+            if (due <= EPS) return;
+            item.moraWaived = round2(item.moraWaived + Math.min(entry.amount, due));
+        });
+    }
+
     // Reparte `credit` entre lo que se debe el dia `day` y devuelve lo que sobra (saldo a favor).
     // AQUI se decide el orden de un pago que no alcanza para todo (payFirst de la regla vigente ese dia).
     function allocate(open, credit, day, rules) {
@@ -290,7 +323,7 @@
         const period = feePeriod(t);
         const item = {
             id: t.id, kind: fixed ? 'mora' : period ? 'fee' : 'extra', period, amount, index,
-            capital: fixed ? 0 : amount, moraRaw: fixed ? amount : 0, moraPaid: 0,
+            capital: fixed ? 0 : amount, moraRaw: fixed ? amount : 0, moraPaid: 0, moraWaived: 0,
             base: null, grace: 0, accruedTo: null, sortDay: day
         };
         item.parts = partsOf(t, amount, item.kind);
@@ -309,13 +342,18 @@
     function compute(list, rules, asOf) {
         const events = [];
         list.forEach((t, index) => {
-            if (!t || t.deleted || (t.type !== 'charge' && t.type !== 'income')) return;
+            if (!t || t.deleted || (t.type !== 'charge' && t.type !== 'income' && t.type !== DISCOUNT_TYPE)) return;
             const amount = round2(parseFloat(t.amount));
             if (!(amount > 0)) return;
             const day = dayOf(t.date);
-            events.push({ day: day === null ? 0 : day, order: t.type === 'charge' ? 0 : 1, index, amount, tx: t, alloc: t.type === 'income' ? allocOf(t, amount) : null });
+            const discount = t.type === DISCOUNT_TYPE ? discountOf(t) : null;
+            if (t.type === DISCOUNT_TYPE && !discount) return;
+            events.push({
+                day: day === null ? 0 : day, order: t.type === 'charge' ? 0 : t.type === DISCOUNT_TYPE ? 1 : 2, index, amount, tx: t,
+                alloc: t.type === 'income' ? allocOf(t, amount) : null, discount
+            });
         });
-        // Por fecha; en el mismo dia, los cargos antes que los pagos
+        // Por fecha; en el mismo dia, los cargos primero, despues los descuentos de mora y al final los pagos
         events.sort((a, b) => a.day - b.day || a.order - b.order || a.index - b.index);
 
         const items = [];
@@ -327,6 +365,11 @@
                 const item = newItem(e.tx, e.amount, e.day, e.index, rules);
                 items.push(item);
                 open.push(item);
+            } else if (e.discount) {
+                // Un descuento de mora no es dinero: no paga capital ni deja saldo a favor
+                applyDiscount(open, e.discount, e.day, rules);
+                open = open.filter(isOpen);
+                return;
             } else if (e.alloc && open.length) {
                 // Un pago dirigido a conceptos: se aplica a ellos, y solo lo que no tuvo a donde ir se reparte como uno normal
                 credit = round2(credit + applyAlloc(open, e.alloc, e.day, rules));
@@ -343,12 +386,14 @@
 
         // moraDaily: la mora por dia que se acumulo (sin la mora fija cargada como movimiento). No esta en el libro de
         // OIKOS: el saldo del libro (con TODOS sus movimientos, tambien los fechados despues de hoy) menos moraDaily es lo
-        // que se debe con mora, pagado o no lo que toque (los pagos ya estan en el libro).
-        const totals = { capital: 0, overdueCapital: 0, mora: 0, moraAccrued: 0, moraPaid: 0, moraDaily: 0 };
+        // que se debe con mora, pagado o no lo que toque (los pagos ya estan en el libro). moraWaived: la mora descontada
+        // (descuentos de mora, tambien de la mora fija, que si esta en el libro): lo que se debe con mora es el libro menos
+        // moraDaily mas moraWaived.
+        const totals = { capital: 0, overdueCapital: 0, mora: 0, moraAccrued: 0, moraPaid: 0, moraWaived: 0, moraDaily: 0 };
         const parts = {}; // lo que falta de cada concepto entre todas las cuotas y cargos
         const out = items.map((item) => {
             const accrued = round2(item.moraRaw);
-            const pending = round2(accrued - item.moraPaid);
+            const pending = round2(accrued - item.moraPaid - item.moraWaived);
             const overdue = item.capital > EPS && (item.kind === 'extra' || (item.kind === 'fee' && asOf > item.base + item.grace));
             totals.capital += item.capital;
             totals.overdueCapital += overdue ? item.capital : 0;
@@ -356,10 +401,11 @@
             totals.moraAccrued += accrued;
             Object.keys(item.parts).forEach((k) => { parts[k] = round2((parts[k] || 0) + item.parts[k]); });
             totals.moraPaid += item.moraPaid;
+            totals.moraWaived += item.moraWaived;
             if (item.kind !== 'mora') totals.moraDaily += accrued;
             return {
                 id: item.id, kind: item.kind, period: item.period, amount: item.amount, capital: item.capital, parts: { ...item.parts },
-                moraAccrued: accrued, moraPaid: item.moraPaid, mora: pending,
+                moraAccrued: accrued, moraPaid: item.moraPaid, moraWaived: item.moraWaived, mora: pending,
                 dueDate: item.base === null ? null : keyOfDay(item.base + item.grace), overdue
             };
         });
@@ -419,5 +465,39 @@
         return { parts, mora: Math.max(0, round2(before.mora - after.mora)), credit: Math.max(0, round2(after.credit - before.credit)) };
     }
 
-    return { PAY_FIRST, PART_KEYS, ALLOC_KEYS, previewPayment, dayOf, dayOfKey, keyOfDay, periodDays, feePeriod, rulesOf, enabled, ruleAt, withRule, stateOf, statesByResident };
+    // Como se reparte un descuento de mora sobre el estado de un residente (stateOf): solo cuotas con mora pendiente.
+    //   { ids: [...] }   -> toda la mora de esas cuotas (los meses que se marcaron)
+    //   { amount: 100 }  -> ese total, empezando por las cuotas MAS RECIENTES que tienen mora (la mora fija cargada de otro
+    //                       sistema, que es la mas antigua, va al final); hasta la mora que se debe
+    // Devuelve { items: [{ id, period, kind, mora, amount }], total, left } (left: lo que no tuvo de donde descontarse)
+    function discountPlan(state, opts) {
+        const options = opts || {};
+        const withMora = ((state && state.items) || []).map((item, index) => ({ item, index })).filter((x) => x.item.mora > EPS);
+        const row = (item, amount) => ({ id: String(item.id), period: item.period || null, kind: item.kind, mora: round2(item.mora), amount: round2(amount) });
+        let items;
+        let left = 0;
+        if (Array.isArray(options.ids)) {
+            const wanted = new Set(options.ids.map(String));
+            items = withMora.filter((x) => wanted.has(String(x.item.id))).map((x) => row(x.item, x.item.mora));
+        } else {
+            let rest = Math.max(0, round2(parseFloat(options.amount) || 0));
+            const newestFirst = withMora.slice().sort((a, b) => {
+                const pa = a.item.period || '';
+                const pb = b.item.period || '';
+                return pa !== pb ? (pa < pb ? 1 : -1) : b.index - a.index;
+            });
+            items = [];
+            newestFirst.forEach((x) => {
+                if (rest <= EPS) return;
+                const take = Math.min(rest, round2(x.item.mora));
+                items.push(row(x.item, take));
+                rest = round2(rest - take);
+            });
+            left = rest;
+        }
+        const total = round2(items.reduce((sum, x) => sum + x.amount, 0));
+        return { items, total, left };
+    }
+
+    return { PAY_FIRST, PART_KEYS, ALLOC_KEYS, DISCOUNT_TYPE, discountPlan, previewPayment, dayOf, dayOfKey, keyOfDay, periodDays, feePeriod, rulesOf, enabled, ruleAt, withRule, stateOf, statesByResident };
 });

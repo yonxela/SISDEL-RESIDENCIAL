@@ -175,6 +175,12 @@ equal('sin Modificar saldos no se crean cargos, no se cargan meses ni se corrige
 equal('la fecha del pago solo la ve quien puede cambiarla', [B.cssFor(only('pagos_registrar')).includes('#inc-date-wrap'), B.cssFor(only('pagos_registrar', 'pagos_fecha')).includes('#inc-date-wrap')], [true, false]);
 equal('el nombre del residente queda de solo lectura al editar sin usuarios.vecinos_nombre (envuelve editResident y openModal)', /if \(!can\('usuarios\.vecinos_nombre'\)\) \{[\s\S]*?field\.readOnly = locked[\s\S]*?\['editResident', 'openModal'\]\.forEach/.test(require('node:fs').readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')), true);
 
+console.log('\nDescontar mora y su reporte (pedido del dueno el 2026-11-18)');
+equal('la pestana, las casillas y aplicar el descuento piden descontar mora', ["setIncTab('descuento')", 'discToggleAll(true)', 'discToggle(this)', 'discClear()', 'applyMoraDiscount()'].map((a) => [blocked(a, only('mora_descontar')), blocked(a, only('pagos_registrar', 'residentes_estado'))]), [[false, true], [false, true], [false, true], [false, true], [false, true]]);
+equal('las otras pestanas del ingreso no lo piden', ["setIncTab('pago')", "setIncTab('detalle')"].map((a) => blocked(a, none)), [false, false]);
+equal('el reporte de descuentos pide su privilegio y abre Reportes aunque sea el unico', [blocked("selectReport('mora-discounts')", only('reportes_descuentos')), blocked("selectReport('mora-discounts')", only('reportes_morosos')), B.viewAllowed('reports', only('reportes_descuentos')), B.firstReport(only('reportes_descuentos'))], [false, true, true, 'mora-discounts']);
+equal('sin descontar mora se ocultan la pestana y su panel; sin el reporte, su boton y el enlace', [B.cssFor(only('pagos_registrar')).includes('#inc-tab-descuento'), B.cssFor(only('pagos_registrar')).includes('#inc-pane-descuento'), B.cssFor(only('mora_descontar')).includes('#inc-tab-descuento'), B.cssFor(only('mora_descontar')).includes('#rep-tab-mora-discounts'), B.cssFor(only('mora_descontar')).includes('#disc-report-link')], [true, true, false, true, true]);
+
 console.log('\nCobertura del catalogo: ningun privilegio de OIKOS queda sin efecto en pantalla');
 const names = PRIV.ITEMS.filter((i) => i.key.startsWith('finanzas.')).map((i) => i.key.slice('finanzas.'.length));
 const referenced = new Set();

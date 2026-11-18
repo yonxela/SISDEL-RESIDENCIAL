@@ -1205,6 +1205,26 @@ async function run() {
     await denied('residentes: un administrador al que se le quitaron no finiquita', () => updateDoc(xref(adm9, 'res-t9'), { status: 'closed', closedAt: ts(), closeReason: 'Venta', closeNotes: '', updated_at: ts() }));
     await denied('residentes: ni elimina', () => updateDoc(xref(adm9, 'res-t9'), { deleted: true, updated_at: ts() }));
     await allowed('residentes: pero conserva editar', () => updateDoc(xref(adm9, 'res-t9'), { dpi: '333', notes: 'n', updated_at: ts() }));
+
+    // Descuento de mora (pedido del dueno, 2026-11-18): no es dinero; lo trae el administrador y a cualquier otro usuario hay
+    // que marcarselo. Lleva residente, cuotas, motivo y quien lo hizo (su propia cuenta)
+    const md = (c, id, extra = {}) => ({ id, date: ts(), type: 'mora_discount', amount: 15, resiId: 'u-ana', moraItems: [{ id: 'fin-ch-2', period: '2030-01', amount: 15 }], reason: 'Acuerdo de pago', byId: c.auth.currentUser.uid, byName: 'Prueba', before: { total: 115, mora: 15 }, after: { total: 100, mora: 0 }, created_at: ts(), updated_at: ts(), ...extra });
+    await allowed('mora: el administrador (sin marcar nada) descuenta mora', () => setDoc(mref(admin, 'md-adm'), md(admin, 'md-adm')));
+    await denied('mora: no puede poner a otra persona como quien lo hizo', () => setDoc(mref(admin, 'md-otro'), md(admin, 'md-otro', { byId: 'u-ana' })));
+    await denied('mora: sin motivo (o con menos de 3 letras) se rechaza', () => setDoc(mref(admin, 'md-sinmotivo'), md(admin, 'md-sinmotivo', { reason: 'ok' })));
+    await denied('mora: sin cuotas se rechaza', () => setDoc(mref(admin, 'md-sincuotas'), md(admin, 'md-sincuotas', { moraItems: [] })));
+    await denied('mora: sin residente se rechaza', () => setDoc(mref(admin, 'md-sinres'), md(admin, 'md-sinres', { resiId: '' })));
+    await denied('mora: en cero se rechaza', () => setDoc(mref(admin, 'md-cero'), md(admin, 'md-cero', { amount: 0 })));
+    await denied('mora: un operador con todo el Sistema Financiero NO descuenta mora si no se le marco', () => setDoc(mref(resAllFin, 'md-op'), md(resAllFin, 'md-op')));
+    await denied('mora: el cajero (registra pagos) tampoco', () => setDoc(mref(cajero, 'md-caj'), md(cajero, 'md-caj')));
+    const moraOp = await opWith('u-mds', 'PMDS1', 'Descuenta mora', ['finanzas.mora_descontar']);
+    await allowed('mora: al operador al que se le marco si descuenta', () => setDoc(mref(moraOp, 'md-op2'), md(moraOp, 'md-op2')));
+    await denied('mora: el cajero no anula un descuento', () => updateDoc(mref(cajero, 'md-adm'), annul()));
+    await allowed('mora: quien descuenta mora lo anula (queda con su motivo)', () => updateDoc(mref(moraOp, 'md-adm'), annul()));
+    await createUserAs(admin, mkUser('u-adm12', 'Admin sin descontar mora', 'admin', { privilegios: { 'finanzas.mora_descontar': false } }), 'PA120');
+    const adm12 = await loginAs('PA120');
+    await denied('mora: un administrador al que se le quito no descuenta', () => setDoc(mref(adm12, 'md-adm12'), md(adm12, 'md-adm12')));
+    await allowed('mora: pero sigue registrando pagos', () => setDoc(mref(adm12, 'adm12-in'), mv('adm12-in', { type: 'income' })));
     const resCr = await opWith('u-rcr', 'PRCR1', 'Registra residentes', ['finanzas.residentes_crear']);
     await allowed('residentes: crear registra los datos financieros de uno nuevo', () => setDoc(xref(resCr, 'res-t5'), { id: 'res-t5', dpi: '555', notes: '', feeFrom: '2026-11', updated_at: ts() }));
     await denied('residentes: crear no edita a uno existente', () => updateDoc(xref(resCr, 'res-t4'), { dpi: '9', updated_at: ts() }));

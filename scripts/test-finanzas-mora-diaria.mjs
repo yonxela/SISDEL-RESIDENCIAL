@@ -169,6 +169,44 @@ const aheadState = D.stateOf('r1', ahead, S, '2026-12-20');
 equal('una cuota fechada despues de hoy no cuenta en el estado del dia', [aheadState.capital, aheadState.balance], [300, -306]);
 equal('el saldo del libro (con todo) menos la mora por dia cuadra: Q 600 + Q 6', round2(-600 - aheadState.moraDaily), -606);
 
+// Descuento de mora (pedido del dueno el 2026-11-18): quitar la mora de los meses que se elijan, o un total que se
+// descuenta de los meses mas recientes con mora. No es dinero: solo baja la mora
+console.log('\nDescuento de mora');
+const disc = (id, day, items, more = {}) => ({ id, type: 'mora_discount', amount: round2(items.reduce((a, x) => a + x.amount, 0)), resiId: 'r1', date: at(day), moraItems: items, ...more });
+const twoFees = [oct, nov];   // al 20 de diciembre: octubre Q 15.00 de mora (50 dias) y noviembre Q 6.00 (20 dias)
+const moraOfItems = (st) => st.items.map((i) => [i.id, i.mora, i.moraWaived]);
+equal('sin descuento: Q 15 de octubre y Q 6 de noviembre', moraOfItems(state(twoFees, '2026-12-20')), [['f10', 15, 0], ['f11', 6, 0]]);
+const octOff = twoFees.concat([disc('d1', '2026-12-20', [{ id: 'f10', amount: 15 }])]);
+const octOffState = state(octOff, '2026-12-20');
+equal('descontar toda la mora de octubre: queda solo la de noviembre; el capital no cambia', [brief(octOff, '2026-12-20'), octOffState.moraWaived, moraOfItems(octOffState)], [{ capital: 600, overdue: 600, mora: 6, balance: -606 }, 15, [['f10', 0, 15], ['f11', 6, 0]]]);
+equal('si la cuota sigue sin pagarse, su mora vuelve a correr desde el dia siguiente (Q 0.30 al dia)', moraOfItems(state(octOff, '2026-12-21')), [['f10', 0.3, 15], ['f11', 6.3, 0]]);
+equal('un descuento mayor que la mora de esa cuota solo quita lo que debe: nunca deja saldo a favor', (({ mora, moraWaived, credit, balance }) => ({ mora, moraWaived, credit, balance }))(state(twoFees.concat([disc('d', '2026-12-20', [{ id: 'f10', amount: 50 }])]), '2026-12-20')), { mora: 6, moraWaived: 15, credit: 0, balance: -606 });
+equal('un descuento anulado no cuenta: la mora vuelve sola', brief(twoFees.concat([disc('d', '2026-12-20', [{ id: 'f10', amount: 15 }], { deleted: true })]), '2026-12-20'), { capital: 600, overdue: 600, mora: 21, balance: -621 });
+equal('un descuento sin cuotas validas, o de una cuota que no existe, no hace nada', [brief(twoFees.concat([disc('d', '2026-12-20', [{ id: 'f10', amount: 0 }]), { id: 'e', type: 'mora_discount', amount: 5, resiId: 'r1', date: at('2026-12-20') }]), '2026-12-20').mora, brief(twoFees.concat([disc('d', '2026-12-20', [{ id: 'otra', amount: 15 }])]), '2026-12-20').mora], [21, 21]);
+equal('el descuento va antes que un pago del mismo dia (aunque en la lista llegue despues y aunque se cobre primero la mora): pagando el capital queda en cero', [
+    brief([oct, nov, pay('p', '2026-12-20', 600), disc('d', '2026-12-20', [{ id: 'f10', amount: 15 }, { id: 'f11', amount: 6 }])], '2026-12-20'),
+    brief([oct, nov, pay('p', '2026-12-20', 600), disc('d', '2026-12-20', [{ id: 'f10', amount: 15 }, { id: 'f11', amount: 6 }])], '2026-12-20', moraFirstRules)
+], [{ capital: 0, overdue: 0, mora: 0, balance: 0 }, { capital: 0, overdue: 0, mora: 0, balance: 0 }]);
+equal('una cuota ya pagada que solo debe mora: el descuento la deja en cero', brief([oct, nov, pay('p', '2026-12-20', 600), disc('d', '2026-12-28', [{ id: 'f10', amount: 15 }, { id: 'f11', amount: 6 }])], '2027-01-15'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
+equal('un descuento fechado despues del dia que se consulta todavia no existe', brief(twoFees.concat([disc('d', '2026-12-25', [{ id: 'f10', amount: 15 }])]), '2026-12-20').mora, 21);
+const fixedList = [oct, nov, extra('m', '2026-10-31', 50, { moraFixed: true }), pay('p', '2026-12-20', 100), disc('d', '2026-12-30', [{ id: 'm', amount: 50 }])];
+const fixedOff = D.stateOf('r1', fixedList, S, '2026-12-30');
+const ledgerOf = (list) => round2(list.reduce((a, t) => a + (t.deleted ? 0 : t.type === 'income' ? t.amount : t.type === 'charge' ? -t.amount : 0), 0));
+equal('tambien se descuenta la mora fija cargada de otro sistema, y el saldo del libro menos la mora por dia mas lo descontado cuadra', [fixedOff.moraWaived, round2(ledgerOf(fixedList) - fixedOff.moraDaily + fixedOff.moraWaived), fixedOff.balance], [50, fixedOff.balance, round2(-fixedOff.capital - fixedOff.mora)]);
+equal('el libro de OIKOS no cambia (el descuento no es un pago ni un cargo)', ledgerOf(octOff), -600);
+console.log('\nComo se reparte un descuento de mora (discountPlan)');
+const st20 = state(twoFees, '2026-12-20');
+const planIds = D.discountPlan(st20, { ids: ['f10'] });
+equal('meses marcados: toda la mora de cada uno', [planIds.items.map((x) => [x.id, x.period, x.amount]), planIds.total, planIds.left], [[['f10', '2026-10', 15]], 15, 0]);
+equal('un total: primero los meses mas recientes con mora (noviembre) y despues los anteriores', (({ items, total, left }) => ({ items: items.map((x) => [x.id, x.amount]), total, left }))(D.discountPlan(st20, { amount: 10 })), { items: [['f11', 6], ['f10', 4]], total: 10, left: 0 });
+equal('un total mayor que toda la mora: solo la mora que se debe, y dice lo que sobra', (({ items, total, left }) => ({ items: items.map((x) => [x.id, x.amount]), total, left }))(D.discountPlan(st20, { amount: 30 })), { items: [['f11', 6], ['f10', 15]], total: 21, left: 9 });
+equal('meses sin mora, montos en cero o ids que no existen no entran', [D.discountPlan(state(twoFees, '2026-11-03'), { amount: 10 }).items.length, D.discountPlan(st20, { amount: 0 }).items.length, D.discountPlan(st20, { ids: ['nada'] }).items.length], [0, 0, 0]);
+equal('la mora fija (la mas antigua) va al final de un total', D.discountPlan(D.stateOf('r1', [oct, nov, extra('m', '2026-10-31', 50, { moraFixed: true })], S, '2026-12-20'), { amount: 60 }).items.map((x) => [x.id, x.amount]), [['f11', 6], ['f10', 15], ['m', 39]]);
+const applied = state(twoFees.concat([disc('d', '2026-12-20', D.discountPlan(st20, { amount: 10 }).items)]), '2026-12-20');
+equal('guardar el reparto como descuento baja la mora exactamente ese total', [applied.mora, applied.moraWaived], [11, 10]);
+equal('el servidor: el descuento baja lo que debe y la garita sigue mirando solo el capital', [(({ debt, mora, overdue, moroso }) => ({ debt, mora, overdue, moroso }))(M.moraOf('r1', octOff, S, M.gtDate(2026, 11, 20, 12)))], [{ debt: 606, mora: 6, overdue: 600, moroso: true }]);
+equal('el servidor lee las cuotas de cada descuento (TX_FIELDS)', /'moraItems'/.test(read('functions/src/finanzas/recalc.js')), true);
+
 console.log('\nServidor: quien es moroso para la garita');
 const dec20 = M.gtDate(2026, 11, 20, 12);
 equal('una cuota vencida con su mora: debe Q 306 pero la garita mira solo el capital (no bloquea)', M.moraOf('r1', [nov], S, dec20), { balance: -306, debt: 306, overdue: 300, moroso: false, capital: 300, mora: 6 });

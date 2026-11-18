@@ -2696,6 +2696,13 @@
         var chatListUnsub;   // sin valor inicial: navigate() puede suscribirse antes de llegar a esta linea
         var chatFilter = 'all';
         var chatHistoryAsked = {};
+        // Palomitas sin el aviso de UltraMsg (whatsappWebhook): mientras el chat abierto tenga un mensaje enviado, reciente y sin
+        // entregar, cada CHAT_ACK_REFRESH_MS se piden a UltraMsg los ultimos mensajes (loadChatHistory, que solo SUBE las palomitas) hasta
+        // CHAT_ACK_MAX_TRIES veces por ese mensaje. Con el aviso funcionando es solo una red de seguridad.
+        var chatAckTimer = null;
+        var chatAckTries = {};
+        var CHAT_ACK_REFRESH_MS = 30000;
+        var CHAT_ACK_MAX_TRIES = 10;
         var chatSending = false;
         var chatReadTimer = null;
         function chatEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -2817,6 +2824,7 @@
         }
         // Abrir un chat (por su telefono)
         function openChat(id) {
+            clearTimeout(chatAckTimer); chatAckTimer = null;
             stopChatMessages();
             chatCurrentId = String(id || '') || null;
             chatNewResident = null;
@@ -2833,6 +2841,7 @@
                 chatMessages = (list || []).filter(function (m) { return !m.duplicateOf; });
                 renderChatMessages();
                 scheduleChatRead();
+                scheduleChatAckRefresh(opened);
                 // La primera vez que se abre un chat con pocos mensajes se traen los de antes (los guarda UltraMsg)
                 const c = chatOf(opened);
                 if (c && c.channel !== 'meta' && !c.historyLoadedAt && !chatHistoryAsked[opened] && chatMessages.length < 10) {
@@ -2841,6 +2850,34 @@
                 }
             });
             scheduleChatRead();
+        }
+        // Hora del mensaje enviado mas reciente que aun no se entrego ('' si no hay): un enviado sin palomita, en cola o con una gris,
+        // de los ultimos 20 minutos
+        function chatPendingSince() {
+            const limit = Date.now() - 20 * 60 * 1000;
+            let latest = '';
+            (chatMessages || []).forEach(function (m) {
+                if (!m || !m.fromMe || m.duplicateOf || !(!m.ack || m.ack === 'pending' || m.ack === 'server')) return;
+                const at = Date.parse(m.at || 0);
+                if (at > limit && String(m.at) > latest) latest = String(m.at);
+            });
+            return latest;
+        }
+        function scheduleChatAckRefresh(id) {
+            clearTimeout(chatAckTimer);
+            chatAckTimer = null;
+            const api = sisdelChatsApi();
+            const c = chatOf(id);
+            const since = chatPendingSince();
+            if (!api || !c || c.channel === 'meta' || String(id) !== String(chatCurrentId) || !since) return;
+            const key = id + '|' + since;
+            if ((chatAckTries[key] || 0) >= CHAT_ACK_MAX_TRIES) return;
+            chatAckTimer = setTimeout(function () {
+                chatAckTimer = null;
+                if (String(id) !== String(chatCurrentId) || currentView !== 'chats' || document.visibilityState !== 'visible' || chatPendingSince() !== since) return;
+                chatAckTries[key] = (chatAckTries[key] || 0) + 1;
+                Promise.resolve().then(function () { return api.loadHistory(id); }).catch(function () { /* se vuelve a intentar */ }).then(function () { scheduleChatAckRefresh(id); });
+            }, CHAT_ACK_REFRESH_MS);
         }
         // Marca como leido el chat abierto (si la pantalla se esta viendo)
         function scheduleChatRead() {

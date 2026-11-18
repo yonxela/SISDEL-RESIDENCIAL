@@ -627,6 +627,40 @@ async function run() {
         await oikos(`(() => { closeModal('modal-income'); closeModal('modal-voucher-options'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);
         await idle();
 
+        console.log('\nChats: las palomitas suben aunque no llegue el aviso de UltraMsg');
+        await page.evaluate(`(() => { window.__realChats = window.sisdelChats; window.__hist = []; window.sisdelChats = { available: true, state: { chats: [{ id: '50255550001', channel: 'ultramsg' }, { id: '50255550002', channel: 'meta' }] }, loadHistory: async (id) => { window.__hist.push(id); return { ok: true, saved: 0 }; } }; })()`);
+        const refresh = (id, messages, extra) => oikos(`(() => { clearTimeout(chatAckTimer); CHAT_ACK_REFRESH_MS = 120; CHAT_ACK_MAX_TRIES = 2; chatAckTries = {}; window.parent.__hist.length = 0; currentView = 'chats'; chatCurrentId = ${JSON.stringify(id)}; chatMessages = ${JSON.stringify(messages)}; ${extra || ''} scheduleChatAckRefresh(${JSON.stringify(id)}); return document.visibilityState; })()`);
+        const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const histCalls = () => page.evaluate(`window.__hist.length`);
+        const justNow = new Date().toISOString();
+        const vis = await refresh('50255550001', [{ fromMe: true, ack: 'pending', at: justNow }]);
+        await pause(900);
+        record('un enviado en cola se vuelve a preguntar a UltraMsg, con tope de intentos (2)', (await histCalls()) === 2, `pagina ${vis}, llamadas ${await histCalls()}`);
+        await refresh('50255550001', [{ fromMe: true, ack: 'server', at: justNow }]);
+        await pause(500);
+        record('con una palomita gris (enviado) tambien se sigue preguntando', (await histCalls()) >= 1, String(await histCalls()));
+        await refresh('50255550001', [{ fromMe: true, ack: 'device', at: justNow }, { fromMe: true, ack: 'read', at: justNow }]);
+        await pause(500);
+        equal('lo ya entregado o leido no se vuelve a preguntar', await histCalls(), 0);
+        await refresh('50255550001', [{ fromMe: false, ack: 'pending', at: justNow }]);
+        await pause(500);
+        equal('lo que escribio el residente no cuenta', await histCalls(), 0);
+        await refresh('50255550001', [{ fromMe: true, ack: 'pending', at: new Date(Date.now() - 30 * 60 * 1000).toISOString() }]);
+        await pause(500);
+        equal('un enviado de hace mas de 20 minutos tampoco', await histCalls(), 0);
+        await refresh('50255550002', [{ fromMe: true, ack: 'pending', at: justNow }]);
+        await pause(500);
+        equal('con el WhatsApp oficial de Meta no (no guarda mensajes de antes)', await histCalls(), 0);
+        await refresh('50255550001', [{ fromMe: true, ack: 'pending', at: justNow }], `chatCurrentId = 'otro';`);
+        await pause(500);
+        equal('si ya no es el chat abierto no se pregunta', await histCalls(), 0);
+        await refresh('50255550001', [{ fromMe: true, ack: 'pending', at: justNow }]);
+        await oikos(`(() => { try { openChat('otro-chat'); } catch (e) { /* el chat falso no pinta todo: lo que importa es que ya cancelo el repaso */ } })()`);
+        await pause(500);
+        equal('al abrir otro chat se cancela el repaso del anterior', await histCalls(), 0);
+        await page.evaluate(`(() => { window.sisdelChats = window.__realChats; })()`);
+        await oikos(`(() => { clearTimeout(chatAckTimer); chatAckTimer = null; CHAT_ACK_REFRESH_MS = 30000; CHAT_ACK_MAX_TRIES = 10; chatMessages = []; chatCurrentId = null; })()`);
+
         console.log('\nLote o casa');
         const finRef = (id) => condoRef.collection('finanzas_residentes').doc(id);
         // El formulario de un residente nuevo pide el tipo; el de uno que ya existia sin tipo se puede editar sin elegirlo

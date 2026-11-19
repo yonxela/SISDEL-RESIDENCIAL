@@ -8,6 +8,8 @@
      Ingresos = pagos (type 'income'); egresos = gastos (type 'expense'). Los cargos y cuotas ('charge') no
      son dinero que entro: son lo que se cobra. Saldo = ingresos menos egresos del mes.
      Aparte (sin mezclarlo con la caja): cuotas y cargos emitidos en el mes y lo que queda por cobrar al cierre.
+   - cashMonths: ingresos, gastos y saldo de unos meses seguidos (las tres graficas del tablero de OIKOS), con los
+     mismos criterios de monthBalance, mas el primer y el ultimo mes con pagos o gastos (para navegar).
    - periodSummary: lo mismo para un periodo (la ventana "Reporte financiero").
    - Por cobrar al cierre = de cada vecino, sus cuotas y cargos menos sus pagos hasta ese dia (si pago de mas, cuenta
      cero, no resta lo de otros), sumado. Es el mismo total del reporte de Morosos (sin la mora por dia, que no se
@@ -143,6 +145,49 @@
             months,
             years: Array.from(years.entries()).map(([year, y]) => ({ year, ...totalsOf(y.s, y.receivable) })),
             total: totalsOf(total, receivable)
+        };
+    }
+
+    // ───────── Tablero: ingresos, gastos y saldo de unos meses ─────────
+    // Los `count` meses (1 a 24, 3 por defecto) que terminan en `end` ('AAAA-MM'), con los MISMOS criterios de
+    // monthBalance (asi el tablero dice lo mismo que el reporte por mes): ingresos = pagos, gastos = egresos y saldo =
+    // ingresos menos gastos del mes; las cuotas, los cargos y los descuentos de mora no son dinero, y lo anulado no cuenta.
+    // Una sola pasada (sin "por cobrar", que no se muestra en el tablero). Tambien el primer y el ultimo mes con pagos o
+    // gastos (first / last, null si no hay ninguno: hasta donde tiene sentido navegar) y si la ventana tiene alguno.
+    function cashMonths(txs, opts) {
+        const options = opts || {};
+        const count = Math.max(1, Math.min(24, Math.floor(Number(options.count) || 3)));
+        const end = validMonth(String(options.end || '')) ? String(options.end) : null;
+        const dayKey = dayKeyOf(options);
+        const sums = new Map();
+        let first = null;
+        let last = null;
+        (txs || []).forEach((t) => {
+            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.date) return;
+            const key = monthOf(dayKey(t.date));
+            if (!validMonth(key)) return;
+            if (!first || key < first) first = key;
+            if (!last || key > last) last = key;
+            if (!sums.has(key)) sums.set(key, zeroSums());
+            sums.get(key)[t.type] += cents(t.amount);
+        });
+        const months = [];
+        const total = zeroSums();
+        if (end) {
+            for (let i = count - 1; i >= 0; i--) {
+                const key = addMonths(end, -i);
+                const s = sums.get(key) || zeroSums();
+                total.income += s.income;
+                total.expense += s.expense;
+                months.push({ key, year: Number(key.slice(0, 4)), month: Number(key.slice(5, 7)), label: periodLabel(key), income: fromCents(s.income), expense: fromCents(s.expense), balance: fromCents(s.income - s.expense) });
+            }
+        }
+        return {
+            months,
+            total: { income: fromCents(total.income), expense: fromCents(total.expense), balance: fromCents(total.income - total.expense) },
+            first,
+            last,
+            hasCash: months.some((m) => m.income !== 0 || m.expense !== 0)
         };
     }
 
@@ -582,5 +627,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage };
 });

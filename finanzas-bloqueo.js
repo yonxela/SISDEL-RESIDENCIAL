@@ -95,6 +95,8 @@
         [/^selectReport\('expense-cat'\)/, ['reportes_gastos']],
         [/^selectReport\('account-statement'\)/, ['reportes_libro']],
         [/^selectReport\('month-balance'\)/, ['reportes_resumen']],
+        // "Ver el reporte" de las graficas del tablero abre ese mismo reporte
+        [/^openDashMonthReport\(/, ['reportes_resumen']],
         [/^selectReport\('mora-discounts'\)/, ['reportes_descuentos']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
@@ -160,7 +162,7 @@
         [['reportes_libro'], ['#rep-tab-account-statement']],
         [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
-        [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share']],
+        [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],
         [['reportes_exportar'], [
             '#view-reports button[onclick="printCurrentReport()"]', '#view-reports button[onclick="downloadCurrentReportPDF()"]',
             '#view-reports button[onclick="exportCurrentReportExcel()"]', '#view-reports button[onclick="shareCurrentReportWhatsApp()"]',

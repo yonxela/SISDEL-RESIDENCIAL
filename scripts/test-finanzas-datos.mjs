@@ -385,7 +385,8 @@ console.log('\nStore de OIKOS: en memoria da lo mismo que en localStorage');
 {
     const html = read('finanzas/index.html');
     const from = html.indexOf('        // ========== COMPANY-SCOPED STORE ==========');
-    const to = html.indexOf('        let myChart, currentView');
+    // Termina donde empiezan las variables de las pantallas (la de las graficas del tablero, antes "let myChart, currentView")
+    const to = html.indexOf("        let currentView = 'dashboard'");
     yes('se encuentra el Store en finanzas/index.html', from > 0 && to > from);
     const storeCode = html.slice(from, to) + '\n;globalThis.__api = { Store, sisdelMem, sisdelDerived };';
     const clock = { now: Date.parse(T1) };

@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261118a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261118a"></script>
+    <script src="./sisdel-reportes.js?v=20261118b"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -489,9 +489,46 @@
                     </div>
                     <!-- SISDEL: saldo en bancos (se calcula: apertura + ingresos - egresos de cada cuenta) -->
                     <div id="dash-bank" class="hidden cursor-pointer" onclick="navigate('banks')"></div>
-                    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
-                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4" id="lbl-chart-title">Tendencia (Últimos 3 Meses)</h3>
-                        <div class="h-64 relative w-full"><canvas id="trendChart"></canvas></div>
+                    <!-- SISDEL: Ingresos, gastos y saldo por mes en tres graficas de barras de 3 meses, con flechas para ver meses
+                         anteriores (pedido del usuario, 2026-11-18; antes una sola grafica "Tendencia" de los ultimos 3 meses).
+                         Las cifras son las del reporte "Ingresos, egresos y saldo por mes" (SisdelReportesOikos.cashMonths) -->
+                    <div id="dash-months" class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6">
+                        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white" id="lbl-chart-title">Ingresos, gastos y saldo por mes</h3>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5" id="dash-months-range"></p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" id="dash-months-prev" onclick="dashMonthsGo(-1)" title="Correr las gráficas un mes hacia atrás" class="dash-months-btn bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"><i class="fas fa-chevron-left"></i><span class="ml-2">Mes anterior</span></button>
+                                <button type="button" id="dash-months-next" onclick="dashMonthsGo(1)" title="Correr las gráficas un mes hacia adelante" class="dash-months-btn bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"><span class="mr-2">Mes siguiente</span><i class="fas fa-chevron-right"></i></button>
+                                <button type="button" id="dash-months-today" onclick="dashMonthsGo(0)" title="Volver a los últimos 3 meses" class="dash-months-btn bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-3 py-2 rounded-lg text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">Mes actual</button>
+                                <button type="button" id="dash-months-report" onclick="openDashMonthReport()" title="Abrir el reporte Ingresos, egresos y saldo por mes de estos meses" class="text-blue-600 dark:text-blue-400 hover:underline px-2 py-2 text-sm font-semibold"><i class="fas fa-table mr-1"></i>Ver el reporte</button>
+                            </div>
+                        </div>
+                        <p id="dash-months-note" class="hidden mb-4 text-sm rounded-lg px-3 py-2 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"></p>
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div class="rounded-xl border border-slate-100 dark:border-slate-700 p-4">
+                                <div class="flex items-baseline justify-between gap-2">
+                                    <p class="text-sm font-semibold uppercase text-emerald-600 dark:text-emerald-400">Ingresos</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">3 meses: <span id="dash-months-total-income" class="font-bold text-emerald-600 dark:text-emerald-400"></span></p>
+                                </div>
+                                <div class="h-56 relative w-full mt-2"><canvas id="dash-chart-income"></canvas></div>
+                            </div>
+                            <div class="rounded-xl border border-slate-100 dark:border-slate-700 p-4">
+                                <div class="flex items-baseline justify-between gap-2">
+                                    <p class="text-sm font-semibold uppercase text-rose-600 dark:text-rose-400">Gastos</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">3 meses: <span id="dash-months-total-expense" class="font-bold text-rose-600 dark:text-rose-400"></span></p>
+                                </div>
+                                <div class="h-56 relative w-full mt-2"><canvas id="dash-chart-expense"></canvas></div>
+                            </div>
+                            <div class="rounded-xl border border-slate-100 dark:border-slate-700 p-4">
+                                <div class="flex items-baseline justify-between gap-2">
+                                    <p class="text-sm font-semibold uppercase text-blue-600 dark:text-blue-400" title="Ingresos menos gastos de cada mes">Saldo del mes</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">3 meses: <span id="dash-months-total-balance" class="font-bold"></span></p>
+                                </div>
+                                <div class="h-56 relative w-full mt-2"><canvas id="dash-chart-balance"></canvas></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- VIEW 2: RESIDENTS -->
@@ -2031,7 +2068,11 @@
             }
         };
 
-        let myChart, currentView = 'dashboard', residentBeingEditedId = null;
+        let currentView = 'dashboard', residentBeingEditedId = null;
+        // SISDEL: las tres graficas del tablero (Ingresos, Gastos y Saldo del mes): DASH_MONTHS_COUNT meses que terminan en
+        // dashMonthsEnd ('AAAA-MM'; null = el mes en curso). Van aqui arriba porque el tablero se pinta al arrancar
+        const DASH_MONTHS_COUNT = 3;
+        let dashMonthsEnd = null, dashCharts = {};
         let currentCompanyCode = null;
         let generatedCode = '------';
 
@@ -3582,29 +3623,144 @@
             renderChart(txs);
         }
 
+        // SISDEL: Ingresos, gastos y saldo por mes en tres graficas de barras (pedido del usuario, 2026-11-18). Antes era una
+        // sola grafica "Tendencia" de los ultimos 3 meses que agrupaba por new Date(t.date) (no por el dia local de los
+        // reportes) y sin el ano. Ahora las cifras son las de SisdelReportesOikos.cashMonths: las mismas del reporte
+        // "Ingresos, egresos y saldo por mes" (pagos y gastos vivos por su dia local; las cuotas y cargos no son dinero).
+        // "Mes anterior" / "Mes siguiente" corren la ventana un mes: nunca despues del mes en curso ni antes del primer mes
+        // con pagos o gastos. Cada barra lleva su monto escrito; el saldo negativo va en rojo.
+        function dashMonthNow() { return localDayKey(new Date()).slice(0, 7); }
+        function dashMonthsEndKey() { const now = dashMonthNow(); return dashMonthsEnd && dashMonthsEnd < now ? dashMonthsEnd : now; }
+        function dashMonthsData(txs) {
+            return SisdelReportesOikos.cashMonths(txs || Store.get('transactions') || [], { end: dashMonthsEndKey(), count: DASH_MONTHS_COUNT, dayKey: localDayKey });
+        }
+        // Un monto con su signo delante del simbolo ("-Q50.00", no "Q-50.00")
+        function dashMoney(v) { const n = Number(v) || 0; return n < 0 ? '-' + formatMoney(-n) : formatMoney(n); }
+        // Monto corto para el eje: Q500, Q1.5 mil, Q2 M
+        function dashMoneyShort(v) {
+            const n = Number(v) || 0;
+            const sym = currSymbols[Store.get('settings').currency] || '$';
+            const abs = Math.abs(n);
+            const sign = n < 0 ? '-' : '';
+            const fmt = (x) => String(Math.round(x * 10) / 10);
+            if (abs >= 1e6) return `${sign}${sym}${fmt(abs / 1e6)} M`;
+            if (abs >= 1e3) return `${sign}${sym}${fmt(abs / 1e3)} mil`;
+            return `${sign}${sym}${fmt(abs)}`;
+        }
+        // "Septiembre a noviembre de 2026" o "Diciembre de 2025 a febrero de 2026"
+        function dashRangeText(a, b) {
+            const ml = SisdelReportesOikos.monthLong;
+            const text = a.slice(0, 4) === b.slice(0, 4) ? `${ml(a).split(' de ')[0]} a ${ml(b)}` : `${ml(a)} a ${ml(b)}`;
+            return text.charAt(0).toUpperCase() + text.slice(1);
+        }
         function renderChart(txs) {
-            const ctx = document.getElementById('trendChart');
-            if (myChart) myChart.destroy();
-            const mapInc = {}, mapExp = {};
-            const labels = [];
-            const d = new Date();
-            for (let i = 2; i >= 0; i--) {
-                const nd = new Date(d.getFullYear(), d.getMonth() - i, 1);
-                const k = `${nd.getFullYear()}-${nd.getMonth()}`;
-                labels.push(nd.toLocaleDateString(Store.get('settings').lang === 'es' ? 'es' : 'en', { month: 'short' }));
-                mapInc[k] = 0; mapExp[k] = 0;
+            if (typeof SisdelReportesOikos === 'undefined' || typeof Chart === 'undefined') return;
+            const now = dashMonthNow();
+            const end = dashMonthsEndKey();
+            const data = dashMonthsData(txs);
+            const months = data.months;
+            if (!months.length) return;
+            const first = months[0].key;
+            const last = months[months.length - 1].key;
+            const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+            setText('dash-months-range', dashRangeText(first, last) + (end === now ? ' (el mes en curso va hasta hoy)' : ''));
+            setText('dash-months-total-income', dashMoney(data.total.income));
+            setText('dash-months-total-expense', dashMoney(data.total.expense));
+            const balEl = document.getElementById('dash-months-total-balance');
+            if (balEl) {
+                balEl.textContent = dashMoney(data.total.balance);
+                balEl.className = 'font-bold ' + (data.total.balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400');
             }
-            txs.forEach(t => {
-                const td = new Date(t.date); const k = `${td.getFullYear()}-${td.getMonth()}`;
-                if (mapInc[k] !== undefined) { if (t.type === 'income') mapInc[k] += parseFloat(t.amount) || 0; else if (t.type === 'expense') mapExp[k] += parseFloat(t.amount) || 0; }
-            });
+            const prev = document.getElementById('dash-months-prev');
+            const next = document.getElementById('dash-months-next');
+            const today = document.getElementById('dash-months-today');
+            if (prev) prev.disabled = !data.first || first <= data.first;
+            if (next) next.disabled = end >= now;
+            if (today) today.disabled = end >= now;
+            // Sin pagos ni gastos en la ventana: se dice por que todo esta en cero (un condominio cargado solo con cuotas)
+            const note = document.getElementById('dash-months-note');
+            if (note) {
+                let msg = '';
+                if (!data.first) msg = 'Todavía no hay pagos ni gastos registrados. Las cuotas y los cargos no son dinero recibido: lo que deben los residentes está en Residentes y en Reportes.';
+                else if (!data.hasCash) msg = `No hay pagos ni gastos registrados en estos meses. Hay movimientos de ${SisdelReportesOikos.monthLong(data.first)} a ${SisdelReportesOikos.monthLong(data.last)}.`;
+                note.textContent = msg;
+                note.classList.toggle('hidden', !msg);
+            }
             const isDark = document.documentElement.classList.contains('dark');
             const tc = isDark ? '#cbd5e1' : '#475569';
-            myChart = new Chart(ctx, {
+            const grid = isDark ? '#334155' : '#f1f5f9';
+            const labels = months.map(m => m.label);
+            dashChart('income', 'Ingresos', labels, months.map(m => m.income), months.map(() => '#10b981'), tc, grid);
+            dashChart('expense', 'Gastos', labels, months.map(m => m.expense), months.map(() => '#f43f5e'), tc, grid);
+            dashChart('balance', 'Saldo del mes', labels, months.map(m => m.balance), months.map(m => (m.balance < 0 ? '#f43f5e' : '#3b82f6')), tc, grid);
+        }
+        // Una grafica de barras del tablero (una barra por mes) con el monto escrito sobre cada barra (debajo si es negativo)
+        function dashChart(key, label, labels, values, colors, tc, grid) {
+            const canvas = document.getElementById('dash-chart-' + key);
+            if (!canvas) return;
+            if (dashCharts[key]) dashCharts[key].destroy();
+            const allZero = values.every(v => !v);
+            dashCharts[key] = new Chart(canvas, {
                 type: 'bar',
-                data: { labels, datasets: [{ label: 'Ingresos', data: Object.values(mapInc), backgroundColor: '#10b981', borderRadius: 4 }, { label: 'Gastos', data: Object.values(mapExp), backgroundColor: '#f43f5e', borderRadius: 4 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tc } } }, scales: { x: { ticks: { color: tc }, grid: { display: false } }, y: { ticks: { color: tc }, grid: { color: isDark ? '#334155' : '#f1f5f9' } } } }
+                data: { labels, datasets: [{ label, data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 64 }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 250 },
+                    layout: { padding: { top: 24, bottom: 4 } },
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${label}: ${dashMoney(c.parsed.y)}` } } },
+                    scales: {
+                        x: { ticks: { color: tc, font: { weight: '600' } }, grid: { display: false } },
+                        // Todo en cero: sin numeros en el eje (0.1, 0.2... confunden); el aviso de arriba dice por que
+                        y: { beginAtZero: true, grace: '12%', ticks: { display: !allZero, color: tc, callback: (v) => dashMoneyShort(v) }, grid: { color: grid } }
+                    }
+                },
+                plugins: [{
+                    id: 'sisdelValueLabels',
+                    afterDatasetsDraw(chart) {
+                        const ctx = chart.ctx;
+                        const meta = chart.getDatasetMeta(0);
+                        ctx.save();
+                        ctx.fillStyle = tc;
+                        ctx.font = '600 12px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        meta.data.forEach((bar, i) => {
+                            const v = Number(chart.data.datasets[0].data[i]) || 0;
+                            ctx.textBaseline = v < 0 ? 'top' : 'bottom';
+                            ctx.fillText(dashMoney(v), bar.x, v < 0 ? bar.y + 4 : bar.y - 4);
+                        });
+                        ctx.restore();
+                    }
+                }]
             });
+        }
+        // step: -1 un mes atras, 1 un mes adelante, 0 vuelve al mes en curso
+        function dashMonthsGo(step) {
+            if (typeof SisdelReportesOikos === 'undefined') return;
+            const now = dashMonthNow();
+            if (step < 0) {
+                const data = dashMonthsData();
+                if (!data.first || !data.months.length || data.months[0].key <= data.first) return;
+            }
+            let end = step === 0 ? now : SisdelReportesOikos.addMonths(dashMonthsEndKey(), step);
+            if (end > now) end = now;
+            dashMonthsEnd = end >= now ? null : end;
+            renderChart(Store.get('transactions'));
+        }
+        // "Ver el reporte": el reporte Ingresos, egresos y saldo por mes de los mismos meses (el privilegio lo decide
+        // finanzas-bloqueo.js, como el boton del reporte en la lista)
+        function openDashMonthReport() {
+            if (typeof SisdelReportesOikos === 'undefined') return;
+            const now = dashMonthNow();
+            const end = dashMonthsEndKey();
+            const start = SisdelReportesOikos.addMonths(end, 1 - DASH_MONTHS_COUNT);
+            const lastDay = end === now ? localDayKey(new Date()) : `${end}-${String(new Date(Number(end.slice(0, 4)), Number(end.slice(5, 7)), 0).getDate()).padStart(2, '0')}`;
+            navigate('reports');
+            const fromEl = document.getElementById('rep-from');
+            const toEl = document.getElementById('rep-to');
+            if (fromEl) fromEl.value = `${start}-01`;
+            if (toEl) toEl.value = lastDay;
+            selectReport('month-balance');
         }
 
         function toggleMenu(id) { document.querySelectorAll('.dropdown').forEach(el => { if (el.id !== id) el.classList.remove('active'); }); document.getElementById(id).classList.toggle('active'); }

@@ -54,6 +54,26 @@ const longAgo = R.monthBalance([tx('a', 'income', '2026-06-01T15:00:00.000Z', 10
 equal('una fecha Desde mal escrita (1900) no llena la tabla: arranca en el primer mes con movimientos', [longAgo.months.length, longAgo.months[0].key], [1, '2026-06']);
 equal('dos anos completos son 24 filas', R.monthBalance([], { from: '2025-01-01', to: '2026-12-31' }).months.length, 24);
 
+// Las tres graficas del tablero (pedido del usuario, 2026-11-18): Ingresos, Gastos y Saldo del mes de 3 meses
+console.log('\nTablero: ingresos, gastos y saldo de 3 meses (cashMonths)');
+{
+    const w = R.cashMonths(txs, { end: '2026-03', count: 3, dayKey: gtDay });
+    equal('los 3 meses que terminan en el elegido, en orden y con su nombre corto', w.months.map((m) => [m.key, m.label]), [['2026-01', 'Ene 2026'], ['2026-02', 'Feb 2026'], ['2026-03', 'Mar 2026']]);
+    equal('ingresos = pagos, gastos = egresos y saldo = ingresos menos gastos; los cargos y lo anulado no cuentan', w.months.map((m) => [m.income, m.expense, m.balance]), [[750.5, 120, 630.5], [0, 0, 0], [300, 1000, -700]]);
+    equal('el total de los 3 meses', w.total, { income: 1050.5, expense: 1120, balance: -69.5 });
+    equal('el primer y el ultimo mes con pagos o gastos (hasta donde se puede navegar)', [w.first, w.last, w.hasCash], ['2025-12', '2026-03', true]);
+    const report = R.monthBalance(txs, { from: '2026-01-01', to: '2026-03-31', dayKey: gtDay });
+    equal('dice lo mismo que el reporte "Ingresos, egresos y saldo por mes"', w.months.map((m) => [m.key, m.income, m.expense, m.balance]), report.months.map((m) => [m.key, m.income, m.expense, m.balance]));
+    equal('un mes atras tambien cruza el cambio de ano', R.cashMonths(txs, { end: '2026-02', dayKey: gtDay }).months.map((m) => [m.key, m.income]), [['2025-12', 200], ['2026-01', 750.5], ['2026-02', 0]]);
+    equal('sin pagos ni gastos en la ventana: todo en cero y hasCash falso', (() => { const z = R.cashMonths(txs, { end: '2026-07', dayKey: gtDay }); return [z.months.map((m) => m.key), z.total, z.hasCash, z.last]; })(), [['2026-05', '2026-06', '2026-07'], { income: 0, expense: 0, balance: 0 }, false, '2026-03']);
+    equal('un condominio solo con cuotas y cargos no tiene meses con dinero', (() => { const z = R.cashMonths([tx('c', 'charge', '2026-02-01T15:00:00.000Z', 300)], { end: '2026-03' }); return [z.first, z.last, z.hasCash]; })(), [null, null, false]);
+    equal('un gasto del 31 de marzo a las 5 pm de Guatemala cae en marzo (dia local)', R.cashMonths([tx('g', 'expense', '2026-03-31T23:00:00.000Z', 10)], { end: '2026-04', count: 2, dayKey: gtDay }).months.map((m) => [m.key, m.expense]), [['2026-03', 10], ['2026-04', 0]]);
+    equal('un descuento de mora no es dinero', R.cashMonths([tx('d', 'mora_discount', '2026-03-10T15:00:00.000Z', 50)], { end: '2026-03', count: 1 }).months[0].income, 0);
+    equal('la cantidad de meses va de 1 a 24 (3 por defecto)', [R.cashMonths([], { end: '2026-03' }).months.length, R.cashMonths([], { end: '2026-03', count: 99 }).months.length, R.cashMonths([], { end: '2026-03', count: -5 }).months.length], [3, 24, 1]);
+    equal('sin un mes final valido no hay meses', R.cashMonths(txs, { end: '2026-13' }).months, []);
+    equal('los centavos se suman sin errores de redondeo', R.cashMonths([0.1, 0.2, 0.3].map((a, i) => tx('c' + i, 'income', '2026-06-01T15:00:00.000Z', a)), { end: '2026-06', count: 1 }).total.income, 0.6);
+}
+
 console.log('\nCuotas y cargos emitidos y por cobrar (aparte de la caja)');
 const fee = (id, resiId, date, amount) => tx(id, 'charge', date, amount, { resiId, kind: 'fee' });
 const pay = (id, resiId, date, amount) => tx(id, 'income', date, amount, { resiId });

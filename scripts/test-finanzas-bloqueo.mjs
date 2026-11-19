@@ -116,6 +116,10 @@ equal('en la lista de Reportes, cada reporte se oculta sin su privilegio (tambie
 equal('sin exportar se ocultan los cuatro botones de la pantalla de Reportes (tambien WhatsApp)',
     ['printCurrentReport()', 'downloadCurrentReportPDF()', 'exportCurrentReportExcel()', 'shareCurrentReportWhatsApp()'].map((f) => cssCashier.includes(`#view-reports button[onclick="${f}"]`)), [true, true, true, true]);
 equal('sin el reporte financiero tampoco se ve el de ingresos y egresos por mes', [cssCashier.includes('#rep-tab-month-balance'), B.cssFor(only('reportes_resumen')).includes('#rep-tab-month-balance')], [true, false]);
+// Las graficas del tablero (2026-11-18): moverse de mes es parte de ver el tablero; "Ver el reporte" abre el reporte por mes
+equal('"Ver el reporte" de las graficas del tablero pide el reporte por mes (se oculta y se bloquea sin el); las flechas no piden nada mas',
+    [cssCashier.includes('#dash-months-report'), B.cssFor(only('reportes_resumen')).includes('#dash-months-report'), blocked('openDashMonthReport()', only('tablero_ver')), blocked('openDashMonthReport()', only('tablero_ver', 'reportes_resumen')), blocked('dashMonthsGo(-1)', only('tablero_ver')), blocked('dashMonthsGo(0)', only('tablero_ver'))],
+    [true, false, true, false, false, false]);
 equal('sin estado de cuenta el nombre del residente deja de ser enlace', B.cssFor(only('residentes_ver')).includes('text-decoration: none'), true);
 equal('con configuracion solo de lectura los campos quedan bloqueados', (() => {
     const css = B.cssFor(only('config_ver'));

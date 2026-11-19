@@ -943,6 +943,65 @@ async function run() {
         await oikos(`(() => { deleteTransaction('disc-test-07'); deleteTransaction('disc-test-08'); Store.get = window.__real.get; window.alert = window.__real.alert; window.confirm = window.__real.confirm; window.prompt = window.__real.prompt; navigate('accounting'); })()`);
         equal('todo queda guardado en la nube', await idle(), 'ok');
 
+        console.log('\nTablero: ingresos, gastos y saldo por mes en tres graficas, con flechas');
+        // Un gasto de hace 4 meses registrado "en otro equipo" (directo en la nube): asi hay meses atras a donde ir
+        const gtNow = new Date(Date.now() - 6 * 3600000);
+        const monthKeyAgo = (n) => new Date(Date.UTC(gtNow.getUTCFullYear(), gtNow.getUTCMonth() - n, 1)).toISOString().slice(0, 7);
+        const oldKey = monthKeyAgo(4);
+        const dashStamp = new Date().toISOString();
+        await txRef('dash-test-old').set({ id: 'dash-test-old', type: 'expense', amount: 75, date: `${oldKey}-15T18:00:00.000Z`, concept: 'Gasto de prueba del tablero', category: 'Mantenimiento', created_at: dashStamp, updated_at: dashStamp });
+        await waitFor('un gasto de hace 4 meses registrado en otro equipo llega a OIKOS', () => oikos(`Store.get('transactions').some((t) => t.id === 'dash-test-old')`), 60000);
+        // Lo que muestran las tres graficas y, aparte, lo que suman a mano los pagos y gastos vivos de esos meses
+        const DASH = `(() => {
+            navigate('dashboard');
+            const chartOf = (k) => Chart.getChart(document.getElementById('dash-chart-' + k));
+            const bars = (k) => (chartOf(k) ? chartOf(k).data.datasets[0].data.map(Number) : null);
+            const end = dashMonthsEndKey();
+            const keys = [2, 1, 0].map((i) => SisdelReportesOikos.addMonths(end, -i));
+            const txs = Store.get('transactions');
+            const sum = (type, key) => Math.round(txs.filter((t) => t.type === type && localDayKey(t.date).slice(0, 7) === key).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) * 100) / 100;
+            const noteEl = document.getElementById('dash-months-note');
+            return {
+                keys, labels: chartOf('income') ? chartOf('income').data.labels : null,
+                income: bars('income'), expense: bars('expense'), balance: bars('balance'),
+                byHand: keys.map((k) => [sum('income', k), sum('expense', k), Math.round((sum('income', k) - sum('expense', k)) * 100) / 100]),
+                range: document.getElementById('dash-months-range').textContent,
+                prev: document.getElementById('dash-months-prev').disabled, next: document.getElementById('dash-months-next').disabled, today: document.getElementById('dash-months-today').disabled,
+                note: noteEl.classList.contains('hidden') ? '' : noteEl.textContent,
+                totals: ['income', 'expense', 'balance'].map((k) => document.getElementById('dash-months-total-' + k).textContent),
+                totalsByHand: [0, 1, 2].map((j) => dashMoney(Math.round(keys.reduce((s, k, i) => s + [sum('income', k), sum('expense', k), sum('income', k) - sum('expense', k)][j], 0) * 100) / 100)),
+                yTicks: chartOf('income') ? chartOf('income').options.scales.y.ticks.display : null,
+                old: !!document.getElementById('trendChart')
+            };
+        })()`;
+        const sameAsHand = (d) => d.income.every((v, i) => v === d.byHand[i][0]) && d.expense.every((v, i) => v === d.byHand[i][1]) && d.balance.every((v, i) => v === d.byHand[i][2]);
+        let dash = await oikos(DASH);
+        equal('tres graficas (Ingresos, Gastos y Saldo del mes) de los ultimos 3 meses, con el ano en cada mes; la de Tendencia ya no esta',
+            [dash.keys, dash.labels && dash.labels.length, [dash.income, dash.expense, dash.balance].every((b) => b && b.length === 3), dash.old],
+            [[monthKeyAgo(2), monthKeyAgo(1), monthKeyAgo(0)], 3, true, false]);
+        record('los labels dicen el mes y el ano (Nov 2026)', dash.labels.every((l) => /^[A-Z][a-z]{2} \d{4}$/.test(l)), JSON.stringify(dash.labels));
+        record('cada barra es la suma de los pagos (o gastos) vivos de su mes; el saldo, ingresos menos gastos', sameAsHand(dash), JSON.stringify(dash));
+        equal('los totales de los 3 meses arriba de cada grafica', dash.totals, dash.totalsByHand);
+        equal('en el mes en curso: no se puede ir adelante ni a "Mes actual", si hacia atras (hay un gasto de hace 4 meses)', [dash.prev, dash.next, dash.today, dash.range.endsWith('(el mes en curso va hasta hoy)')], [false, true, true, true]);
+        dash = await oikos(`(() => { document.getElementById('dash-months-prev').click(); return ${DASH}; })()`);
+        equal('"Mes anterior" corre las tres graficas un mes hacia atras', [dash.keys, dash.next, dash.today, sameAsHand(dash)], [[monthKeyAgo(3), monthKeyAgo(2), monthKeyAgo(1)], false, false, true]);
+        const windowZero = dash.byHand.every((m) => m[0] === 0 && m[1] === 0);
+        record('sin pagos ni gastos en la ventana un aviso dice por que (y el eje no muestra 0.1, 0.2...); con pagos no hay aviso',
+            windowZero ? (dash.note.startsWith('No hay pagos ni gastos registrados en estos meses') && dash.yTicks === false) : (dash.note === '' && dash.yTicks === true), JSON.stringify([windowZero, dash.note, dash.yTicks]));
+        for (let i = 0; i < 8 && !(await oikos(`document.getElementById('dash-months-prev').disabled`)); i++) await oikos(`document.getElementById('dash-months-prev').click()`);
+        dash = await oikos(DASH);
+        equal('hacia atras llega hasta el primer mes con pagos o gastos y ahi se detiene, con el gasto en su mes', [dash.keys[0], dash.prev, dash.expense[0] === dash.byHand[0][1] && dash.expense[0] >= 75, dash.range.includes('mes en curso')], [oldKey, true, true, false]);
+        dash = await oikos(`(() => { document.getElementById('dash-months-next').click(); return ${DASH}; })()`);
+        equal('"Mes siguiente" la corre un mes hacia adelante', [dash.keys[0], dash.prev, sameAsHand(dash)], [monthKeyAgo(3), false, true]);
+        dash = await oikos(`(() => { document.getElementById('dash-months-today').click(); return ${DASH}; })()`);
+        equal('"Mes actual" vuelve a los ultimos 3 meses', [dash.keys[2], dash.next, dash.today], [monthKeyAgo(0), true, true]);
+        const dashRep = await oikos(`(() => { document.getElementById('dash-months-prev').click(); document.getElementById('dash-months-report').click(); const out = { view: currentView, key: currentReportKey, title: document.getElementById('rep-current').textContent, from: document.getElementById('rep-from').value, to: document.getElementById('rep-to').value }; dashMonthsGo(0); return out; })()`);
+        const lastDayAgo1 = new Date(Date.UTC(gtNow.getUTCFullYear(), gtNow.getUTCMonth(), 0)).toISOString().slice(0, 10);
+        equal('"Ver el reporte" abre Ingresos, egresos y saldo por mes de esos mismos meses', dashRep, { view: 'reports', key: 'month-balance', title: 'Ingresos, egresos y saldo por mes', from: `${monthKeyAgo(3)}-01`, to: lastDayAgo1 });
+        // Limpieza: el gasto de prueba se anula (nada se borra)
+        await oikos(`deleteTransaction('dash-test-old')`);
+        equal('el gasto de prueba se anula y queda guardado en la nube', [await idle(), (await txRef('dash-test-old').get()).get('deleted')], ['ok', true]);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

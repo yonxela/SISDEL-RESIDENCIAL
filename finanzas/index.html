@@ -5166,19 +5166,55 @@
         // SISDEL: el mensaje a UN residente sale desde el WhatsApp del condominio (servidor), con confirmacion y SIN pedir
         // telefono: el servidor lo toma de la ficha del vecino. Sin el puente (OIKOS fuera de SISDEL), o si WhatsApp no esta
         // conectado y el usuario lo acepta, se abre WhatsApp para enviarlo a mano.
+        // SISDEL: lo que ya se sabe del WhatsApp del condominio por la ultima comprobacion de ESTE equipo (de hace menos de 10
+        // minutos): 'restringido' (WhatsApp no deja salir los mensajes), 'desconectado' o '' (bien, o no se sabe: ahi decide el servidor)
+        function remKnownBlock() {
+            const c = remConn;
+            if (!c || c.checking || !c.at || Date.now() - c.at > 10 * 60 * 1000) return '';
+            if (c.connected === false) return 'desconectado';
+            return c.connected === true && c.confirming === false ? 'restringido' : '';
+        }
+        // La pregunta corta que se hace cuando el numero del condominio no puede enviar: primero lo que se pregunta y despues el motivo
+        // en una linea. Antes se mostraba el aviso largo del servidor y un cuadro del navegador se corta si el texto es largo: la
+        // pregunta ("¿Abrir WhatsApp para enviarlo a mano?") quedaba tapada abajo (La Perla, 2026-11-18). El detalle sigue en el aviso
+        // rojo de Recordatorios.
+        function remMineAsk(kind, label) {
+            const why = kind === 'desconectado' ? 'El WhatsApp del condominio está desconectado.' : 'WhatsApp no deja salir los mensajes del número del condominio (lo restringió).';
+            return `¿Abrir su WhatsApp con el mensaje para ${label}?\n\n${why} Saldría de su propio número: usted pulsa Enviar allá.`;
+        }
+        // Apunta lo que el servidor acaba de decir (numero restringido o desconectado) para que el siguiente Enviar no vuelva a
+        // preguntarle y se vea el aviso rojo de Recordatorios si esta abierta
+        function remNoteBlock(kind, detail) {
+            const restricted = kind === 'restringido';
+            const base = remConn && !remConn.checking ? remConn : {};
+            remConn = Object.assign({}, base, restricted
+                ? { connected: true, confirming: false, healthMessage: detail || '', at: Date.now() }
+                : { connected: false, message: detail || '', at: Date.now() });
+            paintRemConnection();
+            paintReminderBulk();
+        }
         async function remSendOne(r, text, mode) {
-            const phone = remWaPhone(r.contact) || String(r.contact || '').replace(/[^0-9]/g, '');
-            const manual = () => window.open(remWaUrl(phone, text, remManualDest), '_blank');
+            const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
+            // Su propio WhatsApp con el mensaje ya escrito (uno por uno y con su clic: ver "Enviar desde MI WhatsApp" abajo)
+            const manual = () => { if (openMyWhatsApp(r.contact, text)) myWhatsAppToast(label); };
             const bridge = remBridge();
             if (!bridge) return manual();
-            const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
+            // Si ya se sabe que el numero del condominio no puede enviar no se le pide nada al servidor (cada intento puede alargar el
+            // castigo de WhatsApp): se ofrece Mi WhatsApp de una vez
+            const known = remKnownBlock();
+            if (known) { if (confirm(remMineAsk(known, label))) manual(); return; }
             const preview = text.length > 400 ? text.slice(0, 400) + '...' : text;
             if (!confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return;
             const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
             if (!result.ok) {
-                const blocked = /no está conectado|no está dejando salir/i.test(result.error);
-                if (blocked && confirm(result.error + '\n\n¿Abrir WhatsApp para enviarlo a mano?')) return manual();
-                if (!blocked) alert(result.error);
+                const restricted = /no está dejando salir/i.test(result.error);
+                if (restricted || /no está conectado/i.test(result.error)) {
+                    const kind = restricted ? 'restringido' : 'desconectado';
+                    remNoteBlock(kind, result.error);
+                    if (confirm(remMineAsk(kind, label))) manual();
+                    return;
+                }
+                alert(result.error);
                 return;
             }
             // "Enviado" solo decia que UltraMsg lo acepto (el 2026-11-16 los mensajes salian "enviados" y no llegaban): el servidor mira
@@ -5627,8 +5663,8 @@
             try { r = await bridge.status({}); } catch (e) { r = null; }
             remConnBusy = false;
             remConn = r && r.ok
-                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null, channel: r.channel || 'ultramsg', templates: r.templates || null, meta: r.meta || null, confirming: r.confirming === undefined ? null : r.confirming, healthMessage: r.healthMessage || '' }
-                : { connected: null, state: 'sin-respuesta', message: '', queue: null };
+                ? { connected: r.connected, state: r.state, message: r.message || '', queue: r.queue || null, channel: r.channel || 'ultramsg', templates: r.templates || null, meta: r.meta || null, confirming: r.confirming === undefined ? null : r.confirming, healthMessage: r.healthMessage || '', at: Date.now() }
+                : { connected: null, state: 'sin-respuesta', message: '', queue: null, at: Date.now() };
             paintRemConnection();
             paintRemMeta();
             renderReminderPreview();

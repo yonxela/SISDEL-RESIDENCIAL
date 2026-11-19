@@ -370,6 +370,46 @@ async function run() {
             return asked;
         })()`);
         record('si WhatsApp lo rechazo dice que NO llego y por que; si sigue en cola no lo da por entregado', seen.length === 4 && /NO llegó: WhatsApp bloqueó temporalmente/.test(seen[1]) && /todavía no se sabe si llegó \(sigue en la cola/.test(seen[3]), JSON.stringify(seen));
+        // Numero del condominio bloqueado por WhatsApp (La Perla, 2026-11-18): Enviar de una fila ofrece Mi WhatsApp con una pregunta
+        // corta (antes el cuadro mostraba el aviso largo del servidor y la pregunta quedaba cortada abajo)
+        const blockedOne = await oikos(`(async () => {
+            const asked = []; const opened = []; let serverCalls = 0;
+            const real = { confirm: window.confirm, alert: window.alert, open: window.open, one: window.parent.sisdelWhatsApp.one, conn: remConn };
+            window.confirm = (m) => { asked.push(String(m)); return true; }; window.alert = (m) => { asked.push('alert: ' + m); };
+            window.open = (u) => { opened.push(String(u)); return {}; };
+            window.parent.sisdelWhatsApp.one = async () => { serverCalls++; return { ok: false, error: 'WhatsApp no está dejando salir los mensajes del número del condominio: ' + 'detalle largo '.repeat(60) + 'Después use "Enviar prueba" a su propio teléfono.' }; };
+            const r = { id: 'perla-A006', unit: 'A006', name: 'UNION EMPRESARIAL, S.A', contact: '4100-1708' };
+            const grab = () => ({ asked: asked.splice(0), opened: opened.splice(0), serverCalls });
+            const out = {};
+            try {
+                remConn = { connected: true, confirming: true, at: Date.now() };
+                await remSendOne(r, 'hola A006', 'mora');
+                out.sinSaber = grab();                                  // 1) se pregunta si se envia, el servidor lo rechaza, 2) la pregunta corta
+                out.apunta = remKnownBlock();                           // el rechazo se apunta: la siguiente vez no se vuelve a preguntar al servidor
+                await remSendOne(r, 'hola A006', 'mora');
+                out.yaSabe = grab();
+                const at = Date.now();
+                out.estados = [null, { checking: true }, { connected: false, at }, { connected: true, confirming: false, at }, { connected: true, confirming: true, at }, { connected: true, confirming: null, at }, { connected: true, confirming: false, at: at - 11 * 60 * 1000 }, { connected: false }].map((c) => { remConn = c; return remKnownBlock(); });
+                remConn = { connected: false, message: 'WhatsApp no está conectado (estado: standby).', at: Date.now() };
+                await remSendOne(r, 'hola A006', 'mora');
+                out.desconectado = grab();
+                remConn = { connected: true, confirming: false, at: Date.now() };
+                await remSendOne({ id: 'x', unit: 'B1', name: 'Sin telefono', contact: '123' }, 'hola', 'mora');
+                out.sinTelefono = grab();
+            } finally {
+                window.confirm = real.confirm; window.alert = real.alert; window.open = real.open; window.parent.sisdelWhatsApp.one = real.one; remConn = real.conn;
+                paintRemConnection(); paintReminderBulk();
+            }
+            return out;
+        })()`);
+        const shortAsk = (m) => typeof m === 'string' && m.length < 300 && m.startsWith('¿Abrir su WhatsApp con el mensaje para A006') && !/detalle largo/.test(m);
+        record('sin saber el estado: pregunta si se envia, el servidor lo rechaza y la pregunta de Mi WhatsApp es corta (la pregunta va primero y no trae el aviso largo)',
+            blockedOne.sinSaber.asked.length === 2 && /^¿Enviar este mensaje/.test(blockedOne.sinSaber.asked[0]) && shortAsk(blockedOne.sinSaber.asked[1]) && blockedOne.sinSaber.serverCalls === 1, JSON.stringify(blockedOne.sinSaber));
+        record('al aceptar abre SU WhatsApp en el chat de ese residente con el mensaje ya escrito', blockedOne.sinSaber.opened.length === 1 && /^https:\/\/(web\.whatsapp\.com\/send\?phone=50241001708&text=hola%20A006|wa\.me\/50241001708\?text=hola%20A006)$/.test(blockedOne.sinSaber.opened[0]), JSON.stringify(blockedOne.sinSaber.opened));
+        equal('el rechazo se apunta y el siguiente Enviar ya no le pregunta al servidor: solo la pregunta corta y se abre Mi WhatsApp', [blockedOne.apunta, blockedOne.yaSabe.asked.length, shortAsk(blockedOne.yaSabe.asked[0]), blockedOne.yaSabe.serverCalls, blockedOne.yaSabe.opened.length], ['restringido', 1, true, 1, 1]);
+        equal('lo que se sabe del WhatsApp del condominio: restringido o desconectado solo si la comprobacion es de hace menos de 10 minutos', blockedOne.estados, ['', '', 'desconectado', 'restringido', '', '', '', '']);
+        record('desconectado: tambien una pregunta corta, que dice que esta desconectado, sin llamar al servidor', blockedOne.desconectado.asked.length === 1 && /^¿Abrir su WhatsApp con el mensaje para A006/.test(blockedOne.desconectado.asked[0]) && /desconectado/.test(blockedOne.desconectado.asked[0]) && blockedOne.desconectado.asked[0].length < 300 && blockedOne.desconectado.serverCalls === 1 && blockedOne.desconectado.opened.length === 1, JSON.stringify(blockedOne.desconectado));
+        record('un residente sin telefono que sirva: lo dice y no abre WhatsApp', blockedOne.sinTelefono.opened.length === 0 && blockedOne.sinTelefono.asked.length === 2 && /no tiene un teléfono que sirva para WhatsApp/.test(blockedOne.sinTelefono.asked[1]), JSON.stringify(blockedOne.sinTelefono));
         await oikos(`(() => { remCampaign = Object.assign({}, remCampaign, { status: 'paused', pausedAt: new Date().toISOString() }); paintReminderProgress(); })()`);
         equal('el texto del avance en pausa dice que se pulse Continuar', await oikos(`/en pausa desde .*pulse Continuar/.test(document.getElementById('rem-bulk-detail').textContent)`), true);
         await oikos(`(() => { remCampaign = null; paintReminderProgress(); paintReminderBulk(); })()`);

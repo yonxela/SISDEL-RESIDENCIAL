@@ -943,6 +943,13 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('OIKOS pide el envio por el puente de finanzas.html y sin el puente no hay envio automatico', /window\.sisdelWhatsApp = \{/.test(read('finanzas.html')) && /window\.parent\.sisdelWhatsApp/.test(oikos) && /function sendRemindersToAll/.test(oikos));
     yes('el bloqueo de pantalla cubre las funciones nuevas', /sendRemindersToAll\|sendReminderTest\|controlRemCampaign/.test(read('finanzas-bloqueo.js')));
     yes('las ventanas que abre OIKOS (WhatsApp) escapan del sandbox del iframe: sin esto salia "Se bloqueo api.whatsapp.com"', (() => { const m = /setAttribute\('sandbox', '([^']*)'\)/.exec(read('finanzas.html')); return !!m && m[1].split(' ').includes('allow-popups-to-escape-sandbox') && !m[1].includes('allow-top-navigation'); })());
+    // Con el numero del condominio bloqueado, Enviar de una fila ofrece Mi WhatsApp con una pregunta corta (pedido del usuario el
+    // 2026-11-18, tras ver el aviso largo con la pregunta cortada abajo)
+    yes('con el numero del condominio bloqueado o desconectado, Enviar ofrece Mi WhatsApp con una pregunta corta y sin llamar al servidor; el aviso largo del servidor ya no va en el cuadro',
+        /function remKnownBlock\(\)/.test(oikos) && /Date\.now\(\) - c\.at > 10 \* 60 \* 1000/.test(oikos) && /function remMineAsk\(kind, label\)/.test(oikos)
+        && /if \(known\) \{ if \(confirm\(remMineAsk\(known, label\)\)\) manual\(\); return; \}/.test(oikos) && /remNoteBlock\(kind, result\.error\);/.test(oikos)
+        && !/confirm\(result\.error \+/.test(oikos) && (oikos.match(/, at: Date\.now\(\) \}/g) || []).length >= 2
+        && /const manual = \(\) => \{ if \(openMyWhatsApp\(r\.contact, text\)\) myWhatsAppToast\(label\); \};/.test(oikos));
     yes('Enviar de la fila y Contactar mandan desde el servidor sin pedir telefono', /function remSendOne/.test(oikos) && /bridge\.one\(\{ residentId/.test(oikos) && /one: callServer\('sendReminderOne'\)/.test(read('finanzas.html')) && /contactWhatsApp\(this\.dataset\.id\)/.test(oikos) && /sendReminderOne\b/.test(funcs) && /match \/recordatorios_individuales\/\{msgId\}[\s\S]{0,160}allow write: if false/.test(rules));
     yes('OIKOS avisa cuanto tarda (de a poco, con el ritmo del envio cuidadoso) y pide confirmar antes de enviar', /de a poco para que WhatsApp no lo bloquee \(uno cada 25 a 55 segundos, de 8:00 a 18:00 y hasta \$\{REM_DAILY_LIMIT\} por día\): \$\{remEstimate\(items\.length\)\}/.test(oikos) && /¿Enviar\?`\)/.test(oikos) && /SOLO a los \$\{items\.length\} residentes que seleccion/.test(oikos));
     // Seleccion de residentes (pedido del usuario el 2026-11-16): con casillas se envia solo a los elegidos, para una prueba de unos 20

@@ -63,7 +63,24 @@ equal('dos cuotas vencidas: moroso', [mora.overdue, mora.moroso], [1000, true]);
 mora = M.moraOf('a', [charge('a', '2026-10'), charge('a', '2026-11')], settings, at(2026, 10, 6));
 equal('la cuota del mes en periodo de gracia no cuenta', [mora.debt, mora.overdue, mora.moroso], [1000, 500, false]);
 mora = M.moraOf('a', [charge('a', '2026-10'), charge('a', '2026-11')], settings, at(2026, 10, 8));
-equal('vencida la gracia del mes, cuenta', [mora.overdue, mora.moroso], [1000, true]);
+equal('la cuota del mes sigue en su plazo todo el mes: solo la de octubre esta vencida (ya no pasa el dia de cobro mas la gracia)', [mora.debt, mora.overdue, mora.moroso], [1000, 500, false]);
+
+console.log('\nPlazo de pago de 35 dias (el mes completo y hasta el dia 5 del siguiente; pedido del dueno el 2026-11-19)');
+const trio = [charge('a', '2026-09'), charge('a', '2026-10'), charge('a', '2026-11')];
+equal('el 4 de noviembre octubre todavia esta en su plazo (hasta el 5): solo septiembre esta vencido', [M.moraOf('a', trio, settings, at(2026, 10, 4)).overdue], [500]);
+equal('el 5 de noviembre octubre aun esta en su plazo (el dia 5 cuenta)', [M.moraOf('a', trio, settings, at(2026, 10, 5)).overdue], [500]);
+equal('el 6 de noviembre octubre ya vencio: septiembre y octubre', [M.moraOf('a', trio, settings, at(2026, 10, 6)).overdue], [1000]);
+mora = M.moraOf('a', [charge('a', '2026-11')], settings, at(2026, 11, 5));
+equal('noviembre se puede pagar hasta el 5 de diciembre sin ser moroso', [mora.debt, mora.overdue, mora.moroso], [500, 0, false]);
+mora = M.moraOf('a', [charge('a', '2026-11')], settings, at(2026, 11, 6));
+equal('el 6 de diciembre noviembre ya vencio (una cuota vencida: al dia para la garita, pero ya es deuda vencida)', [mora.overdue, mora.moroso], [500, false]);
+mora = M.moraOf('a', [charge('a', '2026-10'), charge('a', '2026-11')], settings, at(2026, 11, 6));
+equal('el 6 de diciembre quien debe octubre y noviembre es moroso (dos cuotas vencidas)', [mora.overdue, mora.moroso], [1000, true]);
+mora = M.moraOf('a', [charge('a', '2026-12')], settings, at(2027, 0, 5));
+equal('el cambio de ano: diciembre se paga hasta el 5 de enero', [mora.overdue, mora.moroso], [0, false]);
+equal('el dia de cobro y los dias de gracia de Configuracion ya no cambian nada', [M.moraOf('a', trio, { ...settings, chargeDay: 20, graceDays: 0 }, at(2026, 10, 6)).overdue, M.moraOf('a', trio, { ...settings, chargeDay: 1, graceDays: 25 }, at(2026, 10, 6)).overdue], [1000, 1000]);
+equal('una multa (no es cuota mensual) cuenta como vencida de una vez', M.moraOf('a', [charge('a', '2026-10', 120, { kind: 'fine', period: undefined, concept: 'Multa' })], { ...settings, fee: 100 }, at(2026, 10, 20)).moroso, true);
+
 mora = M.moraOf('a', [charge('a', '2026-09'), charge('a', '2026-10'), pay('a', 600)], settings, at(2026, 10, 20));
 equal('un pago parcial lo saca de mora', [mora.overdue, mora.moroso], [400, false]);
 mora = M.moraOf('a', [charge('a', '2026-09'), charge('a', '2026-10', 500, { deleted: true })], settings, at(2026, 10, 20));

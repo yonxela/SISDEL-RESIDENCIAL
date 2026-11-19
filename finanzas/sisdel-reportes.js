@@ -194,7 +194,7 @@
     // ───────── Mapa de pagos por residente ─────────
     // Por cada residente, cada ano anterior y cada mes del ano en curso (hasta hoy):
     //   'owed'    = debe algo de ese periodo y ya vencio (rojo)
-    //   'pending' = debe algo de ese periodo pero aun no vence (amarillo; no es mora)
+    //   'pending' = debe algo de ese periodo pero aun esta en su plazo (en blanco; no es mora)
     //   'paid'    = tuvo cuotas o cargos y estan pagados (verde)
     //   'none'    = no tuvo cuotas ni cargos (gris)
     // Los pagos de cada residente cubren sus cuotas y cargos del mas antiguo al mas nuevo (el mismo reparto del reporte
@@ -518,7 +518,7 @@
     }
 
     // Estilos del Excel de reportes-export.js para las celdas de color del mapa de pagos
-    const STATUS_STYLE = { owed: 4, paid: 5, pending: 6 };
+    const STATUS_STYLE = { owed: 4, paid: 5 };   // 'pending' (cuota en su plazo) va sin relleno
 
     // report: { title, summary, notice, headers, rows, rowsMeta, totals, numericCols, cellStatus, compact }.
     // cellStatus[fila][columna] = 'owed' | 'paid' | 'pending' | 'none' pinta la celda en el Excel (rojo, verde, amarillo).

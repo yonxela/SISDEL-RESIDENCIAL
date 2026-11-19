@@ -132,8 +132,8 @@ function balanceOf(txs, residentId) {
     return round2(balance);
 }
 
-// Mora del residente. La cuota del mes actual cuenta como vencida a partir del
-// dia de cobro mas los dias de gracia (como checkIsMoroso de OIKOS).
+// Mora del residente. La cuota de un mes cuenta como vencida pasados 35 dias: el mes completo mas hasta el dia 5 del
+// siguiente (cuotas.dueKey; como checkIsMoroso de OIKOS). El dia de cobro y los dias de gracia de OIKOS ya no cuentan.
 // `resident` (opcional) es su ficha financiera: con agua por lote, "una cuota" es la de su lote.
 //
 // En un condominio con recargo por mora (settings.moraRules) decide el modulo de mora por dia: cada cuota
@@ -154,17 +154,17 @@ function moraOf(residentId, txs, settings, now = new Date(), resident = null) {
     const balance = balanceOf(txs, residentId);
     const debt = balance < -EPS ? -balance : 0;
     if (!debt) return { balance, debt: 0, overdue: 0, moroso: false };
+    // La cuota de cada mes se paga sin atraso durante ese mes y hasta el dia 5 del siguiente (cuotas.dueKey, 35 dias:
+    // pedido del dueno el 2026-11-19 para todos los condominios): lo que aun esta en su plazo no cuenta como vencido.
     const { y, m, d } = localParts(now);
-    const current = periodKey(y, m);
-    let currentFee = 0;
+    const today = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    let notDue = 0;
     txs.forEach((t) => {
         if (!t || t.deleted || String(t.resiId) !== String(residentId)) return;
-        if (txFeePeriod(t) === current) currentFee += parseFloat(t.amount) || 0;
+        const period = txFeePeriod(t);
+        if (period && String(cuotas.dueKey(period) || '') >= today) notDue += parseFloat(t.amount) || 0;
     });
-    const chargeDay = parseInt(s.chargeDay, 10) || 1;
-    const graceDays = parseInt(s.graceDays, 10) || 0;
-    const inGrace = d < chargeDay + graceDays;
-    const overdue = round2(inGrace ? Math.max(0, debt - currentFee) : debt);
+    const overdue = round2(Math.max(0, debt - notDue));
     return { balance, debt: round2(debt), overdue, moroso: overdue > fee + EPS };
 }
 

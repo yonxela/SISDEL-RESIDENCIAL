@@ -1042,6 +1042,49 @@ async function run() {
         await oikos(`deleteTransaction('dash-test-old')`);
         equal('el gasto de prueba se anula y queda guardado en la nube', [await idle(), (await txRef('dash-test-old').get()).get('deleted')], ['ok', true]);
 
+        console.log('\nPlazo de pago de 35 dias: el mes y hasta el dia 5 del siguiente (en pantalla)');
+        // Con fechas FIJAS (se sustituye la fecha de hoy) y movimientos de mentira, para que no dependa del dia en que corra la prueba
+        const windowCases = await oikos(`(() => {
+            const RealDate = Date;
+            const realGet = Store.get;
+            const realMem = window.sisdelMem;
+            const at = (iso) => { window.Date = class extends RealDate { constructor(...a) { if (a.length === 0) super(iso); else super(...a); } static now() { return new RealDate(iso).getTime(); } }; };
+            const fee = (period) => ({ id: 'w-' + period, type: 'charge', kind: 'fee', period, amount: 100, resiId: 'w1', date: period + '-01T18:00:00.000Z' });
+            const out = {};
+            try {
+                window.sisdelMem = () => null;
+                const moroso = (iso, periods, balance) => { at(iso); const txs = periods.map(fee); Store.get = (k) => (k === 'transactions' ? txs : realGet(k)); return checkIsMoroso({ id: 'w1', balance }); };
+                out.nov19SoloNov = moroso('2026-11-19T18:00:00.000Z', ['2026-11'], -100);
+                out.dic5SoloNov = moroso('2026-12-05T18:00:00.000Z', ['2026-11'], -100);
+                out.dic6SoloNov = moroso('2026-12-06T18:00:00.000Z', ['2026-11'], -100);
+                out.nov4OctYNov = moroso('2026-11-04T18:00:00.000Z', ['2026-10', '2026-11'], -200);
+                out.nov5OctYNov = moroso('2026-11-05T18:00:00.000Z', ['2026-10', '2026-11'], -200);
+                out.nov6OctYNov = moroso('2026-11-06T18:00:00.000Z', ['2026-10', '2026-11'], -200);
+                out.nov19OctYNov = moroso('2026-11-19T18:00:00.000Z', ['2026-10', '2026-11'], -200);
+                out.alDia = moroso('2026-11-19T18:00:00.000Z', ['2026-10', '2026-11'], 0);
+                out.aFavor = moroso('2026-11-19T18:00:00.000Z', ['2026-10'], 50);
+                out.multa = (() => { at('2026-11-19T18:00:00.000Z'); const txs = [{ id: 'w-m', type: 'charge', kind: 'fine', amount: 100, resiId: 'w1', date: '2026-11-10T18:00:00.000Z', concept: 'Multa' }]; Store.get = (k) => (k === 'transactions' ? txs : realGet(k)); return checkIsMoroso({ id: 'w1', balance: -100 }); })();
+                // La Tabla general: la cuota en su plazo es 'pending' (en blanco) y la vencida 'owed'
+                const status = (today, periods) => { const txs = periods.map(fee); return SisdelReportesOikos.paymentMap([{ id: 'w1', name: 'W', unit: '1' }], txs, { today, dayKey: localDayKey, feePeriodOf: txFeePeriod, dueOf: sisdelPeriodDue }).rows[0].cells; };
+                window.Date = RealDate;
+                const c19 = status('2026-11-19', ['2026-10', '2026-11']);
+                out.tablaNov19 = [c19['2026-10'].status, c19['2026-11'].status];
+                out.tablaDic5 = status('2026-12-05', ['2026-11'])['2026-11'].status;
+                out.tablaDic6 = status('2026-12-06', ['2026-11'])['2026-11'].status;
+                out.due = [sisdelPeriodDue('2026-11'), sisdelPeriodDue('2026-12')];
+                // Con regla de mora por dia (La Perla: fin de mes + 5 dias) da lo mismo
+                Store.get = (k) => (k === 'settings' ? Object.assign({}, realGet(k), { moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] }) : realGet(k));
+                out.dueConRegla = [sisdelPeriodDue('2026-11'), sisdelPeriodDue('2026-12')];
+            } finally { window.Date = RealDate; Store.get = realGet; window.sisdelMem = realMem; }
+            return out;
+        })()`);
+        equal('una cuota del mes en su plazo no es mora: noviembre se paga hasta el 5 de diciembre (el 19 de noviembre y el mismo 5 de diciembre no es moroso; el 6 si)', [windowCases.nov19SoloNov, windowCases.dic5SoloNov, windowCases.dic6SoloNov], [false, false, true]);
+        equal('quien debe octubre y noviembre: hasta el 5 de noviembre octubre aun esta en su plazo; desde el 6 es moroso por octubre (noviembre sigue en su plazo)', [windowCases.nov4OctYNov, windowCases.nov5OctYNov, windowCases.nov6OctYNov, windowCases.nov19OctYNov], [false, false, true, true]);
+        equal('quien esta al dia o tiene saldo a favor no es moroso; una multa (no es cuota mensual) cuenta como vencida', [windowCases.alDia, windowCases.aFavor, windowCases.multa], [false, false, true]);
+        equal('en la Tabla general el mes en su plazo va como "pending" (en blanco) y el vencido como "owed": el 19 de noviembre octubre vencio y noviembre no; noviembre vence despues del 5 de diciembre', [windowCases.tablaNov19, windowCases.tablaDic5, windowCases.tablaDic6], [['owed', 'pending'], 'pending', 'owed']);
+        equal('el ultimo dia para pagar noviembre es el 5 de diciembre y diciembre el 5 de enero; con regla de mora por dia (La Perla) es el mismo', [windowCases.due, windowCases.dueConRegla], [['2026-12-05', '2027-01-05'], ['2026-12-05', '2027-01-05']]);
+        equal('Configuracion muestra el plazo fijo de 5 dias y no se puede cambiar', await oikos(`(() => { navigate('settings'); const g = document.getElementById('cfg-grace'); return [g.value, g.readOnly]; })()`), ['5', true]);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

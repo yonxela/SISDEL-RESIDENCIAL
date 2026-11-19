@@ -16,12 +16,12 @@
     <script src="./vendor/chart.umd.min.js"></script>
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
-    <script src="./sisdel-cuotas.js?v=20261115c"></script>
+    <script src="./sisdel-cuotas.js?v=20261119a"></script>
     <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
     <script src="./sisdel-mora.js?v=20261118a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261118b"></script>
+    <script src="./sisdel-reportes.js?v=20261119a"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261116a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -633,7 +633,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-fee">Cuota Mensual (suma del desglose)</label><input type="number" step="0.01" id="cfg-fee" readonly class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                                 <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-day">Día de Cobro (1-28)</label><input type="number" min="1" max="28" id="cfg-day" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
-                                <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-grace">Días de Gracia</label><input type="number" min="0" max="30" id="cfg-grace" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
+                                <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" id="lbl-set-grace" title="Fijo en todos los condominios: la cuota de un mes se paga hasta el día 5 del mes siguiente (35 días desde el día 1)">Plazo de pago (días tras fin de mes)</label><input type="number" min="0" max="30" id="cfg-grace" readonly title="Fijo: 5 días después de terminar el mes" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none"></div>
                             </div>
                             <!-- Modo de cobro de la cuota mensual: automático / manual -->
                             <div class="mt-2 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/40">
@@ -667,7 +667,7 @@
                                         <li>El saldo del residente se calcula siempre de sus movimientos (pagos − cargos). Un cargo o pago agregado por error se <strong>anula</strong> desde el estado de cuenta: queda marcado, no se borra, y el saldo se ajusta solo.</li>
                                         <li><strong>Finiquitar relación</strong> (menú del residente) da de baja a quien ya no es dueño de la propiedad: conserva su historial y puede seguir pagando lo que deba, pero no recibe más cargos. Se puede reactivar.</li>
                                         <li>Los residentes nuevos solo reciben cargos a partir del mes en que se crearon; si deben meses anteriores, márquelos en el selector de meses al crearlos.</li>
-                                        <li>Los <strong>Días de Gracia</strong> indican cuántos días después del día de cobro tiene el residente antes de marcarse como <em>moroso</em> (solo aplica a la cuota del mes en curso; deudas de meses anteriores marcan mora de inmediato).</li>
+                                        <li>El <strong>plazo de pago</strong> es el mismo en todos los condominios: la cuota de cada mes se paga durante ese mes completo y hasta el <strong>día 5 del mes siguiente</strong> (35 días desde el día 1). Hasta entonces no es mora y el residente no sale en los listados de morosos (en la Tabla general ese mes va en blanco); pasada esa fecha, si no pagó, es <em>moroso</em>. El Día de Cobro solo decide cuándo se genera la cuota en modo automático.</li>
                                     </ul>
                                 </div>
                             </details>
@@ -3538,39 +3538,34 @@
             return `${sym}${parseFloat(amount).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,')}`;
         }
 
-        // Moroso = debe algo de meses ANTERIORES, o debe el mes actual y ya
-        // pasó el día de cobro + días de gracia. (La versión anterior dependía
-        // de `lastChargedMonth`, que ya no se escribe, así que la gracia
-        // nunca aplicaba.)
+        // Moroso = debe algo que YA VENCIO. La cuota de un mes se paga sin atraso durante ese mes completo y hasta el dia 5 del
+        // siguiente (35 dias; pedido del dueno el 2026-11-19 para todos los condominios): hasta entonces no es mora y el
+        // residente no sale en los listados de morosos. Lo vencido es lo que debe menos las cuotas que aun estan en su plazo
+        // (los pagos cubren primero lo mas antiguo, asi que lo que sigue sin pagar es siempre lo mas reciente). Un cargo que
+        // no es una cuota mensual (multa, mora fija) cuenta como vencido de una vez. Misma regla en el servidor (mora.js).
         function checkIsMoroso(r) {
             if (!r || r.balance >= -0.005) return false;
-            const s = Store.get('settings');
-            const cDay = parseInt(s.chargeDay) || 1;
-            const gDays = parseInt(s.graceDays) || 0;
-            const d = new Date();
-            const curPeriod = feePeriodKey(d.getFullYear(), d.getMonth());
-            let curFee = 0;
-            const mem = sisdelMem();
-            if (mem) {
-                // SISDEL: la suma de las cuotas del mes de cada residente se calcula una vez por cambio de la lista
-                // (antes se recorrian todos los movimientos por cada residente). Misma suma, en el mismo orden.
-                curFee = sisdelDerived(mem, 'feeOf:' + curPeriod, txs => {
-                    const sums = new Map();
-                    txs.forEach(t => {
-                        if (!t || t.deleted || txFeePeriod(t) !== curPeriod) return;
-                        const key = String(t.resiId);
-                        sums.set(key, (sums.get(key) || 0) + (parseFloat(t.amount) || 0));
-                    });
-                    return sums;
-                }).get(String(r.id)) || 0;
-            } else {
-                Store.get('transactions').forEach(t => {
-                    if (String(t.resiId) === String(r.id) && txFeePeriod(t) === curPeriod) curFee += parseFloat(t.amount) || 0;
+            const notDue = sisdelFeesInWindow().get(String(r.id)) || 0;
+            return (-r.balance - notDue) > 0.005;
+        }
+        // La suma, por residente, de las cuotas que todavia estan en su plazo (su ultimo dia para pagar no ha pasado). Una vez
+        // por cambio de la lista de movimientos y por dia (antes se recorrian todos los movimientos por cada residente).
+        function sisdelFeesInWindow() {
+            const today = localDayKey(new Date());
+            const compute = (txs) => {
+                const sums = new Map();
+                txs.forEach(t => {
+                    if (!t || t.deleted) return;
+                    const period = txFeePeriod(t);
+                    if (!period || !(sisdelPeriodDue(period) >= today)) return;
+                    const key = String(t.resiId);
+                    sums.set(key, (sums.get(key) || 0) + (parseFloat(t.amount) || 0));
                 });
-            }
-            const debtBeforeCurrent = -r.balance - curFee;
-            if (debtBeforeCurrent > 0.005) return true;
-            return d.getTime() >= new Date(d.getFullYear(), d.getMonth(), cDay + gDays).getTime();   // SISDEL: con rollover al mes siguiente
+                return sums;
+            };
+            const mem = sisdelMem();
+            const rules = (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {})) ? JSON.stringify(SisdelMora.rulesOf(Store.get('settings'))) : '';
+            return mem ? sisdelDerived(mem, 'feesInWindow:' + today + ':' + rules, compute) : compute(Store.get('transactions'));
         }
 
         // SISDEL: mora por dia (finanzas/sisdel-mora.js) de cada residente, calculada a hoy. Solo en condominios con regla
@@ -6006,8 +6001,10 @@
             rsCurrentMode = mode;
             const res = Store.get('residents');
             const s = Store.get('settings');
-            const aldia = res.filter(r => r.balance >= 0);
-            const morosos = res.filter(r => r.balance < 0);
+            // SISDEL: moroso = debe algo que ya vencio (la cuota de un mes se paga hasta el dia 5 del siguiente, checkIsMoroso); quien solo
+            // debe una cuota que sigue en su plazo esta al dia
+            const morosos = res.filter(r => checkIsMoroso(r));
+            const aldia = res.filter(r => !checkIsMoroso(r));
             // Update summary
             document.getElementById('rs-total').textContent = res.length;
             document.getElementById('rs-count-aldia').textContent = aldia.length;
@@ -6027,7 +6024,7 @@
                 tabA.className = 'flex-1 py-2 text-sm font-medium rounded-md text-slate-500 dark:text-slate-400 transition';
                 iconWrap.className = 'w-10 h-10 rounded-xl flex items-center justify-center text-lg bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400';
                 document.getElementById('rs-title').textContent = 'Residentes Morosos';
-                document.getElementById('rs-subtitle').textContent = morosos.length + ' de ' + res.length + ' residentes con deuda';
+                document.getElementById('rs-subtitle').textContent = morosos.length + ' de ' + res.length + ' residentes con deuda vencida';
             }
             // Render list
             const list = mode === 'aldia' ? aldia : morosos;
@@ -6042,7 +6039,7 @@
                 rsCurrentData.push({ ...r, ...info });
                 if (mode === 'aldia') {
                     const last3Html = info.last3.length > 0 ? info.last3.map(m => `<span class="inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"><i class="fas fa-check mr-1"></i>${m.label}: ${formatMoney(m.total)}</span>`).join('') : '<span class="text-xs text-slate-400">Sin pagos recientes</span>';
-                    const saldoLabel = r.balance > 0 ? `<span class="text-emerald-600 font-bold">Saldo a favor: ${formatMoney(r.balance)}</span>` : '<span class="text-emerald-600 font-bold">Sin deuda</span>';
+                    const saldoLabel = r.balance > 0 ? `<span class="text-emerald-600 font-bold">Saldo a favor: ${formatMoney(r.balance)}</span>` : (r.balance < -0.005 ? `<span class="text-slate-600 dark:text-slate-300 font-bold">Cuota en su plazo: ${formatMoney(-r.balance)}</span>` : '<span class="text-emerald-600 font-bold">Sin deuda</span>');
                     return `<div class="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
                         <div class="flex justify-between items-start mb-2"><div><p class="font-bold text-slate-800 dark:text-slate-200">${r.unit} \u2014 ${r.name}</p><p class="text-xs text-slate-500 mt-0.5">${r.contact || 'Sin tel\u00e9fono'}</p></div><div class="text-right text-sm">${saldoLabel}</div></div>
                         <div class="mt-2"><p class="text-xs font-semibold text-slate-500 uppercase mb-1.5">\u00daltimos 3 meses pagados</p><div class="flex flex-wrap gap-1.5">${last3Html}</div></div></div>`;
@@ -6554,6 +6551,7 @@
         var REP_TONES = {
             owed: { bar: '#f43f5e', value: 'text-rose-600 dark:text-rose-400', swatch: 'bg-rose-600' },
             pending: { bar: '#fbbf24', value: 'text-amber-600 dark:text-amber-300', swatch: 'bg-amber-400' },
+            blank: { bar: '#cbd5e1', value: 'text-slate-600 dark:text-slate-300', swatch: 'bg-white border border-slate-400 dark:bg-slate-900 dark:border-slate-400' },
             paid: { bar: '#10b981', value: 'text-emerald-600 dark:text-emerald-400', swatch: 'bg-emerald-600' },
             none: { bar: '#94a3b8', value: 'text-slate-600 dark:text-slate-300', swatch: 'bg-slate-200 border border-slate-400 dark:bg-slate-600 dark:border-slate-400' },
             mora: { bar: '#f97316', value: 'text-orange-600 dark:text-orange-400', swatch: 'bg-orange-500' },
@@ -7056,7 +7054,9 @@
             });
             map.rows.forEach(function (x) {
                 const r = x.resident;
-                if (!(x.owed.total > 0)) return;
+                // Solo sale quien ya tiene algo VENCIDO (o mora): una cuota que sigue en su plazo (el mes completo y hasta el dia 5 del
+                // siguiente) no lo vuelve moroso (pedido del dueno el 2026-11-19)
+                if (!(x.late > 0) && !(x.owed.mora > 0)) return;
                 const base = {
                     name: (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'),
                     residentId: r.id, late: x.late, upcoming: x.upcoming, mora: x.owed.mora, pending: x.owed.pending, amount: x.owed.total
@@ -7066,18 +7066,20 @@
                 let remaining = mine.filter(function (t) { return t.type === 'income'; }).reduce(function (sum, t) { return sum + (parseFloat(t.amount) || 0); }, 0);
                 const charges = mine.filter(function (t) { return t.type === 'charge'; }).map(function (t) {
                     const period = txFeePeriod(t);
-                    return { isFee: !!period, sort: period ? period + '-00' : localDayKey(t.date), label: period ? feePeriodLabel(period) : (t.concept || 'Cargo especial'), amount: parseFloat(t.amount) || 0 };
+                    return { isFee: !!period, period: period, sort: period ? period + '-00' : localDayKey(t.date), label: period ? feePeriodLabel(period) : (t.concept || 'Cargo especial'), amount: parseFloat(t.amount) || 0 };
                 }).sort(function (a, b) { return a.sort.localeCompare(b.sort); });
                 const debts = [];
                 charges.forEach(function (c) {
                     if (remaining >= c.amount - 0.005) { remaining -= c.amount; return; }
                     const owed = +(c.amount - Math.max(0, remaining)).toFixed(2);
                     remaining = 0;
-                    if (owed > 0.005) debts.push({ label: c.label, owed: owed, isFee: c.isFee });
+                    if (owed > 0.005) debts.push({ label: c.label, owed: owed, isFee: c.isFee, period: c.period });
                 });
-                const feeMonths = debts.filter(function (d) { return d.isFee; }).length;
+                // Los meses que siguen en su plazo no se listan como adeudados (solo aparecen en blanco en la Tabla general)
+                const overdue = debts.filter(function (d) { return !(d.isFee && d.period && sisdelPeriodDue(d.period) >= today); });
+                const feeMonths = overdue.filter(function (d) { return d.isFee; }).length;
                 totalMonths += feeMonths;
-                rows.push(Object.assign(base, { months: debts.map(function (d) { return d.label; }).join(', ') || '—', count: feeMonths }));
+                rows.push(Object.assign(base, { months: overdue.map(function (d) { return d.label; }).join(', ') || 'Solo mora', count: feeMonths }));
             });
             // De mayor a menor lo que debe (el orden de sisdelPayMap); a igual total, por nombre
             rows.sort(function (a, b) { return (b.amount - a.amount) || String(a.name).localeCompare(String(b.name), 'es', { numeric: true }); });
@@ -7429,15 +7431,16 @@
         const SISDEL_STATUS_CLASS = {
             owed: 'bg-rose-600 text-white font-semibold',
             paid: 'bg-emerald-600 text-white',
-            pending: 'bg-amber-400 text-slate-900 font-semibold',
+            pending: '',   // en su plazo (pedido del dueno el 2026-11-19): la celda va en blanco, sin color ni monto
             none: 'text-slate-400 dark:text-slate-500'
         };
-        const SISDEL_STATUS_TEXT = { owed: 'Debe (vencido)', paid: 'Pagado', pending: 'Debe, aún no vence', none: 'Sin cuota en este período' };
+        const SISDEL_STATUS_TEXT = { owed: 'Debe (vencido)', paid: 'Pagado', pending: 'Cuota en su plazo: aún no vence (no es mora)', none: 'Sin cuota en este período' };
         // Colores para la impresion y el PDF (fondo, texto)
-        const SISDEL_STATUS_COLORS = { owed: ['#dc2626', '#ffffff'], paid: ['#059669', '#ffffff'], pending: ['#fbbf24', '#0f172a'], none: ['#ffffff', '#94a3b8'] };
+        const SISDEL_STATUS_COLORS = { owed: ['#dc2626', '#ffffff'], paid: ['#059669', '#ffffff'], pending: ['#ffffff', '#94a3b8'], none: ['#ffffff', '#94a3b8'] };
 
-        // Ultimo dia para pagar la cuota de un mes sin estar en mora. Con regla de mora por dia (sisdel-mora.js): el
-        // ultimo dia del mes mas los dias de plazo. Sin ella, el de checkIsMoroso: dia de cobro + dias de gracia.
+        // Ultimo dia (inclusive) para pagar la cuota de un mes sin estar en mora. Con regla de mora por dia (sisdel-mora.js): el
+        // ultimo dia del mes mas los dias de plazo de la regla (5 en La Perla). Sin ella: el dia 5 del mes siguiente (35 dias
+        // desde el dia 1, SisdelCuotas.dueKey; el dia de cobro y los dias de gracia de Configuracion ya no cuentan).
         function sisdelPeriodDue(period) {
             const s = Store.get('settings') || {};
             if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(s)) {
@@ -7448,10 +7451,7 @@
                     return SisdelMora.keyOfDay(days.last + (rule ? rule.graceDays : 0));
                 }
             }
-            const { y, m } = feePeriodParts(period);
-            const cDay = parseInt(s.chargeDay) || 1;
-            const gDays = parseInt(s.graceDays) || 0;
-            return localDayKey(new Date(y, m, cDay + gDays - 1));
+            return SisdelCuotas.dueKey(period) || '';
         }
 
         // SISDEL: la carga inicial de un condominio desde una cartera (scripts de carga): sus cargos traen importedFrom. La
@@ -7509,7 +7509,8 @@
             const { map, today } = sisdelPayMap();
             const nameOf = function (r) { return esc((r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)')); };
             const cellText = function (c) {
-                if (c.status === 'owed' || c.status === 'pending') return formatMoney(c.owed);
+                if (c.status === 'owed') return formatMoney(c.owed);
+                if (c.status === 'pending') return '';   // en su plazo: en blanco
                 return c.status === 'paid' ? 'Pagado' : '—';
             };
             const money = (x) => (x > 0 ? formatMoney(x) : '—');
@@ -7524,21 +7525,21 @@
             const debt = { pending: sum(x => x.owed.pending), mora: sum(x => x.owed.mora), total: sum(x => x.owed.total) };
             return {
                 title: 'Tabla general',
-                summary: map.late + ' en mora · ' + map.pending + ' con cuota por vencer · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe' + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
+                summary: map.late + ' en mora · ' + map.pending + ' con cuota en su plazo · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe' + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
                 hideSummary: true,
                 kpisFromTotals: false,
                 // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); tambien
                 // van como indicadores al PDF, Excel, impresion y WhatsApp
                 highlights: [
                     { tone: 'owed', value: String(map.late), label: map.late === 1 ? 'residente en mora' : 'residentes en mora' },
-                    { tone: 'pending', value: String(map.pending), label: 'con cuota por vencer' },
+                    { tone: 'blank', value: String(map.pending), label: 'con cuota en su plazo' },
                     { tone: 'paid', value: String(map.upToDate), label: 'al día en cuotas' }
                 ].concat(sisdelDebtHighlights(debt)),
                 highlightsNote: 'Al ' + today + ' · ordenado de mayor a menor total que debe · total = cuotas y cargos pendientes + mora a hoy',
                 legend: [
                     { tone: 'owed', text: 'Rojo: debe (ya venció)' },
                     { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') },
-                    { tone: 'pending', text: 'Amarillo: debe, aún no vence' },
+                    { tone: 'blank', text: 'En blanco: la cuota del mes, en su plazo (hasta el día 5 del mes siguiente; no es mora)' },
                     { tone: 'none', text: 'Gris: sin cuota' }
                 ],
                 hint: 'Toque un residente para ver su estado de cuenta',
@@ -8261,7 +8262,7 @@
             document.getElementById('cfg-fee').value = s.fee;
             fillFeeBreakdown(s);   // SISDEL: la cuota se muestra desglosada
             document.getElementById('cfg-day').value = s.chargeDay;
-            document.getElementById('cfg-grace').value = s.graceDays !== undefined ? s.graceDays : 5;
+            document.getElementById('cfg-grace').value = SisdelCuotas.PAYMENT_WINDOW_DAYS;   // fijo (35 dias: el mes y 5 dias mas)
             document.getElementById('cfg-theme').checked = s.theme === 'dark';
             setFeeMode(s.feeMode === 'manual' ? 'manual' : 'auto');
             renderCustomConceptsSettings();

@@ -216,10 +216,10 @@ const mapReport = {
     compact: { headers: ['Residente', 'Meses en mora', 'En mora desde', 'Total en mora'], rows: [['A001 · Uno', '1', 'Oct 2026', 'Q300.00']], totals: ['TOTAL', '1', '', 'Q300.00'], numericCols: [1, 3] }
 };
 const mapExcel = R.exportModel(mapReport, { at, excel: true });
-equal('en Excel las celdas van con su color (rojo, amarillo, verde) y lo gris sin color', [mapExcel.tables[0].rows[0][1], mapExcel.tables[0].rows[0][2], mapExcel.tables[0].rows[1][1], mapExcel.tables[0].rows[1][2]], [{ v: 'Q300.00', s: 4 }, { v: 'Q300.00', s: 6 }, { v: 'Pagado', s: 5 }, '—']);
+equal('en Excel las celdas van con su color (rojo y verde); la cuota en su plazo y lo gris, sin color', [mapExcel.tables[0].rows[0][1], mapExcel.tables[0].rows[0][2], mapExcel.tables[0].rows[1][1], mapExcel.tables[0].rows[1][2]], [{ v: 'Q300.00', s: 4 }, 'Q300.00', { v: 'Pagado', s: 5 }, '—']);
 const mapBook = readXlsx(Buffer.from(X.buildXlsx(mapExcel)));
 const mapRow = mapBook.sheets[0].rows.find((r) => r.cells[0] && r.cells[0].v === 'A001 · Uno');
-equal('el .xlsx con colores se abre y cada celda guarda su estilo', mapRow ? [mapRow.cells[1].s, mapRow.cells[2].s] : null, ['4', '6']);
+equal('el .xlsx con colores se abre y cada celda guarda su estilo (la cuota en su plazo, ninguno)', mapRow ? [mapRow.cells[1].s, mapRow.cells[2].s] : null, ['4', null]);
 const mapWa = R.exportModel(mapReport, { at });
 equal('WhatsApp usa la version corta: residente, meses, desde y total', [mapWa.tables[0].headers, mapWa.tables[0].rows[0], mapWa.kpis], [['Residente', 'Meses en mora', 'En mora desde', 'Total en mora'], ['A001 · Uno', '1', 'Oct 2026', 'Q300.00'], [{ label: 'Total meses en mora', value: '1' }, { label: 'Total en mora', value: 'Q300.00' }]]);
 

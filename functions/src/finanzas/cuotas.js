@@ -35,6 +35,10 @@
         { key: 'electricity', label: 'Electricidad', phrase: 'servicio de electricidad' },
         { key: 'other', label: 'Otros', phrase: 'otros conceptos' }
     ];
+    // Plazo para pagar (pedido del dueno el 2026-11-19, para TODOS los condominios): la cuota de un mes se paga sin atraso
+    // durante ese mes completo y hasta el dia 5 del mes siguiente (35 dias desde el dia 1). Hasta entonces no es mora y el
+    // residente no sale en los listados de morosos; pasado ese dia, si no pago, es moroso.
+    const PAYMENT_WINDOW_DAYS = 5;
     const SYMBOLS = { GTQ: 'Q', USD: '$', MXN: '$', EUR: '€' };
     const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -175,7 +179,19 @@
         return { amount, concept: describe(breakdown, s.currency, period), breakdown };
     }
 
+    // Ultimo dia (inclusive, 'AAAA-MM-DD') para pagar la cuota de un periodo 'AAAA-MM' sin atraso: el dia PAYMENT_WINDOW_DAYS
+    // del mes siguiente. null si el periodo no es valido. La usan OIKOS y el servidor (cuotas.js es copia identica).
+    function dueKey(period) {
+        const mt = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(String(period || ''));
+        if (!mt) return null;
+        const month = Number(mt[2]);
+        const year = month === 12 ? Number(mt[1]) + 1 : Number(mt[1]);
+        const next = month === 12 ? 1 : month + 1;
+        return `${year}-${String(next).padStart(2, '0')}-${String(PAYMENT_WINDOW_DAYS).padStart(2, '0')}`;
+    }
+
     return {
+        PAYMENT_WINDOW_DAYS, dueKey,
         PARTS, normalize, total, describe, listParts, feeInfo, money, joinList, symbolOf, monthLabel,
         WATER_UNITS, waterUnits, waterPrices, waterOf, residentFee, residentFeeInfo, lotParts, monthFee
     };

@@ -166,6 +166,15 @@ vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-cuotas.js'), sandbox);
 yes('en el navegador queda como SisdelCuotas', sandbox.self.SisdelCuotas && typeof sandbox.self.SisdelCuotas.feeInfo === 'function');
 
+console.log('\nPlazo de pago: el mes completo y hasta el dia 5 del siguiente (35 dias)');
+equal('el plazo es de 5 dias despues de terminar el mes', C.PAYMENT_WINDOW_DAYS, 5);
+equal('noviembre de 2026 se paga hasta el 5 de diciembre', C.dueKey('2026-11'), '2026-12-05');
+equal('diciembre pasa al ano siguiente: hasta el 5 de enero', C.dueKey('2026-12'), '2027-01-05');
+equal('enero y febrero (mes corto): el dia 5 del mes siguiente', [C.dueKey('2026-01'), C.dueKey('2026-02')], ['2026-02-05', '2026-03-05']);
+equal('un periodo invalido no tiene fecha', [C.dueKey(''), C.dueKey('2026-13'), C.dueKey('2026-1'), C.dueKey(null), C.dueKey('Cuota')], [null, null, null, null, null]);
+yes('contando el dia 1 de noviembre y el 5 de diciembre son 35 dias', (new Date('2026-12-05T00:00:00Z') - new Date('2026-11-01T00:00:00Z')) / 86400000 + 1 === 35);
+yes('el servidor usa la misma funcion (cuotas.js es copia identica)', read('functions/src/finanzas/cuotas.js') === read('finanzas/sisdel-cuotas.js') && /cuotas\.dueKey\(period\)/.test(read('functions/src/finanzas/mora.js')));
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

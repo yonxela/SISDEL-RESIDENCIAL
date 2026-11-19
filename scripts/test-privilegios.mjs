@@ -446,6 +446,14 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
                 && row.length > 0 && !/font-size/.test(row) && !/font-size/.test(links)
                 && (page !== 'auditor.html' || /\.top-bar-actions \.badge, \.top-bar-actions \.ro-badge \{ font-size: 0\.91rem; \}/.test(html)));
         }
+        // La garita en celular (2026-11-18): Medios de Acceso y Visitas del Dia iban siempre en dos columnas y la pagina
+        // media unos 590 px en un telefono de 390 (se movia de lado)
+        const garitaHtml = read('garita.html');
+        yes('garita.html: Medios de Acceso y Visitas del Dia van una debajo de la otra en celular y tableta (la pagina no se sale de lado)',
+            /<div class="garita-columns">\s*<!-- Scanner Section -->/.test(garitaHtml)
+            && /\.garita-columns \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/.test(garitaHtml)
+            && /@media \(max-width: 860px\) \{ \.garita-columns \{ grid-template-columns: minmax\(0, 1fr\); \} \}/.test(garitaHtml)
+            && !/grid-template-columns: 1fr 1fr/.test(garitaHtml));
     }
     yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes y #reportes/reporte)', /id="viewReportes"/.test(admin) && admin.includes('/^#reportes(?:\\/([a-z-]+))?$/') && /id="reportesMount"/.test(admin));
     yes('admin.html carga reportes-ui.js antes del script de la pagina', admin.indexOf('reportes-ui.js') > 0 && admin.indexOf('reportes-ui.js') < admin.indexOf('SisdelReportes.available()'));

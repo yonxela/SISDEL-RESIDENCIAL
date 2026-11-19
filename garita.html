@@ -18,6 +18,10 @@
             .top-bar { flex-wrap: wrap; gap: 0.75rem; }
             .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
         }
+        /* Medios de Acceso y Visitas del Dia: dos columnas en pantalla ancha y una debajo de la otra en celular o tableta.
+           Antes eran siempre dos y en un celular la pagina media unos 590 px y se movia de lado (2026-11-18) */
+        .garita-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; }
+        @media (max-width: 860px) { .garita-columns { grid-template-columns: minmax(0, 1fr); } }
     </style>
 </head>
 
@@ -76,7 +80,7 @@
                 </div>
             </div>
 
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-top:1.5rem;">
+            <div class="garita-columns">
                 <!-- Scanner Section -->
                 <div id="accessMethodsContainer">
                     <h3 style="margin-bottom:1rem; font-size:1.25rem;">🚗 Medios de Acceso</h3>

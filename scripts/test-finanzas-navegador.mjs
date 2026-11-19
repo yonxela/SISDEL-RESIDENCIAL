@@ -489,6 +489,31 @@ async function run() {
         equal('en Por seleccion sin marcar a nadie el boton esta apagado', [(await manualUi()).label, (await manualUi()).start], ['Enviar desde mi WhatsApp', true]);
         await oikos(`(() => { remTogglePick(${JSON.stringify(fase3[1][0])}, true); })()`);
         equal('al marcar a uno, el boton cuenta solo a ese', (await manualUi()).label, 'Enviar desde mi WhatsApp (1)');
+        // Mi WhatsApp tambien en cada fila de Recordatorios, en el menu de cada residente y en el chat (pedido del usuario el 2026-11-18)
+        await oikos(`(() => { remSelected.clear(); window.__opened.length = 0; remManualSetDest('web'); renderRemindersList('fase'); setRemFase('3'); })()`);
+        equal('el recuadro va arriba del envio desde el servidor', await oikos(`!!(document.getElementById('rem-manual').compareDocumentPosition(document.getElementById('rem-bulk')) & Node.DOCUMENT_POSITION_FOLLOWING)`), true);
+        equal('cada fila con telefono trae Mi WhatsApp junto a Enviar', await oikos(`[...document.querySelectorAll('#reminders-list .rem-row')].map((row) => [...row.querySelectorAll('button')].map((b) => b.textContent.trim()))`), [['Mi WhatsApp', 'Enviar'], ['Mi WhatsApp', 'Enviar']]);
+        await oikos(`document.querySelector('#reminders-list .rem-row button[onclick^="sendReminderMine("]').click()`);
+        equal('Mi WhatsApp de la fila abre su WhatsApp Web con el mensaje de ese residente', await opened(), [['https://web.whatsapp.com/send', fase3[0][2], `Aviso de prueba para ${fase3[0][1]}`, '_blank']]);
+        const menuMine = await oikos(`(() => {
+            window.__opened.length = 0; const realSaved = reminderMessagesSaved;
+            reminderMessagesSaved = () => ({ mora: 'Mora de {nombre}', general: 'General para {nombre}' });
+            const r = Store.get('residents').find((x) => String(x.id) === ${JSON.stringify(fase3[1][0])});
+            try { contactMyWhatsApp(r.id); } finally { reminderMessagesSaved = realSaved; }
+            return [(checkIsMoroso(r) ? 'Mora de ' : 'General para ') + r.name, window.__opened.map(([u]) => [new URL(u).searchParams.get('phone'), new URL(u).searchParams.get('text')])];
+        })()`);
+        equal('Enviar desde mi WhatsApp del menu del residente abre su WhatsApp con el texto de Contactar (mora o aviso general)', menuMine[1], [[fase3[1][2], menuMine[0]]]);
+        const chatMine = await oikos(`(() => {
+            window.__opened.length = 0;
+            chatNewResident = Store.get('residents').find((x) => String(x.id) === ${JSON.stringify(fase3[0][0])}); chatCurrentId = null; renderChatPane();
+            const input = document.getElementById('chat-input'); input.value = 'Hola desde mi WhatsApp';
+            const btn = document.getElementById('chat-send-mine');
+            btn.click();
+            const out = [btn.textContent.trim(), window.__opened.map(([u]) => [new URL(u).searchParams.get('phone'), new URL(u).searchParams.get('text')]), input.value, input.disabled];
+            chatNewResident = null; renderChatPane();
+            return out;
+        })()`);
+        equal('el chat trae Mi WhatsApp: abre su WhatsApp con lo escrito y vacia la caja', chatMine, ['Mi WhatsApp', [[fase3[0][2], 'Hola desde mi WhatsApp']], '', false]);
         await oikos(`(() => { remSelected.clear(); remManualSetDest('web'); window.open = window.__realOpen; window.confirm = () => true; try { localStorage.removeItem('sisdel_rem_wa_destino'); } catch (e) {} })()`);
         // Con poca pantalla (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
         await oikos(`openReminders()`);

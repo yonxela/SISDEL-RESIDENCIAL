@@ -944,6 +944,23 @@
                 <button type="button" id="rem-fase-assign" onclick="openAssignFases()" class="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition" title="Poner la fase de todos los lotes de cada sector (A, B, C...) de una vez"><i class="fas fa-layer-group mr-1"></i>Asignar fases por sector</button>
                 <span id="rem-fase-empty" class="hidden text-xs text-slate-500 dark:text-slate-400">Todavía no hay fases anotadas: se escriben en el formulario de cada residente o todas juntas con «Asignar fases por sector».</span>
             </div>
+            <!-- SISDEL: Enviar desde MI WhatsApp (pedido del usuario el 2026-11-18): el mensaje sale del WhatsApp de quien envia (su telefono
+                 vinculado a WhatsApp Web, o la app en el celular), no del numero del condominio. Se abre el chat de cada residente con el
+                 texto ya escrito y la persona pulsa Enviar: uno por uno, siempre con su clic. Va ARRIBA del envio del servidor (pedido del
+                 usuario el 2026-11-18: no lo veia, y con el numero del condominio restringido es lo que se usa) -->
+            <div id="rem-manual" class="mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-900/10 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="rem-manual-start" onclick="remManualStart()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-sky-600 hover:bg-sky-700 text-white shadow transition"><i class="fas fa-mobile-screen-button mr-1.5"></i><span id="rem-manual-label">Enviar desde mi WhatsApp</span></button>
+                    <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Abrir en
+                        <select id="rem-manual-dest" onchange="remManualSetDest(this.value)" class="px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                            <option value="web">WhatsApp Web (computadora)</option>
+                            <option value="app">App de WhatsApp (celular)</option>
+                        </select>
+                    </label>
+                    <span class="text-xs text-slate-600 dark:text-slate-300">Sale de <b>su</b> WhatsApp, no del número del condominio: se abre el chat de cada residente de la lista con el mensaje ya escrito y usted pulsa Enviar.</span>
+                </div>
+                <div id="rem-manual-run" class="hidden mt-3"></div>
+            </div>
             <!-- SISDEL: enviar a todos con un clic desde el WhatsApp del condominio. Lo manda el servidor, de a poco (una pausa de
                  25 a 55 segundos entre mensajes, de 8:00 a 18:00 y, con UltraMsg, hasta 120 por dia: WhatsApp restringe los numeros que
                  escriben a muchos contactos nuevos de golpe) y sigue aunque se cierre la ventana -->
@@ -981,22 +998,6 @@
                     <p id="rem-rec-note" class="text-xs text-slate-600 dark:text-slate-300 mb-2"></p>
                     <div id="rem-rec-list" class="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 text-sm"></div>
                 </div>
-            </div>
-            <!-- SISDEL: Enviar desde MI WhatsApp (pedido del usuario el 2026-11-18): el mensaje sale del WhatsApp de quien envia (su telefono
-                 vinculado a WhatsApp Web, o la app en el celular), no del numero del condominio. Se abre el chat de cada residente con el
-                 texto ya escrito y la persona pulsa Enviar: uno por uno, siempre con su clic -->
-            <div id="rem-manual" class="mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-900/10 p-3">
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" id="rem-manual-start" onclick="remManualStart()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-sky-600 hover:bg-sky-700 text-white shadow transition"><i class="fas fa-mobile-screen-button mr-1.5"></i><span id="rem-manual-label">Enviar desde mi WhatsApp</span></button>
-                    <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Abrir en
-                        <select id="rem-manual-dest" onchange="remManualSetDest(this.value)" class="px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                            <option value="web">WhatsApp Web (computadora)</option>
-                            <option value="app">App de WhatsApp (celular)</option>
-                        </select>
-                    </label>
-                    <span class="text-xs text-slate-600 dark:text-slate-300">Sale de <b>su</b> WhatsApp, no del número del condominio: se abre el chat de cada residente de la lista con el mensaje ya escrito y usted pulsa Enviar.</span>
-                </div>
-                <div id="rem-manual-run" class="hidden mt-3"></div>
             </div>
             <!-- SISDEL: con el WhatsApp OFICIAL de Meta el texto lo fija una plantilla aprobada por Meta: solo cambian los datos de cada residente -->
             <div id="rem-template-box" class="hidden mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 px-4 py-3">
@@ -2828,9 +2829,10 @@
             const note = document.getElementById('chat-window-note');
             if (!input || !btn) return;
             const w = chatCurrentId ? chatWindowOf(chatOf(chatCurrentId)) : { allowed: true, text: '' };
-            input.disabled = !w.allowed;
+            // SISDEL: el campo queda abierto aunque el WhatsApp oficial no deje escribir: "Mi WhatsApp" lo manda desde el de la persona
+            input.disabled = false;
             btn.disabled = !w.allowed || chatSending;
-            input.placeholder = w.allowed ? 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)' : 'Fuera de las 24 horas del WhatsApp oficial';
+            input.placeholder = w.allowed ? 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)' : 'Fuera de las 24 horas del WhatsApp oficial: escríbalo y use «Mi WhatsApp»';
             if (note) { note.textContent = w.text || ''; note.className = 'px-4 py-1.5 text-[11px] ' + (w.allowed ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20') + (w.text ? '' : ' hidden'); }
         }
         function chatTypeLabel(type) { return CHAT_TYPES[type] || 'Mensaje'; }
@@ -3044,6 +3046,7 @@
                 + '<div class="border-t border-slate-100 dark:border-slate-700 p-3 flex gap-2 items-end">'
                 + '<textarea id="chat-input" rows="2" maxlength="4096" onkeydown="chatInputKey(event)" class="flex-1 resize-none px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)"></textarea>'
                 + '<button type="button" onclick="sendChatFromInput()" id="chat-send" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition" title="Enviar"><i class="fas fa-paper-plane"></i></button>'
+                + '<button type="button" onclick="chatSendFromMine()" id="chat-send-mine" class="px-3 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold transition whitespace-nowrap" title="Abre SU WhatsApp (WhatsApp Web o la app) con este mensaje ya escrito: sale de su número, no del número del condominio"><i class="fas fa-mobile-screen-button mr-1"></i>Mi WhatsApp</button>'
                 + '</div>';
             renderChatHeader();
             renderChatMessages();
@@ -3090,6 +3093,7 @@
             if (!api || !input || chatSending) return;
             const text = input.value.trim();
             if (!text) return;
+            if (chatCurrentId && !chatWindowOf(chatOf(chatCurrentId)).allowed) return;   // fuera de las 24 horas: solo "Mi WhatsApp"
             const target = chatCurrentId ? { chatId: chatCurrentId } : (chatNewResident ? { residentId: chatNewResident.id } : null);
             if (!target) return;
             chatSending = true;
@@ -3106,6 +3110,17 @@
                 const i = document.getElementById('chat-input');
                 if (i) i.focus();
             });
+        }
+        // SISDEL: "Mi WhatsApp" (pedido del usuario el 2026-11-18): abre el WhatsApp de la persona (WhatsApp Web o la app) en el chat de
+        // este telefono con lo escrito; ella pulsa Enviar alla. Sale de su numero, no del del condominio, y no queda en este chat.
+        function chatSendFromMine() {
+            const input = document.getElementById('chat-input');
+            const c = chatOf(chatCurrentId);
+            const phone = c ? (c.phone || c.id) : (chatNewResident ? chatNewResident.contact : '');
+            const text = input ? input.value.trim() : '';
+            if (!openMyWhatsApp(phone, text)) return;
+            if (input) input.value = '';
+            showToast(`Se abrió ${remManualDest === 'app' ? 'WhatsApp' : 'WhatsApp Web'}${text ? ' con el mensaje' : ''}: pulse Enviar allá. Sale de su número y no queda en este chat.`);
         }
 
         // ========== SISDEL: BANCOS ==========
@@ -3981,6 +3996,7 @@
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
                             <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
+                            <button onclick="contactMyWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-400"><i class="fas fa-mobile-screen-button w-5"></i> Enviar desde mi WhatsApp</button>
                             <button onclick="openResidentChat(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-400"><i class="fas fa-comments w-5"></i> Chat de WhatsApp</button>
                             ${closed
                                 ? `<button onclick="reactivateResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-600"><i class="fas fa-user-check w-5"></i> Reactivar residente</button>`
@@ -5054,6 +5070,38 @@
         // En el celular la app; en la computadora WhatsApp Web. La eleccion se recuerda en este equipo
         function remManualDefaultDest() { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ? 'app' : 'web'; }
         var remManualDest = (() => { try { const v = localStorage.getItem('sisdel_rem_wa_destino'); return v === 'app' || v === 'web' ? v : remManualDefaultDest(); } catch (e) { return remManualDefaultDest(); } })();
+        // Abre SU WhatsApp en el chat de un telefono con el texto ya escrito (el de Recordatorios, Contactar o el chat). false si no se pudo
+        function openMyWhatsApp(contact, text) {
+            const phone = remWaPhone(contact);
+            if (!phone) { alert('Este residente no tiene un teléfono que sirva para WhatsApp (8 cifras o con el código del país). Corríjalo en Residentes.'); return false; }
+            const w = window.open(remWaUrl(phone, text, remManualDest), '_blank');
+            if (!w) { alert('El navegador no dejó abrir WhatsApp. Permita las ventanas emergentes de esta página e intente de nuevo.'); return false; }
+            return true;
+        }
+        function myWhatsAppToast(label) {
+            showToast(`Se abrió ${remManualDest === 'app' ? 'WhatsApp' : 'WhatsApp Web'} con el mensaje${label ? ' para ' + label : ''}: pulse Enviar allá (sale de su número).`);
+        }
+        // Menu de cada residente: el mismo mensaje de Contactar (el de mora si esta en mora; si no, el aviso general), desde SU WhatsApp
+        function contactMyWhatsApp(residentId) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
+            if (!r) return alert('No se encontró al residente.');
+            const saved = reminderMessagesSaved();
+            const template = checkIsMoroso(r) ? saved.mora : saved.general;
+            if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) return alert('Escriba el aviso general en Recordatorios (Mensajes varios) y use "Guardar para todos" antes de escribirle a un residente que no está en mora.');
+            if (openMyWhatsApp(r.contact, reminderText(template, r))) myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || ''));
+        }
+        // Boton "Mi WhatsApp" de cada fila de Recordatorios: el mensaje de la ventana para ese residente
+        function sendReminderMine(residentId) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
+            if (!r) return;
+            const template = remManualTemplate(r);
+            if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) {
+                document.getElementById('rem-msg-box').open = true;
+                document.getElementById('rem-msg-general').focus();
+                return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+            }
+            if (openMyWhatsApp(r.contact, reminderText(template, r))) myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || ''));
+        }
         function remManualSetDest(value) {
             remManualDest = value === 'app' ? 'app' : 'web';
             try { localStorage.setItem('sisdel_rem_wa_destino', remManualDest); } catch (e) { /* solo se pierde la preferencia */ }
@@ -5331,8 +5379,12 @@
                 const pick = remBridge() && hasPhone && currentRemFilter === 'seleccion'
                     ? `<input type="checkbox" class="rem-pick shrink-0 w-5 h-5 accent-emerald-600 cursor-pointer" data-id="${esc(r.id)}" ${picked ? 'checked' : ''} onchange="remTogglePick(this.dataset.id, this.checked)" title="Seleccionar para el envío" aria-label="Seleccionar a ${esc(r.name || '')}">`
                     : '';
+                // Enviar (desde el WhatsApp del condominio) y Mi WhatsApp (abre el de la persona con el mensaje ya escrito)
+                const mine = remWaPhone(r.contact)
+                    ? `<button type="button" onclick="sendReminderMine(this.dataset.id)" data-id="${esc(r.id)}" title="Abre SU WhatsApp con este mensaje ya escrito: sale de su número, no del número del condominio" class="px-3 py-2 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800 rounded-lg font-medium text-sm transition whitespace-nowrap"><i class="fas fa-mobile-screen-button"></i> Mi WhatsApp</button>`
+                    : '';
                 const button = hasPhone
-                    ? `<button type="button" onclick="sendReminder(this.dataset.id)" data-id="${esc(r.id)}" class="shrink-0 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-lg font-medium text-sm transition"><i class="fab fa-whatsapp"></i> Enviar</button>`
+                    ? `<div class="shrink-0 flex flex-wrap justify-end gap-2">${mine}<button type="button" onclick="sendReminder(this.dataset.id)" data-id="${esc(r.id)}" class="px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-lg font-medium text-sm transition whitespace-nowrap"><i class="fab fa-whatsapp"></i> Enviar</button></div>`
                     : '<span class="shrink-0 px-3 py-2 text-xs text-slate-400" title="Registre su teléfono en Residentes">Sin teléfono</span>';
                 return `<div class="rem-row flex justify-between items-center gap-3 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600${picked ? ' ring-2 ring-emerald-500' : ''}"><div class="flex items-center gap-3 min-w-0">${pick}<div class="min-w-0"><p class="font-bold text-slate-800 dark:text-slate-200">${mark(r.unit || '—')} - ${mark(r.name || '')}</p>${owedLine}${r.contact ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${mark(r.contact)}</p>` : ''}</div></div>${button}</div>`;
             }).join('');
@@ -5436,14 +5488,14 @@
             const queueTag = queued ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-semibold">${queued} en la cola de UltraMsg</span>` : '';
             // SISDEL: conectado, pero WhatsApp no deja salir los mensajes (numero restringido; La Perla, 16 y 17/11/2026): no se envia
             if (c.connected === true && c.confirming === false) {
-                el.innerHTML = `<div id="rem-wa-restricted" class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp no está dejando salir los mensajes: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.healthMessage || '')}</p><div class="mt-2">${again}</div></div>`;
+                el.innerHTML = `<div id="rem-wa-restricted" class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp no está dejando salir los mensajes: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.healthMessage || '')}</p><p id="rem-wa-mine-hint" class="mt-1 font-semibold">Mientras tanto puede usar «Enviar desde mi WhatsApp» (arriba) o el botón «Mi WhatsApp» de cada residente: sale de su propio WhatsApp.</p><div class="mt-2">${again}</div></div>`;
                 return;
             }
             if (c.connected === true) {
                 const officialTag = c.channel === 'meta' ? `<span class="text-slate-600 dark:text-slate-300">${SisdelBusqueda.escapeHtml(((c.meta && c.meta.number) || '') + (c.meta && c.meta.quality ? ' · calidad ' + c.meta.quality : ''))}</span>` : '';
                 el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 font-semibold"><i class="fas fa-circle-check mr-1"></i>${c.channel === 'meta' ? 'WhatsApp oficial de Meta conectado' : 'WhatsApp conectado'}</span>${officialTag}${queueTag}${queued ? '<span class="text-slate-500 dark:text-slate-400">salen solos, de 1 a 15 segundos entre cada uno</span>' : ''}${again}`;
             } else if (c.connected === false) {
-                el.innerHTML = `<div class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp desconectado: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.message || '')}</p>${queued ? `<p class="mt-1">${queueTag} Salen solos cuando se vuelva a conectar, si no pasan 24 horas.</p>` : ''}<div class="mt-2">${again}</div></div>`;
+                el.innerHTML = `<div class="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 text-rose-800 dark:text-rose-200 px-3 py-2"><p class="font-bold"><i class="fas fa-triangle-exclamation mr-1"></i>WhatsApp desconectado: no se puede enviar</p><p class="mt-1">${SisdelBusqueda.escapeHtml(c.message || '')}</p>${queued ? `<p class="mt-1">${queueTag} Salen solos cuando se vuelva a conectar, si no pasan 24 horas.</p>` : ''}<p class="mt-1 font-semibold">Mientras tanto puede usar «Enviar desde mi WhatsApp» (arriba) o el botón «Mi WhatsApp» de cada residente: sale de su propio WhatsApp.</p><div class="mt-2">${again}</div></div>`;
             } else {
                 el.innerHTML = `<span class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 font-semibold">No se pudo comprobar la conexión de WhatsApp</span>${queueTag}${again}`;
             }

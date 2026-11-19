@@ -1,7 +1,7 @@
 // Pruebas del plan de carga desde una hoja de cobros (scripts/lib-hoja-cobros.mjs) con datos INVENTADOS: sin emuladores.
 //   node scripts/test-hoja-cobros.mjs
 import { createRequire } from 'node:module';
-import { MONTHS, cleanName, validateSheet, buildPlan, reconcile, accessCodeFor } from './lib-hoja-cobros.mjs';
+import { MONTHS, cleanName, validateSheet, buildPlan, reconcile, morosos, accessCodeFor } from './lib-hoja-cobros.mjs';
 
 const require = createRequire(import.meta.url);
 const SisdelMora = require('../finanzas/sisdel-mora.js');
@@ -84,6 +84,25 @@ equal('una casa que pago todo lo cargado no debe nada (capital vencido 0), y el 
 equal('quien pago hasta junio no debe nada ni tiene saldo a favor (no se le inventaron cuotas)', [stateOf('prueba-2').capital, stateOf('prueba-2').balance, stateOf('prueba-2').credit], [0, 0, 0]);
 const monthly = Reportes.monthBalance(plan.movements, { from: '2026-01-01', to: '2026-12-31' });
 equal('Ingresos por mes: lo cargado de cada mes (el adelantado de diciembre cuenta en noviembre, cuando se cobro)', monthly.months.filter((m) => m.income).map((m) => [m.key, m.income]).slice(0, 3), [['2026-01', 400], ['2026-02', 300], ['2026-03', 400]]);
+
+console.log('\nCuotas pendientes (los meses vencidos sin pago se ven en rojo)');
+yes('sin la opcion no se cargan cuotas pendientes', !plan.movements.some((t) => t.pendiente));
+const sh2 = sheet();
+sh2.casas.push({ casa: 6, nombre: 'ELENA DUDOSA', pagos: {}, noCargarPendientes: true });
+const plan2 = buildPlan(sh2, { ...options, pendientes: true });
+const pend = (casa) => plan2.movements.filter((t) => t.resiId === 'prueba-' + casa && t.pendiente);
+equal('casa 2 (pago hasta junio): debe julio a octubre, cuota por cuota', pend(2).map((t) => t.period), ['2026-07', '2026-08', '2026-09', '2026-10']);
+equal('casa 3: debe el mes en blanco de febrero y de junio a octubre, con la tarifa de cada mes', pend(3).map((t) => [t.period, t.amount]), [['2026-02', 100], ['2026-06', 150], ['2026-07', 150], ['2026-08', 150], ['2026-09', 150], ['2026-10', 150]]);
+equal('casa 4: abril (monto raro) no se carga como pendiente; mayo a octubre si', pend(4).map((t) => t.period), ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+equal('casa 5: la celda en duda (julio) no se carga; los demas meses vencidos si', pend(5).map((t) => t.period), ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-08', '2026-09', '2026-10']);
+equal('una casa marcada noCargarPendientes no recibe ninguna', [pend(6).length, plan2.houses.find((h) => h.casa === 6).check.pending], [0, 0]);
+equal('casa 1 (pago todo el ano): sin pendientes; el mes en curso (noviembre) y diciembre nunca se cargan como pendientes', [pend(1).length, plan2.movements.some((t) => t.pendiente && t.period >= '2026-11')], [0, false]);
+const p1 = pend(2)[0];
+equal('la cuota pendiente es igual a las demas (id fee_<vecino>_<mes>, cargo manual, retroactivo, dia 1) y SIN serverGenerated: el servidor recalcula a ese vecino', [p1.id, p1.type, p1.kind, p1.manual, p1.retro, p1.date, p1.amount, 'serverGenerated' in p1, 'importedFrom' in p1], ['fee_prueba-2_2026-07', 'charge', 'fee', true, true, '2026-07-01T18:00:00.000Z', 150, false, false]);
+equal('los ids no se repiten con las cuotas ya pagadas', new Set(plan2.movements.map((t) => t.id)).size, plan2.movements.length);
+equal('quienes quedan morosos (deben mas de una cuota), con la misma funcion del servidor', morosos(plan2, { fee: 150 }, new Date('2026-11-19T18:00:00.000Z')), [2, 3, 4, 5]);
+equal('sin las cuotas pendientes, nadie queda moroso', morosos(plan, { fee: 150 }, new Date('2026-11-19T18:00:00.000Z')), []);
+equal('el cuadre contra los totales de la hoja no cambia (las pendientes no son pagos)', reconcile(sh2, plan2).ok, true);
 
 console.log('\nCodigos de acceso');
 const taken = new Set(['DA001']);

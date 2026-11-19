@@ -1,7 +1,7 @@
 // Carga de un condominio desde una hoja de cobros (ver lib-hoja-cobros.mjs). Se uso con Residenciales Delco II.
 //
 //   node cargar-hoja-cobros.mjs --datos=RUTA.json --condo=ID [--target=emulator|prod] [--carpeta=DIR]
-//        [--aplicar] [--confirmo="CARGAR <NOMBRE DEL CONDOMINIO>"] [--continuar] [--crear-condominio]
+//        [--pendientes] [--aplicar] [--confirmo="CARGAR <NOMBRE DEL CONDOMINIO>"] [--continuar] [--crear-condominio]
 //
 // Sin --aplicar es un SIMULACRO: arma la carga, la cuadra contra los totales de la hoja y deja el informe, sin tocar la base.
 // El archivo de datos (nombres de personas) y el informe van FUERA de cualquier repositorio (el repo es publico).
@@ -10,10 +10,12 @@
 // cuota (eso dispara el recalculo del condominio en el servidor). En la nube (--target=prod) pide ademas --confirmo con el
 // nombre del condominio y comprueba que sea el mismo de la base. No carga encima de vecinos que no sean de esta carga;
 // con --continuar retoma una carga cortada (salta lo que ya esta). No toca la garita, la mora ni la clave de nadie.
+// Con --pendientes, ademas, cada mes ya vencido sin pago (y sin duda) se carga como cuota pendiente: se ve en rojo y quien
+// debe mas de una cuota pasa a moroso (el resumen dice cuantos). Para sumarlas a una carga ya hecha: --pendientes --continuar.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { validateSheet, buildPlan, reconcile, accessCodeFor, MONTHS } from './lib-hoja-cobros.mjs';
+import { validateSheet, buildPlan, reconcile, morosos, accessCodeFor, MONTHS } from './lib-hoja-cobros.mjs';
 import { connect, parseArgs } from './admin.mjs';
 
 const args = parseArgs();
@@ -48,10 +50,14 @@ if (problems.length) { console.error('El archivo de datos tiene problemas:\n - '
 // ── 1. Armar y cuadrar ──
 const nowIso = new Date().toISOString();
 const currentPeriod = gtNow().toISOString().slice(0, 7);
-const plan = buildPlan(sheet, { condoId, nowIso, currentPeriod, currency: 'GTQ' });
+const withPending = args.pendientes === true;
+const plan = buildPlan(sheet, { condoId, nowIso, currentPeriod, currency: 'GTQ', pendientes: withPending });
 const rec = reconcile(sheet, plan);
-const count = (type) => plan.movements.filter((t) => t.type === type).length;
-const sumOf = (type) => plan.movements.filter((t) => t.type === type).reduce((s, t) => s + t.amount, 0);
+const paidCharges = plan.movements.filter((t) => t.type === 'charge' && !t.pendiente);
+const pendingCharges = plan.movements.filter((t) => t.pendiente);
+const count = (type) => (type === 'charge' ? paidCharges : plan.movements.filter((t) => t.type === type)).length;
+const sumOf = (type) => (type === 'charge' ? paidCharges : plan.movements.filter((t) => t.type === type)).reduce((s, t) => s + t.amount, 0);
+const moroseHouses = withPending ? morosos(plan, { fee: Number(sheet.cuotaActual) }, new Date()) : [];
 const advance = plan.movements.filter((t) => t.type === 'income' && t.id.slice(-7) > currentPeriod);
 
 // ── 2. Informe (fuera del repositorio) ──
@@ -65,6 +71,7 @@ const summary = [
     '',
     `Vecinos a crear: ${plan.houses.length} (con su codigo de acceso y su ficha; sin telefono ni correo)`,
     `Cuotas a crear: ${count('charge')} (${money(sumOf('charge'))}) | Pagos a crear: ${count('income')} (${money(sumOf('income'))}, de ellos ${advance.length} adelantados: ${money(advance.reduce((s, t) => s + t.amount, 0))})`,
+    ...(withPending ? [`Cuotas PENDIENTES a crear (meses vencidos sin pago): ${pendingCharges.length} (${money(pendingCharges.reduce((s, t) => s + t.amount, 0))}) en ${new Set(pendingCharges.map((t) => t.resiId)).size} casas; quedarian morosas (deben mas de una cuota): ${moroseHouses.length}`] : []),
     `Celdas que NO se cargan por no ser la tarifa del mes o por estar en duda: ${plan.skippedCells.length}`,
     `Columna anterior al ano (no se carga): ${Object.keys(sheet.columnaAnterior || {}).length} casas, ${money(Object.values(sheet.columnaAnterior || {}).reduce((s, n) => s + n, 0))}`,
     '',
@@ -76,8 +83,8 @@ const summary = [
     `  Cuota actual: mantenimiento ${money(sheet.cuotaActual)} al mes, sin mora; cobro manual; cada casa se cobra desde ${currentPeriod}`
 ];
 fs.writeFileSync(path.join(folder, 'resumen.txt'), summary.join('\n') + '\n', { mode: 0o600 });
-writeCsv(path.join(folder, 'casas.csv'), ['Casa', 'Id', 'Nombre', 'Cuotas cargadas', 'Pagos cargados', 'Adelantados', 'Total pagado', 'Nota'],
-    plan.houses.map((h) => [h.casa, h.id, h.name, h.check.charges, h.check.payments, h.check.advance, h.check.paid, h.check.nota]));
+writeCsv(path.join(folder, 'casas.csv'), ['Casa', 'Id', 'Nombre', 'Cuotas cargadas', 'Pagos cargados', 'Adelantados', 'Total pagado', 'Cuotas pendientes', 'Quedaria moroso', 'Nota'],
+    plan.houses.map((h) => [h.casa, h.id, h.name, h.check.charges, h.check.payments, h.check.advance, h.check.paid, h.check.pending, moroseHouses.includes(h.casa) ? 'si' : '', h.check.nota]));
 writeCsv(path.join(folder, 'revisar.csv'), ['Casa', 'Mes', 'Monto', 'Por que no se carga'],
     plan.skippedCells.map((s) => [s.casa, s.mes, s.monto, s.motivo]));
 console.log(summary.join('\n'));

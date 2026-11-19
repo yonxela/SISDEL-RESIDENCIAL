@@ -73,6 +73,7 @@ export function buildPlan(sheet, options) {
         let charges = 0;
         let payments = 0;
         let advance = 0;
+        let pending = 0;
         MONTHS.forEach((m) => {
             const amount = c.pagos && c.pagos[m];
             if (!amount) return;
@@ -101,6 +102,23 @@ export function buildPlan(sheet, options) {
             });
             payments++;
         });
+        // Cuotas PENDIENTES (opcion `pendientes`): cada mes ya vencido sin pago ni duda es una cuota que se debe, sin pago, y asi
+        // la Tabla general lo muestra en rojo. No se cargan para una casa marcada `noCargarPendientes` (datos dudosos), para un
+        // mes con una celda en duda, ni para el mes en curso (esa cuota la genera "Cuota del mes"). Sin `serverGenerated`: el
+        // servidor recalcula a ese vecino (quien debe mas de una cuota pasa a moroso).
+        if (options.pendientes && !c.noCargarPendientes) {
+            MONTHS.forEach((m) => {
+                const period = periodOf(sheet.anio, m);
+                if (period >= currentPeriod || (c.pagos && c.pagos[m]) || (c.dudas || []).some((d) => d.mes === m)) return;
+                const tarifa = Number(sheet.tarifas[m]);
+                const breakdown = { maintenance: tarifa };
+                movements.push({
+                    resiId: id, created_at: nowIso, updated_at: nowIso, loadedFrom: source, id: `fee_${id}_${period}`, type: 'charge', kind: 'fee', manual: true, auto: false,
+                    period, date: noonGt(`${period}-01`), amount: tarifa, concept: SisdelCuotas.describe(breakdown, currency, period), breakdown, retro: true, pendiente: true
+                });
+                pending++;
+            });
+        }
         (c.dudas || []).forEach((d) => {
             // Lo que se anoto como duda en el archivo (anotaciones a mano, celdas marcadas...) y no esta en "pagos"
             if (!skippedCells.some((s) => s.casa === c.casa && s.mes === d.mes)) skippedCells.push({ casa: c.casa, mes: d.mes, monto: d.monto, motivo: d.motivo });
@@ -113,7 +131,7 @@ export function buildPlan(sheet, options) {
                 paymentStatus: 'al_dia', morosoSince: null, active: true, createdAt: nowIso, updatedAt: nowIso, loadedFrom: source
             },
             ficha: { id, feeFrom: currentPeriod, unitType: 'casa', createdAt: nowIso, updated_at: nowIso },
-            check: { charges, payments, advance, paid: round2(movements.filter((t) => t.resiId === id && t.type === 'income').reduce((sum, t) => sum + t.amount, 0)), nota: clean(c.nota) }
+            check: { charges, payments, advance, pending, paid: round2(movements.filter((t) => t.resiId === id && t.type === 'income').reduce((sum, t) => sum + t.amount, 0)), nota: clean(c.nota) }
         });
     });
 
@@ -131,6 +149,16 @@ export function reconcile(sheet, plan) {
         rows.push({ mes: m, loaded, excluded, total, ok: total == null ? null : Math.abs(loaded + excluded - total) < 0.005 });
     });
     return { rows, ok: rows.every((r) => r.ok !== false), checked: rows.filter((r) => r.ok !== null).length };
+}
+
+// Quienes quedarian morosos con estos movimientos, con la MISMA funcion que usa el servidor (functions/src/finanzas/mora.js):
+// moroso = debe mas de una cuota ya vencida. settings: { fee, chargeDay, graceDays }; now: la fecha de hoy.
+export function morosos(plan, settings, now = new Date()) {
+    const moraServidor = require('../functions/src/finanzas/mora.js');
+    return plan.houses.filter((h) => {
+        const txs = plan.movements.filter((t) => t.resiId === h.id);
+        return moraServidor.moraOf(h.id, txs, settings, now, null).moroso;
+    }).map((h) => h.casa);
 }
 
 // Codigo de acceso como los de SISDEL (inicial del condominio + inicial del nombre + 3 cifras): el mismo de La Perla

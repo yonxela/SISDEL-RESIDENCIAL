@@ -47,6 +47,15 @@
         .ficha-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); column-gap: 1rem; }
         .ficha-grid > * { min-width: 0; }
         #fichaForm .form-input:disabled { opacity: 0.85; cursor: default; }
+        /* Fila de botones del encabezado (paneles y Salir): el texto un 30 % mas grande que antes y en negrita (pedido
+           del usuario el 2026-11-18, como en admin.html). Antes: botones 1rem */
+        .top-bar-actions .btn { font-weight: 700; }
+        .top-bar-actions .btn-sm { font-size: 1.3rem; }
+        /* Si la fila no cabe junto al nombre del condominio baja a otra linea, a la derecha (en celular ya lo hace styles.css) */
+        @media (min-width: 641px) {
+            .top-bar { flex-wrap: wrap; gap: 0.75rem; }
+            .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+        }
     </style>
 </head>
 

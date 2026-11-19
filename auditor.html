@@ -86,6 +86,16 @@
             .print-only { display: block !important; }
         }
         .print-only { display: none; }
+        /* Fila de botones del encabezado (paneles, Solo lectura, el nombre y Salir): el texto un 30 % mas grande que antes y
+           en negrita (pedido del usuario el 2026-11-18, como en admin.html). Antes: botones 1rem y las etiquetas 0.7rem */
+        .top-bar-actions .btn { font-weight: 700; }
+        .top-bar-actions .btn-sm { font-size: 1.3rem; }
+        .top-bar-actions .badge, .top-bar-actions .ro-badge { font-size: 0.91rem; }
+        /* Si la fila no cabe junto al nombre del condominio baja a otra linea, a la derecha (en celular ya lo hace styles.css) */
+        @media (min-width: 641px) {
+            .top-bar { flex-wrap: wrap; gap: 0.75rem; }
+            .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+        }
     </style>
 </head>
 

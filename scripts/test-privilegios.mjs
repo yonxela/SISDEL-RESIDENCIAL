@@ -435,6 +435,17 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             && ['btnReports', 'btnConfig'].every((id) => /class="[^"]*\bhead-btn\b/.test(headTag(id)) && !/font-size/.test(headTag(id)))
             && /class="[^"]*\bhead-btn\b/.test(panelLink) && !/font-size/.test(panelLink)
             && !/font-size/.test(headTag('adminName')) && !/font-size/.test(headTag('btnLogout')));
+        // Lo mismo en los demas paneles (sus botones median 1rem y las etiquetas 0.7rem)
+        for (const page of ['garita.html', 'auditor.html', 'vecino.html', 'master.html']) {
+            const html = read(page);
+            const row = (html.match(/class="top-bar-actions"[\s\S]*?<\/header>/) || [''])[0];
+            const links = (html.match(/getElementById\('panelLinks'\)\.innerHTML[\s\S]*?<a ([^>]*)>/) || ['', ''])[1];
+            yes(`${page}: el texto de la fila del encabezado es un 30 % mas grande y en negrita, y baja de linea si no cabe`,
+                /\.top-bar-actions \.btn \{ font-weight: 700; \}/.test(html) && /\.top-bar-actions \.btn-sm \{ font-size: 1\.3rem; \}/.test(html)
+                && /\.top-bar-actions \{ flex-wrap: wrap; justify-content: flex-end; margin-left: auto; \}/.test(html)
+                && row.length > 0 && !/font-size/.test(row) && !/font-size/.test(links)
+                && (page !== 'auditor.html' || /\.top-bar-actions \.badge, \.top-bar-actions \.ro-badge \{ font-size: 0\.91rem; \}/.test(html)));
+        }
     }
     yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes y #reportes/reporte)', /id="viewReportes"/.test(admin) && admin.includes('/^#reportes(?:\\/([a-z-]+))?$/') && /id="reportesMount"/.test(admin));
     yes('admin.html carga reportes-ui.js antes del script de la pagina', admin.indexOf('reportes-ui.js') > 0 && admin.indexOf('reportes-ui.js') < admin.indexOf('SisdelReportes.available()'));

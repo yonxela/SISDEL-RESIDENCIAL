@@ -28,6 +28,15 @@
             #condoList .condo-actions { width: 100%; display: grid; grid-template-columns: auto 1fr 1fr; }
             #condoList .condo-actions .btn { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
         }
+        /* Fila de botones del encabezado (Salir): el texto un 30 % mas grande que antes y en negrita (pedido del usuario el
+           2026-11-18, como en admin.html). Antes: 1rem */
+        .top-bar-actions .btn { font-weight: 700; }
+        .top-bar-actions .btn-sm { font-size: 1.3rem; }
+        /* Si la fila no cabe junto al titulo baja a otra linea, a la derecha (en celular ya lo hace styles.css) */
+        @media (min-width: 641px) {
+            .top-bar { flex-wrap: wrap; gap: 0.75rem; }
+            .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+        }
     </style>
 </head>
 

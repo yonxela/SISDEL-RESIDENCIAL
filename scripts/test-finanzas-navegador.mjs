@@ -434,6 +434,62 @@ async function run() {
         await oikos(`setReminderMode('mora'); checkRemConnection();`);
         await sleep(300);
         equal('al volver a UltraMsg se ve el texto editable otra vez', await oikos(`[document.getElementById('rem-template-box').classList.contains('hidden'), document.getElementById('rem-msg-box').classList.contains('hidden')]`), [true, false]);
+
+        // Enviar desde MI WhatsApp (pedido del usuario el 2026-11-18): se abre el chat de cada residente con el texto ya escrito y la
+        // persona pulsa Enviar en su WhatsApp. Aqui window.open es de mentira: se ve que se abriria, no sale nada.
+        console.log('\nRecordatorios: enviar desde mi WhatsApp (WhatsApp Web o la app del celular)');
+        await oikos(`(() => {
+            window.__opened = []; window.__openResult = {}; window.__realOpen = window.open;
+            window.open = (u, t) => { window.__opened.push([String(u), t]); return window.__openResult; };
+            window.__asked = []; window.confirm = (m) => { window.__asked.push(String(m)); return true; };
+            remManual = null; openReminders(); setReminderMode('varios'); remManualSetDest('web');
+            document.getElementById('rem-msg-general').value = 'Aviso de prueba para {nombre}';
+            renderRemindersList('fase'); setRemFase('3');
+        })()`);
+        const manualUi = () => oikos(`(() => { const d = (id) => document.getElementById(id); return { label: d('rem-manual-label').textContent, start: d('rem-manual-start').disabled, run: !d('rem-manual-run').classList.contains('hidden'), title: d('rem-manual-title') ? d('rem-manual-title').textContent : '', buttons: [...d('rem-manual-run').querySelectorAll('button')].map((b) => b.textContent.trim()) }; })()`);
+        const opened = () => oikos(`window.__opened.map(([u, t]) => { const q = new URL(u); return [q.origin + q.pathname, q.searchParams.get('phone'), q.searchParams.get('text'), t]; })`);
+        equal('el recuadro se ve junto al envio del servidor y cuenta a los de la lista (fase 3: 2)', await manualUi(), { label: 'Enviar desde mi WhatsApp (2)', start: false, run: false, title: '', buttons: [] });
+        const fase3 = await oikos(`remShownList.map((r) => [String(r.id), r.name, '502' + String(r.contact).replace(/\\D/g, ''), r.unit])`);
+        await oikos(`remManualStart()`);
+        const startAsk = await oikos(`window.__asked.slice(-1)[0] || ''`);
+        record('al empezar pide confirmar: a quienes (fase 3), en WhatsApp Web y que sale de SU numero', /a los 2 residentes de la fase 3/.test(startAsk) && /en WhatsApp Web/.test(startAsk) && /sale desde SU WhatsApp, no desde el número del condominio/.test(startAsk) && !/restringir/.test(startAsk), startAsk);
+        equal('al empezar todavia no abre nada (el navegador pide un clic para abrir otra ventana) y muestra el primero', [await opened(), await manualUi()], [[], { label: 'Enviar desde mi WhatsApp (2)', start: true, run: true, title: 'Mensaje 1 de 2', buttons: ['Abrir el chat', 'Saltar', 'Terminar'] }]);
+        await oikos(`remManualOpen()`);
+        const first = await opened();
+        equal('Abrir el chat: WhatsApp Web con el telefono (con el 502) y el texto de ese residente, en una pestana nueva', first, [['https://web.whatsapp.com/send', fase3[0][2], `Aviso de prueba para ${fase3[0][1]}`, '_blank']]);
+        equal('ya abierto ofrece Ya lo envie: siguiente y Abrir el chat de nuevo', (await manualUi()).buttons, ['Ya lo envié: siguiente', 'Abrir el chat de nuevo', 'Saltar', 'Terminar']);
+        await oikos(`remManualNext()`);
+        const second = await opened();
+        equal('Ya lo envie: siguiente abre el chat del segundo con el mismo clic', second.slice(1), [['https://web.whatsapp.com/send', fase3[1][2], `Aviso de prueba para ${fase3[1][1]}`, '_blank']]);
+        equal('el primero queda marcado en la lista y el ultimo dice terminar', [await oikos(`[...document.querySelectorAll('#reminders-list .rem-row')].map((row) => row.querySelector('.rem-manual-tag') ? row.querySelector('.rem-manual-tag').textContent : '')`), (await manualUi()).title, (await manualUi()).buttons[0]], [['Enviado desde su WhatsApp', ''], 'Mensaje 2 de 2', 'Ya lo envié: terminar']);
+        await oikos(`remManualNext()`);
+        const finished = await manualUi();
+        equal('al terminar no abre nada mas y dice cuantos salieron de su WhatsApp', [(await opened()).length, finished.title, finished.buttons, finished.start, await oikos(`document.getElementById('rem-manual-summary').textContent.replace(/\\s+/g, ' ')`)], [2, 'Tanda terminada', ['Cerrar'], false, '2 enviados desde su WhatsApp · 0 saltados. Revise en su WhatsApp que cada mensaje tenga sus palomitas.']);
+        await oikos(`remManualClose()`);
+        equal('Cerrar quita el recuadro de la tanda y las marcas de la lista', [(await manualUi()).run, await oikos(`document.querySelectorAll('#reminders-list .rem-manual-tag').length`)], [false, 0]);
+        // En el celular: la app de WhatsApp (wa.me). Saltar no abre el siguiente; Terminar deja dicho a quienes no se abrio
+        await oikos(`(() => { window.__opened.length = 0; remManualSetDest('app'); remManualStart(); remManualOpen(); })()`);
+        equal('con "App de WhatsApp" abre wa.me con el telefono y el texto', await oikos(`window.__opened.map(([u]) => u.startsWith('https://wa.me/${fase3[0][2]}?text=') && decodeURIComponent(u.split('text=')[1]) === 'Aviso de prueba para ${fase3[0][1]}')`), [true]);
+        await oikos(`remManualSkip()`);
+        equal('Saltar pasa al siguiente sin abrirlo', [(await opened()).length, (await manualUi()).title, (await manualUi()).buttons[0]], [1, 'Mensaje 2 de 2', 'Abrir el chat']);
+        await oikos(`remManualStop()`);
+        const stopped = await oikos(`document.getElementById('rem-manual-run').textContent.replace(/\\s+/g, ' ')`);
+        record('Terminar antes de tiempo dice cuantos se saltaron y a quien no se le abrio el chat', /Tanda terminada antes de tiempo/.test(stopped) && /0 enviados desde su WhatsApp · 1 saltados · 1 sin abrir/.test(stopped) && stopped.includes(`Sin abrir: ${fase3[1][3]} · ${fase3[1][1]}`), stopped);
+        await oikos(`remManualClose()`);
+        // El navegador no deja abrir la ventana: lo dice
+        const blockedOpen = await oikos(`(() => { const seen = []; const real = window.alert; window.alert = (m) => seen.push(String(m)); window.__openResult = null; try { remManualStart(); remManualOpen(); } finally { window.alert = real; window.__openResult = {}; } remManualClose(); return seen; })()`);
+        record('si el navegador bloquea la ventana avisa que permita las ventanas emergentes', blockedOpen.length === 1 && /Permita las ventanas emergentes/.test(blockedOpen[0]), JSON.stringify(blockedOpen));
+        // Con muchos avisa que WhatsApp puede restringir SU numero
+        await oikos(`(() => { REM_MANUAL_WARN = 1; remManualStart(); REM_MANUAL_WARN = 30; remManualClose(); })()`);
+        record('con muchos residentes avisa que WhatsApp puede restringir SU numero', /WhatsApp puede restringir SU número/.test(await oikos(`window.__asked.slice(-1)[0] || ''`)), '');
+        // El aviso sin escribir no se manda; en Por seleccion, solo los marcados
+        const withPlaceholder = await oikos(`(() => { const seen = []; const real = window.alert; window.alert = (m) => seen.push(String(m)); document.getElementById('rem-msg-general').value = 'Hola {nombre}: ' + SISDEL_REMINDER_PLACEHOLDER; try { remManualStart(); } finally { window.alert = real; } document.getElementById('rem-msg-general').value = 'Aviso de prueba para {nombre}'; return [seen.length, remManual]; })()`);
+        equal('con el aviso sin escribir ([Escriba aqui el aviso]) no empieza', [withPlaceholder[0], withPlaceholder[1]], [1, null]);
+        await oikos(`(() => { remSelected.clear(); renderRemindersList('seleccion'); })()`);
+        equal('en Por seleccion sin marcar a nadie el boton esta apagado', [(await manualUi()).label, (await manualUi()).start], ['Enviar desde mi WhatsApp', true]);
+        await oikos(`(() => { remTogglePick(${JSON.stringify(fase3[1][0])}, true); })()`);
+        equal('al marcar a uno, el boton cuenta solo a ese', (await manualUi()).label, 'Enviar desde mi WhatsApp (1)');
+        await oikos(`(() => { remSelected.clear(); remManualSetDest('web'); window.open = window.__realOpen; window.confirm = () => true; try { localStorage.removeItem('sisdel_rem_wa_destino'); } catch (e) {} })()`);
         // Con poca pantalla (o la pagina muy ampliada) la ventana se desplaza: se llega al progreso, a la lista y al boton Cerrar
         await oikos(`openReminders()`);
         const scrolling = await oikos(`(() => {

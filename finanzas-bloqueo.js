@@ -68,7 +68,7 @@
         [/^openEstadoCuenta\(/, ['residentes_estado']],
         // Chat de WhatsApp con los residentes (la pantalla Chats WhatsApp y el boton del menu de cada residente)
         [/^(openResidentChat|openChat|startChatWith|toggleChatNew|setChatFilter|sendChatFromInput|loadChatHistoryNow)\(/, ['whatsapp_chat']],
-        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
+        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|remManualStart|remManualOpen|remManualNext|remManualSkip|remManualStop|remManualClose|remManualSetDest|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
         // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
         [/^saveReminderMessages\(/, ['config_general']],
         // Bancos: abrir y editar cuentas, registrar movimientos y transferencias, anular. La cuenta favorita la decide el

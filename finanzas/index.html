@@ -982,6 +982,22 @@
                     <div id="rem-rec-list" class="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700 text-sm"></div>
                 </div>
             </div>
+            <!-- SISDEL: Enviar desde MI WhatsApp (pedido del usuario el 2026-11-18): el mensaje sale del WhatsApp de quien envia (su telefono
+                 vinculado a WhatsApp Web, o la app en el celular), no del numero del condominio. Se abre el chat de cada residente con el
+                 texto ya escrito y la persona pulsa Enviar: uno por uno, siempre con su clic -->
+            <div id="rem-manual" class="mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-900/10 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="rem-manual-start" onclick="remManualStart()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-sky-600 hover:bg-sky-700 text-white shadow transition"><i class="fas fa-mobile-screen-button mr-1.5"></i><span id="rem-manual-label">Enviar desde mi WhatsApp</span></button>
+                    <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">Abrir en
+                        <select id="rem-manual-dest" onchange="remManualSetDest(this.value)" class="px-2 py-1.5 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                            <option value="web">WhatsApp Web (computadora)</option>
+                            <option value="app">App de WhatsApp (celular)</option>
+                        </select>
+                    </label>
+                    <span class="text-xs text-slate-600 dark:text-slate-300">Sale de <b>su</b> WhatsApp, no del número del condominio: se abre el chat de cada residente de la lista con el mensaje ya escrito y usted pulsa Enviar.</span>
+                </div>
+                <div id="rem-manual-run" class="hidden mt-3"></div>
+            </div>
             <!-- SISDEL: con el WhatsApp OFICIAL de Meta el texto lo fija una plantilla aprobada por Meta: solo cambian los datos de cada residente -->
             <div id="rem-template-box" class="hidden mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 px-4 py-3">
                 <p class="text-sm font-bold text-sky-800 dark:text-sky-200"><i class="fas fa-shield-halved mr-1.5"></i>WhatsApp oficial de Meta</p>
@@ -4979,8 +4995,8 @@
         // telefono: el servidor lo toma de la ficha del vecino. Sin el puente (OIKOS fuera de SISDEL), o si WhatsApp no esta
         // conectado y el usuario lo acepta, se abre WhatsApp para enviarlo a mano.
         async function remSendOne(r, text, mode) {
-            const phone = String(r.contact || '').replace(/[^0-9]/g, '');
-            const manual = () => window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(text), '_blank');
+            const phone = remWaPhone(r.contact) || String(r.contact || '').replace(/[^0-9]/g, '');
+            const manual = () => window.open(remWaUrl(phone, text, remManualDest), '_blank');
             const bridge = remBridge();
             if (!bridge) return manual();
             const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
@@ -5013,6 +5029,168 @@
         }
         // Compatibilidad: la firma anterior (la usaba el boton Enviar de cada fila)
         function contactSingleWhatsApp(contact, balance, isMora, residentId) { sendReminder(residentId); }
+
+        // ───────── SISDEL: Enviar desde MI WhatsApp (pedido del usuario el 2026-11-18) ─────────
+        // El mensaje sale del WhatsApp de quien envia (su telefono vinculado a WhatsApp Web o, en el celular, la app), no del numero
+        // del condominio: se abre el chat de cada residente de la lista con el texto ya escrito y la persona pulsa Enviar. Siempre uno
+        // por uno y con su clic: que el sistema pulsara Enviar en WhatsApp Web es lo mismo que hace UltraMsg, y WhatsApp restringe
+        // igual al numero que escribe a muchos contactos nuevos seguidos (le paso al del condominio el 16/11/2026).
+        // WhatsApp Web corta el enlace con la pagina que lo abre (Cross-Origin-Opener-Policy; comprobado en Chrome): no se puede reusar
+        // su pestana y cada chat se abre en una nueva, que se cierra despues de enviar. La lista sale de la misma barra de Recordatorios
+        // (con "Por seleccion", solo los marcados). Lo enviado queda en el WhatsApp de la persona: el sistema solo lleva la cuenta de la
+        // tanda en memoria (sin rastro en el servidor) y marca a cada residente en la lista.
+        var REM_MANUAL_WARN = 30;
+        var remManual = null;   // { items: [{ id, label, phone, text }], index, status: { id: 'sent' | 'skipped' }, dest, done }
+        // Telefono para WhatsApp: solo cifras; 8 cifras = Guatemala (502), como el servidor (normalizePhone); menos de 10 no sirve
+        function remWaPhone(contact) {
+            const digits = String(contact || '').replace(/\D/g, '');
+            if (digits.length === 8) return '502' + digits;
+            return digits.length >= 10 ? digits : '';
+        }
+        function remWaUrl(phone, text, dest) {
+            const t = encodeURIComponent(String(text || ''));
+            return dest === 'app' ? `https://wa.me/${phone}?text=${t}` : `https://web.whatsapp.com/send?phone=${phone}&text=${t}`;
+        }
+        // En el celular la app; en la computadora WhatsApp Web. La eleccion se recuerda en este equipo
+        function remManualDefaultDest() { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ? 'app' : 'web'; }
+        var remManualDest = (() => { try { const v = localStorage.getItem('sisdel_rem_wa_destino'); return v === 'app' || v === 'web' ? v : remManualDefaultDest(); } catch (e) { return remManualDefaultDest(); } })();
+        function remManualSetDest(value) {
+            remManualDest = value === 'app' ? 'app' : 'web';
+            try { localStorage.setItem('sisdel_rem_wa_destino', remManualDest); } catch (e) { /* solo se pierde la preferencia */ }
+            if (remManual && !remManual.done) remManual.dest = remManualDest;
+            paintRemManual();
+        }
+        // A quienes: la lista de la barra (con "Por seleccion", los marcados) con un telefono que sirva para WhatsApp
+        function remManualList() {
+            const list = currentRemFilter === 'seleccion' ? remSelectedSendable() : reminderSendable(remShownList);
+            return list.filter(r => remWaPhone(r.contact));
+        }
+        // El texto: el de la ventana (con Meta, el de su plantilla, que es el que se ve; sin plantilla, el editable)
+        function remManualTemplate(r) {
+            const t = reminderTemplateFor(r);
+            if (t) return t;
+            const saved = reminderMessagesSaved();
+            const pick = (id, fallback) => { const v = document.getElementById(id).value; return v.trim() ? v : fallback; };
+            return currentRemMode === 'varios' ? pick('rem-msg-general', saved.general) : pick('rem-msg-mora', saved.mora);
+        }
+        function remManualStart() {
+            if (remManual && !remManual.done) return;
+            const list = remManualList();
+            if (!list.length) return alert(currentRemFilter === 'seleccion' ? 'Marque al menos un residente con teléfono.' : 'No hay residentes con teléfono en esta lista.');
+            if (remManualTemplate(list[0]).includes(SISDEL_REMINDER_PLACEHOLDER)) {
+                document.getElementById('rem-msg-box').open = true;
+                document.getElementById('rem-msg-general').focus();
+                return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+            }
+            const items = list.map(r => ({ id: String(r.id), label: (r.unit ? r.unit + ' · ' : '') + (r.name || ''), phone: remWaPhone(r.contact), text: reminderText(remManualTemplate(r), r) }));
+            const where = remManualDest === 'app' ? 'la app de WhatsApp' : 'WhatsApp Web';
+            const who = currentRemFilter === 'seleccion' ? `a los ${items.length} residentes que seleccionó` : remScopeWho(items.length);
+            const many = items.length > REM_MANUAL_WARN
+                ? `\n\nSon ${items.length}. WhatsApp puede restringir SU número si escribe a muchos contactos nuevos seguidos (le pasó al número del condominio el 16/11). Conviene enviar pocos por día; puede terminar en cualquier momento y seguir otro día.`
+                : '';
+            if (!confirm(`Se abrirá, uno por uno, el chat de cada residente en ${where} con el mensaje ya escrito: ${who}.\n\nEl mensaje sale desde SU WhatsApp, no desde el número del condominio. En cada chat usted pulsa Enviar y aquí pasa al siguiente.${many}\n\n¿Empezar?`)) return;
+            remManual = { items, index: 0, status: {}, dest: remManualDest, done: false };
+            paintRemManual();
+        }
+        // Abre el chat del residente que toca (un clic de la persona: el navegador no deja abrir ventanas sin el)
+        function remManualOpen() {
+            const run = remManual;
+            if (!run || run.done) return;
+            const item = run.items[run.index];
+            const w = window.open(remWaUrl(item.phone, item.text, run.dest), '_blank');
+            run.opened = run.index;
+            paintRemManual();
+            if (!w) alert('El navegador no dejó abrir WhatsApp. Permita las ventanas emergentes de esta página y pulse «Abrir el chat» otra vez.');
+        }
+        // "Ya lo envie" abre el siguiente con el mismo clic; "Saltar" no lo abre (se pueden saltar varios seguidos)
+        function remManualAdvance(mark, openNext) {
+            const run = remManual;
+            if (!run || run.done) return;
+            run.status[run.items[run.index].id] = mark;
+            run.index++;
+            if (run.index >= run.items.length) run.done = true;
+            renderRemindersList(currentRemFilter);   // la marca de cada residente en la lista (y este recuadro)
+            if (!run.done && openNext) remManualOpen();
+        }
+        function remManualNext() { remManualAdvance('sent', true); }
+        function remManualSkip() { remManualAdvance('skipped', false); }
+        function remManualStop() {
+            const run = remManual;
+            if (!run || run.done) return;
+            run.done = true;
+            run.stopped = true;
+            paintRemManual();
+        }
+        function remManualClose() {
+            remManual = null;
+            paintRemManual();
+            renderRemindersList(currentRemFilter);
+        }
+        function remManualCounts(run) {
+            const values = Object.values(run.status);
+            return { sent: values.filter(v => v === 'sent').length, skipped: values.filter(v => v === 'skipped').length };
+        }
+        // La marca de un residente en la lista de Recordatorios (en esta tanda)
+        function remManualTag(id) {
+            const mark = remManual && remManual.status[String(id)];
+            if (mark === 'sent') return '<span class="rem-manual-tag bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 text-xs px-2 py-0.5 rounded ml-2 font-semibold"><i class="fas fa-check mr-1"></i>Enviado desde su WhatsApp</span>';
+            if (mark === 'skipped') return '<span class="rem-manual-tag bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 text-xs px-2 py-0.5 rounded ml-2 font-semibold">Saltado</span>';
+            return '';
+        }
+        function paintRemManual() {
+            const box = document.getElementById('rem-manual');
+            if (!box) return;
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            const run = remManual;
+            const active = !!(run && !run.done);
+            const n = remManualList().length;
+            const dest = document.getElementById('rem-manual-dest');
+            if (dest) dest.value = active ? run.dest : remManualDest;
+            const label = document.getElementById('rem-manual-label');
+            if (label) label.textContent = `Enviar desde mi WhatsApp${n ? ' (' + n + ')' : ''}`;
+            const start = document.getElementById('rem-manual-start');
+            if (start) {
+                start.disabled = !n || active;
+                start.classList.toggle('opacity-50', start.disabled);
+                start.classList.toggle('cursor-not-allowed', start.disabled);
+                start.title = active ? 'Ya hay una tanda en curso: termínela abajo' : !n ? (currentRemFilter === 'seleccion' ? 'Marque al menos un residente con teléfono' : 'No hay residentes con teléfono en esta lista') : '';
+            }
+            const panel = document.getElementById('rem-manual-run');
+            if (!panel) return;
+            panel.classList.toggle('hidden', !run);
+            if (!run) { panel.innerHTML = ''; return; }
+            const total = run.items.length;
+            const c = remManualCounts(run);
+            const pct = total ? Math.round(((c.sent + c.skipped) * 100) / total) : 0;
+            const btn = 'px-3 py-2 rounded-lg text-sm font-semibold transition';
+            const bar = `<div class="h-2.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden mt-1"><div class="h-full bg-sky-500 transition-all" style="width:${pct}%"></div></div>`;
+            if (run.done) {
+                const skipped = run.items.filter(it => run.status[it.id] === 'skipped');
+                const left = run.items.filter(it => !run.status[it.id]);
+                const names = (list) => list.slice(0, 12).map(it => esc(it.label)).join(', ') + (list.length > 12 ? ` y ${list.length - 12} más` : '');
+                panel.innerHTML = `<p id="rem-manual-title" class="text-sm font-bold text-slate-800 dark:text-slate-100">${run.stopped ? 'Tanda terminada antes de tiempo' : 'Tanda terminada'}</p>${bar}`
+                    + `<p id="rem-manual-summary" class="text-xs text-slate-600 dark:text-slate-300 mt-1.5"><b class="text-sky-700 dark:text-sky-300">${c.sent} enviados desde su WhatsApp</b> · ${c.skipped} saltados${left.length ? ` · ${left.length} sin abrir` : ''}. Revise en su WhatsApp que cada mensaje tenga sus palomitas.</p>`
+                    + (skipped.length ? `<p class="text-xs text-slate-600 dark:text-slate-300 mt-1">Saltados: ${names(skipped)}.</p>` : '')
+                    + (left.length ? `<p class="text-xs text-slate-600 dark:text-slate-300 mt-1">Sin abrir: ${names(left)}.</p>` : '')
+                    + `<div class="flex flex-wrap gap-2 mt-2"><button type="button" onclick="remManualClose()" class="${btn} bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600">Cerrar</button></div>`;
+                return;
+            }
+            const item = run.items[run.index];
+            const last = run.index === total - 1;
+            const opened = run.opened === run.index;
+            const hint = run.dest === 'app'
+                ? 'En WhatsApp pulse Enviar y vuelva a esta página.'
+                : 'En la pestaña de WhatsApp Web pulse Enter (o la flecha de enviar), cierre esa pestaña (⌘W o Ctrl+W) y vuelva aquí. La primera vez WhatsApp Web le pide vincular su teléfono con el código QR.';
+            panel.innerHTML = `<div class="flex justify-between items-baseline gap-3"><p id="rem-manual-title" class="text-sm font-bold text-slate-800 dark:text-slate-100">Mensaje ${run.index + 1} de ${total}</p><p class="text-xs font-semibold text-sky-700 dark:text-sky-300">${c.sent} enviados · ${c.skipped} saltados</p></div>${bar}`
+                + `<div class="mt-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60 px-3 py-2"><p id="rem-manual-who" class="font-bold text-slate-800 dark:text-slate-100">${esc(item.label)} <span class="font-normal text-xs text-slate-500 dark:text-slate-400">+${esc(item.phone)}</span></p><p id="rem-manual-text" class="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-line break-words mt-1 max-h-32 overflow-y-auto">${esc(item.text)}</p></div>`
+                + `<p class="text-xs text-slate-600 dark:text-slate-300 mt-2">${opened ? hint : 'Pulse «Abrir el chat»: se abre con el mensaje ya escrito.'}</p>`
+                + `<div class="flex flex-wrap gap-2 mt-2">`
+                + (opened
+                    ? `<button type="button" id="rem-manual-next" onclick="remManualNext()" class="${btn} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-check mr-1"></i>${last ? 'Ya lo envié: terminar' : 'Ya lo envié: siguiente'}</button><button type="button" onclick="remManualOpen()" class="${btn} bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600"><i class="fab fa-whatsapp mr-1"></i>Abrir el chat de nuevo</button>`
+                    : `<button type="button" id="rem-manual-open" onclick="remManualOpen()" class="${btn} bg-sky-600 hover:bg-sky-700 text-white"><i class="fab fa-whatsapp mr-1"></i>Abrir el chat</button>`)
+                + `<button type="button" onclick="remManualSkip()" class="${btn} bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600">${last ? 'Saltar y terminar' : 'Saltar'}</button>`
+                + `<button type="button" onclick="remManualStop()" class="${btn} bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800">Terminar</button></div>`;
+        }
 
         // Mensaje seleccionado ('mora' o 'varios'; se recuerda en este equipo) y lista que se ve ('all', 'mora' o 'todos').
         // var (no let): OIKOS pinta pantallas al arrancar, antes de estas lineas.
@@ -5146,8 +5324,8 @@
                         : '<span class="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs px-2 py-0.5 rounded ml-2 font-semibold">Al día</span>';
                 const detail = o.mora > 0 ? ` <span class="text-xs font-semibold text-amber-600 dark:text-amber-400">(cuotas ${formatMoney(o.cuotas)} + mora ${formatMoney(o.mora)})</span>` : '';
                 const owedLine = owes
-                    ? `<p class="text-rose-600 dark:text-rose-400 font-semibold text-sm mt-1">Debe: ${formatMoney(o.owed)}${detail} ${tag}</p>`
-                    : `<p class="text-emerald-600 dark:text-emerald-400 font-semibold text-sm mt-1">Sin saldo pendiente ${tag}</p>`;
+                    ? `<p class="text-rose-600 dark:text-rose-400 font-semibold text-sm mt-1">Debe: ${formatMoney(o.owed)}${detail} ${tag}${remManualTag(r.id)}</p>`
+                    : `<p class="text-emerald-600 dark:text-emerald-400 font-semibold text-sm mt-1">Sin saldo pendiente ${tag}${remManualTag(r.id)}</p>`;
                 const hasPhone = !!String(r.contact || '').replace(/[^0-9]/g, '');
                 const picked = currentRemFilter === 'seleccion' && remSelected.has(String(r.id));
                 const pick = remBridge() && hasPhone && currentRemFilter === 'seleccion'
@@ -5271,6 +5449,7 @@
             }
         }
         function paintReminderBulk() {
+            paintRemManual();   // Enviar desde mi WhatsApp cuenta a la misma lista (y se ve aunque no haya envio desde el servidor)
             const box = document.getElementById('rem-bulk');
             if (!box) return;
             const bridge = remBridge();

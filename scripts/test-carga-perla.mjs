@@ -126,8 +126,9 @@ equal('cuadre: mora fija = mora de cuotas pagadas', plan.charges.filter((c) => c
 console.log('\nMora que calculara el sistema');
 const settings = { fee: 300, moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] };
 const state = SisdelMora.stateOf('perla-A001', anaCharges, settings, '2026-11-15');
-// julio Q150 desde el 31/07: 107 dias -> 16.05; septiembre Q380 desde el 30/09: 46 dias -> 17.48; octubre Q300 desde el 31/10: 15 dias -> 4.50
-equal('mora por dia al 15/11/2026 de las cuotas cargadas', state.items.filter((i) => i.kind === 'fee').map((i) => [i.period, i.mora]), [['2026-07', 16.05], ['2026-09', 17.48], ['2026-10', 4.5]]);
+// Un cargo de 3 % el dia 6 de cada mes despues de vencer: julio Q150 (6 de agosto, septiembre, octubre y noviembre) -> 4 x 4.50 = 18.00;
+// septiembre Q380 (6 de octubre y de noviembre) -> 2 x 11.40 = 22.80; octubre Q300 (6 de noviembre) -> 9.00
+equal('mora al 15/11/2026 de las cuotas cargadas (un cargo el dia 6 de cada mes)', state.items.filter((i) => i.kind === 'fee').map((i) => [i.period, i.mora]), [['2026-07', 18], ['2026-09', 22.8], ['2026-10', 9]]);
 equal('la mora fija no crece', state.items.find((i) => i.kind === 'mora').mora, 25.5);
 
 console.log('\nCodigos de acceso');

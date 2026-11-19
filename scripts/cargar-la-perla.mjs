@@ -26,7 +26,8 @@ const LA_PERLA = 'UikIeRIBWRsdPKpxk7N2';
 const CUT_DAY = '2026-11-15'; // "A la fecha 15/11/26" del reporte de la asociacion
 const CONFIRM = 'CARGAR LA PERLA';
 // La cuota y la mora de La Perla (decisiones del 2026-11-12): mantenimiento Q300, paja de agua Q160, mora 3 % al mes
-// por dia con 5 dias de plazo, la mora no genera mora y un abono paga primero la cuota
+// con 5 dias de plazo (desde el 2026-11-19 se carga el dia 6 de cada mes; antes era por dia), la mora no genera mora y un
+// abono paga primero la cuota
 const SETTINGS = {
     fee: 300, currency: 'GTQ', waterUnitPrice: 160,
     feeBreakdown: { maintenance: 300, water: 0, garbage: 0, electricity: 0, other: 0 },
@@ -73,7 +74,7 @@ const loaded = {
     interest: round2(plan.lots.reduce((s, l) => s + l.check.interest, 0))
 };
 const orphan = carteraTotals(plan.orphanAccounts);
-// Mora que calculara el sistema al dia del reporte (3 % al mes, por dia, desde el fin de mes mas 5 dias de plazo)
+// Mora que calculara el sistema al dia del reporte (3 % al mes, cargado el dia 6 de cada mes: finanzas/sisdel-mora.js)
 const moraState = new Map();
 const byResident = new Map();
 plan.charges.forEach((c) => { if (!byResident.has(c.resiId)) byResident.set(c.resiId, []); byResident.get(c.resiId).push(c); });
@@ -131,7 +132,7 @@ const summary = [
     '',
     'CONDOMINIO',
     `  Garita: ${GARITA.gracePeriodDays} dias de gracia para morosos (reminderEnabled)`,
-    `  Cuota: mantenimiento ${money(SETTINGS.fee)}, paja de agua ${money(SETTINGS.waterUnitPrice)}, mora ${SETTINGS.moraRules[0].percent} % al mes por dia con ${SETTINGS.moraRules[0].graceDays} dias de plazo`
+    `  Cuota: mantenimiento ${money(SETTINGS.fee)}, paja de agua ${money(SETTINGS.waterUnitPrice)}, mora ${SETTINGS.moraRules[0].percent} % al mes, cargada el dia ${SETTINGS.moraRules[0].graceDays + 1} de cada mes (${SETTINGS.moraRules[0].graceDays} dias de plazo)`
 ];
 fs.writeFileSync(path.join(folder, 'resumen.txt'), summary.join('\n') + '\n', { mode: 0o600 });
 writeCsv(path.join(folder, 'lotes.csv'),

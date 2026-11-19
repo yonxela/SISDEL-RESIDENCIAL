@@ -136,8 +136,8 @@ function balanceOf(txs, residentId) {
 // siguiente (cuotas.dueKey; como checkIsMoroso de OIKOS). El dia de cobro y los dias de gracia de OIKOS ya no cuentan.
 // `resident` (opcional) es su ficha financiera: con agua por lote, "una cuota" es la de su lote.
 //
-// En un condominio con recargo por mora (settings.moraRules) decide el modulo de mora por dia: cada cuota
-// vence al terminar su mes mas los dias de plazo y la garita mira solo el capital vencido (el recargo se debe,
+// En un condominio con recargo por mora (settings.moraRules) decide el modulo de mora (mora-diaria.js: un cargo el
+// dia 6 de cada mes con 5 dias de plazo): cada cuota vence al terminar su mes mas los dias de plazo y la garita mira solo el capital vencido (el recargo se debe,
 // pero no bloquea). `balance` y `debt` incluyen el recargo.
 function moraOf(residentId, txs, settings, now = new Date(), resident = null) {
     const s = settings || {};

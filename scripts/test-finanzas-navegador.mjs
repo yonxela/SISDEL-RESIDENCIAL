@@ -134,7 +134,7 @@ async function run() {
         await oikos(`closeModal('modal-fee-run')`);
 
         console.log('\nEstado de cuenta: lo que debe el residente');
-        // Un vecino con 227 cuotas sin pagar desde 2008 (como C070 de La Perla) y la mora por dia: la pantalla, la impresion,
+        // Un vecino con 227 cuotas sin pagar desde 2008 (como C070 de La Perla) y su mora (un cargo el dia 6 de cada mes): la pantalla, la impresion,
         // el PDF, el Excel y WhatsApp dicen lo mismo y las tres cifras suman. El estado de mora se arma con el modulo de verdad
         // (a un dia fijo) y se le entrega a la pantalla; lo demas es el codigo de OIKOS tal cual.
         const feesCount = await oikos(`(() => {
@@ -144,7 +144,7 @@ async function run() {
             const ledger = -300 * txs.length;
             window.__real = { ecMora, sisdelMoraRuleText, open: window.open, jsPdfSave: window.jspdf && window.jspdf.jsPDF.API.save };
             ecMora = () => Object.assign({}, state, { total: Math.round((ledger - state.moraDaily) * 100) / 100 });
-            sisdelMoraRuleText = () => '3 % al mes por día sobre cada cuota vencida';
+            sisdelMoraRuleText = () => '3 % al mes de lo que falta de cada cuota vencida, cargado el día 6 de cada mes';
             openEstadoCuenta('u-ana');
             return txs.length;
         })()`);
@@ -920,7 +920,7 @@ async function run() {
 
         // ───────── Descontar mora (pedido del dueno el 2026-11-18) ─────────
         console.log('\nDescontar mora: pestana del Ingreso, reporte y nube');
-        equal('sin regla de mora por dia la pestana Descontar mora no se ve', await oikos(`(() => { navigate('accounting'); openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); const t = document.getElementById('inc-tab-descuento'); const out = t.classList.contains('hidden'); closeModal('modal-income'); return out; })()`), true);
+        equal('sin regla de mora la pestana Descontar mora no se ve', await oikos(`(() => { navigate('accounting'); openModal('modal-income'); document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); const t = document.getElementById('inc-tab-descuento'); const out = t.classList.contains('hidden'); closeModal('modal-income'); return out; })()`), true);
         await sleep(350);
         // La regla de mora de La Perla solo en la pantalla (no se guarda) y dos cuotas viejas de Ana, de verdad (van a la nube)
         await oikos(`(() => {
@@ -942,6 +942,22 @@ async function run() {
             return { tab: !tab.classList.contains('hidden') && getComputedStyle(tab).display !== 'none', owed: sisdelOwedOf(r), m07: mora('disc-test-07'), m08: mora('disc-test-08'), all: st.mora };
         })()`);
         record('con regla de mora la pestana Descontar mora se ve y Ana debe mora de julio y agosto', discStart.tab && discStart.m07 > discStart.m08 && discStart.m08 > 0 && discStart.owed.mora >= discStart.m07 + discStart.m08 - 0.01, JSON.stringify(discStart));
+        // La mora se carga el dia 6 de cada mes (pedido del usuario el 2026-11-19): cada cuota lleva 3 % (Q 9 de Q 300) por cada
+        // dia 6 que paso desde que vencio, y la ventana del ingreso dice cuando es el proximo cargo si no paga antes
+        const steps = await oikos(`(() => {
+            const settings = Store.get('settings');
+            const today = localDayKey(new Date());
+            const when = SisdelMora.chargeDates(settings, today);
+            const count = (period) => { let n = 0; const p = SisdelMora.periodDays(period); for (let d = p.last + 6; d <= SisdelMora.dayOfKey(today); d++) if (SisdelMora.keyOfDay(d).slice(8) === '06') n++; return n; };
+            const st = SisdelMora.stateOf('u-ana', Store.get('transactions'), settings, today);
+            const nextCapital = st.items.filter((i) => i.kind === 'fee' && i.capital > 0 && i.dueDate < when.next).reduce((a, i) => a + i.capital, 0);
+            const el = document.getElementById('inc-bal-next');
+            return { m07: count('2026-07') * 9, m08: count('2026-08') * 9, day: when.dayOfMonth, text: el.textContent, shown: !el.classList.contains('hidden'),
+                expected: [sisdelDayText(when.next), formatMoney(Math.round(nextCapital * 3) / 100)], rule: sisdelMoraRuleText() };
+        })()`);
+        equal('la mora de cada cuota son los cargos de Q 9.00 de cada dia 6 desde que vencio (julio y agosto)', [discStart.m07, discStart.m08, steps.day], [steps.m07, steps.m08, 6]);
+        record('la ventana del ingreso dice cuando se carga la proxima mora y cuanto, si no paga antes', steps.shown && steps.text.includes('el ' + steps.expected[0]) && steps.text.includes(steps.expected[1]) && /Hasta entonces su saldo no cambia/.test(steps.text), JSON.stringify(steps));
+        record('el texto de la regla dice que se carga el dia 6', /cargado el día 6 de cada mes/.test(steps.rule), steps.rule);
         equal('la pestana se abre mas ancha, sin el boton Registrar, con la tabla de cuotas (casilla solo en los meses con mora)', await oikos(`(() => { setIncTab('descuento'); const rows = [...document.querySelectorAll('#disc-rows tr')]; return [!document.getElementById('inc-pane-descuento').classList.contains('hidden'), document.getElementById('inc-pane-pago').classList.contains('hidden'), document.getElementById('inc-modal-box').classList.contains('max-w-3xl'), document.getElementById('btn-inc-reg').classList.contains('hidden'), rows.length >= 2, document.querySelectorAll('#disc-rows input[data-id="disc-test-07"]').length, document.querySelectorAll('#disc-rows input[data-id="disc-test-08"]').length, document.getElementById('inc-tab-descuento').getAttribute('aria-selected')]; })()`), [true, true, true, true, true, 1, 1, 'true']);
         const markJul = await oikos(`(() => { document.querySelector('#disc-rows input[data-id="disc-test-07"]').click(); return [document.getElementById('disc-total').textContent, document.getElementById('disc-count').textContent, document.getElementById('disc-after').textContent, document.getElementById('disc-owed').textContent]; })()`);
         equal('marcar julio suma su mora y dice cuanto deberia con el descuento', markJul, await oikos(`[formatMoney(${discStart.m07}), '1 mes marcado', formatMoney(Math.round((${discStart.owed.total} - ${discStart.m07}) * 100) / 100), formatMoney(${discStart.owed.total})]`));

@@ -14,7 +14,7 @@ const { SERVER_STAMP, staleStamp } = require('./sello');
 const SETTINGS_DOC = 'oikos_settings';
 const BATCH_SIZE = 400;
 // Solo los campos que hacen falta: los movimientos pueden traer fotos de comprobantes
-// `date` y `moraFixed` los pide la mora por dia (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy.
+// `date` y `moraFixed` los pide la mora (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy.
 // `breakdown` (los conceptos de una cuota) y `alloc` (a que conceptos se aplico un pago) tambien: con alloc, el servidor
 // reparte cada pago igual que la ventana del ingreso, y por eso decide lo mismo sobre quien es moroso. `moraItems` son las
 // cuotas de un descuento de mora (type 'mora_discount'): bajan la mora, nunca el capital que mira la garita.

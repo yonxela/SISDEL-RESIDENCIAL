@@ -178,7 +178,7 @@ equal('descontar mora arrastra registrar pagos y ver estados de cuenta (la pesta
     yes('OIKOS: lo que debe resta la mora descontada (tambien la fija) y el descuento no entra en caja ni en el libro del estado de cuenta', /- \(ms\.moraDaily \|\| 0\) \+ \(ms\.moraWaived \|\| 0\)/.test(ui) && /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\); \}/.test(ui) && !/filter\(t => t\.type !== 'charge'\)/.test(ui) && !/&& t\.type !== 'charge'; \}/.test(ui) && /if \(t\.type === 'mora_discount'\) return false;/.test(ui));
     yes('OIKOS: el reporte Descuentos de mora lista todos (tambien anulados) con motivo y quien lo hizo, y abre el detalle', /function buildMoraDiscountReport\(\)/.test(ui) && /headers: \['Fecha', 'Residente', 'Meses', 'Mora descontada', 'Debía', 'Quedó debiendo', 'Motivo', 'Registró', 'Estado'\]/.test(ui) && /kind: 'tx', txId: t\.id/.test(ui) && /m\.kind === 'tx' && m\.txId/.test(ui));
     yes('finanzas.html le dice a OIKOS quien lo usa (el Master con su id reservado) y abre el reporte desde el panel', /window\.sisdelWho = session\.role === 'master'/.test(read('finanzas.html')) && /owners\|mora-discounts\|account-statement/.test(read('finanzas.html')));
-    yes('OIKOS carga el motor nuevo (sisdel-mora.js?v=20261118a)', ui.includes('sisdel-mora.js?v=20261118a'));
+    yes('OIKOS carga el motor nuevo (sisdel-mora.js?v=20261119a: la mora se carga el dia 6)', ui.includes('sisdel-mora.js?v=20261119a'));
 }
 
 // ───────── Copia en las functions ─────────

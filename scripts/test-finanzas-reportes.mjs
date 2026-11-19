@@ -238,16 +238,16 @@ console.log('\nEstado de cuenta: lo que debe el residente');
     };
     const sum3 = (d) => round2(d.pending + d.mora);
 
-    // Octubre vencida (300, con 16 dias de mora: 16 x 0.3) y noviembre que aun no vence
+    // Octubre vencida (300, con el cargo de mora del 6 de noviembre: 3 % = Q 9) y noviembre que aun no vence
     const base = [feeTx('2026-10'), feeTx('2026-11')];
     const ms = standing(base, '2026-11-16');
     const debt = R.accountDebt(ms);
-    equal('cuotas pendientes + mora = total que debe, con lo vencido y lo que aun no vence', debt, { pending: 600, overdue: 300, upcoming: 300, mora: 4.8, total: 604.8, credit: 0 });
+    equal('cuotas pendientes + mora = total que debe, con lo vencido y lo que aun no vence', debt, { pending: 600, overdue: 300, upcoming: 300, mora: 9, total: 609, credit: 0 });
     equal('la suma de las tres cifras es exacta', sum3(debt), debt.total);
-    equal('el total que debe es el saldo con mora de la lista de Residentes (libro menos la mora por dia)', debt.total, round2(-ms.total));
+    equal('el total que debe es el saldo con mora de la lista de Residentes (libro menos la mora calculada)', debt.total, round2(-ms.total));
     const list = R.pendingRows(ms, { label: (item) => R.periodLabel(item.period), total: debt.total });
-    equal('la tabla trae una fila por cuota pendiente, con su vencimiento y su mora', list.rows.map((r) => [r.label, r.capital, r.dueDate, r.overdue, r.mora, r.total]), [['Oct 2026', 300, '2026-11-05', true, 4.8, 304.8], ['Nov 2026', 300, '2026-12-05', false, 0, 300]]);
-    equal('el total de la tabla es el total que debe (sin fila de ajuste)', [list.capital, list.mora, list.total, list.rows.some((r) => r.kind === 'ajuste')], [600, 4.8, 604.8, false]);
+    equal('la tabla trae una fila por cuota pendiente, con su vencimiento y su mora', list.rows.map((r) => [r.label, r.capital, r.dueDate, r.overdue, r.mora, r.total]), [['Oct 2026', 300, '2026-11-05', true, 9, 309], ['Nov 2026', 300, '2026-12-05', false, 0, 300]]);
+    equal('el total de la tabla es el total que debe (sin fila de ajuste)', [list.capital, list.mora, list.total, list.rows.some((r) => r.kind === 'ajuste')], [600, 9, 609, false]);
 
     // Muchos anos sin pagar (como C070): siempre suma y la tabla cuadra con el total
     const years = [];
@@ -269,10 +269,10 @@ console.log('\nEstado de cuenta: lo que debe el residente');
     const futureDebt = R.accountDebt(future);
     const futureList = R.pendingRows(future, { total: futureDebt.total, adjustLabel: 'Fechados despues de hoy' });
     const adjust = futureList.rows.find((r) => r.kind === 'ajuste');
-    equal('un cargo fechado despues de hoy cuenta en el total y la tabla lo muestra como ajuste', [futureDebt.pending, futureDebt.total, adjust && adjust.label, adjust && adjust.capital, futureList.total], [420, 424.8, 'Fechados despues de hoy', 120, 424.8]);
+    equal('un cargo fechado despues de hoy cuenta en el total y la tabla lo muestra como ajuste', [futureDebt.pending, futureDebt.total, adjust && adjust.label, adjust && adjust.capital, futureList.total], [420, 429, 'Fechados despues de hoy', 120, 429]);
 
     // El mismo total que la regla de la lista de Residentes y de los reportes (sisdelOwedOf de OIKOS, en centavos):
-    // pendiente = max(0, -libro); mora = max(0, mora por dia - max(0, libro)); total = pendiente + mora
+    // pendiente = max(0, -libro); mora = max(0, mora calculada - max(0, libro)); total = pendiente + mora
     const owedOf = (m) => { const pend = Math.max(0, -Math.round(m.ledger * 100)); const mor = Math.max(0, Math.round(m.moraDaily * 100) - Math.max(0, Math.round(m.ledger * 100))); return (pend + mor) / 100; };
     const futureTx = { id: 'f2', type: 'charge', kind: 'extra', amount: 120, resiId: 'r1', date: at12('2026-12-20'), concept: 'Cargo futuro' };
     const scenarios = [ms, big, partial, future, standing([feeTx('2026-10'), { id: 'p2', type: 'income', amount: 1000, resiId: 'r1', date: at12('2026-10-10') }], '2026-11-16'), standing([feeTx('2026-10'), futureTx], '2026-11-16')];

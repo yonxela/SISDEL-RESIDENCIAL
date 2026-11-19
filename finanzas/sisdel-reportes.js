@@ -12,8 +12,8 @@
      mismos criterios de monthBalance, mas el primer y el ultimo mes con pagos o gastos (para navegar).
    - periodSummary: lo mismo para un periodo (la ventana "Reporte financiero").
    - Por cobrar al cierre = de cada vecino, sus cuotas y cargos menos sus pagos hasta ese dia (si pago de mas, cuenta
-     cero, no resta lo de otros), sumado. Es el mismo total del reporte de Morosos (sin la mora por dia, que no se
-     guarda como movimiento). Con opts.residents (ids de los vecinos vigentes) solo cuentan ellos, como en Morosos.
+     cero, no resta lo de otros), sumado. Es el mismo total del reporte de Morosos (sin la mora, que no se guarda
+     como movimiento). Con opts.residents (ids de los vecinos vigentes) solo cuentan ellos, como en Morosos.
    - exportModel: convierte un reporte de OIKOS (encabezados, filas con texto ya formateado y totales) en el
      modelo de reportes-export.js (SisdelReportExport), que arma el Excel (.xlsx) y el mensaje de WhatsApp.
      Para el Excel las columnas de montos pasan a numero (se pueden sumar); para WhatsApp quedan con su formato.
@@ -201,7 +201,7 @@
     // de Morosos de OIKOS): una cuota por su mes (period) y un cargo suelto por el mes de su fecha.
     // opts: { today 'AAAA-MM-DD', dayKey, feePeriodOf(t) -> 'AAAA-MM' o null, dueOf(period) -> ultimo dia 'AAAA-MM-DD'
     // para pagar sin estar en mora, maxYears (columnas de anos; los anteriores se juntan en "Antes de ..."),
-    // totalOf(r) -> lo que debe en total (con la mora del dia: el saldo de Residentes), moraOf(r) -> la mora a hoy,
+    // totalOf(r) -> lo que debe en total (con la mora a hoy: el saldo de Residentes), moraOf(r) -> la mora a hoy,
     // paidBefore(r) -> 'AAAA-MM' o null: los meses anteriores sin cuota cuentan como pagados (un condominio cargado
     // desde una cartera que solo traia lo que se debe: lo que no aparece, estaba pagado) }.
     // Orden: de mayor a menor total que debe (con totalOf, el saldo con mora; si no, lo vencido mas lo por vencer); a
@@ -349,8 +349,8 @@
     // ── Estado de cuenta de un residente: lo que debe hoy ──
     // accountDebt: tres cifras que SIEMPRE suman: cuotas y cargos pendientes + mora = total que debe.
     // `ms` es el estado de mora a hoy con el saldo del libro (sisdelMoraOf(id, r.balance) de OIKOS): `total` es el
-    // libro menos la mora por dia (negativo = debe: el MISMO saldo con mora de la lista de Residentes y de la Tabla
-    // general), `mora` la mora que se debe hoy (por dia y fija, ya descontado lo pagado de ella) y `overdueCapital`
+    // libro menos la mora calculada (negativo = debe: el MISMO saldo con mora de la lista de Residentes y de la Tabla
+    // general), `mora` la mora que se debe hoy (la cargada cada mes y la fija, ya descontado lo pagado de ella) y `overdueCapital`
     // lo de las cuotas que ya vencio. Lo pendiente es el total menos la mora: asi suma aunque el residente haya pagado
     // parte de la mora o haya movimientos fechados despues de hoy. De lo pendiente, `overdue` ya vencio y `upcoming`
     // todavia no (una cuota del mes en curso no es mora). Sin saldo en contra todo es cero y `credit` es el saldo a favor.

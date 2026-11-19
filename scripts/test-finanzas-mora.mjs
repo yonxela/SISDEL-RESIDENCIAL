@@ -90,6 +90,15 @@ equal('sin cuota configurada, cualquier deuda vencida es mora', mora.moroso, tru
 mora = M.moraOf('a', [charge('b', '2026-09'), charge('b', '2026-10')], settings, at(2026, 10, 20));
 equal('la deuda de otro vecino no cuenta', mora.moroso, false);
 
+console.log('\nCon regla de mora: la mora se carga el dia 6 de cada mes (la misma que OIKOS)');
+// 3 % al mes con 5 dias de plazo; noviembre de Q 300 sin pagar
+const rules = { fee: 300, moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] };
+const nov = { id: 'f11', type: 'charge', kind: 'fee', period: '2026-11', amount: 300, resiId: 'a', date: '2026-11-01T18:00:00.000Z' };
+const payOn = (day, amount) => ({ id: 'p' + day, type: 'income', amount, resiId: 'a', date: `${day}T18:00:00.000Z` });
+equal('hasta el 5 de diciembre no hay mora; el 6, Q 9.00, y no cambia hasta el 6 de enero (Q 18.00)', [[11, 5], [11, 6], [11, 31], [0, 5], [0, 6]].map(([m, d]) => M.moraOf('a', [nov], rules, at(m === 0 ? 2027 : 2026, m, d)).mora), [0, 9, 9, 9, 18]);
+equal('pagada el 5, el 6 y el 7 de diciembre: sin mora, Q 9.00 y Q 9.00 (lo que queda debiendo al 10 de enero)', ['2026-12-05', '2026-12-06', '2026-12-07'].map((day) => M.moraOf('a', [nov, payOn(day, 300)], rules, at(2027, 0, 10)).debt), [0, 9, 9]);
+equal('la mora no cambia quien es moroso: la garita mira el capital vencido', (({ overdue, moroso }) => ({ overdue, moroso }))(M.moraOf('a', [nov], rules, at(2027, 0, 10))), { overdue: 300, moroso: false });
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

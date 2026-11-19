@@ -17,8 +17,8 @@
     <script src="./vendor/jspdf.umd.min.js"></script>
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="./sisdel-cuotas.js?v=20261119a"></script>
-    <!-- SISDEL: mora por dia de cada cuota vencida (settings.moraRules); la misma que usa el servidor -->
-    <script src="./sisdel-mora.js?v=20261118a"></script>
+    <!-- SISDEL: mora de cada cuota vencida, cargada una vez al mes (el dia 6 con 5 dias de plazo; settings.moraRules); la misma que usa el servidor -->
+    <script src="./sisdel-mora.js?v=20261119a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
     <script src="./sisdel-reportes.js?v=20261119a"></script>
@@ -1387,6 +1387,8 @@
                         </div>
                     </div>
                     <p class="mt-1 text-[11px] opacity-80" id="inc-bal-detail"></p>
+                    <!-- SISDEL: cuando se le carga la proxima mora si no paga antes (la mora se carga una vez al mes, el dia 6) -->
+                    <p class="hidden mt-1 text-[11px] leading-snug text-amber-800 dark:text-amber-200" id="inc-bal-next"></p>
                     <p class="hidden mt-1 text-xs font-bold" id="inc-bal-after"></p>
                     <!-- SISDEL: a que meses llega el saldo a favor (el que ya tiene o el que deja este pago): se aplica solo -->
                     <p class="hidden mt-1 text-xs leading-snug text-emerald-800 dark:text-emerald-200" id="inc-bal-cover"></p>
@@ -1396,7 +1398,7 @@
                 <div id="inc-tabs" class="flex gap-1 border-b border-slate-200 dark:border-slate-700 -mb-1" role="tablist">
                     <button type="button" id="inc-tab-pago" onclick="setIncTab('pago')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Pago</button>
                     <button type="button" id="inc-tab-detalle" onclick="setIncTab('detalle')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Detalle por concepto</button>
-                    <!-- SISDEL: descontar mora (privilegio finanzas.mora_descontar; solo con regla de mora por dia) -->
+                    <!-- SISDEL: descontar mora (privilegio finanzas.mora_descontar; solo con regla de mora) -->
                     <button type="button" id="inc-tab-descuento" onclick="setIncTab('descuento')" role="tab" class="hidden px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Descontar mora</button>
                 </div>
                 <!-- SISDEL: Descontar mora (pedido del dueno el 2026-11-18): las cuotas que deben, como en el estado de cuenta, con una
@@ -1442,7 +1444,7 @@
                             <label for="disc-reason" class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Motivo <span class="text-rose-500">*</span></label>
                             <textarea id="disc-reason" rows="2" maxlength="500" oninput="renderDiscPane()" placeholder="Ej.: acuerdo de pago aprobado por la junta directiva" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none resize-y text-sm" autocomplete="off"></textarea>
                         </div>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Se descuenta la mora acumulada hasta hoy. Si las cuotas siguen sin pagarse, su mora vuelve a correr desde mañana. Cada descuento queda en el reporte de descuentos de mora y se puede anular.</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Se descuenta la mora cargada hasta hoy. Si las cuotas siguen sin pagarse, vuelven a llevar mora en el próximo cargo de mora (una vez al mes). Cada descuento queda en el reporte de descuentos de mora y se puede anular.</p>
                         <div class="flex justify-end">
                             <button type="button" id="disc-apply" onclick="applyMoraDiscount()" class="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-percent mr-1.5"></i>Aplicar descuento de mora</button>
                         </div>
@@ -1669,8 +1671,8 @@
                 <label class="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none" title="Incluir en la lista los movimientos anulados (no suman)"><input type="checkbox" id="ec-show-deleted" class="accent-indigo-600" onchange="renderEstadoCuenta()">Mostrar anulados</label>
             </div>
             <!-- SISDEL: LO QUE DEBE EL RESIDENTE HOY, en tres cifras que se suman: cuotas y cargos pendientes + mora = TOTAL QUE DEBE.
-                 Con regla de mora (settings.moraRules) la mora corre por dia sobre cada cuota vencida; no es un cargo: se calcula a
-                 hoy (finanzas/sisdel-mora.js). El calculo esta en finanzas/sisdel-reportes.js (accountDebt, prueba test-finanzas-reportes.mjs)
+                 Con regla de mora (settings.moraRules) cada cuota vencida lleva un cargo de mora el dia 6 de cada mes (el dia siguiente
+                 al plazo); no es un movimiento: se calcula a hoy (finanzas/sisdel-mora.js). El calculo esta en finanzas/sisdel-reportes.js (accountDebt, prueba test-finanzas-reportes.mjs)
                  y es el mismo en la pantalla, el PDF, la impresion, el Excel y WhatsApp (ecDebt) -->
             <div id="ec-mora-box" class="hidden mb-4">
                 <div class="grid grid-cols-[1fr_1fr_1.25fr] gap-3 items-stretch">
@@ -3568,10 +3570,11 @@
             return mem ? sisdelDerived(mem, 'feesInWindow:' + today + ':' + rules, compute) : compute(Store.get('transactions'));
         }
 
-        // SISDEL: mora por dia (finanzas/sisdel-mora.js) de cada residente, calculada a hoy. Solo en condominios con regla
-        // de mora (settings.moraRules); sin regla devuelve null y todo queda como siempre. La mora no es un cargo: corre
-        // sobre el capital de cada cuota vencida y se congela cuando la cuota se paga. Se calcula una vez por cambio de la
-        // lista de movimientos (y por dia).
+        // SISDEL: mora (finanzas/sisdel-mora.js) de cada residente, calculada a hoy. Solo en condominios con regla de mora
+        // (settings.moraRules); sin regla devuelve null y todo queda como siempre. La mora no es un movimiento: el dia de cargo
+        // de cada mes (el 6, con 5 dias de plazo) cada cuota vencida suma el porcentaje de lo que falta pagar de ella, y entre
+        // un dia de cargo y el siguiente no cambia; deja de crecer cuando la cuota se paga. Se calcula una vez por cambio de
+        // la lista de movimientos (y por dia).
         function sisdelMoraStates() {
             const s = Store.get('settings');
             if (typeof SisdelMora === 'undefined' || !SisdelMora.enabled(s)) return null;
@@ -3581,7 +3584,7 @@
             return SisdelMora.statesByResident(Store.get('transactions'), s, day);
         }
         // { capital, overdueCapital, mora, moraDaily, credit, balance } del residente a hoy (solo con lo fechado hasta hoy);
-        // null sin regla. Con `ledgerBalance` (el saldo del libro, r.balance) agrega `total`: el libro menos la mora por dia,
+        // null sin regla. Con `ledgerBalance` (el saldo del libro, r.balance) agrega `total`: el libro menos la mora calculada,
         // el saldo con mora que se muestra (asi cuadra con la lista del estado de cuenta, que trae todos los movimientos).
         function sisdelMoraOf(residentId, ledgerBalance) {
             const states = sisdelMoraStates();
@@ -3599,11 +3602,35 @@
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
             return r ? r.balance : 0;
         }
-        // "3 % al mes por día, con 5 días de plazo" (la regla vigente hoy)
+        // "3 % al mes de cada cuota vencida, cargado el dia 6 de cada mes" (la regla vigente hoy)
         function sisdelMoraRuleText() {
-            const rules = SisdelMora.rulesOf(Store.get('settings'));
+            const settings = Store.get('settings');
+            const rules = SisdelMora.rulesOf(settings);
             const rule = SisdelMora.ruleAt(rules, SisdelMora.dayOfKey(localDayKey(new Date()))) || rules[rules.length - 1];
-            return rule ? `${rule.percent} % al mes por día sobre cada cuota vencida, desde el fin de su mes, con ${rule.graceDays} días de plazo; la mora no genera mora` : '';
+            const when = SisdelMora.chargeDates(settings, localDayKey(new Date()));
+            return rule ? `${rule.percent} % al mes de lo que falta de cada cuota vencida, cargado el día ${when ? when.dayOfMonth : rule.graceDays + 1} de cada mes (${rule.graceDays} días de plazo después del fin de mes); quien paga antes no lleva la mora de ese mes y la mora no genera mora` : '';
+        }
+        // SISDEL: '2026-12-06' -> "6 de diciembre" (con el ano si no es el de hoy)
+        function sisdelDayText(key) {
+            const [y, m, d] = String(key || '').split('-').map(n => parseInt(n, 10));
+            if (!y || !m || !d) return String(key || '');
+            return `${d} de ${FEE_MONTHS_ES[m - 1].toLowerCase()}${y !== new Date().getFullYear() ? ' de ' + y : ''}`;
+        }
+        // SISDEL: el proximo cargo de mora de un residente si no paga antes: { date: 'AAAA-MM-DD', amount } o null (sin regla
+        // de mora, o si en ese dia no le toca mora). Es la cuenta del motor al dia del cargo, sin los pagos fechados despues
+        // de hoy; la ventana del ingreso la muestra para que se sepa que pagar antes de ese dia evita ese cargo.
+        function sisdelNextMoraCharge(residentId) {
+            const settings = Store.get('settings');
+            if (typeof SisdelMora === 'undefined' || !SisdelMora.enabled(settings)) return null;
+            const today = localDayKey(new Date());
+            const when = SisdelMora.chargeDates(settings, today);
+            if (!when) return null;
+            const id = String(residentId);
+            const own = (Store.get('transactions') || []).filter(t => t && String(t.resiId) === id && !(t.type !== 'charge' && localDayKey(t.date) > today));
+            const now = SisdelMora.stateOf(id, own, settings, today);
+            const then = SisdelMora.stateOf(id, own, settings, when.next);
+            const amount = Math.round((then.moraDaily - now.moraDaily + Number.EPSILON) * 100) / 100;
+            return amount > 0.004 ? { date: when.next, amount } : null;
         }
 
         // ========== RENDER VIEWS ==========
@@ -3952,10 +3979,10 @@
         }
         // SISDEL: lo que debe un residente a hoy, con las mismas cifras en todos los reportes, la Tabla general, Residentes y
         // el Estado de cuenta (la misma regla que accountDebt de finanzas/sisdel-reportes.js):
-        //   total   = el saldo con mora de Residentes (residentShownBalance) cuando debe: el libro menos la mora por dia,
+        //   total   = el saldo con mora de Residentes (residentShownBalance) cuando debe: el libro menos la mora calculada,
         //   mora    = la mora que se debe hoy (sisdel-mora.js ms.mora: sin la que ya se pago), nunca mas que el total,
         //   pending = cuotas y cargos pendientes = total menos esa mora.
-        // Siempre cuadra (en centavos). Sin regla de mora por dia, mora = 0 y total = lo que debe del libro.
+        // Siempre cuadra (en centavos). Sin regla de mora, mora = 0 y total = lo que debe del libro.
         function sisdelOwedOf(r) {
             const c = (v) => Math.round((parseFloat(v) || 0) * 100);
             const ms = sisdelMoraOf(r.id, r.balance);
@@ -3977,7 +4004,7 @@
         }
         // ───────── SISDEL: saldo a favor aplicado a los meses siguientes (pedido del usuario el 2026-11-18) ─────────
         // Un pago de mas no se devuelve ni se pierde: queda como saldo a favor y se descuenta SOLO de las cuotas que se carguen
-        // despues (el saldo del libro, la mora por dia de sisdel-mora.js y el servidor ya lo hacen: esa cuota no queda pendiente,
+        // despues (el saldo del libro, la mora de sisdel-mora.js y el servidor ya lo hacen: esa cuota no queda pendiente,
         // no genera mora y el residente no sale moroso). Aqui solo se dice a que meses llega (SisdelReportesOikos.creditCoverage):
         // en el Ingreso, el comprobante, el detalle del movimiento, la lista de Residentes y el Estado de cuenta.
         // El ultimo mes con cuota cargada (viva) de cada residente: Map(id -> 'AAAA-MM'), una vez por cambio de la lista
@@ -4034,7 +4061,7 @@
             let ordered;
             if (search.trim()) ordered = SisdelBusqueda.filter(res, search, residentSearchFields);
             else if (resOrder === 'debt') {
-                // Lo que debe cada uno con la mora del dia (el saldo que se ve); a igual deuda, por nombre
+                // Lo que debe cada uno con la mora a hoy (el saldo que se ve); a igual deuda, por nombre
                 const owed = new Map(res.map(r => [r.id, Math.max(0, -residentShownBalance(r).shown)]));
                 ordered = res.slice().sort((a, b) => (owed.get(b.id) - owed.get(a.id)) || byName(a, b));
             } else ordered = res.slice().sort(resOrder === 'unit' ? byUnit : byName);
@@ -5520,7 +5547,7 @@
                 b.className = (key === currentRemFilter ? tabOn : tabOff) + (hidden ? ' hidden' : '');
             });
             const text = document.getElementById('rem-search')?.value || '';
-            // Segun el tipo de aviso y la opcion de la barra: todos los vigentes, los morosos, los que deben algo (con la mora del dia),
+            // Segun el tipo de aviso y la opcion de la barra: todos los vigentes, los morosos, los que deben algo (con la mora a hoy),
             // una fase, solo casas, solo lotes o los marcados; por nombre
             remAllResidents = Store.get('residents');
             const base = remBaseList(currentRemFilter);
@@ -7438,9 +7465,10 @@
         // Colores para la impresion y el PDF (fondo, texto)
         const SISDEL_STATUS_COLORS = { owed: ['#dc2626', '#ffffff'], paid: ['#059669', '#ffffff'], pending: ['#ffffff', '#94a3b8'], none: ['#ffffff', '#94a3b8'] };
 
-        // Ultimo dia (inclusive) para pagar la cuota de un mes sin estar en mora. Con regla de mora por dia (sisdel-mora.js): el
-        // ultimo dia del mes mas los dias de plazo de la regla (5 en La Perla). Sin ella: el dia 5 del mes siguiente (35 dias
-        // desde el dia 1, SisdelCuotas.dueKey; el dia de cobro y los dias de gracia de Configuracion ya no cuentan).
+        // Ultimo dia (inclusive) para pagar la cuota de un mes sin estar en mora. Con regla de mora (sisdel-mora.js): el
+        // ultimo dia del mes mas los dias de plazo de la regla (5 en La Perla; la mora se carga el dia siguiente, el 6). Sin
+        // ella: el dia 5 del mes siguiente (35 dias desde el dia 1, SisdelCuotas.dueKey; el dia de cobro y los dias de gracia
+        // de Configuracion ya no cuentan).
         function sisdelPeriodDue(period) {
             const s = Store.get('settings') || {};
             if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(s)) {
@@ -7766,7 +7794,7 @@
                     ? 'No hay pagos ni gastos registrados en este período; se emitieron cuotas y cargos por ' + formatMoney(p.charges) + '. Los pagos aparecen aquí cuando se registran.'
                     : 'No hay pagos, gastos ni cargos registrados en este período.';
             }
-            if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {}) && p.receivable) notice = (notice ? notice + ' ' : '') + 'Por cobrar al cierre no incluye la mora por día; lo que deben hoy con la mora va aparte.';
+            if (typeof SisdelMora !== 'undefined' && SisdelMora.enabled(Store.get('settings') || {}) && p.receivable) notice = (notice ? notice + ' ' : '') + 'Por cobrar al cierre no incluye la mora; lo que deben hoy con la mora va aparte.';
             // SISDEL: lo que deben hoy los residentes (cuotas y cargos pendientes + mora a hoy = total)
             const owed = sisdelOwedTotals();
             document.getElementById('rep-val-owed-pending').innerText = formatMoney(owed.pending);
@@ -8378,7 +8406,7 @@
             if (!el || !msg) return;
             const day = String(el.value || ''), today = localDayKey(new Date());
             const text = day && day > today ? 'La fecha no puede ser posterior a hoy.'
-                : day && day < today ? 'El pago quedará con fecha ' + new Date(day + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) + ': la mora se calcula hasta ese día.' : '';
+                : day && day < today ? 'El pago quedará con fecha ' + new Date(day + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) + ': la mora se calcula a esa fecha (si es antes del cargo de mora de ese mes, no lo lleva).' : '';
             msg.textContent = text;
             msg.classList.toggle('hidden', !text);
         }
@@ -8436,6 +8464,13 @@
             } else if (!credit) parts.push('No debe nada');
             if (!isResidentActive(r)) parts.push('residente finiquitado');
             document.getElementById('inc-bal-detail').textContent = parts.join(' · ');
+            // SISDEL: la mora se carga una vez al mes (el dia 6): hasta entonces el saldo no cambia y pagar antes evita ese cargo
+            const nextEl = document.getElementById('inc-bal-next');
+            if (nextEl) {
+                const next = sisdelNextMoraCharge(r.id);
+                nextEl.textContent = next ? `Si no paga antes, el ${sisdelDayText(next.date)} se le cargan ${formatMoney(next.amount)} de mora. Hasta entonces su saldo no cambia.` : '';
+                nextEl.classList.toggle('hidden', !next);
+            }
             document.getElementById('inc-bal-fill').classList.toggle('hidden', !owes);
             const after = document.getElementById('inc-bal-after');
             const amt = parseFloat((document.getElementById('inc-amount') || {}).value);
@@ -8540,7 +8575,7 @@
         // la mora de cada mes, o un total que se descuenta de los meses mas recientes con mora (SisdelMora.discountPlan). Al
         // aplicarlo se guarda un movimiento type 'mora_discount' con las cuotas (moraItems), el motivo, quien lo hizo y lo que
         // debia antes y despues: no es dinero (no entra en caja, bancos ni el libro) y el motor de mora lo resta de la mora, tambien
-        // en el servidor. Privilegio finanzas.mora_descontar (pantalla, subida y reglas). Solo con regla de mora por dia.
+        // en el servidor. Privilegio finanzas.mora_descontar (pantalla, subida y reglas). Solo con regla de mora.
         var disc = { rid: null, selected: new Set(), mode: 'months', done: '' };
         function discAvailable() { return typeof SisdelMora !== 'undefined' && typeof SisdelReportesOikos !== 'undefined' && SisdelMora.enabled(Store.get('settings')); }
         function discResident() {
@@ -8597,7 +8632,7 @@
             const view = r && discAvailable() ? discView(r) : null;
             const showEmpty = (text) => { empty.textContent = text; empty.classList.remove('hidden'); wrap.classList.add('hidden'); };
             if (!r) return showEmpty('Elija un residente para ver sus cuotas con mora.');
-            if (!view) return showEmpty('Este condominio no cobra mora por día: no hay mora que descontar.');
+            if (!view) return showEmpty('Este condominio no cobra mora: no hay mora que descontar.');
             if (!(view.debt.mora > 0.004)) return showEmpty(disc.done ? 'Ya no tiene mora pendiente.' : 'Este residente no tiene mora pendiente.');
             empty.classList.add('hidden'); wrap.classList.remove('hidden');
             // Lo marcado que ya no tiene mora (se desconto u otro equipo la cambio) se suelta

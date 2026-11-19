@@ -8,7 +8,7 @@ const { TIME_ZONE } = require('./mora');
 const { SERVER_STAMP, needsStamp, onlyStampChanged } = require('./sello');
 
 // Campos de la configuracion que cambian cuanto debe cada vecino (el desglose, el precio de la paja de agua
-// y las reglas de mora por dia tambien cambian la cuota de cada lote o su mora)
+// y las reglas de mora tambien cambian la cuota de cada lote o su mora)
 const FEE_SETTINGS = ['fee', 'chargeDay', 'graceDays', 'feeMode', 'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'moraRules'];
 const sameValue = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
 

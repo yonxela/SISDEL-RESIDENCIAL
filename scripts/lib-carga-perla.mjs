@@ -9,7 +9,7 @@
 //   finanzas_movimientos     una cuota por lote y mes con capital pendiente (mantenimiento + agua de ese mes, con su
 //                            desglose y la descripcion de OIKOS), la mora que quedo de cuotas ya pagadas como cargo
 //                            fijo (moraFixed) y el interes pendiente. La mora de lo que se debe NO se carga: la
-//                            calcula el sistema por dia (finanzas/sisdel-mora.js).
+//                            calcula el sistema (finanzas/sisdel-mora.js: un cargo el dia 6 de cada mes).
 import { createRequire } from 'node:module';
 import { cellText, cellNumber } from './lib-xlsx.mjs';
 

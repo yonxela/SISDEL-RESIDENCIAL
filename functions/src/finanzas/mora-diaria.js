@@ -1,24 +1,34 @@
 /* ═══════════════════════════════════════════════════════════════
-   SISDEL - Mora por dia (Sistema Financiero)
+   SISDEL - Mora del Sistema Financiero: se carga una vez al mes (el dia 6 con 5 dias de plazo)
    ───────────────────────────────────────────────────────────────
    Recargo por mora de un condominio que lo cobra (settings.moraRules). La mora NO se guarda como movimientos:
    se calcula cada vez a partir de las cuotas y los pagos, asi un pago anulado o una cuota corregida la
    recalculan solos y no hay nada que "poner al dia".
 
-   Reglas (las de la asociacion de La Perla, configurables por condominio):
+   Reglas (pedido del usuario el 2026-11-19: "el cargo de la mora debe ser el dia 6 de cada mes posterior, si antes de
+   ese periodo el vecino paga en automatico el sistema ya no hara cargo por mora, es decir todo el mes el residente tendra
+   el mismo saldo dia con dia"; antes era por dia, 0.1 % diario):
    - Solo las cuotas mensuales generan mora; un cargo extra no, y la mora nunca genera mora.
    - La cuota de un mes vence el ultimo dia de ese mes mas los dias de plazo (graceDays). Quien paga dentro del
-     plazo no paga mora; pasado el plazo, la mora se cuenta desde el ultimo dia del mes.
-     Ejemplo con 5 dias de plazo: noviembre pagado el 4 de diciembre, sin mora; pagado el 20 de diciembre,
-     20 dias de mora.
-   - Cada dia suma (porcentaje mensual / 30) sobre lo que falta pagar de esa cuota: con 3 % es 0.1 % diario,
-     Q 0.30 al dia por una cuota de Q 300.
+     plazo no paga mora.
+   - DIA DE CARGO de la mora: el dia siguiente al plazo, el mismo cada mes (plazo + 1: con 5 dias de plazo, el dia 6; con
+     un plazo de 27 dias o mas, el 28, que existe en todos los meses). Ese dia, cada cuota ya vencida que todavia debe
+     capital suma (porcentaje mensual) de lo que falta pagar de ella: con 3 %, Q 9.00 por una cuota de Q 300. Entre un dia
+     de cargo y el siguiente la mora no cambia.
+     Ejemplo con 5 dias de plazo: noviembre pagado hasta el 5 de diciembre, sin mora; pagado el 6, el 7 o el 31 de
+     diciembre, Q 9.00; sin pagar, el 6 de enero Q 18.00, el 6 de febrero Q 27.00...
+   - El cargo del dia entra ANTES que los pagos de ese dia (pagar el 6 ya es con mora). Un pago fechado antes del dia de
+     cargo (finanzas.pagos_fecha) tambien evita la mora: todo se calcula por la fecha de cada movimiento.
    - Al terminar de pagarse la cuota, su mora deja de crecer y queda como deuda hasta que se pague.
-   - La mora no corre antes de que el cargo exista (una cuota de octubre cobrada en marzo cuenta desde marzo).
+   - La mora no corre antes de que el cargo exista (una cuota de octubre cobrada el 10 de marzo vence el 15 de marzo y su
+     primer cargo de mora es el 6 de abril).
+   - La mora de toda la historia sale asi (decision del usuario el 2026-11-19: "todo en escalones"), tambien la de las
+     cuotas viejas de una carga inicial: cada cuota lleva un cargo por cada dia de cargo que paso desde que vencio.
 
    settings.moraRules es un HISTORIAL: [{ from: 'AAAA-MM-DD', percent, graceDays, payFirst }]. Cada regla vale
-   desde su fecha y hasta la siguiente, asi un cambio de porcentaje no recalcula lo que ya paso. Un porcentaje
-   0 detiene la mora desde ese dia.
+   desde su fecha y hasta la siguiente, asi un cambio de porcentaje no recalcula lo que ya paso: el cargo de cada mes
+   usa el porcentaje de la regla vigente ESE dia de cargo. Un porcentaje 0 detiene la mora desde ese dia. El dia de cargo
+   de un mes sale del plazo de la regla vigente el primero de ese mes.
 
    payFirst es el UNICO lugar que decide a que se aplica un pago que no alcanza para todo:
      'fee'  -> primero las cuotas y cargos (del mas antiguo al mas nuevo) y despues la mora
@@ -40,8 +50,8 @@
    (`moraItems: [{ id: <id del cargo>, amount }]`): el dia del descuento, a cada cuota se le descuenta hasta lo que debe de
    mora ese dia (lo de mas no va a ningun lado: un descuento nunca es saldo a favor). No es dinero ni esta en el libro de
    OIKOS: solo baja la mora (`moraWaived` de la cuota y del total). Va antes que los pagos del mismo dia (asi un pago que
-   llega el mismo dia no se lleva primero la mora que se descontaba). Si la cuota sigue sin pagarse, su mora vuelve a correr
-   desde el dia siguiente. Anulado (deleted) no cuenta. `discountPlan` dice como se reparte un descuento.
+   llega el mismo dia no se lleva primero la mora que se descontaba). Si la cuota sigue sin pagarse, vuelve a llevar mora
+   en el siguiente dia de cargo. Anulado (deleted) no cuenta. `discountPlan` dice como se reparte un descuento.
 
    Lo carga OIKOS en el navegador y lo usa el servidor (functions/src/finanzas/mora.js) para decidir quien es
    moroso. functions/src/finanzas/mora-diaria.js es una COPIA IDENTICA de este archivo (la prueba
@@ -59,6 +69,7 @@
     const UTC_OFFSET_HOURS = -6; // Guatemala: UTC-6 todo el ano
     const PAY_FIRST = ['fee', 'mora'];
     const DISCOUNT_TYPE = 'mora_discount';
+    const MAX_CHARGE_DAY = 28; // el dia de cargo de la mora nunca pasa del 28 (existe en todos los meses)
     // Los conceptos de una cuota (los mismos de sisdel-cuotas.js) y los que acepta un pago dirigido (alloc)
     const PART_KEYS = ['maintenance', 'water', 'garbage', 'electricity', 'other'];
     const ALLOC_KEYS = PART_KEYS.concat(['fee', 'extra', 'mora']);
@@ -160,14 +171,29 @@
     }
 
     // ── Calculo ──
-    // Suma a la cuota la mora de los dias que faltan hasta `day`. Solo crece mientras quede capital y ya paso el plazo.
+    // Dia de cargo de la mora del mes que empieza el dia `first`: el dia siguiente al plazo (plazo 5 -> el 6), con el plazo
+    // de la regla vigente el primero de ese mes (o el de la primera regla, para los meses anteriores a ella). Como mucho
+    // el 28, que existe en todos los meses.
+    function chargeDayIn(first, rules) {
+        const rule = ruleAt(rules, first) || rules[0] || null;
+        return first + Math.min(rule ? rule.graceDays : 0, MAX_CHARGE_DAY - 1);
+    }
+    // Suma a la cuota la mora de los dias de cargo que pasaron hasta `day` (los de (accruedTo, day]). Solo carga mientras
+    // quede capital y despues de vencida; cada cargo es el porcentaje de la regla vigente ese dia sobre lo que falta pagar.
     function accrue(item, day, rules) {
         if (item.kind !== 'fee' || item.capital <= EPS || day <= item.base + item.grace || day <= item.accruedTo) return;
-        const start = item.accruedTo + 1; // la mora cuenta los dias (accruedTo, day]
-        for (let i = 0; i < rules.length; i++) {
-            const lo = Math.max(start, rules[i].fromDay);
-            const hi = Math.min(day, i + 1 < rules.length ? rules[i + 1].fromDay - 1 : day);
-            if (hi >= lo && rules[i].percent > 0) item.moraRaw += item.capital * (hi - lo + 1) * rules[i].percent / 3000;
+        const from = new Date((item.accruedTo + 1) * DAY_MS);
+        let y = from.getUTCFullYear();
+        let m = from.getUTCMonth();
+        for (;;) {
+            const first = Math.floor(Date.UTC(y, m, 1) / DAY_MS);
+            if (first > day) break;
+            const charge = chargeDayIn(first, rules);
+            if (charge > item.accruedTo && charge <= day && charge > item.base + item.grace) {
+                const rule = ruleAt(rules, charge);
+                if (rule && rule.percent > 0) item.moraRaw += item.capital * rule.percent / 100;
+            }
+            if (++m > 11) { m = 0; y++; }
         }
         item.accruedTo = day;
     }
@@ -384,11 +410,11 @@
         });
         open.forEach((item) => accrue(item, asOf, rules));
 
-        // moraDaily: la mora por dia que se acumulo (sin la mora fija cargada como movimiento). No esta en el libro de
-        // OIKOS: el saldo del libro (con TODOS sus movimientos, tambien los fechados despues de hoy) menos moraDaily es lo
-        // que se debe con mora, pagado o no lo que toque (los pagos ya estan en el libro). moraWaived: la mora descontada
-        // (descuentos de mora, tambien de la mora fija, que si esta en el libro): lo que se debe con mora es el libro menos
-        // moraDaily mas moraWaived.
+        // moraDaily: la mora que calculo este modulo (los cargos de cada mes, sin la mora fija cargada como movimiento; el
+        // nombre viene de cuando era por dia). No esta en el libro de OIKOS: el saldo del libro (con TODOS sus movimientos,
+        // tambien los fechados despues de hoy) menos moraDaily es lo que se debe con mora, pagado o no lo que toque (los
+        // pagos ya estan en el libro). moraWaived: la mora descontada (descuentos de mora, tambien de la mora fija, que si
+        // esta en el libro): lo que se debe con mora es el libro menos moraDaily mas moraWaived.
         const totals = { capital: 0, overdueCapital: 0, mora: 0, moraAccrued: 0, moraPaid: 0, moraWaived: 0, moraDaily: 0 };
         const parts = {}; // lo que falta de cada concepto entre todas las cuotas y cargos
         const out = items.map((item) => {
@@ -442,6 +468,23 @@
         const out = {};
         groups.forEach((list, id) => { out[id] = compute(list, rules, day); });
         return out;
+    }
+
+    // Los dias de cargo de la mora alrededor de `asOf`: { dayOfMonth: 6, last: 'AAAA-MM-DD' (el ultimo hasta asOf, incluido),
+    // next: 'AAAA-MM-DD' (el siguiente despues de asOf) }. null si el condominio no cobra mora. Para decir en pantalla
+    // "la mora se carga el dia 6" y "si paga antes del 6 de diciembre no lleva la mora de ese mes".
+    function chargeDates(settings, asOf) {
+        const rules = rulesOf(settings);
+        if (!rules.length) return null;
+        const day = asOfDay(asOf);
+        const at = new Date(day * DAY_MS);
+        const monthFirst = (y, m) => Math.floor(Date.UTC(y, m, 1) / DAY_MS);
+        const y = at.getUTCFullYear();
+        const m = at.getUTCMonth();
+        const thisMonth = chargeDayIn(monthFirst(y, m), rules);
+        const last = thisMonth <= day ? thisMonth : chargeDayIn(monthFirst(y, m - 1), rules);
+        const next = thisMonth > day ? thisMonth : chargeDayIn(monthFirst(y, m + 1), rules);
+        return { dayOfMonth: thisMonth - monthFirst(y, m) + 1, last: keyOfDay(last), next: keyOfDay(next) };
     }
 
     // Como se aplicaria hoy un pago NORMAL de `amount` (sin alloc) segun lo que se debe y las reglas de mora: lo que cubre de
@@ -499,5 +542,5 @@
         return { items, total, left };
     }
 
-    return { PAY_FIRST, PART_KEYS, ALLOC_KEYS, DISCOUNT_TYPE, discountPlan, previewPayment, dayOf, dayOfKey, keyOfDay, periodDays, feePeriod, rulesOf, enabled, ruleAt, withRule, stateOf, statesByResident };
+    return { PAY_FIRST, PART_KEYS, ALLOC_KEYS, DISCOUNT_TYPE, MAX_CHARGE_DAY, chargeDates, discountPlan, previewPayment, dayOf, dayOfKey, keyOfDay, periodDays, feePeriod, rulesOf, enabled, ruleAt, withRule, stateOf, statesByResident };
 });

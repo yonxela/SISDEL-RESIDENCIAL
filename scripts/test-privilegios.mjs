@@ -423,7 +423,19 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     const core = read('sisdel-core.js');
     const fin = read('finanzas.html');
     const oikos = read('finanzas/index.html');
-    yes('admin.html tiene el boton Reportes junto a Configuracion, con icono SVG y sin emojis', /id="btnReports"[\s\S]*?<svg[\s\S]*?Reportes\s*<\/button>\s*<button class="btn btn-ghost btn-sm" id="btnConfig"/.test(admin));
+    yes('admin.html tiene el boton Reportes junto a Configuracion, con icono SVG y sin emojis', /id="btnReports"[\s\S]*?<svg[\s\S]*?Reportes\s*<\/button>\s*<button class="btn btn-ghost btn-sm head-btn" id="btnConfig"/.test(admin));
+    // Pedido del usuario el 2026-11-18: el texto de la fila del encabezado un 30 % mas grande (0.85 -> 1.105rem, el nombre
+    // 0.7 -> 0.91rem, Salir 1 -> 1.3rem) y en negrita; sin tamanos en linea que lo pisen
+    {
+        const headTag = (id) => (admin.match(new RegExp(`<[a-z]+ [^>]*id="${id}"[^>]*>`)) || [''])[0];
+        const panelLink = (admin.match(/getElementById\('panelLinks'\)\.innerHTML[\s\S]*?<a ([^>]*)>/) || ['', ''])[1];
+        yes('admin.html: el texto de la fila del encabezado es un 30 % mas grande y en negrita',
+            /\.top-bar-actions \.btn \{ font-weight: 700; \}/.test(admin) && /\.top-bar-actions \.head-btn \{ font-size: 1\.105rem; \}/.test(admin)
+            && /#btnLogout \{ font-size: 1\.3rem; \}/.test(admin) && /#adminName \{ font-size: 0\.91rem; \}/.test(admin)
+            && ['btnReports', 'btnConfig'].every((id) => /class="[^"]*\bhead-btn\b/.test(headTag(id)) && !/font-size/.test(headTag(id)))
+            && /class="[^"]*\bhead-btn\b/.test(panelLink) && !/font-size/.test(panelLink)
+            && !/font-size/.test(headTag('adminName')) && !/font-size/.test(headTag('btnLogout')));
+    }
     yes('la vista Reportes vive aparte del panel y se abre por direccion (#reportes y #reportes/reporte)', /id="viewReportes"/.test(admin) && admin.includes('/^#reportes(?:\\/([a-z-]+))?$/') && /id="reportesMount"/.test(admin));
     yes('admin.html carga reportes-ui.js antes del script de la pagina', admin.indexOf('reportes-ui.js') > 0 && admin.indexOf('reportes-ui.js') < admin.indexOf('SisdelReportes.available()'));
     yes('el panel, Configuracion y Reportes son vistas exclusivas', /function paintViews\(\)/.test(admin) && /if \(open\) repOpen = false;/.test(admin) && /if \(open\) cfgOpen = false;/.test(admin));

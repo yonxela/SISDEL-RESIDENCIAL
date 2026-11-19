@@ -21,6 +21,19 @@
         .vecinos-note { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.85rem; line-height: 1.45; background: var(--bg-item); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 1.25rem; color: var(--text-secondary); }
         .vecinos-note span { flex: 1 1 14rem; }
         .vecinos-note .btn { border: 1px solid var(--border-strong); }
+        /* Fila de botones del encabezado (Garita, Finanzas, Rondas, Reportes, Configuracion, el nombre y Salir): el texto
+           un 30 % mas grande que antes y en negrita (pedido del usuario el 2026-11-18). Antes: botones 0.85rem, el
+           nombre 0.7rem y Salir 1rem */
+        .top-bar-actions .btn { font-weight: 700; }
+        .top-bar-actions .head-btn { font-size: 1.105rem; }
+        #btnLogout { font-size: 1.3rem; }
+        #adminName { font-size: 0.91rem; }
+        /* Con el texto mas grande la fila no cabe junto al nombre del condominio en pantallas medianas: baja a otra linea,
+           a la derecha, en vez de salirse de la pantalla (en celular ya lo hace styles.css) */
+        @media (min-width: 641px) {
+            .top-bar { flex-wrap: wrap; gap: 0.75rem; }
+            .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+        }
     </style>
 </head>
 
@@ -56,13 +69,13 @@
                     </svg>
                 </button>
                 <span id="panelLinks" style="display:contents;"></span>
-                <button class="btn btn-ghost btn-sm" id="btnReports" title="Reportes: garita, morosos, finanzas y rondas" aria-label="Reportes"
-                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                <button class="btn btn-ghost btn-sm head-btn" id="btnReports" title="Reportes: garita, morosos, finanzas y rondas" aria-label="Reportes"
+                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; border:1px solid var(--border-strong);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     Reportes
                 </button>
-                <button class="btn btn-ghost btn-sm" id="btnConfig" title="Configuración: usuarios, privilegios y plantillas" aria-label="Configuración"
-                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                <button class="btn btn-ghost btn-sm head-btn" id="btnConfig" title="Configuración: usuarios, privilegios y plantillas" aria-label="Configuración"
+                    style="display:none; gap:0.4rem; padding:0.5rem 0.85rem; border:1px solid var(--border-strong);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     Configuración
                 </button>
@@ -72,7 +85,7 @@
                         <polyline points="22,6 12,13 2,6"/>
                     </svg>
                 </button>
-                <span id="adminName" class="badge badge-info" style="font-size:0.7rem;"></span>
+                <span id="adminName" class="badge badge-info"></span>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -404,8 +417,8 @@
                 'rondin/': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
             };
             document.getElementById('panelLinks').innerHTML = SISDEL.otherPanels('admin.html').map((p) => `
-                <a class="btn btn-ghost btn-sm" href="${p.page}" title="${p.label}"
-                    style="gap:0.4rem; padding:0.5rem 0.85rem; font-size:0.85rem; border:1px solid var(--border-strong);">
+                <a class="btn btn-ghost btn-sm head-btn" href="${p.page}" title="${p.label}"
+                    style="gap:0.4rem; padding:0.5rem 0.85rem; border:1px solid var(--border-strong);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PANEL_ICONS[p.page] || ''}</svg>
                     ${p.label}
                 </a>`).join('');

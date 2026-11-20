@@ -655,7 +655,9 @@
             if (options.excel && fill) return { v: out, s: fill };
             return bold ? { v: out, s: 1 } : out;
         };
-        const rows = (report.rows || []).map((row, r) => row.map((value, i) => cell(value, i, !!(meta[r] && meta[r].kind === 'subtotal'), STATUS_STYLE[(status[r] || [])[i]])));
+        // emphasisCols (p. ej. el nombre del vecino): en negrita en el Excel
+        const bold = new Set(report.emphasisCols || []);
+        const rows = (report.rows || []).map((row, r) => row.map((value, i) => cell(value, i, !!(meta[r] && meta[r].kind === 'subtotal') || bold.has(i), STATUS_STYLE[(status[r] || [])[i]])));
         const totals = report.totals ? report.totals.map((value, i) => cell(value, i, true)) : null;
         if (totals && options.excel) rows.push(totals);
         // Las cifras grandes del reporte (highlights: en mora, lo que deben, la mora...) van primero como indicadores

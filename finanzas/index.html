@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120c"></script>
+    <script src="./sisdel-reportes.js?v=20261120d"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -6725,7 +6725,17 @@
             // SISDEL: con pinCols 2 (Listado de vecinos con morosidad) quedan fijas el lote (angosta) y el nombre, pegada a su derecha
             const pinTwo = pinFirst && d.pinCols === 2;
             const isPinned = function (i) { return pinFirst && (i === 0 || (pinTwo && i === 1)); };
-            const pinAttr = function (i) { return pinTwo ? (i === 0 ? ' style="min-width:6.5rem;width:6.5rem"' : i === 1 ? ' style="left:6.5rem;min-width:14rem;text-align:left"' : '') : ''; };
+            // SISDEL: emphasisCols (el nombre en el Listado de vecinos con morosidad): letra en negrita y un 20 % mas grande
+            const emph = new Set(d.emphasisCols || []);
+            const styleOf = function (i, withEmph) {
+                const parts = [];
+                if (pinTwo && i === 0) parts.push('min-width:6.5rem;width:6.5rem');
+                if (pinTwo && i === 1) parts.push('left:6.5rem;min-width:16rem;text-align:left');
+                if (withEmph && emph.has(i)) parts.push('font-weight:700;font-size:1.2em');
+                if (withEmph && (d.nowrapCols || []).indexOf(i) >= 0) parts.push('white-space:nowrap');
+                return parts.length ? ' style="' + parts.join(';') + '"' : '';
+            };
+            const pinAttr = function (i) { return styleOf(i, false); };
             thead.innerHTML = '<tr>' + d.headers.map(function (h, i) {
                 const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : 'text-right';
                 return '<th class="px-4 py-3 ' + align + (isPinned(i) ? ' ' + pinCls : '') + (d.cellStatus && i > 0 ? ' text-center whitespace-nowrap' : '') + '"' + pinAttr(i) + '>' + h + '</th>';
@@ -6781,7 +6791,7 @@
                         : cell;
                     const st = statusRow[i];
                     if (st) return '<td class="px-2 py-2 text-center text-xs font-mono whitespace-nowrap border border-slate-200 dark:border-slate-700 ' + (SISDEL_STATUS_CLASS[st] || '') + '" title="' + (SISDEL_STATUS_TEXT[st] || '') + '">' + content + '</td>';
-                    return '<td class="px-4 py-2.5 ' + align + ' font-mono' + (isPinned(i) ? ' ' + pinCls + (pinTwo ? '' : ' min-w-[12rem]') : '') + '"' + pinAttr(i) + '>' + content + '</td>';
+                    return '<td class="px-4 py-2.5 ' + align + ' font-mono' + (isPinned(i) ? ' ' + pinCls + (pinTwo ? '' : ' min-w-[12rem]') : '') + '"' + styleOf(i, true) + '>' + content + '</td>';
                 }).join('') + '</tr>';
             }).join('');
             if (d.totals) {
@@ -6916,6 +6926,7 @@
             const meta = d.rowsMeta || [];
             // SISDEL: las columnas que el reporte pide sin partir (lote y nombre) y los encabezados de un mapa de meses no se parten en dos lineas
             const nowrap = new Set(d.nowrapCols || []);
+            const emph = new Set(d.emphasisCols || []);   // el nombre del vecino: negrita y un 20 % mas grande (12 px -> 14.4 px)
             // Un mapa de meses (muchas columnas) va mas compacto para que quepa en la hoja
             const tight = !!d.cellStatus;
             const headerCells = d.headers.map(stripCellHtml)
@@ -6927,7 +6938,7 @@
                     // SISDEL: celdas de color del mapa de pagos (se imprimen con su color)
                     const st = (status[r] || [])[i];
                     const colors = st ? SISDEL_STATUS_COLORS[st] : null;
-                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 4px` : `;text-align:${alignOf(i)}${nowrap.has(i) ? ';white-space:nowrap' : ''}`;
+                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 4px` : `;text-align:${alignOf(i)}${nowrap.has(i) ? ';white-space:nowrap' : ''}${emph.has(i) ? ';font-weight:700;font-size:14.4px' : ''}`;
                     return `<td style="padding:${tight ? '6px 6px' : '6px 10px'};border-bottom:1px solid #e2e8f0;font-size:12px${extra}">${escText(stripCellHtml(cell))}</td>`;
                 }).join('') + '</tr>';
             }).join('');
@@ -7065,6 +7076,9 @@
             numericCols.forEach(i => { if (i > 0) columnStyles[i] = { halign: 'right' }; });
             // SISDEL: las columnas que el reporte pide sin partir (lote y nombre) toman el ancho de su contenido
             (d.nowrapCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { cellWidth: 'wrap' }); });
+            // El nombre del vecino: negrita y un 20 % mas grande que el resto de la tabla
+            const pdfBodySize = d.headers.length > 12 ? 6 : (d.headers.length > 8 ? 8 : 9);
+            (d.emphasisCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { fontStyle: 'bold', fontSize: Math.round(pdfBodySize * 1.2 * 10) / 10 }); });
             doc.autoTable({
                 startY,
                 head,
@@ -7927,6 +7941,7 @@
                 leftCols: [1],
                 pinCols: 2,
                 nowrapCols: [0, 1],
+                emphasisCols: [1],
                 rows: rows,
                 rowsMeta: list.rows.map(function (x) { return { kind: 'resident', residentId: x.row.resident.id }; }),
                 cellStatus: list.rows.map(function (x) {

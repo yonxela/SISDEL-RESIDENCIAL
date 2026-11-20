@@ -1173,6 +1173,8 @@ async function run() {
         })()`;
         const ml0 = await oikos(MLJS);
         record('el reporte abre con sus filtros, lote y nombre primero, el total al final y al menos un vecino', ml0.n >= 1 && ml0.filtersShown && ml0.headers[0] === 'Lote / Casa' && ml0.headers[1] === 'Nombre' && ml0.headers[ml0.iTotal] === 'Total adeudado' && ml0.iMeses > 2, JSON.stringify(ml0.headers));
+        const mlFont = await oikos(`(() => { const tds = document.querySelectorAll('#rep-tbody tr:first-child td'); const a = getComputedStyle(tds[0]); const b = getComputedStyle(tds[1]); return { weight: b.fontWeight, loteWeight: a.fontWeight, ratio: parseFloat(b.fontSize) / parseFloat(a.fontSize) }; })()`);
+        record('el nombre del vecino va en negrita y un 20 % mas grande que el lote', Number(mlFont.weight) >= 700 && Number(mlFont.loteWeight) < 700 && Math.abs(mlFont.ratio - 1.2) < 0.02, JSON.stringify(mlFont));
         record('solo salen los dos vecinos con morosidad (quien esta al dia no), con su total y sus meses', ml0.onlyMorosos && ml0.n === 2 && JSON.stringify(ml0.units) === JSON.stringify(['A002', 'A010']) && JSON.stringify(ml0.totals) === JSON.stringify([1500, 600]) && JSON.stringify(ml0.meses) === JSON.stringify([5, 2]), JSON.stringify([ml0.units, ml0.totals, ml0.meses]));
         record('cada mes que debe va en rojo con su monto y los demas en blanco', ml0.redOk && ml0.owedCells >= ml0.n, `${ml0.owedCells} celdas rojas`);
         record('la pantalla pinta de rojo esas celdas', ml0.domRed === ml0.owedCells, `${ml0.domRed} de ${ml0.owedCells}`);
@@ -1215,6 +1217,7 @@ async function run() {
             const rows = m.tables[0].rows;
             out.excelTotalRow = String(rows[rows.length - 1][0].v !== undefined ? rows[rows.length - 1][0].v : rows[rows.length - 1][0]);
             out.excelRed = rows.reduce((a, r) => a + r.filter((c) => c && typeof c === 'object' && c.s === 4).length, 0);
+            out.excelNameBold = rows.slice(0, -1).every((r) => r[1] && typeof r[1] === 'object' && r[1].s === 1);
             out.excelNumbers = rows.slice(0, -1).every((r) => { const last = r[r.length - 1]; const v = last && typeof last === 'object' ? last.v : last; return typeof v === 'number'; });
             const w = currentReportModel(false);
             out.waHeaders = w.tables[0].headers;
@@ -1229,6 +1232,7 @@ async function run() {
             out.printHasTitle = html.includes('Listado de vecinos con morosidad');
             out.printLegend = html.includes('Rojo: mes adeudado');
             out.printRed = (html.match(/background:#dc2626/g) || []).length;
+            out.printNameBold = html.includes('font-weight:700;font-size:14.4px');
             const Orig = window.jspdf.jsPDF;
             const texts = [];
             let saved = '';
@@ -1244,6 +1248,7 @@ async function run() {
             return out;
         })()`);
         record('Excel: titulos, una fila de totales al final, montos como numero y los meses adeudados con relleno rojo', mlOut.excelHeaders[0] === 'Lote / Casa' && mlOut.excelHeaders[1] === 'Nombre' && mlOut.excelHeaders[2] === 'Total adeudado' && mlOut.excelTotalRow === 'TOTAL' && mlOut.excelNumbers && mlOut.excelRed === ml0.owedCells, JSON.stringify([mlOut.excelHeaders, mlOut.excelTotalRow, mlOut.excelRed]));
+        record('el nombre del vecino va en negrita en el Excel y en la impresion (14.4 px = 12 px mas un 20 %)', mlOut.excelNameBold && mlOut.printNameBold, JSON.stringify([mlOut.excelNameBold, mlOut.printNameBold]));
         record('WhatsApp: resumen con lote, nombre, meses y total adeudado', JSON.stringify(mlOut.waHeaders) === JSON.stringify(['Lote', 'Nombre', 'Meses', 'Total adeudado']) && /Listado de vecinos con morosidad/.test(mlOut.waText) && /Total adeudado/.test(mlOut.waText), mlOut.waText.slice(0, 120));
         record('Imprimir: titulo, leyenda de colores y las celdas adeudadas en rojo', mlOut.printHasTitle && mlOut.printLegend && mlOut.printRed >= ml0.owedCells, JSON.stringify([mlOut.printHasTitle, mlOut.printLegend, mlOut.printRed, ml0.owedCells]));
         record('PDF: se genera sin errores, con el nombre del reporte, la leyenda y "Pagina 1 de N" en el pie', !mlOut.pdfError && /listado-de-vecinos-con-morosidad/.test(mlOut.pdfSaved) && mlOut.pdfFooter && mlOut.pdfLegend && mlOut.pdfTitle, JSON.stringify([mlOut.pdfError, mlOut.pdfSaved, mlOut.pdfFooter, mlOut.pdfLegend, mlOut.pdfTitle]));

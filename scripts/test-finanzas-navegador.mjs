@@ -1126,6 +1126,117 @@ async function run() {
         record('el Excel (y la impresion y el PDF) salen solo de quien se busco, sin etiquetas de resaltado: una fila por residente mas la de totales', pmExport.filas >= 2 && pmExport.filas < pmAll + 1 && /Mar[ií]a/.test(pmExport.texto) && !pmExport.marcas, JSON.stringify(pmExport));
         await pmSearch('');
 
+        console.log('\nListado de vecinos con morosidad');
+        // Con vecinos de mentira (solo en pantalla, nada se guarda): el seed no tiene cuotas ya vencidas. Los meses son relativos a
+        // hoy (de hace 5 a hace 2 meses, siempre vencidos, y uno de hace 14 meses: de otro ano), asi no depende del dia de la prueba.
+        await oikos(`(() => {
+            const pk = (back) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - back); return localDayKey(d).slice(0, 7); };
+            const fee = (id, back) => ({ id: 'ml-' + id + '-' + back, type: 'charge', kind: 'fee', period: pk(back), amount: 300, resiId: id, date: pk(back) + '-01T18:00:00.000Z' });
+            const pay = (id, amount) => ({ id: 'ml-p-' + id, type: 'income', amount: amount, resiId: id, date: pk(2) + '-20T18:00:00.000Z' });
+            const txs = [];
+            [14, 5, 4, 3, 2].forEach((b) => txs.push(fee('ml1', b)));
+            [5, 4, 3, 2].forEach((b) => txs.push(fee('ml2', b)));
+            txs.push(pay('ml2', 600));
+            [5, 4, 3, 2].forEach((b) => txs.push(fee('ml3', b)));
+            txs.push(pay('ml3', 1200));
+            const mk = (id, name, unit, balance) => ({ id: id, name: name, unit: unit, balance: balance, status: 'active', waterUnits: 0 });
+            const residents = [mk('ml1', 'Ana Prueba', 'A002', -1500), mk('ml2', 'Beto Prueba', 'A010', -600), mk('ml3', 'Carla Alida', 'A001', 0)];
+            window.__mlRealGet = Store.get;
+            Store.get = function (k) { return k === 'transactions' ? txs : k === 'residents' ? residents : window.__mlRealGet.call(Store, k); };
+        })()`);
+        await oikos(`(() => { navigate('reports'); selectReport('mora-list'); })()`);
+        await sleep(700);
+        const MLJS = `(() => {
+            const d = currentReportData;
+            const txt = (c) => stripCellHtml(c);
+            const money = (t) => { const m = /[\\d,]+\\.\\d{2}/.exec(String(t)); return m ? parseFloat(m[0].replace(/,/g, '')) : 0; };
+            const iMeses = d.headers.indexOf('Meses');
+            const iMora = d.headers.indexOf('Mora a hoy');
+            const iTotal = d.headers.length - 1;
+            const out = { headers: d.headers, n: d.rows.length, iMeses, iMora, iTotal };
+            out.redOk = d.rows.every((row, r) => { for (let c = 2; c < iMeses; c++) { if ((d.cellStatus[r][c] === 'owed') !== (txt(row[c]) !== '')) return false; } return true; });
+            out.rowTotalOk = d.rows.every((row) => { let sum = 0; for (let c = 2; c < iMeses; c++) sum += money(txt(row[c])); if (iMora >= 0) sum += money(txt(row[iMora])); return Math.abs(sum - money(txt(row[iTotal]))) < 0.006; });
+            const owedIds = d.rowsMeta.map((m) => m.residentId);
+            out.onlyMorosos = owedIds.every((id) => { const r = Store.get('residents').find((x) => String(x.id) === String(id)); const o = r && sisdelOwedOf(r); return !!o && o.total > 0; });
+            out.footerOk = (() => { const t = d.totals.map(txt); let ok = Math.abs(money(t[iTotal]) - d.rows.reduce((a, row) => a + money(txt(row[iTotal])), 0)) < 0.006; for (let c = 2; c < iMeses; c++) ok = ok && Math.abs(money(t[c]) - d.rows.reduce((a, row) => a + money(txt(row[c])), 0)) < 0.006; return ok; })();
+            out.owedCells = d.cellStatus.reduce((a, row) => a + row.filter((x) => x === 'owed').length, 0);
+            out.domRed = document.querySelectorAll('#rep-tbody td.bg-rose-600').length;
+            const tds = document.querySelectorAll('#rep-tbody tr:first-child td');
+            out.pinned = tds.length > 1 && getComputedStyle(tds[0]).position === 'sticky' && getComputedStyle(tds[1]).position === 'sticky';
+            out.filtersShown = getComputedStyle(document.getElementById('rep-moralist-filters')).display !== 'none';
+            out.units = d.rows.map((row) => txt(row[0]));
+            out.totals = d.rows.map((row) => money(txt(row[iTotal])));
+            out.meses = d.rows.map((row) => parseInt(txt(row[iMeses]), 10) || 0);
+            out.names = d.rows.map((row) => txt(row[1]));
+            out.kpis = d.highlights.map((h) => h.label);
+            return out;
+        })()`;
+        const ml0 = await oikos(MLJS);
+        record('el reporte abre con sus filtros, lote y nombre primero, el total al final y al menos un vecino', ml0.n >= 1 && ml0.filtersShown && ml0.headers[0] === 'Lote / Casa' && ml0.headers[1] === 'Nombre' && ml0.headers[ml0.iTotal] === 'Total adeudado' && ml0.iMeses > 2, JSON.stringify(ml0.headers));
+        record('solo salen los dos vecinos con morosidad (quien esta al dia no), con su total y sus meses', ml0.onlyMorosos && ml0.n === 2 && JSON.stringify(ml0.units) === JSON.stringify(['A002', 'A010']) && JSON.stringify(ml0.totals) === JSON.stringify([1500, 600]) && JSON.stringify(ml0.meses) === JSON.stringify([5, 2]), JSON.stringify([ml0.units, ml0.totals, ml0.meses]));
+        record('cada mes que debe va en rojo con su monto y los demas en blanco', ml0.redOk && ml0.owedCells >= ml0.n, `${ml0.owedCells} celdas rojas`);
+        record('la pantalla pinta de rojo esas celdas', ml0.domRed === ml0.owedCells, `${ml0.domRed} de ${ml0.owedCells}`);
+        record('el total de cada vecino es la suma de sus meses (y su mora) y la fila de totales suma las columnas', ml0.rowTotalOk && ml0.footerOk);
+        record('el lote y el nombre quedan fijos al desplazarse a la derecha', ml0.pinned);
+        // Orden, minimo de meses y buscador
+        const mlSet = async (id, value) => { await oikos(`(() => { const el = document.getElementById(${JSON.stringify(id)}); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event(${JSON.stringify(id === 'ml-search' ? 'input' : 'change')})); })()`); await sleep(id === 'ml-search' ? 450 : 250); return oikos(MLJS); };
+        const mlDebt = await mlSet('ml-order', 'debt');
+        record('de mayor a menor deuda: los totales no suben', mlDebt.totals.every((t, i) => i === 0 || mlDebt.totals[i - 1] >= t - 0.006), JSON.stringify(mlDebt.totals.slice(0, 8)));
+        const mlName = await mlSet('ml-order', 'name');
+        record('alfabetico: los nombres van en orden', mlName.names.every((n, i) => i === 0 || mlName.names[i - 1].localeCompare(n, 'es', { sensitivity: 'base', numeric: true }) <= 0), JSON.stringify(mlName.names.slice(0, 5)));
+        const mlUnit = await mlSet('ml-order', 'unit');
+        record('por lote: los lotes van en orden natural (A2 antes que A10)', mlUnit.units.every((u, i) => i === 0 || mlUnit.units[i - 1].localeCompare(u, 'es', { sensitivity: 'base', numeric: true }) <= 0), JSON.stringify(mlUnit.units.slice(0, 6)));
+        const mlMin = await mlSet('ml-min', '3');
+        record('"3 meses o mas" deja solo a quien debe tantos', mlMin.n === 1 && mlMin.meses.every((m) => m >= 3), JSON.stringify(mlMin.meses));
+        await mlSet('ml-min', '1');
+        const mlFirst = ml0.names[0].split(' ')[0];
+        const mlFound = await mlSet('ml-search', mlFirst.toLowerCase());
+        record('el buscador deja solo a quien coincide, con lo encontrado resaltado y lo dice arriba', mlFound.n >= 1 && mlFound.names.every((n) => n.toLowerCase().includes(mlFirst.toLowerCase())) && (await oikos(`(document.getElementById('rep-tbody').innerHTML.match(/<mark/g) || []).length`)) >= 1 && (await oikos(`currentReportData.summary`)).includes('búsqueda'), JSON.stringify(mlFound.names));
+        const mlNone = await mlSet('ml-search', 'zzzz');
+        record('sin coincidencias no hay filas y lo dice', mlNone.n === 0 && /Ningún vecino con morosidad coincide/.test(await oikos(`document.getElementById('rep-empty-text').textContent`)));
+        await mlSet('ml-search', '');
+        // Las cuatro salidas
+        const mlOut = await oikos(`(() => {
+            const out = {};
+            const m = currentReportModel(true);
+            out.excelHeaders = m.tables[0].headers.slice(0, 2).concat(m.tables[0].headers.slice(-1));
+            const rows = m.tables[0].rows;
+            out.excelTotalRow = String(rows[rows.length - 1][0].v !== undefined ? rows[rows.length - 1][0].v : rows[rows.length - 1][0]);
+            out.excelRed = rows.reduce((a, r) => a + r.filter((c) => c && typeof c === 'object' && c.s === 4).length, 0);
+            out.excelNumbers = rows.slice(0, -1).every((r) => { const last = r[r.length - 1]; const v = last && typeof last === 'object' ? last.v : last; return typeof v === 'number'; });
+            const w = currentReportModel(false);
+            out.waHeaders = w.tables[0].headers;
+            out.waText = SisdelReportExport.whatsappText(w);
+            out.fileName = m.fileName;
+            // Imprimir y PDF con ventana y archivo de mentira
+            const savedOpen = window.open;
+            let html = '';
+            window.open = () => ({ document: { write: (h) => { html += h; }, close() {} }, print() {} });
+            printCurrentReport();
+            window.open = savedOpen;
+            out.printHasTitle = html.includes('Listado de vecinos con morosidad');
+            out.printLegend = html.includes('Rojo: mes adeudado');
+            out.printRed = (html.match(/background:#dc2626/g) || []).length;
+            const Orig = window.jspdf.jsPDF;
+            const texts = [];
+            let saved = '';
+            window.jspdf.jsPDF = function () { const d = new (Function.prototype.bind.apply(Orig, [null].concat(Array.from(arguments))))(); const t = d.text.bind(d); d.text = function (x) { texts.push(Array.isArray(x) ? x.join(' ') : String(x)); return t.apply(null, arguments); }; d.save = function (n) { saved = n; }; return d; };
+            let pdfError = '';
+            try { downloadCurrentReportPDF(); } catch (e) { pdfError = String(e && e.message || e); }
+            window.jspdf.jsPDF = Orig;
+            out.pdfError = pdfError;
+            out.pdfSaved = saved;
+            out.pdfFooter = texts.some((x) => /^Página 1 de \\d+$/.test(x));
+            out.pdfLegend = texts.some((x) => x.includes('Rojo: mes adeudado'));
+            out.pdfTitle = texts.some((x) => x === 'Listado de vecinos con morosidad');
+            return out;
+        })()`);
+        record('Excel: titulos, una fila de totales al final, montos como numero y los meses adeudados con relleno rojo', mlOut.excelHeaders[0] === 'Lote / Casa' && mlOut.excelHeaders[1] === 'Nombre' && mlOut.excelHeaders[2] === 'Total adeudado' && mlOut.excelTotalRow === 'TOTAL' && mlOut.excelNumbers && mlOut.excelRed === ml0.owedCells, JSON.stringify([mlOut.excelHeaders, mlOut.excelTotalRow, mlOut.excelRed]));
+        record('WhatsApp: resumen con lote, nombre, meses y total adeudado', JSON.stringify(mlOut.waHeaders) === JSON.stringify(['Lote', 'Nombre', 'Meses', 'Total adeudado']) && /Listado de vecinos con morosidad/.test(mlOut.waText) && /Total adeudado/.test(mlOut.waText), mlOut.waText.slice(0, 120));
+        record('Imprimir: titulo, leyenda de colores y las celdas adeudadas en rojo', mlOut.printHasTitle && mlOut.printLegend && mlOut.printRed >= ml0.owedCells, JSON.stringify([mlOut.printHasTitle, mlOut.printLegend, mlOut.printRed, ml0.owedCells]));
+        record('PDF: se genera sin errores, con el nombre del reporte, la leyenda y "Pagina 1 de N" en el pie', !mlOut.pdfError && /listado-de-vecinos-con-morosidad/.test(mlOut.pdfSaved) && mlOut.pdfFooter && mlOut.pdfLegend && mlOut.pdfTitle, JSON.stringify([mlOut.pdfError, mlOut.pdfSaved, mlOut.pdfFooter, mlOut.pdfLegend, mlOut.pdfTitle]));
+        await oikos(`(() => { Store.get = window.__mlRealGet; renderCurrentReport(); })()`);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

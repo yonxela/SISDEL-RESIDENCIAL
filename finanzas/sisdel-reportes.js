@@ -406,6 +406,37 @@
         };
     }
 
+    // ── Listado de vecinos con morosidad (pedido del usuario el 2026-11-20) ──
+    // De un mapa de pagos (paymentMap, con los campos que OIKOS le agrega a cada fila: `late` = cuotas y cargos ya vencidos y
+    // `owed.mora` = la mora a hoy) deja SOLO a los vecinos con algo vencido (o mora) y SOLO las columnas de los periodos que
+    // alguien debe (los meses del ano en curso y los anos anteriores que ya trae el mapa). Una cuota que sigue en su plazo no
+    // cuenta. opts.minMonths: solo quienes deben ese numero de meses o mas (1 = todos, tambien quien solo debe mora).
+    // Devuelve { columns, rows: [{ row, amounts, months, late, mora, total }], totals, hasMora, residents }: `amounts` va
+    // paralelo a `columns` (0 = no debe ese periodo); total = cuotas vencidas + mora, que es lo que dicen Morosos y la Tabla general.
+    function moraList(map, opts) {
+        const options = opts || {};
+        const minMonths = Math.max(1, Math.floor(Number(options.minMonths) || 1));
+        const all = (map && map.rows) || [];
+        const lateOf = (x) => cents(x.late !== undefined && x.late !== null ? x.late : x.lateTotal);
+        const moraOf = (x) => cents(x.owed && x.owed.mora !== undefined ? x.owed.mora : (x.mora || 0));
+        const kept = all.filter((x) => (lateOf(x) > 0 || moraOf(x) > 0) && (minMonths <= 1 || (x.lateMonths || 0) >= minMonths));
+        const cellOf = (x, col) => { const c = x.cells && x.cells[col.key]; return c && c.status === 'owed' ? cents(c.late) : 0; };
+        const columns = ((map && map.columns) || []).filter((col) => (col.kind === 'month' || col.kind === 'years') && kept.some((x) => cellOf(x, col) > 0));
+        const rows = kept.map((x) => {
+            const amounts = columns.map((col) => cellOf(x, col));
+            return { row: x, amounts: amounts.map(fromCents), months: x.lateMonths || 0, late: fromCents(lateOf(x)), mora: fromCents(moraOf(x)), total: fromCents(lateOf(x) + moraOf(x)) };
+        });
+        const sumOf = (get) => kept.reduce((a, x) => a + get(x), 0);
+        const totals = {
+            byColumn: columns.map((col) => fromCents(sumOf((x) => cellOf(x, col)))),
+            months: sumOf((x) => x.lateMonths || 0),
+            late: fromCents(sumOf(lateOf)),
+            mora: fromCents(sumOf(moraOf)),
+            total: fromCents(sumOf((x) => lateOf(x) + moraOf(x)))
+        };
+        return { columns, rows, totals, hasMora: totals.mora > 0, residents: all.length };
+    }
+
     // ── Estado de cuenta de un residente: lo que debe hoy ──
     // accountDebt: tres cifras que SIEMPRE suman: cuotas y cargos pendientes + mora = total que debe.
     // `ms` es el estado de mora a hoy con el saldo del libro (sisdelMoraOf(id, r.balance) de OIKOS): `total` es el
@@ -687,5 +718,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
 });

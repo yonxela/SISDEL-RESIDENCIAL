@@ -378,6 +378,40 @@ equal('por periodo y por fase, de mayor a menor deuda', view({ from: '2026-02', 
 equal('los centavos se suman sin errores de redondeo', R.ownersList([{ id: 'z', name: 'Zeta', unit: 'C1' }], [], { owedOf: () => ({ pending: 0.1, mora: 0.2, total: 0.3 }) }).totals, { count: 1, owing: 1, pending: 0.1, mora: 0.2, total: 0.3 });
 equal('sin residentes o sin datos de deuda, el listado sale vacio o en cero', [R.ownersList([], [], {}).rows, R.ownersList([{ id: 'q', name: 'Q', unit: 'C9' }], [], {}).rows.map((x) => x.total)], [[], [0]]);
 
+// ───────── Listado de vecinos con morosidad (pedido del usuario el 2026-11-20) ─────────
+console.log('\nListado de vecinos con morosidad');
+const Cuotas = require('../finanzas/sisdel-cuotas.js');
+const mlResidents = [
+    { id: 'u1', name: 'Uno', unit: 'A002' }, { id: 'u2', name: 'Dos', unit: 'A001' },
+    { id: 'u3', name: 'Tres', unit: 'A010' }, { id: 'u4', name: 'Cuatro', unit: 'A003' }
+];
+const mlTx = [];
+const feeTx = (id, m, amount) => mlTx.push({ id: `fee_${id}_${m}`, type: 'charge', kind: 'fee', period: m, resiId: id, amount, date: `${m}-01T18:00:00.000Z` });
+['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].forEach((m) => { feeTx('u1', m, 300); feeTx('u2', m, 300); });
+['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'].forEach((m) => feeTx('u3', m, 300));
+feeTx('u2', '2026-11', 300);
+mlTx.push({ id: 'old', type: 'charge', kind: 'extra', resiId: 'u1', amount: 500, date: '2025-06-10T18:00:00.000Z' });          // un cargo de otro ano, sin pagar
+mlTx.push({ id: 'p2', type: 'income', resiId: 'u2', amount: 3300, date: '2026-11-10T18:00:00.000Z' });                          // u2 pago todo
+mlTx.push({ id: 'p3', type: 'income', resiId: 'u3', amount: 2400, date: '2026-11-10T18:00:00.000Z' });                          // u3 cubre hasta agosto
+const mlMap = R.paymentMap(mlResidents, mlTx, { today: '2026-11-20', dayKey: gtDay, dueOf: (p) => Cuotas.dueKey(p), order: 'unit' });
+// OIKOS agrega a cada fila lo vencido (late) y la mora a hoy (owed.mora)
+const mlMora = { u4: 5 };
+mlMap.rows.forEach((x) => { x.late = x.lateTotal; x.owed = { mora: mlMora[x.resident.id] || 0, pending: x.lateTotal + x.pendingTotal, total: x.lateTotal + (mlMora[x.resident.id] || 0) }; });
+const ml = R.moraList(mlMap);
+equal('solo salen los vecinos con algo vencido (o mora), en el orden del mapa: A002, A003 (solo mora) y A010', ml.rows.map((x) => x.row.resident.unit), ['A002', 'A003', 'A010']);
+equal('las columnas son solo los periodos que alguien debe: el ano anterior y de enero a octubre (noviembre sigue en su plazo)', ml.columns.map((c) => c.key), ['2025', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+equal('lo que debe cada vecino en cada columna (cero si no lo debe)', ml.rows.map((x) => x.amounts), [[500, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 300, 300]]);
+equal('meses adeudados: los de las cuotas; quien solo debe mora, cero', ml.rows.map((x) => x.months), [11, 0, 2]);
+equal('el total de cada vecino es lo vencido mas la mora, y suma lo mismo que sus columnas (sin mora)', [ml.rows[0].total, ml.rows[0].amounts.reduce((a, b) => a + b, 0), ml.rows[1].total, ml.rows[2].total], [3500, 3500, 5, 600]);
+equal('totales: por columna, meses, vencido, mora y total', [ml.totals.byColumn[0], ml.totals.byColumn[1], ml.totals.byColumn[9], ml.totals.months, ml.totals.late, ml.totals.mora, ml.totals.total], [500, 300, 600, 13, 4100, 5, 4105]);
+equal('hay mora y se cuentan todos los vecinos del mapa', [ml.hasMora, ml.residents], [true, 4]);
+const ml3 = R.moraList(mlMap, { minMonths: 3 });
+equal('con "3 meses o mas" solo queda quien debe tantos meses (y ya no hay mora ni su columna del ano anterior sobra)', [ml3.rows.map((x) => x.row.resident.unit), ml3.hasMora, ml3.columns.length], [['A002'], false, 11]);
+equal('con 12 meses o mas no sale nadie y no queda ninguna columna', [R.moraList(mlMap, { minMonths: 12 }).rows.length, R.moraList(mlMap, { minMonths: 12 }).columns.length], [0, 0]);
+equal('un mapa sin morosos da un listado vacio', [R.moraList({ rows: mlMap.rows.filter((x) => x.resident.id === 'u2'), columns: mlMap.columns }).rows.length, R.moraList({ rows: [], columns: [] }).columns.length, R.moraList(null).rows.length], [0, 0, 0]);
+equal('las celdas son las del mapa: lo que debe cada mes sale en rojo (status owed)', [mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-09'].status, mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-08'].status, mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-11'].status], ['owed', 'paid', 'pending']);
+equal('en el navegador tambien existe moraList', typeof R.moraList, 'function');
+
 // ───────── Saldo a favor (pedido del usuario el 2026-11-18) ─────────
 console.log('\nSaldo a favor: a que cuotas se aplica');
 const cov = (credit, fee, first) => R.creditCoverage(credit, fee, first);

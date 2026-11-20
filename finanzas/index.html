@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120a"></script>
+    <script src="./sisdel-reportes.js?v=20261120b"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -788,6 +788,7 @@
                                 <li><button type="button" onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="En qué se gasta el dinero del condominio en el período que elija."><span>Gastos por período y categoría</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('month-balance')" id="rep-tab-month-balance" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año."><span>Ingresos, egresos y saldo por mes</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('mora-list')" id="rep-tab-mora-list" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Solo los vecinos con morosidad: número de lote, nombre, una columna por cada mes que deben (en rojo) y el total que adeudan."><span>Listado de vecinos con morosidad</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('mora-discounts')" id="rep-tab-mora-discounts" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo."><span>Descuentos de mora</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
@@ -822,6 +823,39 @@
                                 <select id="rep-type" onchange="repTypeChanged(this.value)" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
                                     <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin marcar</option>
                                 </select>
+                            </div>
+                            <!-- SISDEL: filtros del Listado de vecinos con morosidad (pedido del usuario el 2026-11-20): buscador inteligente,
+                                 fase, orden (por lote, por deuda o alfabetico) y el minimo de meses adeudados -->
+                            <div id="rep-moralist-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div class="min-w-[16rem] flex-1 max-w-md">
+                                    <label for="ml-search" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Buscar vecino</label>
+                                    <div class="relative">
+                                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+                                        <input type="search" id="ml-search" autocomplete="off" spellcheck="false" oninput="moraListSearchChanged()" placeholder="Nombre, lote o casa, fase, teléfono..." class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="ml-fase" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fase</label>
+                                    <select id="ml-fase" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer"></select>
+                                </div>
+                                <div>
+                                    <label for="ml-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Orden</label>
+                                    <select id="ml-order" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="unit">Por número de lote o casa</option>
+                                        <option value="debt">De mayor a menor deuda</option>
+                                        <option value="name">Alfabético</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="ml-min" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Meses adeudados</label>
+                                    <select id="ml-min" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="1">Todos los morosos</option>
+                                        <option value="2">2 meses o más</option>
+                                        <option value="3">3 meses o más</option>
+                                        <option value="6">6 meses o más</option>
+                                        <option value="12">12 meses o más</option>
+                                    </select>
+                                </div>
                             </div>
                             <!-- SISDEL: filtros de la Tabla general (una linea por vecino; pedido del usuario el 2026-11-20): la fase, el orden
                                  (por deuda, por lote como una hoja o por nombre) y si cada mes muestra la cuota o la cuota con su mora -->
@@ -6550,6 +6584,7 @@
             'expense-cat': 'Gastos por período y categoría',
             'month-balance': 'Ingresos, egresos y saldo por mes',
             morosos: 'Morosos y meses adeudados',
+            'mora-list': 'Listado de vecinos con morosidad',
             'pay-map': 'Tabla general',
             owners: 'Listado general de propietarios',
             'mora-discounts': 'Descuentos de mora',
@@ -6587,9 +6622,12 @@
             const payMapWrap = document.getElementById('rep-paymap-filters');
             if (payMapWrap) payMapWrap.style.display = key === 'pay-map' ? '' : 'none';
             if (key === 'pay-map') payMapPrepareFilters();
+            const moraListWrap = document.getElementById('rep-moralist-filters');
+            if (moraListWrap) moraListWrap.style.display = key === 'mora-list' ? '' : 'none';
+            if (key === 'mora-list') moraListPrepareFilters();
             // SISDEL: lote o casa: el filtro va en los reportes por residente
             const typeWrap = document.getElementById('rep-type-wrap');
-            const byResident = key === 'morosos' || key === 'pay-map' || key === 'owners';
+            const byResident = key === 'morosos' || key === 'mora-list' || key === 'pay-map' || key === 'owners';
             if (typeWrap) typeWrap.style.display = byResident ? '' : 'none';
             if (byResident) unitTypeOptions(document.getElementById('rep-type'), unitTypeCounts(Store.get('residents') || []), repTypeFilter || '');
             renderCurrentReport();
@@ -6604,6 +6642,7 @@
             else if (currentReportKey === 'expense-cat') currentReportData = buildExpenseByCategoryReport();
             else if (currentReportKey === 'account-statement') currentReportData = buildAccountStatementReport();
             else if (currentReportKey === 'month-balance') currentReportData = buildMonthBalanceReport();
+            else if (currentReportKey === 'mora-list') currentReportData = buildMoraListReport();
             else if (currentReportKey === 'pay-map') currentReportData = buildPayMapReport();
             else if (currentReportKey === 'owners') currentReportData = buildOwnersReport();
             else if (currentReportKey === 'mora-discounts') currentReportData = buildMoraDiscountReport();
@@ -6675,9 +6714,13 @@
             // SISDEL: en el mapa de pagos (muchas columnas) la columna del residente queda fija al desplazarse a la derecha
             const pinFirst = !!d.cellStatus;
             const pinCls = 'sticky left-0 z-[1] bg-slate-50 dark:bg-slate-800 shadow-[1px_0_0_rgba(148,163,184,0.35)]';
+            // SISDEL: con pinCols 2 (Listado de vecinos con morosidad) quedan fijas el lote (angosta) y el nombre, pegada a su derecha
+            const pinTwo = pinFirst && d.pinCols === 2;
+            const isPinned = function (i) { return pinFirst && (i === 0 || (pinTwo && i === 1)); };
+            const pinAttr = function (i) { return pinTwo ? (i === 0 ? ' style="min-width:6.5rem;width:6.5rem"' : i === 1 ? ' style="left:6.5rem;min-width:14rem;text-align:left"' : '') : ''; };
             thead.innerHTML = '<tr>' + d.headers.map(function (h, i) {
                 const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : 'text-right';
-                return '<th class="px-4 py-3 ' + align + (pinFirst && i === 0 ? ' ' + pinCls : '') + (d.cellStatus && i > 0 ? ' text-center whitespace-nowrap' : '') + '">' + h + '</th>';
+                return '<th class="px-4 py-3 ' + align + (isPinned(i) ? ' ' + pinCls : '') + (d.cellStatus && i > 0 ? ' text-center whitespace-nowrap' : '') + '"' + pinAttr(i) + '>' + h + '</th>';
             }).join('') + '</tr>';
             if (!d.rows || d.rows.length === 0) {
                 tbody.innerHTML = '';
@@ -6730,13 +6773,13 @@
                         : cell;
                     const st = statusRow[i];
                     if (st) return '<td class="px-2 py-2 text-center text-xs font-mono whitespace-nowrap border border-slate-200 dark:border-slate-700 ' + (SISDEL_STATUS_CLASS[st] || '') + '" title="' + (SISDEL_STATUS_TEXT[st] || '') + '">' + content + '</td>';
-                    return '<td class="px-4 py-2.5 ' + align + ' font-mono' + (pinFirst && i === 0 ? ' ' + pinCls + ' min-w-[12rem]' : '') + '">' + content + '</td>';
+                    return '<td class="px-4 py-2.5 ' + align + ' font-mono' + (isPinned(i) ? ' ' + pinCls + (pinTwo ? '' : ' min-w-[12rem]') : '') + '"' + pinAttr(i) + '>' + content + '</td>';
                 }).join('') + '</tr>';
             }).join('');
             if (d.totals) {
                 tfoot.innerHTML = '<tr>' + d.totals.map(function (cell, i) {
                     const align = (i === 0 || (d.leftCols || []).indexOf(i) >= 0) ? 'text-left' : (d.cellStatus ? 'text-center whitespace-nowrap' : 'text-right');
-                    return '<td class="px-4 py-3 ' + align + ' font-mono' + (pinFirst && i === 0 ? ' ' + pinCls : '') + '">' + cell + '</td>';
+                    return '<td class="px-4 py-3 ' + align + ' font-mono' + (isPinned(i) ? ' ' + pinCls : '') + '"' + pinAttr(i) + '>' + cell + '</td>';
                 }).join('') + '</tr>';
             } else {
                 tfoot.innerHTML = '';
@@ -6863,8 +6906,12 @@
             const numericCols = new Set(d.numericCols || []);
             const alignOf = (i) => (i > 0 && numericCols.has(i) ? 'right' : 'left');
             const meta = d.rowsMeta || [];
+            // SISDEL: las columnas que el reporte pide sin partir (lote y nombre) y los encabezados de un mapa de meses no se parten en dos lineas
+            const nowrap = new Set(d.nowrapCols || []);
+            // Un mapa de meses (muchas columnas) va mas compacto para que quepa en la hoja
+            const tight = !!d.cellStatus;
             const headerCells = d.headers.map(stripCellHtml)
-                .map((h, i) => `<th style="padding:8px 10px;text-align:${alignOf(i)};font-size:11px;text-transform:uppercase;color:#475569;background:#f1f5f9;border-bottom:2px solid #cbd5e1">${escText(h)}</th>`).join('');
+                .map((h, i) => `<th style="padding:${tight ? '7px 6px' : '8px 10px'};text-align:${alignOf(i)};font-size:${tight ? '10px' : '11px'};text-transform:uppercase;color:#475569;background:#f1f5f9;border-bottom:2px solid #cbd5e1${tight ? ';white-space:nowrap' : ''}">${escText(h)}</th>`).join('');
             const status = d.cellStatus || [];
             const bodyRows = d.rows.map((row, r) => {
                 const isSubtotal = meta[r] && meta[r].kind === 'subtotal';
@@ -6872,8 +6919,8 @@
                     // SISDEL: celdas de color del mapa de pagos (se imprimen con su color)
                     const st = (status[r] || [])[i];
                     const colors = st ? SISDEL_STATUS_COLORS[st] : null;
-                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 6px` : `;text-align:${alignOf(i)}`;
-                    return `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px${extra}">${escText(stripCellHtml(cell))}</td>`;
+                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 4px` : `;text-align:${alignOf(i)}${nowrap.has(i) ? ';white-space:nowrap' : ''}`;
+                    return `<td style="padding:${tight ? '6px 6px' : '6px 10px'};border-bottom:1px solid #e2e8f0;font-size:12px${extra}">${escText(stripCellHtml(cell))}</td>`;
                 }).join('') + '</tr>';
             }).join('');
             const totalsRow = d.totals ? '<tr style="background:#f1f5f9;font-weight:700">' + d.totals.map((cell, i) => {
@@ -6898,9 +6945,14 @@
                 </div>
                 ${d.notice ? `<p style="margin:0 0 16px;padding:10px 12px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px">${escText(d.notice)}</p>` : ''}
                 ${(d.highlights || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 ${d.highlightsNote ? '6px' : '16px'}">${d.highlights.map(h => `<div style="flex:1 1 150px;border:1px solid #e2e8f0;border-left:5px solid ${(REP_TONES[h.tone] || REP_TONES.total).bar};border-radius:8px;padding:8px 12px"><div style="font-size:18px;font-weight:700">${escText(h.value)}</div><div style="font-size:11px;font-weight:600;color:#475569">${escText(h.label)}</div></div>`).join('')}</div>` : ''}
-                ${(d.highlights || []).length && d.highlightsNote ? `<p style="margin:0 0 16px;font-size:11px;color:#64748b">${escText(d.highlightsNote)}</p>` : ''}
+                ${(d.highlights || []).length && d.highlightsNote ? `<p style="margin:0 0 ${(d.legend || []).length ? '8px' : '16px'};font-size:11px;color:#64748b">${escText(d.highlightsNote)}</p>` : ''}
+                ${(d.legend || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px 22px;margin:0 0 16px;font-size:11px;color:#475569">${d.legend.map(l => `<span style="display:inline-flex;align-items:center;gap:6px"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #94a3b8;background:${SISDEL_LEGEND_COLORS[l.tone] || '#ffffff'}"></span>${escText(l.text)}</span>`).join('')}</div>` : ''}
                 <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody><tfoot>${totalsRow}</tfoot></table>
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
+                <script>
+                    // SISDEL: si la tabla es mas ancha que la hoja (oficio horizontal con margenes de 10 mm: unos 1170 px), se reduce para que quepa
+                    (function () { try { var t = document.querySelector('table'); var need = t ? t.scrollWidth : 0; if (need > 1170) document.body.style.zoom = String(Math.max(0.5, 1170 / need)); } catch (e) {} })();
+                <\/script>
             </body></html>`;
             const w = window.open('', '_blank', 'width=900,height=700');
             if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
@@ -6978,12 +7030,33 @@
                 }
                 startY += 4;
             }
+            // SISDEL: la leyenda de colores del reporte (rojo = debe...) con su cuadrito de color, en una o varias lineas
+            if ((d.legend || []).length) {
+                doc.setFontSize(8);
+                let lx = 14;
+                let ly = startY + 1;
+                d.legend.forEach(l => {
+                    const text = pdfText(l.text);
+                    const w = 5.5 + doc.getTextWidth(text);
+                    if (lx > 14 && lx + w > pageW - 14) { lx = 14; ly += 5; }
+                    const rgb = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+                    doc.setFillColor(...rgb(SISDEL_LEGEND_COLORS[l.tone] || '#ffffff'));
+                    doc.setDrawColor(148, 163, 184);
+                    doc.rect(lx, ly - 3, 3.5, 3.5, 'FD');
+                    doc.setTextColor(71, 85, 105);
+                    doc.text(text, lx + 5.5, ly);
+                    lx += w + 10;
+                });
+                startY = ly + 5;
+            }
             // Tabla
             const body = d.rows.map(row => row.map(pdfText));
             const head = [d.headers.map(pdfText)];
             const foot = d.totals ? [d.totals.map(pdfText)] : undefined;
             const columnStyles = {};
             numericCols.forEach(i => { if (i > 0) columnStyles[i] = { halign: 'right' }; });
+            // SISDEL: las columnas que el reporte pide sin partir (lote y nombre) toman el ancho de su contenido
+            (d.nowrapCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { cellWidth: 'wrap' }); });
             doc.autoTable({
                 startY,
                 head,
@@ -7010,6 +7083,17 @@
                     }
                 },
             });
+            // SISDEL: pie de cada pagina: el condominio y el reporte a la izquierda y "Pagina X de Y" a la derecha
+            const pageCount = doc.getNumberOfPages();
+            const pageH = doc.internal.pageSize.getHeight();
+            for (let p = 1; p <= pageCount; p++) {
+                doc.setPage(p);
+                doc.setFontSize(8);
+                doc.setTextColor(148, 163, 184);
+                doc.text(pdfText((s.name || 'OIKOS') + ' · ' + d.title), 14, pageH - 8);
+                const pageText = pdfText('Página ' + p + ' de ' + pageCount);
+                doc.text(pageText, pageW - 14 - doc.getTextWidth(pageText), pageH - 8);
+            }
             const fileName = typeof SisdelReportesOikos !== 'undefined'
                 ? SisdelReportesOikos.exportModel(d, { condoName: s.name || '', at: new Date() }).fileName
                 : (d.title || 'reporte').replace(/\s+/g, '_').toLowerCase();
@@ -7503,6 +7587,8 @@
         const SISDEL_STATUS_TEXT = { owed: 'Debe (vencido)', paid: 'Pagado', pending: 'Cuota en su plazo: aún no vence (no es mora)', none: 'Sin cuota en este período' };
         // Colores para la impresion y el PDF (fondo, texto)
         const SISDEL_STATUS_COLORS = { owed: ['#dc2626', '#ffffff'], paid: ['#059669', '#ffffff'], pending: ['#ffffff', '#94a3b8'], none: ['#ffffff', '#94a3b8'] };
+        // Colores de los cuadritos de la leyenda en la impresion y el PDF (por tono de la leyenda; los mismos de las celdas)
+        const SISDEL_LEGEND_COLORS = { owed: '#dc2626', paid: '#059669', pending: '#ffffff', blank: '#ffffff', none: '#e2e8f0', mora: '#f97316', total: '#3b82f6' };
 
         // Ultimo dia (inclusive) para pagar la cuota de un mes sin estar en mora. Con regla de mora (sisdel-mora.js): el
         // ultimo dia del mes mas los dias de plazo de la regla (5 en La Perla; la mora se carga el dia siguiente, el 6). Sin
@@ -7718,6 +7804,126 @@
                 chartLabel: 'Cuotas vencidas por período',
                 chartColors: 'rgba(220,38,38,0.7)',
                 chartColorsBorder: '#DC2626',
+            };
+        }
+
+        // ─── SISDEL: Listado de vecinos con morosidad (pedido del usuario el 2026-11-20) ───
+        // Solo los vecinos con algo VENCIDO (o con mora): numero de lote, nombre, una columna por cada mes (o ano anterior) que
+        // alguien debe, con lo que falta de esa cuota en rojo, los meses adeudados y, al final, el total (cuotas vencidas + mora a
+        // hoy: la misma cifra de Morosos, la Tabla general y Residentes). Una cuota que sigue en su plazo (el mes completo y hasta
+        // el dia 5 del siguiente) no cuenta. El calculo esta en SisdelReportesOikos.moraList (finanzas/sisdel-reportes.js).
+        // `var` y funciones: el reporte puede pintarse antes de que corra una variable de aqui.
+        var moraListOrder = (() => { try { const v = localStorage.getItem('sisdel_mora_orden'); return v === 'debt' || v === 'name' ? v : 'unit'; } catch (e) { return 'unit'; } })();
+        var moraListFase = '';
+        var moraListSearch = '';
+        var moraListMin = 1;
+        var moraListSearchTimer = null;
+        function moraListSearchChanged() {
+            clearTimeout(moraListSearchTimer);
+            moraListSearchTimer = setTimeout(function () {
+                const el = document.getElementById('ml-search');
+                const next = el ? el.value.trim() : '';
+                if (next === moraListSearch) return;
+                moraListSearch = next;
+                renderCurrentReport();
+            }, 160);
+        }
+        function moraListPrepareFilters() {
+            const searchBox = document.getElementById('ml-search');
+            if (searchBox) searchBox.value = moraListSearch;
+            const order = document.getElementById('ml-order');
+            if (order) order.value = moraListOrder;
+            const min = document.getElementById('ml-min');
+            if (min) min.value = String(moraListMin);
+            const select = document.getElementById('ml-fase');
+            if (!select) return;
+            const residents = Store.get('residents') || [];
+            const fases = faseValues(residents);
+            const withoutFase = residents.some(r => !String(r.fase || '').trim());
+            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">' + SisdelBusqueda.escapeHtml(faseLabel(f)) + '</option>'));
+            if (fases.length && withoutFase) opts.push('<option value="' + SisdelReportesOikos.NO_FASE + '">Sin fase</option>');
+            select.innerHTML = opts.join('');
+            select.value = Array.from(select.options).some(o => o.value === moraListFase) ? moraListFase : '';
+            moraListFase = select.value;
+            select.disabled = !fases.length;
+            select.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente';
+        }
+        function moraListFiltersChanged() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+            moraListFase = val('ml-fase');
+            moraListOrder = ['debt', 'name'].includes(val('ml-order')) ? val('ml-order') : 'unit';
+            moraListMin = [1, 2, 3, 6, 12].includes(Number(val('ml-min'))) ? Number(val('ml-min')) : 1;
+            try { localStorage.setItem('sisdel_mora_orden', moraListOrder); } catch (e) { /* solo se pierde la preferencia */ }
+            renderCurrentReport();
+        }
+        function moraListOrderText() { return moraListOrder === 'debt' ? 'de mayor a menor deuda' : moraListOrder === 'name' ? 'en orden alfabético' : 'por número de lote o casa'; }
+
+        function buildMoraListReport() {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const { map, today } = sisdelPayMap({ fase: moraListFase, order: moraListOrder, search: moraListSearch });
+            const list = SisdelReportesOikos.moraList(map, { minMonths: moraListMin });
+            // Con una busqueda, lo que coincide va resaltado (SisdelBusqueda.highlight escapa todo lo que viene de la base)
+            const show = (text) => (moraListSearch ? SisdelBusqueda.highlight(String(text || ''), moraListSearch) : esc(text));
+            const nameOf = (r) => show((r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'));
+            const money = (x) => (x > 0 ? formatMoney(x) : '');
+            const n = list.columns.length;
+            const rows = list.rows.map(function (x) {
+                const r = x.row.resident;
+                return [show(r.unit || '—'), nameOf(r)].concat(x.amounts.map(money), [x.months ? String(x.months) : '—'], list.hasMora ? [money(x.mora)] : [], [formatMoney(x.total)]);
+            });
+            const total = list.totals;
+            const count = list.rows.length;
+            const pct = list.residents ? Math.round(count * 1000 / list.residents) / 10 : 0;
+            const filterText = (moraListFase ? ' · ' + (moraListFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(moraListFase)) : '') + (moraListMin > 1 ? ' · ' + moraListMin + ' meses o más' : '') + (moraListSearch ? ' · búsqueda: «' + moraListSearch + '»' : '') + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : '');
+            const settings = Store.get('settings') || {};
+            const lead = 2;   // lote y nombre
+            const moneyCols = [];
+            for (let i = 0; i < n; i++) moneyCols.push(lead + i);
+            const monthsIdx = lead + n;
+            const moraIdx = list.hasMora ? monthsIdx + 1 : -1;
+            const totalIdx = monthsIdx + (list.hasMora ? 2 : 1);
+            if (moraIdx >= 0) moneyCols.push(moraIdx);
+            moneyCols.push(totalIdx);
+            return {
+                title: 'Listado de vecinos con morosidad',
+                summary: count + ' de ' + list.residents + ' vecinos con morosidad (' + pct + ' %) · al ' + today + ' · ' + moraListOrderText() + filterText,
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [
+                    { tone: 'owed', value: String(count), label: count === 1 ? 'vecino con morosidad' : 'vecinos con morosidad' },
+                    { tone: 'none', value: String(total.months), label: total.months === 1 ? 'mes adeudado en total' : 'meses adeudados en total' },
+                ].concat(list.hasMora ? [{ tone: 'owed', value: formatMoney(total.late), label: 'cuotas vencidas' }, { tone: 'mora', value: formatMoney(total.mora), label: 'mora a hoy' }] : [], [{ tone: 'total', value: formatMoney(total.total), label: list.hasMora ? 'total adeudado (cuotas + mora)' : 'total adeudado' }]),
+                highlightsNote: (settings.name ? settings.name + ' · ' : '') + 'Al ' + today + ' · ' + moraListOrderText() + filterText + ' · ' + pct + ' % de los vecinos · no incluye la cuota que sigue en su plazo (el mes completo y hasta el día 5 del siguiente)',
+                legend: [
+                    { tone: 'owed', text: 'Rojo: mes adeudado (ya venció), con lo que falta pagar de esa cuota' },
+                    { tone: 'blank', text: 'En blanco: ese mes no lo debe' }
+                ],
+                hint: 'Toque un vecino para ver su estado de cuenta',
+                emptyText: moraListSearch || moraListMin > 1 || moraListFase ? 'Ningún vecino con morosidad coincide con los filtros.' : 'No hay vecinos con morosidad. Todos están al día en sus cuotas vencidas.',
+                headers: ['Lote / Casa', 'Nombre'].concat(list.columns.map(function (c) { return c.label; }), ['Meses'], list.hasMora ? ['Mora a hoy'] : [], ['Total adeudado']),
+                leftCols: [1],
+                pinCols: 2,
+                nowrapCols: [0, 1],
+                rows: rows,
+                rowsMeta: list.rows.map(function (x) { return { kind: 'resident', residentId: x.row.resident.id }; }),
+                cellStatus: list.rows.map(function (x) {
+                    return [null, null].concat(x.amounts.map(function (a) { return a > 0 ? 'owed' : null; }), [null], list.hasMora ? [null] : [], [null]);
+                }),
+                totals: ['TOTAL', count + (count === 1 ? ' vecino' : ' vecinos')].concat(total.byColumn.map(money), [String(total.months)], list.hasMora ? [formatMoney(total.mora)] : [], [formatMoney(total.total)]),
+                numericCols: [monthsIdx].concat(moneyCols),
+                // WhatsApp: lote, nombre, meses y total (las columnas de cada mes no caben en un mensaje)
+                compact: {
+                    headers: ['Lote', 'Nombre', 'Meses', 'Total adeudado'],
+                    rows: list.rows.map(function (x) { const r = x.row.resident; return [esc(r.unit || '—'), esc((r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)')), x.months ? String(x.months) : '—', formatMoney(x.total)]; }),
+                    totals: ['TOTAL', count + (count === 1 ? ' vecino' : ' vecinos'), String(total.months), formatMoney(total.total)],
+                    numericCols: [2, 3]
+                },
+                chartType: 'bar',
+                chartLabels: list.columns.map(function (c) { return c.label; }),
+                chartValues: total.byColumn,
+                chartLabel: 'Cuotas vencidas por período',
+                chartColors: 'rgba(220,38,38,0.7)',
+                chartColorsBorder: '#DC2626'
             };
         }
 

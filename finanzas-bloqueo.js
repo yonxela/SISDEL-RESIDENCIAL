@@ -47,8 +47,8 @@
     };
     const VIEW_ORDER = ['dashboard', 'residents', 'chats', 'accounting', 'banks', 'reports', 'settings'];
 
-    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos', 'mora-discounts': 'reportes_descuentos' };
-    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'pay-map', 'owners', 'mora-discounts', 'account-statement'];
+    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'mora-list': 'reportes_morosos', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos', 'mora-discounts': 'reportes_descuentos' };
+    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'mora-list', 'pay-map', 'owners', 'mora-discounts', 'account-statement'];
 
     // Atributo onclick / onsubmit (cada sentencia) -> privilegios de los que basta UNO.
     const ACTIONS = [
@@ -90,6 +90,7 @@
         [/^(openVoucherOptions|printVoucher|downloadVoucher|viewReceiptImage|downloadReceiptImage)\(/, ['comprobantes']],
         [/^selectReport\('income'\)/, ['reportes_ingresos']],
         [/^selectReport\('morosos'\)/, ['reportes_morosos']],
+        [/^selectReport\('mora-list'\)/, ['reportes_morosos']],
         [/^selectReport\('pay-map'\)/, ['reportes_morosos']],
         [/^selectReport\('owners'\)/, ['reportes_morosos']],
         [/^selectReport\('expense-cat'\)/, ['reportes_gastos']],
@@ -155,7 +156,7 @@
         ]],
         [['reportes_ingresos'], ['#rep-tab-income']],
         [['reportes_morosos'], [
-            '#rep-tab-morosos', '#rep-tab-pay-map', '#rep-tab-owners', '#view-residents button[onclick="openResidentStatusReport(\'aldia\')"]',
+            '#rep-tab-morosos', '#rep-tab-mora-list', '#rep-tab-pay-map', '#rep-tab-owners', '#view-residents button[onclick="openResidentStatusReport(\'aldia\')"]',
             '#view-residents button[onclick="openResidentStatusReport(\'morosos\')"]', '#modal-res-status'
         ]],
         [['reportes_gastos'], ['#rep-tab-expense-cat']],

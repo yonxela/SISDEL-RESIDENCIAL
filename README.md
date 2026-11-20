@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-157 privilegios: 32 paraguas y 125 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+158 privilegios: 32 paraguas y 126 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -253,6 +253,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `reportes.morosos` | Listado de morosos a la fecha. Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago). | los de su paraguas | Pantalla |
 | `reportes.finanzas` | Accesos a los reportes de Finanzas. Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas. | los de su paraguas | Pantalla |
 | `reportes.rondas` | Acceso a los reportes de Rondas. Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas). | los de su paraguas | Pantalla |
+| `reportes.panico_qr` | QR de pánico de los vecinos. Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código. | los de su paraguas | Pantalla |
 | `reportes.exportar` | Imprimir, PDF, WhatsApp y Excel **(sensible)**. Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema. | los de su paraguas | Pantalla |
 
 <!-- END tabla-privilegios -->
@@ -390,6 +391,7 @@ condominios/{condoId}
     rondas_drones/{id}              Rondin Air: drones y su ultima telemetria
     alertas_panico/{id}             boton de panico de vecinos y guardias
     emergencia/{userId}             contactos de emergencia del vecino
+    panico_dispositivos/{huella}    telefonos vinculados al QR de panico de cada vecino (solo el servidor)
 codigos/{codigo}            índice único código -> usuario
 mensajes_globales/{msgId}   mensajes del master para todos
 camera_logs_huerfanos/      lecturas de cámara sin condominio válido
@@ -413,6 +415,8 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `functions/src/anpr/` | Webhook de la cámara LPR. |
 | `rondin/` | SISDEL RONDÍN con su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
 | `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
+| `gps-ayuda.js` | Botón "Activar ubicación" y la ayuda para activarla según el teléfono (portal del vecino y QR de pánico). |
+| `panico.html`, `panico-qr.js`, `functions/src/panico-qr.js` | QR de pánico por vecino: la tarjeta que se imprime en Reportes, la página que abre al escanearla y las funciones que vinculan el teléfono y envían la alerta. `vendor/qrcode-generator-1.4.4.js` (MIT) dibuja el QR en el navegador. |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |
 | `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
 | `finanzas/` | Sistema Financiero (OIKOS), que se mantiene aquí. `finanzas/sisdel-cuotas.js` arma el desglose de la cuota (`functions/src/finanzas/cuotas.js` es su copia idéntica). |

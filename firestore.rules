@@ -730,6 +730,11 @@ service cloud.firestore {
               && onlyChanges(['status', 'cancelledAt']) && request.resource.data.status == 'CANCELLED');
         allow delete: if false;
       }
+      // Telefonos vinculados al QR de panico de cada vecino (panico.html): huella de la clave del telefono y del codigo con
+      // que se vinculo. Los escriben y leen solo las funciones linkPanicDevice y panicDevice (functions/src/panico-qr.js)
+      match /panico_dispositivos/{deviceId} {
+        allow read, write: if false;
+      }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
         allow read: if isMaster() || pPanicoContactos(condoId)

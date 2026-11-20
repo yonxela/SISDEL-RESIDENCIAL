@@ -285,6 +285,7 @@
                 { key: 'reportes.morosos', sub: 'Secciones', parent: 'reportes.ver', label: 'Listado de morosos a la fecha', description: 'Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago).', requires: ['usuarios.pagos_ver'], enforce: 'pantalla' },
                 { key: 'reportes.finanzas', sub: 'Secciones', parent: 'reportes.ver', label: 'Accesos a los reportes de Finanzas', description: 'Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas.', requires: ['finanzas.usar'], enforce: 'pantalla' },
                 { key: 'reportes.rondas', sub: 'Secciones', parent: 'reportes.ver', label: 'Acceso a los reportes de Rondas', description: 'Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas).', requires: ['rondas.panel_ver'], enforce: 'pantalla' },
+                { key: 'reportes.panico_qr', sub: 'Secciones', parent: 'reportes.ver', label: 'QR de pánico de los vecinos', description: 'Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código.', enforce: 'pantalla' },
                 { key: 'reportes.exportar', sub: 'Exportar', parent: 'reportes.ver', label: 'Imprimir, PDF, WhatsApp y Excel', description: 'Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema.', sensitive: true, enforce: 'pantalla' }
             ]
         }

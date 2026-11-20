@@ -711,6 +711,32 @@ async function run() {
     await denied('el auditor no atiende alertas', () => updateDoc(rref(auditor, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sofia' }));
     await allowed('el auditor ve las alertas', () => getDocs(rcol(auditor, 'alertas_panico')));
 
+    // ───────── QR de panico por vecino: panico.html llama a las funciones con fetch, sin sesion (ver test-panico-qr.mjs) ─────────
+    console.log('\nQR de panico');
+    const qrCall = async (name, data) => {
+        const res = await fetch(`http://${EMULATOR.functions[0]}:${EMULATOR.functions[1]}/${PROJECT_ID}/us-central1/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
+        const body = await res.json();
+        if (body.error) throw new Error(body.error.message);
+        return body.result;
+    };
+    equal('QR: un extrano con el QR de Ana y el codigo de Maria no vincula su telefono', (await qrCall('linkPanicDevice', { c: A, v: 'u-ana', code: 'VM102' })).ok, false);
+    const qrLink = await qrCall('linkPanicDevice', { c: A, v: 'u-ana', code: 'va101' });
+    equal('QR: Ana vincula su telefono con su codigo, sin iniciar sesion', [qrLink.ok, qrLink.name, qrLink.casa, typeof qrLink.secret], [true, 'Ana García', 'Casa 12', 'string']);
+    const qrAlert = await qrCall('panicDevice', { action: 'alert', c: A, v: 'u-ana', secret: qrLink.secret, lat: 14.6, lng: -90.5, accuracy: 9 });
+    equal('QR: el telefono vinculado envia la alerta con su ubicacion', [qrAlert.ok, qrAlert.alert.status, qrAlert.alert.hasLocation], [true, 'ACTIVE', true]);
+    await waitFor('QR: la alerta del QR avisa por WhatsApp como la del portal (central, personal y familiares del vecino)', async () => {
+        const d = (await getDoc(rref(admin, 'alertas_panico', qrAlert.alert.id))).data();
+        return !!d && d.via === 'qr' && d.source === 'vecino' && d.userId === 'u-ana' && !!d.whatsapp && d.whatsapp.sent === true && d.whatsapp.recipients.some((x) => x.nombre === 'Luis García');
+    });
+    await allowed('QR: la garita ve la alerta del QR', () => getDoc(rref(guard, 'alertas_panico', qrAlert.alert.id)));
+    await allowed('QR: el vecino la ve en su portal', () => getDoc(rref(ana, 'alertas_panico', qrAlert.alert.id)));
+    await denied('QR: nadie lee los telefonos vinculados desde el navegador (ni el administrador)', () => getDocs(rcol(admin, 'panico_dispositivos')));
+    await denied('QR: ni el propio vecino', () => getDocs(rcol(ana, 'panico_dispositivos')));
+    await denied('QR: ni los escribe', () => setDoc(rref(ana, 'panico_dispositivos', 'x'), { userId: 'u-ana', codeHash: 'x' }));
+    equal('QR: cancela su alerta desde el telefono', (await qrCall('panicDevice', { action: 'cancel', c: A, v: 'u-ana', secret: qrLink.secret, alertId: qrAlert.alert.id })).alert.status, 'CANCELLED');
+    equal('QR: desvincular el telefono', (await qrCall('panicDevice', { action: 'unlink', c: A, v: 'u-ana', secret: qrLink.secret })).ok, true);
+    equal('QR: desvinculado ya no envia alertas', (await qrCall('panicDevice', { action: 'alert', c: A, v: 'u-ana', secret: qrLink.secret })).relink, true);
+
     await allowed('vecino guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: [{ name: 'Luis', phone: '5555-1111' }], updatedAt: ts() }));
     await denied('vecino no edita contactos de otro', () => setDoc(rref(ana, 'emergencia', 'u-maria'), { userId: 'u-maria', condominioId: A, contacts: [], updatedAt: ts() }));
     await denied('no se aceptan mas de 5 contactos', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: Array.from({ length: 6 }, () => ({ name: 'x', phone: '1' })), updatedAt: ts() }));

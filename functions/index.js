@@ -23,6 +23,8 @@ const { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendRe
 const { whatsappWebhook, sendChatMessage, markChatRead, loadChatHistory } = require('./src/whatsapp-chat');
 const { onFinanceMovement, onFinanceSettings, dailyFinance } = require('./src/finanzas');
 const { onPanicCreated, dailyRondas } = require('./src/rondas');
+// QR de panico por vecino (panico.html): vincular el telefono con su codigo y enviar la alerta (src/panico-qr.js)
+const { linkPanicDevice, panicDevice } = require('./src/panico-qr');
 // Bitacora: rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (ver src/bitacora.js)
 const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements } = require('./src/bitacora');
 
@@ -31,6 +33,6 @@ module.exports = {
     startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, checkWhatsAppConnection, reconcileReminderCampaign, resendReminderCampaign, processReminderQueue,
     whatsappWebhook, sendChatMessage, markChatRead, loadChatHistory,
     onFinanceMovement, onFinanceSettings, dailyFinance,
-    onPanicCreated, dailyRondas,
+    onPanicCreated, dailyRondas, linkPanicDevice, panicDevice,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements
 };

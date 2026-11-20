@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SISDEL - Botón de pánico</title>
+    <!-- El enlace del QR lleva el condominio y el vecino: no se indexa ni se manda a otros sitios -->
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <meta name="theme-color" content="#dc2626">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* QR de panico: la pagina que abre el QR pegado en la puerta o en el carro. Primero la ubicacion, despues el boton */
+        body { min-height: 100vh; min-height: 100dvh; }
+        .pq-page { max-width: 30rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+        .pq-top { display: flex; align-items: center; gap: 0.85rem; }
+        .pq-top h1 { font-size: 1.45rem; margin: 0; color: var(--text-primary); }
+        .pq-who { margin: 0.15rem 0 0; font-weight: 700; color: var(--text-secondary); font-size: 0.95rem; overflow-wrap: anywhere; }
+        .pq-condo { margin: 0; font-size: 0.78rem; color: var(--text-muted); }
+        .pq-step { padding: 1.1rem 1.15rem; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); background: var(--bg-surface); }
+        .pq-step h2 { display: flex; align-items: center; gap: 0.55rem; font-size: 1.05rem; margin: 0 0 0.5rem; color: var(--text-primary); }
+        .pq-step p { font-size: 0.88rem; line-height: 1.45; color: var(--text-secondary); margin: 0 0 0.75rem; }
+        .pq-num { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--primary); color: #fff; font-size: 0.85rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+        .pq-step.done .pq-num { background: #16a34a; }
+        #pqLinkForm { display: flex; flex-direction: column; gap: 0.6rem; }
+        #pqCode { padding-left: 1rem; text-transform: uppercase; letter-spacing: 0.12em; font-size: 1.15rem; font-weight: 700; }
+        .pq-msg { font-weight: 700; font-size: 0.85rem; margin: 0.6rem 0 0; }
+        .pq-msg.bad { color: #dc2626; }
+        .pq-panic { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; }
+        /* El boton grande: redondo, rojo, con el icono del boton de panico; se mantiene presionado 2 segundos */
+        .pq-big { position: relative; overflow: hidden; width: min(72vw, 15.5rem); aspect-ratio: 1; border-radius: 50%; border: 0.55rem solid rgba(220,38,38,0.25);
+            background: radial-gradient(circle at 50% 38%, #ef4444, #b91c1c 70%); color: #fff; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; font-weight: 900; font-size: 1.45rem; letter-spacing: 0.08em;
+            box-shadow: 0 14px 34px rgba(220,38,38,0.45); background-clip: padding-box; }
+        .pq-big:disabled { opacity: 0.7; cursor: progress; }
+        .pq-big .fill { position: absolute; left: 0; bottom: 0; right: 0; height: 0; background: rgba(255,255,255,0.28); }
+        .pq-big span { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+        .pq-hint { font-weight: 700; color: var(--text-secondary); margin: 0; }
+        .pq-warn { font-size: 0.82rem; color: #d97706; font-weight: 700; text-align: center; margin: 0; }
+        .panic-status { width: 100%; box-sizing: border-box; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.92rem; }
+        .panic-status.calm { background: var(--bg-surface); border: 1px solid var(--border-strong); }
+        .pq-error { padding: 0.9rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; margin: 0; }
+        .pq-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
+        .pq-foot a { color: var(--text-muted); }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+
+<body>
+    <main class="pq-page">
+        <header class="pq-top">
+            <svg width="52" height="52" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;"><circle cx="12" cy="12" r="11.5" fill="#fff"/><circle cx="12" cy="12" r="9.6" fill="#dc2626"/><circle cx="12" cy="12" r="7" fill="#b91c1c"/><rect x="10.85" y="6.6" width="2.3" height="7.2" rx="1.15" fill="#fff"/><circle cx="12" cy="16.6" r="1.35" fill="#fff"/></svg>
+            <div style="min-width:0;">
+                <h1>Botón de pánico</h1>
+                <p class="pq-who" id="pqWho">QR de pánico de un vecino</p>
+                <p class="pq-condo" id="pqCondo"></p>
+            </div>
+        </header>
+
+        <p class="pq-error" id="pqError" hidden></p>
+
+        <!-- Paso 1: la ubicacion. Se pide ANTES de mostrar el boton (la alerta la necesita al crearse) -->
+        <section class="pq-step" id="pqStepGps">
+            <h2><span class="pq-num">1</span> Su ubicación</h2>
+            <p id="pqGpsText">Para que la ayuda sepa dónde está, toque "Permitir" cuando el teléfono le pregunte por su ubicación.</p>
+            <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
+        </section>
+
+        <!-- Paso 2, solo la primera vez en este telefono: vincularlo con el codigo del vecino (el QR solo no deja enviar alertas) -->
+        <section class="pq-step" id="pqStepLink" hidden>
+            <h2><span class="pq-num">2</span> Vincule este teléfono</h2>
+            <p>Es la primera vez que se usa este QR en este teléfono. Escriba el código de acceso del vecino del QR (el mismo con que ingresa a garita.app). Se pide una sola vez: después basta con escanear el QR.</p>
+            <form id="pqLinkForm" autocomplete="off">
+                <input class="form-input" id="pqCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="64" placeholder="Código de acceso" aria-label="Código de acceso del vecino">
+                <button class="btn btn-primary" id="pqLinkBtn" type="submit" style="justify-content:center;">Vincular este teléfono</button>
+            </form>
+            <p class="pq-msg" id="pqLinkMsg" hidden></p>
+            <p class="text-xs text-muted" style="margin:0.75rem 0 0;">El código no se guarda en el teléfono. Quien escanee el QR sin el código no puede enviar alertas.</p>
+        </section>
+
+        <!-- El boton -->
+        <section class="pq-panic" id="pqStepPanic" hidden>
+            <button class="pq-big" id="btnPanicHold" type="button" aria-label="Botón de pánico: mantener presionado 2 segundos">
+                <div class="fill" id="panicFill"></div>
+                <span>
+                    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    PÁNICO
+                </span>
+            </button>
+            <p class="pq-hint">Mantenga presionado 2 segundos</p>
+            <p class="pq-warn" id="pqNoGps" hidden>Sin su ubicación la alerta sale igual, con su lote y su nombre, pero sin el mapa.</p>
+            <div class="panic-status" id="panicStatus" hidden></div>
+        </section>
+
+        <footer class="pq-foot">
+            <button class="btn btn-ghost btn-sm" id="pqUnlink" type="button" style="border:1px solid var(--border-strong);" hidden>Desvincular este teléfono</button>
+            <a href="index.html">Ir a garita.app</a>
+        </footer>
+    </main>
+
+    <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
+    <script src="rondas-core.js?v=20261117c"></script>
+    <script src="gps-ayuda.js?v=20261120a"></script>
+    <script src="panico-qr.js?v=20261120a"></script>
+    <script>
+        (() => {
+            const Q = SisdelPanicoQr;
+            const $ = (id) => document.getElementById(id);
+            try { if (localStorage.getItem('sisdel_theme') === 'light') document.body.classList.add('light-mode'); } catch (e) { /* sin almacenamiento */ }
+
+            const qs = Q.parsePanicQuery(location.search);
+            const errorBox = $('pqError');
+            const fail = (text) => { errorBox.textContent = text; errorBox.hidden = !text; };
+            if (!qs) {
+                fail('Este QR no es válido. Pida uno nuevo a la administración.');
+                $('pqStepGps').hidden = true;
+                return;
+            }
+            let forceProd = false;
+            try { forceProd = localStorage.getItem('sisdel_backend') === 'prod'; } catch (e) { /* sin almacenamiento */ }
+            const api = (name, data) => Q.callFunction(Q.functionUrl(location, name, forceProd), { c: qs.c, v: qs.v, ...data });
+
+            // Lo que este telefono recuerda del QR (la clave del vinculo, nunca el codigo de acceso)
+            const KEY = Q.storageKey(qs.c, qs.v);
+            const readLink = () => { try { const l = JSON.parse(localStorage.getItem(KEY)); return l && l.secret ? l : null; } catch (e) { return null; } };
+            const saveLink = (l) => { try { localStorage.setItem(KEY, JSON.stringify(l)); return true; } catch (e) { return false; } };
+            const dropLink = () => { try { localStorage.removeItem(KEY); } catch (e) { /* nada que borrar */ } };
+            let link = readLink();
+            let gpsDone = false;
+            let blocked = false; // el servidor dijo que este vecino no puede usar el boton
+
+            function paintWho() {
+                $('pqWho').textContent = link ? [Q.unitLabel(link.casa), link.name].filter(Boolean).join(' · ') || 'Vecino' : 'QR de pánico de un vecino';
+                $('pqCondo').textContent = link ? link.condoName || '' : '';
+                $('pqUnlink').hidden = !link;
+            }
+            // Despues de la ubicacion: el boton si el telefono esta vinculado; si no, vincularlo
+            function showNext() {
+                if (!gpsDone || blocked) return;
+                $('pqStepLink').hidden = !!link;
+                $('pqStepPanic').hidden = !link;
+                if (!link) setTimeout(() => $('pqCode').focus(), 50);
+            }
+            function linkMessage(text, bad) {
+                const m = $('pqLinkMsg');
+                m.textContent = text || '';
+                m.className = 'pq-msg' + (bad ? ' bad' : '');
+                m.hidden = !text;
+            }
+            function needRelink(text) {
+                dropLink();
+                link = null;
+                paintWho();
+                linkMessage(text, true);
+                showNext();
+            }
+            paintWho();
+
+            // ── Paso 1: la ubicacion (se pide sola al abrir y se espera la respuesta antes de mostrar el boton) ──
+            // Una pagina NO puede activar la ubicacion ni abrir los Ajustes: si esta bloqueada, la ayuda guia con los pasos.
+            // "Abrir en Safari" abre este mismo QR (cada navegador tiene su propio permiso y su propio vinculo)
+            SisdelGpsAyuda.mount({
+                safariUrl: location.href,
+                safariText: 'Como Safari ya tiene la ubicación activada, abra allí este mismo QR, toque "Permitir" si el teléfono pregunta y vincule el teléfono con su código (cada navegador se vincula aparte).'
+            });
+            const GPS_TEXT = {
+                granted: 'Listo: la alerta llevará dónde está.',
+                denied: 'La ubicación está bloqueada en este teléfono. Siga los pasos para activarla; mientras tanto, el botón funciona igual.',
+                timeout: 'El teléfono no respondió. Toque "Activar ubicación" para intentarlo otra vez; el botón ya funciona.',
+                unsupported: 'Este teléfono no da la ubicación: la alerta saldrá con su lote y su nombre.'
+            };
+            function paintGpsStep(state) {
+                const ok = state.status === 'ok';
+                $('pqStepGps').classList.toggle('done', ok);
+                $('pqNoGps').hidden = ok || !gpsDone;
+                if (ok) $('pqGpsText').textContent = GPS_TEXT.granted;
+            }
+            SisdelRondas.gps.onChange((s) => { SisdelGpsAyuda.paint(s); paintGpsStep(s); });
+            function afterGps(result) {
+                gpsDone = true;
+                if (result === 'granted') SisdelRondas.gps.start(); // y sigue la posicion mientras la pagina esta visible
+                const ok = SisdelRondas.gps.state().status === 'ok' || result === 'granted';
+                $('pqGpsText').textContent = GPS_TEXT[ok ? 'granted' : result] || GPS_TEXT.timeout;
+                if (result === 'denied') SisdelGpsAyuda.open();
+                paintGpsStep(SisdelRondas.gps.state());
+                if (ok) $('pqNoGps').hidden = true;
+                showNext();
+            }
+            $('panicGps').addEventListener('click', () => SisdelGpsAyuda.ask(false).then((r) => { if (r === 'granted') $('pqGpsText').textContent = GPS_TEXT.granted; }));
+            SisdelGpsAyuda.paint({ status: 'searching' });
+            $('panicGpsText').textContent = 'Esperando su permiso...';
+            const asking = SisdelRondas.gps.ask(25000);
+            // Mientras tanto se comprueba el vinculo (sin esperar: con poca senal el boton no se atrasa)
+            if (link) {
+                api('panicDevice', { action: 'check', secret: link.secret }).then((res) => {
+                    if (res.ok) {
+                        link = { ...link, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel };
+                        saveLink(link);
+                        paintWho();
+                        if (res.alert) follow(res.alert);
+                    } else if (res.relink) needRelink(res.error);
+                    else { blocked = true; fail(res.error); $('pqStepPanic').hidden = true; $('pqStepLink').hidden = true; }
+                }).catch((e) => console.warn('qr panico: sin conexion al comprobar', e));
+            }
+            asking.then(afterGps, () => afterGps('timeout'));
+            // Al volver de los Ajustes del telefono la ubicacion se comprueba sola; oculta, descansa (bateria)
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) SisdelRondas.gps.stop();
+                else if (gpsDone) SisdelRondas.gps.start();
+            });
+            ['focus', 'pageshow'].forEach((ev) => window.addEventListener(ev, () => { if (gpsDone && SisdelRondas.gps.state().status !== 'ok') SisdelRondas.gps.start(); }));
+
+            // ── Paso 2: vincular este telefono con el codigo del vecino (una sola vez) ──
+            $('pqLinkForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const input = $('pqCode');
+                const code = input.value.trim().toUpperCase();
+                if (!code) { linkMessage('Escriba el código de acceso.', true); return; }
+                const btn = $('pqLinkBtn');
+                btn.disabled = true;
+                linkMessage('Comprobando...', false);
+                try {
+                    const res = await api('linkPanicDevice', { code });
+                    input.value = ''; // el codigo no se queda en la pagina
+                    if (!res.ok) { linkMessage(res.error, true); return; }
+                    link = { secret: res.secret, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel, at: new Date().toISOString() };
+                    const kept = saveLink(link);
+                    linkMessage(kept ? '' : 'Vinculado solo por ahora: este navegador no deja guardar datos (¿modo privado?) y tendrá que vincularlo cada vez.', !kept);
+                    paintWho();
+                    showNext();
+                    if (!kept) $('pqStepLink').hidden = false;
+                } catch (err) {
+                    console.error(err);
+                    linkMessage('No hay conexión con el servidor. Revise su internet e intente de nuevo.', true);
+                } finally { btn.disabled = false; }
+            });
+            $('pqUnlink').addEventListener('click', async () => {
+                if (!link || !confirm('¿Desvincular este teléfono? Para volver a usar el QR aquí tendrá que escribir el código del vecino.')) return;
+                const secret = link.secret;
+                needRelink('');
+                api('panicDevice', { action: 'unlink', secret }).catch(() => {});
+            });
+
+            // ── El boton: mantener presionado 2 segundos (como en el portal del vecino) ──
+            const panicBtn = $('btnPanicHold');
+            const panicFill = $('panicFill');
+            const panicStatus = $('panicStatus');
+            const HOLD_MS = 2000;
+            let holdTimer = null;
+            let pollTimer = null;
+            let current = null;
+            const PANIC_TEXT = {
+                ACTIVE: 'Alerta enviada. La garita y la administración ya fueron avisadas. Manténgase en un lugar seguro.',
+                ATTENDED: 'Su alerta fue atendida',
+                RESOLVED: 'Su alerta fue resuelta.',
+                CANCELLED: 'Alerta cancelada.'
+            };
+            function status(text, calm) {
+                panicStatus.hidden = !text;
+                panicStatus.className = 'panic-status' + (calm ? ' calm' : '');
+                panicStatus.textContent = text || '';
+            }
+            function showAlert(a) {
+                current = a;
+                panicStatus.hidden = false;
+                panicStatus.className = 'panic-status' + (['RESOLVED', 'CANCELLED'].includes(a.status) ? ' calm' : '');
+                panicStatus.textContent = '';
+                const strong = document.createElement('strong');
+                strong.textContent = (PANIC_TEXT[a.status] || a.status) + (a.status === 'ATTENDED' && a.attendedByName ? ` por ${a.attendedByName}.` : (a.status === 'ATTENDED' ? '.' : ''));
+                const when = document.createElement('div');
+                when.className = 'text-xs text-muted';
+                when.style.marginTop = '0.25rem';
+                when.textContent = (a.createdAt ? new Date(a.createdAt).toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : '') + (a.hasLocation ? '' : ' · sin ubicación GPS');
+                panicStatus.append(strong, when);
+                if (a.status === 'ACTIVE' && link && link.canCancel) {
+                    const cancel = document.createElement('button');
+                    cancel.className = 'btn btn-ghost btn-sm';
+                    cancel.type = 'button';
+                    cancel.style.marginTop = '0.5rem';
+                    cancel.textContent = 'Fue un error: cancelar la alerta';
+                    cancel.addEventListener('click', async () => {
+                        if (!confirm('¿Cancelar la alerta de pánico?')) return;
+                        try {
+                            const res = await api('panicDevice', { action: 'cancel', secret: link.secret, alertId: a.id });
+                            if (res.alert) showAlert(res.alert);
+                            if (!res.ok) alert(res.error);
+                        } catch (e) { alert('No hay conexión. Avise a la garita por teléfono que fue un error.'); }
+                    });
+                    panicStatus.append(cancel);
+                }
+            }
+            // Sigue la alerta (atendida, resuelta...) cada 15 s mientras la pagina esta a la vista
+            function follow(a) {
+                showAlert(a);
+                clearTimeout(pollTimer);
+                if (!['ACTIVE', 'ATTENDED'].includes(a.status)) return;
+                pollTimer = setTimeout(async function tick() {
+                    if (!link || !current || current.id !== a.id) return;
+                    if (!document.hidden) {
+                        try {
+                            const res = await api('panicDevice', { action: 'status', secret: link.secret, alertId: a.id });
+                            if (res.ok && res.alert) { showAlert(res.alert); if (!['ACTIVE', 'ATTENDED'].includes(res.alert.status)) return; }
+                        } catch (e) { /* sin senal: se vuelve a intentar */ }
+                    }
+                    pollTimer = setTimeout(tick, 15000);
+                }, 15000);
+            }
+            async function firePanic() {
+                if (!link) return;
+                panicBtn.disabled = true;
+                status('Enviando alerta... obteniendo su ubicación');
+                try {
+                    // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
+                    const pos = await SisdelRondas.gps.bestPosition(6000);
+                    const res = await api('panicDevice', { action: 'alert', secret: link.secret, lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null });
+                    if (res.ok) {
+                        if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+                        follow(res.alert);
+                    } else if (res.relink) { status(''); needRelink(res.error); }
+                    else status(res.error);
+                } catch (e) {
+                    console.error(e);
+                    status('No se pudo enviar la alerta: no hay conexión. Intente de nuevo o llame a la garita por teléfono.');
+                } finally { setTimeout(() => { panicBtn.disabled = false; }, 5000); }
+            }
+            function holdStartFn(e) {
+                if (panicBtn.disabled) return;
+                e.preventDefault();
+                SisdelRondas.gps.start(); // tambien calienta el GPS mientras pasan los 2 segundos
+                panicFill.style.transition = `height ${HOLD_MS}ms linear`;
+                panicFill.style.height = '100%';
+                holdTimer = setTimeout(() => { holdTimer = null; panicFill.style.transition = 'none'; panicFill.style.height = '0'; firePanic(); }, HOLD_MS);
+            }
+            function holdEndFn() {
+                if (!holdTimer) return;
+                clearTimeout(holdTimer);
+                holdTimer = null;
+                panicFill.style.transition = 'none';
+                panicFill.style.height = '0';
+            }
+            panicBtn.addEventListener('pointerdown', holdStartFn);
+            ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => panicBtn.addEventListener(ev, holdEndFn));
+            panicBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+            // Teclado: confirmacion en lugar de mantener presionado
+            panicBtn.addEventListener('keydown', (e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && confirm('¿Activar la alerta de pánico?')) { e.preventDefault(); firePanic(); }
+            });
+        })();
+    </script>
+</body>
+
+</html>

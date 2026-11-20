@@ -10,6 +10,8 @@
      adeudados, mapa de pagos por residente, estado de cuenta y reporte financiero). La contabilidad no se vuelve a calcular aqui: asi las cifras son siempre las de OIKOS, que ya
      trae sus propios botones de imprimir, PDF, WhatsApp y Excel.
    - Rondas (RONDIN): acceso directo al panel y al reporte semanal.
+   - Seguridad: el QR de panico de cada vecino (una tarjeta con el QR, el icono del boton de panico, su lote y su nombre,
+     para la puerta o el carro), por fase o elegidos, con Imprimir y PDF (panico-qr.js; al escanearlo se abre panico.html).
 
    Cada reporte propio ofrece Imprimir, Descargar PDF, Enviar por WhatsApp y Exportar a Excel (reportes-export.js) con el
    privilegio reportes.exportar. Cada categoria pide su privilegio (reportes.*) y los de lectura de los datos que muestra.
@@ -56,7 +58,9 @@ const SisdelReportes = (() => {
         { id: 'finanzas', label: 'Finanzas (OIKOS)', icon: 'money', allowed: (can) => can('reportes.finanzas') && can('finanzas.usar') && FIN_REPORTS.some((r) => can(r.key)),
             reports: (can) => FIN_REPORTS.filter((r) => can(r.key)).map((r) => ({ id: `fin-${r.id}`, label: r.title, text: r.text, href: `finanzas.html#reportes/${r.id}` })) },
         { id: 'rondas', label: 'Rondas (RONDIN)', icon: 'route', allowed: (can) => can('reportes.rondas') && can('rondas.panel_ver'),
-            reports: () => [{ id: 'rondas-panel', label: 'Panel y reporte semanal de Rondas', text: 'Cumplimiento de rondas por guardia, incidentes, alertas y el reporte semanal del Director General.', href: 'rondin/' }] }
+            reports: () => [{ id: 'rondas-panel', label: 'Panel y reporte semanal de Rondas', text: 'Cumplimiento de rondas por guardia, incidentes, alertas y el reporte semanal del Director General.', href: 'rondin/' }] },
+        { id: 'seguridad', label: 'Seguridad', icon: 'qr', allowed: (can) => can('reportes.panico_qr') && can('usuarios.ver'),
+            reports: () => [{ id: 'panico-qr', label: 'QR de pánico por vecino', text: 'Una tarjeta por vecino con su QR de pánico, su lote y su nombre, para pegarla en la puerta de la casa o en el carro: al escanearla se abre el botón de pánico.' }] }
     ];
 
     const svg = (inner, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
@@ -65,6 +69,9 @@ const SisdelReportes = (() => {
         alert: svg('<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
         money: svg('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
         route: svg('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'),
+        qr: svg('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>'),
+        print: svg('<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>', 16),
+        pdf: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/>', 16),
         down: svg('<polyline points="6 9 12 15 18 9"/>', 16),
         up: svg('<polyline points="18 15 12 9 6 15"/>', 16),
         back: svg('<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>', 15),
@@ -165,6 +172,13 @@ const SisdelReportes = (() => {
         .rp-acc-label { flex:1; }
         .rp-acc-arrow { color:var(--text-muted); font-size:1.15rem; line-height:1; }
         .rp-back { margin-bottom:1rem; }
+        .pq-preview { display:flex; flex-wrap:wrap; gap:4mm; align-items:flex-start; padding:1rem; border-radius:0.75rem; background:#e2e8f0; }
+        .pq-picklist { max-height:16rem; overflow-y:auto; border:1px solid var(--border-strong); border-radius:0.6rem; padding:0.35rem; margin-top:0.6rem; }
+        .pq-pickrow { display:flex; align-items:center; gap:0.6rem; padding:0.4rem 0.5rem; border-radius:0.4rem; cursor:pointer; font-size:0.85rem; }
+        .pq-pickrow:hover { background:rgba(148,163,184,0.12); }
+        .pq-pickrow input { width:1.05rem; height:1.05rem; flex:none; }
+        .pq-pickrow .u { font-weight:700; min-width:5.5rem; }
+        .pq-pickbar { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
         .rp-printonly { display:none; }
         @media (max-width:640px) {
             .rp-grid { grid-template-columns:1fr; }
@@ -477,6 +491,183 @@ const SisdelReportes = (() => {
             }, finLink ? `<a class="btn btn-ghost btn-sm" href="finanzas.html#reportes/morosos">${ICONS.open} Meses adeudados en Finanzas</a>` : '');
         }
 
+        // ── QR de panico por vecino (panico-qr.js): una tarjeta por vecino para la puerta o el carro ──
+        // El QR solo lleva el condominio y el vecino (nunca su codigo): por si solo no deja enviar alertas. Se dibuja aqui, en el
+        // navegador, con la libreria de vendor/ (nada se manda a otro servicio)
+        const PQ = () => (typeof SisdelPanicoQr !== 'undefined' ? SisdelPanicoQr : window.SisdelPanicoQr);
+        let qrLibLoad = null;
+        function loadQrLib() {
+            if (typeof qrcode === 'function') return Promise.resolve(qrcode);
+            if (!qrLibLoad) {
+                qrLibLoad = new Promise((resolve, reject) => {
+                    const tag = document.createElement('script');
+                    tag.src = PQ().QR_LIB;
+                    tag.onload = () => resolve(window.qrcode);
+                    tag.onerror = () => { qrLibLoad = null; reject(new Error('No se pudo cargar el generador de QR')); };
+                    document.head.appendChild(tag);
+                });
+            }
+            return qrLibLoad;
+        }
+        const pqState = { mode: 'all', fase: '', size: 'chica', paper: 'carta', picked: new Set(), search: '' };
+        async function renderPanicQr(def) {
+            const Q = PQ();
+            if (!Q) { body.innerHTML = emptyState('Falta panico-qr.js en la página.'); return; }
+            const mine = seq;
+            body.innerHTML = emptyState('Cargando los vecinos...');
+            // La lista de usuarios del panel puede estar llegando (se abrio la direccion #reportes/panico-qr directo)
+            for (let i = 0; i < 40 && !(opts.getUsers ? opts.getUsers() : []).length; i++) await new Promise((r) => setTimeout(r, 250));
+            let lib;
+            try { lib = await loadQrLib(); } catch (e) { if (mine === seq) body.innerHTML = emptyState('No se pudo cargar el generador de QR. Revise su conexión e intente de nuevo.'); return; }
+            if (mine !== seq) return;
+            const all = Q.neighbors(opts.getUsers ? opts.getUsers() : []);
+            const fases = Q.fases(all);
+            const hasFases = fases.some((f) => f);
+            if (!pqState.fase || !fases.includes(pqState.fase)) pqState.fase = fases[0] || '';
+            const origin = Q.publicOrigin(location);
+            const matrixCache = new Map();
+            const withQr = (card) => {
+                if (!matrixCache.has(card.url)) matrixCache.set(card.url, Q.qrMatrix(lib, card.url));
+                const matrix = matrixCache.get(card.url);
+                return { ...card, matrix, svg: Q.qrSvg(matrix) };
+            };
+            const PREVIEW = 12;
+            const faseLabel = (f) => (f ? (/^fase\b/i.test(f) ? f : `Fase ${f}`) : 'Sin fase');
+            body.innerHTML = `
+                <div class="rp-head">
+                    <div>
+                        <h3>${esc(def.label)}</h3>
+                        <p class="text-xs text-muted">${esc(condoName)} · generado por ${esc(userName)}</p>
+                    </div>
+                    <div class="rp-actions">
+                        <button type="button" class="btn btn-primary btn-sm" id="pqPrint" style="gap:0.4rem;">${ICONS.print} Imprimir</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="pqPdf" style="gap:0.4rem; border:1px solid var(--border-strong);">${ICONS.pdf} Descargar PDF</button>
+                    </div>
+                </div>
+                ${note('Cada vecino tiene su propio QR. Al escanearlo, el teléfono pide primero la ubicación y después muestra el botón de pánico. La primera vez en cada teléfono, el vecino escribe su código de acceso para vincularlo: el QR solo no deja enviar alertas y no lleva el código.')}
+                <p class="rp-note warn" id="pqWarn" style="display:none;"></p>
+                <div class="rp-filter">
+                    <div class="rp-field"><label for="pqMode">Imprimir</label>
+                        <select class="form-input" id="pqMode" style="padding-left:0.85rem;">
+                            <option value="all">Todos los vecinos (${all.length})</option>
+                            <option value="fase">Por fase</option>
+                            <option value="picked">Elegidos uno por uno</option>
+                        </select></div>
+                    <div class="rp-field" id="pqFaseField"><label for="pqFase">Fase</label>
+                        <select class="form-input" id="pqFase" style="padding-left:0.85rem;" ${hasFases ? '' : 'disabled'}>${fases.map((f) => `<option value="${esc(f)}">${esc(faseLabel(f))} (${all.filter((u) => String(u.fase || '').trim() === f).length})</option>`).join('')}</select></div>
+                    <div class="rp-field"><label for="pqSize">Tamaño</label>
+                        <select class="form-input" id="pqSize" style="padding-left:0.85rem;">${Object.entries(Q.SIZES).map(([id, z]) => `<option value="${id}">${esc(z.label)}</option>`).join('')}</select></div>
+                    <div class="rp-field"><label for="pqPaper">Hoja</label>
+                        <select class="form-input" id="pqPaper" style="padding-left:0.85rem;">${Object.entries(Q.PAPERS).map(([id, z]) => `<option value="${id}">${esc(z.label)}</option>`).join('')}</select></div>
+                </div>
+                <div id="pqPick" class="card rp-card" style="margin-bottom:1.25rem; display:none;">
+                    <div class="pq-pickbar">
+                        <input type="search" class="form-input" id="pqSearch" placeholder="Buscar por nombre, lote o fase" style="flex:1; min-width:12rem; padding-left:1rem;">
+                        <button type="button" class="btn btn-ghost btn-sm" id="pqPickAll" style="border:1px solid var(--border-strong);">Marcar los de la lista</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="pqPickNone" style="border:1px solid var(--border-strong);">Quitar marcas</button>
+                    </div>
+                    <div class="pq-picklist" id="pqPickList"></div>
+                </div>
+                <p class="text-sm" id="pqSummary" style="font-weight:700; margin:0 0 0.75rem;"></p>
+                <div class="pq-preview" id="pqPreview"></div>`;
+            const $ = (id) => body.querySelector(`#${id}`);
+            $('pqMode').value = pqState.mode;
+            $('pqFase').value = pqState.fase;
+            $('pqSize').value = pqState.size;
+            $('pqPaper').value = pqState.paper;
+            $('pqSearch').value = pqState.search;
+            // Vecinos sin lote: su tarjeta sale solo con el nombre
+            const noUnit = all.filter((u) => !String(u.casa || '').trim()).length;
+            if (noUnit) { $('pqWarn').textContent = `${noUnit} vecino(s) no tienen lote anotado: su tarjeta sale solo con el nombre.`; $('pqWarn').style.display = ''; }
+            // Sin el boton de panico de vecinos activado (RONDIN > Configuracion) el QR no sirve todavia: se avisa
+            if (typeof SisdelRondas !== 'undefined') {
+                SisdelRondas.neighborPanicEnabled().then((on) => {
+                    if (on || mine !== seq) return;
+                    const w = $('pqWarn');
+                    if (!w) return;
+                    w.textContent = 'El botón de pánico de vecinos está apagado (Rondas > Configuración > "Vecinos usarán botón de pánico"): los QR no enviarán alertas hasta activarlo.' + (noUnit ? ` ${w.textContent}` : '');
+                    w.style.display = '';
+                }).catch(() => {});
+            }
+
+            const chosen = () => Q.select(all, { mode: pqState.mode, fase: pqState.fase, ids: [...pqState.picked] });
+            const searchFields = (u) => [u.name, u.casa, u.fase ? faseLabel(u.fase) : ''];
+            const visibleForPick = () => (pqState.search && typeof SisdelBusqueda !== 'undefined' ? SisdelBusqueda.filter(all, pqState.search, searchFields) : all);
+            function paintPick() {
+                const list = visibleForPick();
+                $('pqPickList').innerHTML = list.length ? list.slice(0, 300).map((u) => `
+                    <label class="pq-pickrow"><input type="checkbox" data-pq-id="${esc(u.id)}" ${pqState.picked.has(u.id) ? 'checked' : ''}>
+                        <span class="u">${esc(Q.unitLabel(u.casa) || 'Sin lote')}</span><span>${esc(u.name)}</span>${u.fase ? `<span class="text-xs text-muted">${esc(faseLabel(u.fase))}</span>` : ''}</label>`).join('')
+                    + (list.length > 300 ? `<p class="text-xs text-muted" style="padding:0.4rem 0.5rem;">Se muestran 300 de ${list.length}: busque para ver los demás.</p>` : '')
+                    : '<p class="text-sm text-muted" style="padding:0.5rem;">Ningún vecino coincide con la búsqueda.</p>';
+                $('pqPickList').querySelectorAll('[data-pq-id]').forEach((box) => box.addEventListener('change', () => {
+                    if (box.checked) pqState.picked.add(box.dataset.pqId); else pqState.picked.delete(box.dataset.pqId);
+                    paintCards();
+                }));
+            }
+            function paintCards() {
+                $('pqFaseField').style.display = pqState.mode === 'fase' ? '' : 'none';
+                $('pqPick').style.display = pqState.mode === 'picked' ? '' : 'none';
+                const list = chosen();
+                const L = Q.layout(pqState.paper, pqState.size);
+                const sheets = Q.pages(list.length, L.perPage);
+                $('pqSummary').textContent = list.length
+                    ? `${list.length} tarjeta${list.length === 1 ? '' : 's'} · ${sheets} hoja${sheets === 1 ? '' : 's'} ${L.paper.label.toLowerCase()} (${L.perPage} por hoja)`
+                    : (pqState.mode === 'picked' ? 'Marque a los vecinos que quiere imprimir.' : 'No hay vecinos para imprimir.');
+                const cards = Q.cardsFor(list.slice(0, PREVIEW), origin, condoId).map(withQr);
+                $('pqPreview').innerHTML = cards.map((c) => Q.cardHtml(c, pqState.size, c.svg, condoName)).join('')
+                    + (list.length > PREVIEW ? `<p class="text-sm text-muted" style="align-self:center; color:#334155;">y ${list.length - PREVIEW} más en la impresión</p>` : '');
+                $('pqPreview').style.display = list.length ? '' : 'none';
+                $('pqPrint').disabled = $('pqPdf').disabled = !list.length;
+            }
+            if (!document.getElementById('pqCardStyles')) {
+                const style = document.createElement('style');
+                style.id = 'pqCardStyles';
+                style.textContent = Q.CARD_CSS;
+                document.head.appendChild(style);
+            }
+            $('pqMode').addEventListener('change', (e) => { pqState.mode = e.target.value; if (pqState.mode === 'picked') paintPick(); paintCards(); });
+            $('pqFase').addEventListener('change', (e) => { pqState.fase = e.target.value; paintCards(); });
+            $('pqSize').addEventListener('change', (e) => { pqState.size = e.target.value; paintCards(); });
+            $('pqPaper').addEventListener('change', (e) => { pqState.paper = e.target.value; paintCards(); });
+            $('pqSearch').addEventListener('input', (e) => { pqState.search = e.target.value; paintPick(); });
+            $('pqPickAll').addEventListener('click', () => { visibleForPick().forEach((u) => pqState.picked.add(u.id)); paintPick(); paintCards(); });
+            $('pqPickNone').addEventListener('click', () => { pqState.picked.clear(); paintPick(); paintCards(); });
+            const fileName = () => `qr-panico-${slug}-${ymd(today())}`;
+            $('pqPrint').addEventListener('click', () => {
+                const list = chosen();
+                if (!list.length) return;
+                // Una ventana aparte solo con las hojas de tarjetas (con su tamano de hoja): lo que se ve es lo que sale
+                const win = window.open('', '_blank');
+                if (!win) { S.showToast('El navegador bloqueó la ventana de impresión: permita las ventanas emergentes de garita.app.', 'warning'); return; }
+                const cards = Q.cardsFor(list, origin, condoId).map(withQr);
+                win.document.open();
+                win.document.write(Q.printHtml(cards, { paper: pqState.paper, size: pqState.size, condoName, title: fileName() }));
+                win.document.close();
+                win.focus();
+                setTimeout(() => win.print(), 400);
+            });
+            $('pqPdf').addEventListener('click', async () => {
+                const list = chosen();
+                if (!list.length) return;
+                const btn = $('pqPdf');
+                btn.disabled = true;
+                try {
+                    await RX.ensurePdfLibs();
+                    const { jsPDF } = window.jspdf;
+                    const L = Q.layout(pqState.paper, pqState.size);
+                    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [L.paper.w, L.paper.h], compress: true });
+                    Q.drawPdf(doc, Q.cardsFor(list, origin, condoId).map(withQr), { paper: pqState.paper, size: pqState.size, condoName });
+                    doc.save(`${fileName()}.pdf`);
+                } catch (e) {
+                    console.error(e);
+                    S.showToast('No se pudo generar el PDF. Revise su conexión e intente de nuevo.', 'error');
+                } finally { btn.disabled = false; }
+            });
+            if (pqState.mode === 'picked') paintPick();
+            paintCards();
+        }
+
         function showCatalog(openId) {
             current = '';
             seq++;
@@ -499,6 +690,7 @@ const SisdelReportes = (() => {
             catalogEl.style.display = 'none';
             viewEl.style.display = '';
             if (def.id === 'morosos-fecha') renderMorosos(def);
+            else if (def.id === 'panico-qr') renderPanicQr(def);
             else garitaShell(def);
             return current;
         }

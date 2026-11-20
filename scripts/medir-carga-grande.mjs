@@ -79,7 +79,7 @@ async function main() {
                 tablero: await timed(`navigate('dashboard')`),
                 residentesPantalla: await timed(`navigate('residents')`),
                 contabilidad: await timed(`navigate('accounting')`),
-                filasContabilidad: await inside(`return w.document.getElementById('accounting-table-body').children.length`),
+                filasContabilidad: await inside(`return (w.document.getElementById('accounting-table-body') || { children: [] }).children.length`),
                 estadoDeCuenta: await timed(`openEstadoCuenta(Store.get('residents')[0].id)`),
                 fotoParaDeshacer: await timed(`History.push()`),
                 reporteMorosos: await timed(`closeModal('modal-estado-cuenta'); navigate('reports'); selectReport('morosos')`),

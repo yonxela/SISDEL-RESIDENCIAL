@@ -52,6 +52,18 @@
 
         @media (max-width: 640px) {
             .label-wide { display: none; }
+            /* SISDEL: en el celular la barra va en una sola linea y ocupa poco (pedido del usuario el 2026-11-20): el nombre del
+               condominio se corta con puntos suspensivos, sin el subtitulo, y con todo guardado solo queda el punto verde */
+            .fin-bar { flex-wrap: nowrap; padding: 0.4rem 0.75rem; gap: 0.5rem; }
+            .fin-brand { flex: 1; }
+            .fin-brand > div:last-child { min-width: 0; }
+            .fin-brand .brand-icon { width: 28px; height: 28px; }
+            .fin-brand h1 { font-size: 0.9rem; }
+            .fin-brand p { display: none; }
+            .fin-actions { flex-shrink: 0; gap: 0.35rem; }
+            .sync-pill[data-state="ok"] #syncText { display: none; }
+            .sync-pill[data-state="ok"] { padding: 0.45rem; }
+            #btnBack { padding: 0.45rem 0.6rem; }
         }
     </style>
 </head>
@@ -101,8 +113,8 @@
     <script src="privilegios.js?v=20261118n"></script>
     <script src="sisdel-core.js?v=20261118n"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261120b"></script>
-    <script src="finanzas-bloqueo.js?v=20261120b"></script>
+    <script src="finanzas-sync.js?v=20261120c"></script>
+    <script src="finanzas-bloqueo.js?v=20261120c"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>

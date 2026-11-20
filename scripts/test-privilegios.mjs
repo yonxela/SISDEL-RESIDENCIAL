@@ -582,6 +582,12 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             && (print.match(/white-space:nowrap/g) || []).length >= 3;
     })());
     yes('WhatsApp junta las cuotas por ano cuando son muchas (como mucho 12 lineas)', /if \(forText && list\.rows\.length > 12\) \{\s*const groups = SisdelReportesOikos\.pendingByYear\(list, \{ max: 11 \}\);/.test(oikos));
+    // OIKOS en el celular y Contabilidad sin la lista (pedido del usuario el 2026-11-20)
+    yes('en el celular el menu de OIKOS se esconde, se abre con su boton y se cierra al elegir una opcion', /@media \(max-width: 767px\) \{\s*#oikos-sidebar \{ position: fixed;[^}]*transform: translateX\(-100%\)/.test(oikos) && /body\.oikos-menu-open #oikos-sidebar \{ transform: none;/.test(oikos)
+        && /<aside id="oikos-sidebar"/.test(oikos) && /id="oikos-menu-btn" onclick="oikosMenu\(true\)"/.test(oikos) && /<div id="oikos-menu-backdrop" onclick="oikosMenu\(false\)"><\/div>/.test(oikos) && /oikosMenu\(false\);\s*\/\/ SISDEL: en el celular, al elegir una opcion/.test(oikos));
+    yes('en el celular la lista de Residentes cabe (sin DPI, telefono ni lote) y la barra de SISDEL va en una linea', /#view-residents table tr > th:nth-child\(3\)/.test(oikos) && /\.fin-bar \{ flex-wrap: nowrap;/.test(read('finanzas.html')) && /\.sync-pill\[data-state="ok"\] #syncText \{ display: none; \}/.test(read('finanzas.html')));
+    yes('Contabilidad ya no trae la lista de movimientos ni sus filtros, y lleva al Estado de cuenta general', !oikos.includes('id="accounting-table-body"') && !/onclick="setTxFilter\(/.test(oikos) && /id="acc-moves-note"/.test(oikos) && /function openMovementsReport\(\) \{\s*navigate\('reports'\);\s*selectReport\('account-statement'\);/.test(oikos)
+        && /if \(!document\.getElementById\('accounting-table-body'\)\) \{ renderCharges\(\); return; \}/.test(oikos));
     // Cuota del mes: privilegio con su nombre y, en cobro manual, la clave de quien la aplica
     const auth = read('functions/src/auth.js');
     yes('el privilegio se llama como el boton: "Cuota del mes: aplicarla a todos los residentes" y avisa que pide la clave en cobro manual', (() => { const k = P.itemOf('finanzas.cuotas_mes'); return !!k && /^Cuota del mes/.test(k.label) && /pide la clave/.test(k.description) && k.sensitive === true; })());

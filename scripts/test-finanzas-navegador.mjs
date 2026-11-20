@@ -99,7 +99,8 @@ async function run() {
         await waitFor('el servidor le pone su sello', async () => !!(await txRef(payment.id).get()).get('server_at'));
         copy = await page.evaluate(COPY);
         equal('y no queda nada pendiente en el equipo', copy.pendientes, []);
-        equal('la tabla de contabilidad lo muestra primero', await inside(`return w.document.querySelector('#accounting-table-body tr').innerText.includes('500.00');`), true);
+        // Contabilidad ya no tiene la lista (2026-11-20): el pago esta en Reportes > Estado de cuenta general, con su boton de detalle
+        equal('el Estado de cuenta general (Reportes) lo muestra y abre su detalle', await oikos(`(() => { navigate('accounting'); const noList = !document.getElementById('accounting-table-body'); openMovementsReport(); const btn = [...document.querySelectorAll('#view-reports button[onclick^="openTxDetail("]')].find((b) => b.getAttribute('onclick').includes(${JSON.stringify(payment.id)})); return [noList, currentView, !!btn]; })()`), [true, 'reports', true]);
 
         console.log('\nAnular, deshacer y rehacer');
         await oikos(`deleteTransaction(${JSON.stringify(payment.id)})`);
@@ -1132,7 +1133,7 @@ async function run() {
         equal('en la nube: tipo, cuotas, motivo y autor', [cloudDisc.exists, cloudDisc.get('type'), (cloudDisc.get('moraItems') || []).length, cloudDisc.get('reason'), cloudDisc.get('byId') === applied.who.id], [true, 'mora_discount', 2, 'Acuerdo de pago de prueba', true]);
         const ecDisc = await oikos(`(() => { closeModal('modal-income'); openEstadoCuenta('u-ana'); const out = [getEcData().rows.some((x) => x.id === ${JSON.stringify(applied.tx.id)}), document.getElementById('ec-mora-note').textContent.includes('Mora descontada: ' + formatMoney(${byAmount})), (ecReportModel(true).kpis || []).some((k) => k.label === 'Mora descontada')]; closeModal('modal-estado-cuenta'); return out; })()`);
         equal('el estado de cuenta no lo lista como movimiento del libro y dice la mora descontada (tambien en Excel, PDF y WhatsApp)', ecDisc, [false, true, true]);
-        equal('no aparece en Contabilidad (no es dinero)', await oikos(`(() => { navigate('accounting'); renderAccounting(); return document.getElementById('accounting-table-body').innerHTML.includes(${JSON.stringify(applied.tx.id)}); })()`), false);
+        equal('no aparece en el Estado de cuenta general (no es dinero)', await oikos(`(() => { openMovementsReport(); return document.getElementById('view-reports').innerHTML.includes(${JSON.stringify(applied.tx.id)}); })()`), false);
         const discRep = await oikos(`(() => { navigate('reports'); selectReport('mora-discounts'); const d = currentReportData; const row = d.rows[d.rows.length - 1]; return { title: document.getElementById('rep-current').textContent, n: d.rows.length, row: row.map(stripCellHtml), meta: d.rowsMeta[d.rows.length - 1], high: d.highlights[0].value, wa: SisdelReportExport.whatsappText(currentReportModel(false)).slice(0, 200), xlsx: currentReportModel(true).fileName }; })()`);
         record('el reporte Descuentos de mora lo lista con residente, meses, monto, motivo y quien lo hizo', discRep.title === 'Descuentos de mora' && discRep.n >= 1 && discRep.row[1].includes('Ana') && discRep.row[6] === 'Acuerdo de pago de prueba' && discRep.row[8] === 'Vigente' && discRep.meta.kind === 'tx', JSON.stringify(discRep));
         equal('con la mora descontada arriba y su salida a WhatsApp y Excel', [discRep.high === await oikos(`formatMoney(${byAmount})`), /Descuentos de mora/i.test(discRep.wa), !!discRep.xlsx], [true, true, true]);
@@ -1407,6 +1408,35 @@ async function run() {
         equal('al registrar un residente nuevo el nombre si se escribe', await oikos(`(() => { closeModal('modal-resident'); openModal('modal-resident'); return document.getElementById('res-name').readOnly; })()`), false);
         equal('sin "cambiar la fecha" el Ingreso no muestra la fecha del pago', await oikos(`(() => { closeModal('modal-resident'); navigate('accounting'); openModal('modal-income'); return getComputedStyle(document.getElementById('inc-date-wrap')).display; })()`), 'none');
         await oikos(`closeModal('modal-income')`);
+
+        console.log('\nCelular: el menu se esconde y cada pantalla usa todo el ancho');
+        await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+        await sleep(400);
+        const phone = await oikos(`(async () => {
+            const wait = () => new Promise((r) => setTimeout(r, 350));   // el menu entra deslizandose (0.2 s)
+            const side = () => document.getElementById('oikos-sidebar').getBoundingClientRect();
+            const main = () => document.querySelector('main .section-container');
+            navigate('dashboard');
+            const out = { hidden: side().right <= 0, btn: getComputedStyle(document.getElementById('oikos-menu-btn')).display !== 'none', date: getComputedStyle(document.getElementById('current-date')).display };
+            document.getElementById('oikos-menu-btn').click();
+            await wait();
+            out.opened = side().left >= 0 && document.body.classList.contains('oikos-menu-open');
+            document.getElementById('nav-residents').click();
+            out.closed = !document.body.classList.contains('oikos-menu-open') && currentView === 'residents';
+            out.residentsFit = main().scrollWidth <= main().clientWidth + 1;
+            oikosMenu(true); document.getElementById('oikos-menu-backdrop').click();
+            out.backdrop = !document.body.classList.contains('oikos-menu-open');
+            navigate('accounting');
+            out.accountingFit = main().scrollWidth <= main().clientWidth + 1;
+            return out;
+        })()`);
+        equal('en el celular el menu no se ve hasta tocar su boton, y la fecha no ocupa el encabezado', [phone.hidden, phone.btn, phone.date], [true, true, 'none']);
+        equal('el boton abre el menu; elegir Residentes lo cierra y muestra solo Residentes; tocar fuera tambien lo cierra', [phone.opened, phone.closed, phone.backdrop], [true, true, true]);
+        equal('Residentes y Contabilidad caben en el ancho del celular (sin moverse de lado)', [phone.residentsFit, phone.accountingFit], [true, true]);
+        equal('la barra de SISDEL va en una sola linea', await page.evaluate(`(() => { const bar = document.querySelector('.fin-bar'); return bar.getBoundingClientRect().height < 60; })()`), true);
+        await page.send('Emulation.clearDeviceMetricsOverride');
+        await sleep(400);
+        equal('en una pantalla ancha el menu se ve siempre y el boton no', await oikos(`[document.getElementById('oikos-sidebar').getBoundingClientRect().left >= 0, getComputedStyle(document.getElementById('oikos-menu-btn')).display]`), [true, 'none']);
 
         console.log('\nActualizar (OIKOS se vuelve a montar sin recargar la pagina)');
         const beforeRemount = await oikos(`[Store.getRaw('transactions').length, Store.get('residents').length]`);

@@ -122,6 +122,10 @@ equal('sin el reporte financiero tampoco se ve el de ingresos y egresos por mes'
 equal('"Ver el reporte" de las graficas del tablero pide el reporte por mes (se oculta y se bloquea sin el); las flechas no piden nada mas',
     [cssCashier.includes('#dash-months-report'), B.cssFor(only('reportes_resumen')).includes('#dash-months-report'), blocked('openDashMonthReport()', only('tablero_ver')), blocked('openDashMonthReport()', only('tablero_ver', 'reportes_resumen')), blocked('dashMonthsGo(-1)', only('tablero_ver')), blocked('dashMonthsGo(0)', only('tablero_ver'))],
     [true, false, true, false, false, false]);
+// Contabilidad sin la lista (2026-11-20): "Ver los movimientos" abre el Estado de cuenta general, que pide reportes_libro
+equal('"Ver los movimientos" de Contabilidad pide el Estado de cuenta general (se oculta y se bloquea sin el); el menu del celular no pide nada',
+    [B.cssFor(only('contabilidad_ver')).includes('#acc-moves-note button[onclick="openMovementsReport()"]'), B.cssFor(only('contabilidad_ver', 'reportes_libro')).includes('openMovementsReport'), blocked('openMovementsReport()', only('contabilidad_ver')), blocked('openMovementsReport()', only('reportes_libro')), blocked('oikosMenu(true)', only('tablero_ver')), blocked('oikosMenu(false)', only())],
+    [true, false, true, false, false, false]);
 equal('sin estado de cuenta el nombre del residente deja de ser enlace', B.cssFor(only('residentes_ver')).includes('text-decoration: none'), true);
 equal('con configuracion solo de lectura los campos quedan bloqueados', (() => {
     const css = B.cssFor(only('config_ver'));

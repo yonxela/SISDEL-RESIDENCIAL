@@ -246,6 +246,24 @@
         .dark ::placeholder { color: #64748b; }
         .dark ::-webkit-scrollbar-thumb { background: #334155; }
         .dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        /* SISDEL: en el celular (menos de 768 px) el menu de la izquierda se esconde para que cada pantalla use todo el ancho
+           (pedido del usuario el 2026-11-20: el menu ocupaba media pantalla). Se abre con el boton de las tres rayas del
+           encabezado, encima de la pantalla, y se cierra al elegir una opcion, al tocar fuera o con Escape (oikosMenu) */
+        #oikos-menu-btn, #oikos-menu-backdrop { display: none; }
+        @media (max-width: 767px) {
+            #oikos-sidebar { position: fixed; top: 0; bottom: 0; left: 0; z-index: 45; width: min(16rem, 82vw); overflow-y: auto; transform: translateX(-100%); transition: transform 0.2s ease; }
+            body.oikos-menu-open #oikos-sidebar { transform: none; box-shadow: 0 0 40px rgba(0, 0, 0, 0.5); }
+            body.oikos-menu-open #oikos-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 44; background: rgba(15, 23, 42, 0.6); }
+            #oikos-menu-btn { display: inline-flex; }
+            #oikos-header { padding-left: 0.75rem; padding-right: 0.75rem; height: 3.25rem; }
+            #current-date { display: none; }
+            /* La lista de Residentes cabe en el ancho: sin las columnas DPI, Telefono y Lote (estan en la ficha de cada
+               residente) y con menos margen en cada celda */
+            #view-residents table tr > th:nth-child(3), #view-residents table tr > td:nth-child(3):not([colspan]),
+            #view-residents table tr > th:nth-child(4), #view-residents table tr > td:nth-child(4),
+            #view-residents table tr > th:nth-child(5), #view-residents table tr > td:nth-child(5) { display: none; }
+            #view-residents table th, #view-residents table td { padding-left: 0.6rem; padding-right: 0.6rem; }
+        }
     </style>
 </head>
 <body class="text-slate-800 dark:text-slate-200 h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
@@ -443,7 +461,7 @@
 
     <!-- MAIN APP STRUCTURE -->
     <div id="main-app" class="flex w-full h-full hidden-section opacity-0 transition-opacity duration-500">
-        <aside class="w-64 bg-sidebar text-slate-300 flex flex-col transition-all z-20">
+        <aside id="oikos-sidebar" class="w-64 bg-sidebar text-slate-300 flex flex-col transition-all z-20">
             <div class="p-6 mb-2">
                 <div class="flex items-center space-x-3 mb-1">
                     <div class="w-9 h-9 bg-blue-500 rounded-lg flex items-center justify-center text-white shadow-lg"><i class="fas fa-building text-sm"></i></div>
@@ -468,9 +486,14 @@
                 <button onclick="logout()" class="w-full flex items-center justify-center space-x-2 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition"><i class="fas fa-sign-out-alt"></i><span id="lbl-logout">Cerrar Sesión</span></button>
             </div>
         </aside>
-        <main class="flex-1 flex flex-col h-full relative overflow-hidden">
-            <header class="h-16 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-8 z-10 sticky top-0">
-                <h2 id="page-title" class="text-xl font-semibold text-slate-800 dark:text-white tracking-tight">Dashboard General</h2>
+        <div id="oikos-menu-backdrop" onclick="oikosMenu(false)"></div>
+        <main class="flex-1 flex flex-col h-full relative overflow-hidden min-w-0">
+            <header id="oikos-header" class="h-16 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-8 z-10 sticky top-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <!-- SISDEL: el boton del menu (solo en el celular) -->
+                    <button type="button" id="oikos-menu-btn" onclick="oikosMenu(true)" aria-label="Abrir el menú" aria-expanded="false" class="items-center justify-center w-10 h-10 -ml-1 rounded-lg text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition"><i class="fas fa-bars text-lg"></i></button>
+                    <h2 id="page-title" class="text-xl font-semibold text-slate-800 dark:text-white tracking-tight truncate">Dashboard General</h2>
+                </div>
                 <div class="flex items-center space-x-5">
                     <!-- SISDEL: sin botones Deshacer / Rehacer (pedido del usuario, 2026-11-15); para corregir se anula el movimiento -->
                     <span class="text-sm font-medium text-slate-500 dark:text-slate-400" id="current-date"></span>
@@ -575,20 +598,21 @@
                 <!-- VIEW 3: ACCOUNTING -->
                 <div id="view-accounting" class="space-y-6 hidden-section fade-in">
                     <div class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                        <div class="flex space-x-2 overflow-x-auto pb-2 sm:pb-0 w-full sm:w-auto">
-                            <button onclick="setTxFilter('all')" id="filter-all" class="px-5 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-sm font-semibold whitespace-nowrap">Todos</button>
-                            <button onclick="setTxFilter('income')" id="filter-income" class="px-5 py-2 text-slate-600 dark:text-slate-400 rounded-lg text-sm font-medium whitespace-nowrap">Ingresos</button>
-                            <button onclick="setTxFilter('expense')" id="filter-expense" class="px-5 py-2 text-slate-600 dark:text-slate-400 rounded-lg text-sm font-medium whitespace-nowrap">Gastos</button>
-                        </div>
+                        <!-- SISDEL: sin los filtros Todos / Ingresos / Gastos: solo filtraban la lista, que se quito (2026-11-20) -->
+                        <p class="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto">Registrar pagos, gastos y cargos.</p>
                         <div class="flex space-x-2 w-full sm:w-auto">
                             <button onclick="openModal('modal-bulk-charge')" class="flex-1 sm:flex-none px-4 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-300 rounded-xl text-sm font-semibold transition border border-amber-200 dark:border-amber-800 flex items-center justify-center"><i class="fas fa-bolt mr-1"></i>Cargo</button>
                             <button onclick="openModal('modal-income')" class="flex-1 sm:flex-none bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-down mr-2"></i><span id="btn-new-inc">Ingreso</span></button>
                             <button onclick="openModal('modal-expense')" class="flex-1 sm:flex-none bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center justify-center"><i class="fas fa-arrow-up mr-2"></i><span id="btn-new-exp">Gasto</span></button>
                         </div>
                     </div>
-                    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-                        <table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50/50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-600 text-xs text-slate-500 uppercase"><th class="py-4 px-6" id="th-acc-date">Fecha</th><th class="py-4 px-6" id="th-acc-det">Detalles</th><th class="py-4 px-6 text-right" id="th-acc-amt">Monto</th></tr></thead>
-                        <tbody id="accounting-table-body" class="text-sm text-slate-700 dark:text-slate-200 divide-y divide-slate-50 dark:divide-slate-700"></tbody></table>
+                    <!-- SISDEL: la lista de movimientos se quito de Contabilidad (pedido del usuario el 2026-11-20: limitaba la pantalla,
+                         sobre todo en el celular). Cada pago y gasto se ve, se reimprime y se anula desde Reportes > Estado de cuenta
+                         general (su No. de documento abre el detalle) y los de un residente desde su estado de cuenta (Con movimientos) -->
+                    <div id="acc-moves-note" class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 text-sm text-slate-600 dark:text-slate-300">
+                        <p class="font-semibold text-slate-800 dark:text-white mb-1"><i class="fas fa-circle-info text-blue-500 mr-1.5"></i>¿Dónde están los movimientos?</p>
+                        <p>Cada pago y cada gasto se consulta en <b>Reportes &rsaquo; Estado de cuenta general</b>: al tocar su número de documento se abre su detalle, desde donde se reimprime el comprobante o se anula. Los de un residente también están en su estado de cuenta (pestaña Con movimientos).</p>
+                        <button type="button" onclick="openMovementsReport()" class="mt-3 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 rounded-xl text-sm font-semibold transition"><i class="fas fa-table mr-2"></i>Ver los movimientos</button>
                     </div>
                     <!-- Panel "Cargos Emitidos (Pendientes de Cobro)" removido a
                          pedido del usuario. La información de cargos y saldos
@@ -2954,7 +2978,15 @@
             if (v === 'accounting') renderAccounting();
             if (v === 'reports') initReports();
             if (v === 'settings') renderSettings();
+            oikosMenu(false);   // SISDEL: en el celular, al elegir una opcion se ve solo esa pantalla
         }
+        // SISDEL: abre o cierra el menu en el celular (en pantallas anchas siempre se ve y esto no cambia nada)
+        function oikosMenu(open) {
+            document.body.classList.toggle('oikos-menu-open', !!open);
+            const btn = document.getElementById('oikos-menu-btn');
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('oikos-menu-open')) oikosMenu(false); });
 
         // ========== SISDEL: CHATS DE WHATSAPP ==========
         // Datos: window.parent.sisdelChats (finanzas-chats.js, en finanzas.html): la lista de chats y los mensajes en tiempo
@@ -3926,6 +3958,12 @@
         }
         // "Ver el reporte": el reporte Ingresos, egresos y saldo por mes de los mismos meses (el privilegio lo decide
         // finanzas-bloqueo.js, como el boton del reporte en la lista)
+        // SISDEL: el boton "Ver los movimientos" de Contabilidad: Reportes > Estado de cuenta general (privilegio reportes_libro
+        // en finanzas-bloqueo.js), con el periodo que ya tenga elegido
+        function openMovementsReport() {
+            navigate('reports');
+            selectReport('account-statement');
+        }
         function openDashMonthReport() {
             if (typeof SisdelReportesOikos === 'undefined') return;
             const now = dashMonthNow();
@@ -4349,6 +4387,8 @@
         function showMoreAccounting() { accountingShown += ACCOUNTING_PAGE; renderAccounting(); }
 
         function renderAccounting() {
+            // SISDEL: la lista se quito de Contabilidad (2026-11-20); la funcion queda porque muchos lugares la llaman
+            if (!document.getElementById('accounting-table-body')) { renderCharges(); return; }
             let txs;
             const mem = sisdelMem();
             if (mem) {

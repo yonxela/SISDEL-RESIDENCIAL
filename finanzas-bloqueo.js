@@ -95,6 +95,8 @@
         [/^selectReport\('owners'\)/, ['reportes_morosos']],
         [/^selectReport\('expense-cat'\)/, ['reportes_gastos']],
         [/^selectReport\('account-statement'\)/, ['reportes_libro']],
+        // El boton "Ver los movimientos" de Contabilidad abre ese mismo reporte
+        [/^openMovementsReport\(/, ['reportes_libro']],
         [/^selectReport\('month-balance'\)/, ['reportes_resumen']],
         // "Ver el reporte" de las graficas del tablero abre ese mismo reporte
         [/^openDashMonthReport\(/, ['reportes_resumen']],
@@ -160,7 +162,7 @@
             '#view-residents button[onclick="openResidentStatusReport(\'morosos\')"]', '#modal-res-status'
         ]],
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
-        [['reportes_libro'], ['#rep-tab-account-statement']],
+        [['reportes_libro'], ['#rep-tab-account-statement', '#acc-moves-note button[onclick="openMovementsReport()"]']],
         [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],

@@ -439,6 +439,31 @@ service cloud.firestore {
         allow delete: if isMaster() || pGaritaHistorialBorrar(condoId);
       }
 
+      // ── Registro de ingresos y salidas (accesos.js): un registro con campos propios por cada ingreso o salida de un vecino, un
+      // vehiculo o una visita, para hacer reportes. SOLO SE AGREGA: nadie lo cambia ni lo borra desde una pantalla (el master
+      // tampoco; solo lo borra la eliminacion completa del condominio, que corre en el servidor). Lo escribe la garita con su
+      // propio usuario (guardId = quien esta conectado; un ingreso pide garita.ingreso y una salida garita.salida) y la camara de
+      // placas desde el servidor, que no pasa por estas reglas. Se lee como el historial de la camara (garita.camara).
+      match /accesos/{accessId} {
+        function accessText(d, key, max) { return d.get(key, '') is string && d.get(key, '').size() <= max; }
+        function accessOk() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['id', 'condominioId', 'at', 'day', 'direction', 'kind', 'via', 'outcome', 'userId', 'name', 'casa', 'fase',
+                                   'plate', 'vehicleId', 'visitId', 'visitorName', 'visitType', 'moroso', 'reason', 'guardId', 'guardName', 'source'])
+            && d.keys().hasAll(['id', 'condominioId', 'at', 'day', 'direction', 'kind', 'via', 'outcome', 'moroso', 'source', 'guardId'])
+            && d.id == accessId && d.condominioId == condoId && d.source == 'garita' && d.guardId == request.auth.uid
+            && d.direction in ['entrada', 'salida'] && d.kind in ['residente', 'vehiculo', 'visita']
+            && d.via in ['camara', 'qr', 'codigo', 'lista'] && d.outcome in ['autorizado', 'aviso_mora', 'denegado']
+            && d.moroso is bool && d.at is string && d.at.size() == 24 && d.day is string && d.day.size() == 10
+            && accessText(d, 'userId', 128) && accessText(d, 'vehicleId', 128) && accessText(d, 'visitId', 128)
+            && accessText(d, 'name', 300) && accessText(d, 'visitorName', 300) && accessText(d, 'reason', 300) && accessText(d, 'guardName', 300)
+            && accessText(d, 'casa', 60) && accessText(d, 'fase', 60) && accessText(d, 'plate', 20) && accessText(d, 'visitType', 30);
+        }
+        allow read: if isMaster() || pGaritaCamara(condoId);
+        allow create: if accessOk() && (request.resource.data.direction == 'entrada' ? pGaritaIngreso(condoId) : pGaritaSalida(condoId));
+        allow update, delete: if false;
+      }
+
       // ── Bitacora: el rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (quien, que y cuando) ──
       // La escribe solo el servidor (functions/src/bitacora.js): desde una pantalla nadie la escribe, la cambia ni
       // la borra. La lee quien asigna privilegios (equivale a control total del condominio) o quien puede ver a la

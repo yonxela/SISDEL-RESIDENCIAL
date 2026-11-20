@@ -28,6 +28,15 @@ function residentOutcome(owner, condo, now) {
     return { status: 'Denied', reason: `${owner.name} - Período de gracia vencido` };
 }
 
+// Quien es la persona de la lectura, para el registro de ingresos y salidas (accesos.js): el vecino dueño del vehiculo
+// o, en una visita, la visita y el vecino que la autoriza
+function subjectOf(kind, ownerId, owner, extra) {
+    return {
+        kind, userId: ownerId || '', name: (owner && owner.name) || '', casa: (owner && owner.casa) || '', fase: (owner && owner.fase) || '',
+        moroso: !!owner && owner.paymentStatus === 'moroso', ...extra
+    };
+}
+
 async function checkResident(condoRef, condo, plate, now) {
     const vehicles = await condoRef.collection('vehiculos').where('plateNorm', '==', plate).get();
     let best = null;
@@ -35,8 +44,11 @@ async function checkResident(condoRef, condo, plate, now) {
         const userId = doc.data().userId;
         if (!userId) continue;
         const ownerSnap = await condoRef.collection('usuarios').doc(userId).get();
-        const outcome = residentOutcome(ownerSnap.exists ? ownerSnap.data() : null, condo, now);
-        if (outcome && (!best || RANK[outcome.status] > RANK[best.status])) best = outcome;
+        const owner = ownerSnap.exists ? ownerSnap.data() : null;
+        const outcome = residentOutcome(owner, condo, now);
+        if (outcome && (!best || RANK[outcome.status] > RANK[best.status])) {
+            best = { ...outcome, subject: subjectOf('vehiculo', userId, owner, { vehicleId: doc.id }) };
+        }
     }
     return best;
 }
@@ -63,6 +75,7 @@ async function checkVisit(condoRef, condo, plate, now) {
     [...pending.docs, ...temporal.docs].forEach((d) => candidates.set(d.id, { id: d.id, ...d.data() }));
 
     let deniedByOwner = null;
+    let deniedSubject = null;
     for (const visit of candidates.values()) {
         if (!['pending', 'entered'].includes(visit.status)) continue;
         if (!platesMatch(visit.vehiclePlate, plate)) continue;
@@ -76,8 +89,12 @@ async function checkVisit(condoRef, condo, plate, now) {
         const ownerSnap = visit.userId ? await condoRef.collection('usuarios').doc(String(visit.userId)).get() : null;
         const owner = ownerSnap && ownerSnap.exists ? ownerSnap.data() : null;
         const ownerOutcome = residentOutcome(owner, condo, now);
+        const subject = subjectOf('visita', visit.userId ? String(visit.userId) : '', owner, {
+            visitId: visit.id, visitorName: visit.visitorName || '', visitType: isTemporal ? 'temporal' : '', casa: visit.casa || (owner && owner.casa) || ''
+        });
         if (!ownerOutcome || ownerOutcome.status === 'Denied') {
             deniedByOwner = ownerOutcome ? `Visita de ${visit.visitorName} no entra: ${ownerOutcome.reason}` : `Visita de ${visit.visitorName} no entra: vecino inactivo`;
+            deniedSubject = subject;
             continue;
         }
 
@@ -85,13 +102,14 @@ async function checkVisit(condoRef, condo, plate, now) {
         return {
             status: ownerOutcome.status === 'Reminder' ? 'Reminder' : 'Authorized',
             reason: ownerOutcome.status === 'Reminder' ? `${who} - ${ownerOutcome.reason}` : who,
-            visitIdToMark: visit.status === 'pending' ? visit.id : null
+            visitIdToMark: visit.status === 'pending' ? visit.id : null,
+            subject
         };
     }
-    return deniedByOwner ? { status: 'Denied', reason: deniedByOwner, visitIdToMark: null } : null;
+    return deniedByOwner ? { status: 'Denied', reason: deniedByOwner, visitIdToMark: null, subject: deniedSubject } : null;
 }
 
-// Devuelve { status, reason, visitIdToMark }
+// Devuelve { status, reason, visitIdToMark, subject } (subject: quien es, para el registro de accesos; null si la placa no es de nadie)
 async function decideAccess(condoRef, condo, plate, now = new Date()) {
     const resident = await checkResident(condoRef, condo, plate, now);
     if (resident && resident.status !== 'Denied') return { ...resident, visitIdToMark: null };
@@ -102,7 +120,8 @@ async function decideAccess(condoRef, condo, plate, now = new Date()) {
     return {
         status: 'Denied',
         reason: resident ? resident.reason : 'Placa no registrada',
-        visitIdToMark: null
+        visitIdToMark: null,
+        subject: resident ? resident.subject : null
     };
 }
 

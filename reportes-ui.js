@@ -40,6 +40,7 @@ const SisdelReportes = (() => {
 
     // Reportes de garita: todos usan el mismo rango de fechas y los mismos datos
     const GARITA_REPORTS = [
+        { id: 'garita-accesos', label: 'Registro de ingresos y salidas', text: 'Cada ingreso y salida de vecinos, vehículos y visitas, con su casa, placa, medio, resultado y el guardia que lo registró.' },
         { id: 'garita-resumen', label: 'Resumen de garita por día', text: 'Ingresos, salidas y denegados de vecinos y visitas, día por día.' },
         { id: 'garita-vecinos', label: 'Ingresos y salidas de vecinos', text: 'Cada ingreso, salida o acceso denegado de los vecinos, con su placa.' },
         { id: 'garita-visitas', label: 'Visitas del período', text: 'Las visitas del rango: quién las autorizó, cuándo entraron y salieron y cuánto estuvieron.' },
@@ -368,6 +369,7 @@ const SisdelReportes = (() => {
 
             const fromIso = parseYmd(from).toISOString();
             const toIso = addDays(parseYmd(to), 1).toISOString();
+            if (def.id === 'garita-accesos') { await buildAccesos(def, { from, to, fromIso, toIso, mine, out }); return; }
             const [logs, visits, exits] = await Promise.all([
                 S.getCameraLogsBetween(condoId, fromIso, toIso, MAX_LOGS),
                 S.getVisitsBetween(condoId, from, to),
@@ -462,6 +464,42 @@ const SisdelReportes = (() => {
             paint(out, {
                 title: def.label, subtitle: from === to ? longDate(from) : `${longDate(from)} al ${longDate(to)}`, condoName, userName, at: new Date(),
                 kpis, tables: [tables[def.id]], warnings, fileName: `${def.id}-${slug}-${suffix}`
+            });
+        }
+
+        // ── Registro de ingresos y salidas (coleccion accesos, accesos.js): un renglon por cada movimiento, con sus campos propios ──
+        async function buildAccesos(def, { from, to, fromIso, toIso, mine, out }) {
+            const A = window.SisdelAccesos;
+            if (!A) { out.innerHTML = emptyState('Falta accesos.js en la página.'); return; }
+            const [rows, firstAt] = await Promise.all([S.getAccessBetween(condoId, fromIso, toIso, MAX_LOGS), S.getFirstAccessAt(condoId)]);
+            if (mine !== seq) return;
+            if (!rows) { out.innerHTML = emptyState('No se pudo cargar la información. Revise su conexión e intente de nuevo.'); return; }
+            const entered = rows.filter((r) => r.direction === 'entrada' && r.outcome !== 'denegado');
+            const left = rows.filter((r) => r.direction === 'salida');
+            const denied = rows.filter((r) => r.outcome === 'denegado');
+            const isNeighbor = (r) => r.kind === 'residente' || r.kind === 'vehiculo';
+            const tableRows = rows.map((r) => [
+                stamp(r.at), A.label('direction', r.direction), A.label('kind', r.kind), A.who(r), r.casa || '', r.plate || '',
+                r.kind === 'visita' ? (r.name || '') : '', A.label('via', r.via), A.label('outcome', r.outcome),
+                r.source === 'camara' ? 'Cámara de placas' : (r.guardName || '')
+            ]);
+            const kpis = [
+                { label: 'Ingresos', value: entered.length, color: 'var(--success)' },
+                { label: 'Salidas', value: left.length, color: 'var(--primary-light)' },
+                { label: 'Ingresos de vecinos', value: entered.filter(isNeighbor).length, color: 'var(--success)' },
+                { label: 'Ingresos de visitas', value: entered.filter((r) => r.kind === 'visita').length, color: 'var(--accent)' },
+                { label: 'Con aviso de mora', value: rows.filter((r) => r.outcome === 'aviso_mora').length, color: 'var(--warning)' },
+                { label: 'Denegados', value: denied.length, color: 'var(--danger)' }
+            ];
+            const notes = [];
+            if (firstAt) notes.push(`Este registro tiene los movimientos desde el ${longDate(ymd(new Date(firstAt)))}. Lo anterior está en los otros reportes de garita.`);
+            else notes.push('Todavía no hay movimientos en este registro: cada ingreso y salida se anota aquí desde que se activó, con quién, su casa, su placa y el guardia que lo registró.');
+            const warnings = rows.length >= MAX_LOGS ? [`El período tiene más de ${MAX_LOGS} movimientos; el reporte cubre solo los más recientes. Reduzca el rango para ver todos.`] : [];
+            const suffix = from === to ? from : `${from}_a_${to}`;
+            paint(out, {
+                title: def.label, subtitle: from === to ? longDate(from) : `${longDate(from)} al ${longDate(to)}`, condoName, userName, at: new Date(),
+                kpis, notes, warnings, fileName: `${def.id}-${slug}-${suffix}`,
+                tables: [{ title: def.label, headers: ['Fecha y hora', 'Movimiento', 'Tipo', 'Nombre', 'Casa', 'Placa', 'Autoriza (visitas)', 'Medio', 'Resultado', 'Registró'], rows: tableRows, plate: [5], limit: SHOWN_ROWS }]
             });
         }
 

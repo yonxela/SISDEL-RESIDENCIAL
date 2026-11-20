@@ -177,8 +177,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261120q"></script>
-    <script src="sisdel-core.js?v=20261120q"></script>
+    <script src="privilegios.js?v=20261121a"></script>
+    <script src="accesos.js?v=20261121a"></script>
+    <script src="sisdel-core.js?v=20261121a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="panico-alertas.js?v=20261109f"></script>
     <script>
@@ -324,14 +325,45 @@
             // --- Verification Logic ---
             let currentVerification = null;
 
+            // Registro de ingresos y salidas (accesos.js): el medio por el que se llego a la persona. Se anota con cada movimiento.
+            let accessVia = 'codigo';   // codigo escrito a mano; 'qr' si lo leyo la camara del telefono; 'lista' si se eligio la visita de la lista
+
             window.processVisit = async function (visitId) {
                 const visits = await SISDEL.getTodayVisits(condoId);
                 const visit = visits.find(v => v.id === visitId);
+                accessVia = 'lista';
                 if (visit) await handleAccessMatch(visit, 'visit');
             };
 
+            // Guarda en el registro de accesos (condominios/{id}/accesos, solo se agrega) cada ingreso o salida con sus campos
+            // propios: quien (vecino, vehiculo o visita), su casa, la placa, el medio, el resultado y el guardia que lo registro.
+            // Si no se pudo guardar el movimiento ya ocurrio (la puerta ya se abrio): se avisa en pantalla.
+            async function logAccess(direction, verification) {
+                const { obj, type, via } = verification;
+                const resident = type === 'resident' ? obj : (obj.userId ? await SISDEL.getUserById(obj.userId) : null);
+                const moroso = !!resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                const base = {
+                    direction, via: via || 'codigo', outcome: moroso && direction === 'entrada' ? 'aviso_mora' : 'autorizado', moroso,
+                    userId: resident ? resident.id : (obj.userId || ''), name: resident ? resident.name : '',
+                    casa: (type === 'visit' ? obj.casa : '') || (resident ? resident.casa : '') || '', fase: resident ? (resident.fase || '') : ''
+                };
+                let data;
+                if (type === 'visit') {
+                    data = { ...base, kind: 'visita', visitId: obj.id, visitorName: obj.visitorName, visitType: obj.visitType || '', plate: obj.vehiclePlate || '',
+                        reason: `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}` };
+                } else if (type === 'vehicle') {
+                    data = { ...base, kind: 'vehiculo', vehicleId: obj.id, plate: obj.plate || '',
+                        reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})${resident ? ' — ' + resident.name : ''}`.trim() };
+                } else {
+                    data = { ...base, kind: 'residente', reason: `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}` };
+                }
+                const saved = await SISDEL.createAccess(condoId, data);
+                if (!saved) SISDEL.showToast('El movimiento se hizo, pero no se pudo guardar en el registro de accesos. Avise a la administración.', 'warning');
+                return saved;
+            }
+
             async function handleAccessMatch(obj, type) {
-                currentVerification = { obj, type };
+                currentVerification = { obj, type, via: accessVia };
                 const modal = document.getElementById('modalResult');
                 const title = document.getElementById('resultTitle');
                 const icon = document.getElementById('resultIcon');
@@ -486,6 +518,7 @@
             document.getElementById('btnConfirmEntry').addEventListener('click', async () => {
                 if (!currentVerification) return;
                 const { obj, type } = currentVerification;
+                const verification = currentVerification;
 
                 if (type === 'visit') {
                     await SISDEL.markVisitAsEntered(obj.id);
@@ -526,6 +559,7 @@
                     SISDEL.showToast('Ingreso de residente registrado', 'success');
                 }
 
+                await logAccess('entrada', verification);
                 document.getElementById('modalResult').style.display = 'none';
                 await renderStats();
                 await renderVisits();
@@ -535,6 +569,7 @@
             document.getElementById('btnRegisterExit').addEventListener('click', async () => {
                 if (!currentVerification) return;
                 const { obj, type } = currentVerification;
+                const verification = currentVerification;
                 const button = document.getElementById('btnRegisterExit');
                 button.disabled = true;
                 try {
@@ -556,6 +591,7 @@
                         if (saved) SISDEL.showToast('Salida de residente registrada', 'success');
                     }
                     if (!saved) { SISDEL.showToast('No se pudo registrar la salida', 'danger'); return; }
+                    await logAccess('salida', verification);
                     document.getElementById('modalResult').style.display = 'none';
                     await renderStats();
                     await renderVisits();
@@ -606,6 +642,7 @@
             document.getElementById('formManual').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const code = document.getElementById('manualCode').value.trim();
+                accessVia = 'codigo';
                 await processCode(code);
             });
 
@@ -631,6 +668,7 @@
                         (decodedText) => {
                             setTimeout(async () => {
                                 console.log("QR Scanned:", decodedText);
+                                accessVia = 'qr';
                                 try {
                                     await stopScanner();
                                     const inputManual = document.getElementById('manualCode');

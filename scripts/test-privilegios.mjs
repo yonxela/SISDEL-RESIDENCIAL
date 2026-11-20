@@ -737,17 +737,17 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar reportes.panico_qr oculta la seccion de seguridad (QR de panico)', sectionsFor('admin', { 'reportes.panico_qr': false }), ['garita', 'morosos', 'finanzas', 'rondas']);
     // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
     const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
-    equal('el administrador ve cinco categorias, con 7, 1, 11, 1 y 1 reportes', catalogOf('admin', {}), ['garita:7', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
-    equal('la plantilla de consulta ve solo la categoria de garita, con sus 7 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:7']);
-    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:7', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
-    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:7', 'morosos:1', 'finanzas:9', 'rondas:1', 'seguridad:1']);
-    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:7', 'morosos:1', 'finanzas:7', 'rondas:1', 'seguridad:1']);
-    equal('sin el privilegio de marbetes el panel Reportes no ofrece ese reporte', catalogOf('admin', { 'finanzas.reportes_marbetes': false }), ['garita:7', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
+    equal('el administrador ve cinco categorias, con 8, 1, 11, 1 y 1 reportes', catalogOf('admin', {}), ['garita:8', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
+    equal('la plantilla de consulta ve solo la categoria de garita, con sus 8 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:8']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:8', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
+    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:8', 'morosos:1', 'finanzas:9', 'rondas:1', 'seguridad:1']);
+    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:8', 'morosos:1', 'finanzas:7', 'rondas:1', 'seguridad:1']);
+    equal('sin el privilegio de marbetes el panel Reportes no ofrece ese reporte', catalogOf('admin', { 'finanzas.reportes_marbetes': false }), ['garita:8', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
     equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
     equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
     const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);
     yes('cada reporte tiene un identificador unico y un texto', new Set(allDefs.map((r) => r.id)).size === allDefs.length && allDefs.every((r) => r.label && r.text));
-    equal('los reportes de Finanzas y Rondas se abren en OIKOS y RONDIN; los de garita, morosos y QR de panico se arman aqui', [allDefs.filter((r) => r.href).map((r) => r.href.split('#')[0]).filter((h, i, a) => a.indexOf(h) === i), allDefs.filter((r) => !r.href).length], [['finanzas.html', 'rondin/'], 9]);
+    equal('los reportes de Finanzas y Rondas se abren en OIKOS y RONDIN; los de garita, morosos y QR de panico se arman aqui', [allDefs.filter((r) => r.href).map((r) => r.href.split('#')[0]).filter((h, i, a) => a.indexOf(h) === i), allDefs.filter((r) => !r.href).length], [['finanzas.html', 'rondin/'], 10]);
     yes('el catalogo es un acordeon: arranca cerrado, abre una categoria a la vez y se vuelve con "Volver al catalogo"', rp.includes('Click en una categoría para ver sus reportes.') && /aria-expanded/.test(rp) && /openCat = openCat === b\.dataset\.rpCat \? null/.test(rp) && rp.includes('Volver al catálogo') && /let openCat = null;/.test(rp));
     yes('cada reporte propio ofrece Imprimir, PDF, WhatsApp y Excel con el privilegio reportes.exportar', /actionsHtml\(\{ print: canExport, pdf: canExport, whatsapp: canExport, excel: canExport \}\)/.test(rp) && /const canExport = can\('reportes\.exportar'\)/.test(rp));
     yes('admin.html carga reportes-export.js antes de reportes-ui.js', admin.indexOf('src="reportes-export.js') > 0 && admin.indexOf('src="reportes-export.js') < admin.indexOf('src="reportes-ui.js'));

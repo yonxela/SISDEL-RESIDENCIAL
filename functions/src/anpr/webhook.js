@@ -4,6 +4,7 @@ const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 const { parseRequest, condominioFromRequest } = require('./parse');
 const { decideAccess } = require('./decide');
+const accesos = require('../accesos');
 const { sha256, safeEqual } = require('../util');
 
 const DEDUP_MS = 30 * 1000;       // La camara manda 3 o mas avisos por cada deteccion
@@ -24,6 +25,22 @@ async function isDuplicate(condoRef, plate) {
     const since = new Date(Date.now() - DEDUP_MS).toISOString();
     const recent = await condoRef.collection('camera_logs').where('createdAt', '>=', since).get();
     return recent.docs.some((d) => d.data().plate === plate);
+}
+
+// Registro de ingresos y salidas (accesos.js): cada lectura de la camara es una ENTRADA, con quien es si la placa es de alguien.
+// Se escribe con el servidor (no pasa por las reglas) y nunca frena la respuesta a la camara.
+async function writeAccess(condoRef, condominioId, plate, decision) {
+    const ref = condoRef.collection('accesos').doc();
+    const subject = decision.subject || {};
+    const record = accesos.build({
+        id: ref.id, condominioId, direction: 'entrada', via: 'camara', source: 'camara', status: decision.status,
+        kind: subject.kind || 'vehiculo', plate, userId: subject.userId, name: subject.name, casa: subject.casa, fase: subject.fase,
+        vehicleId: subject.vehicleId, visitId: subject.visitId, visitorName: subject.visitorName, visitType: subject.visitType,
+        moroso: subject.moroso === true, reason: decision.reason
+    });
+    if (!record) throw new Error('registro de acceso incompleto');
+    await ref.set(record);
+    return record;
 }
 
 function reply(res, body) {
@@ -101,6 +118,9 @@ const anprWebhook = onRequest(
                 condominioId, plate: plateNumber, status: decision.status,
                 reason: decision.reason, rawPayload: payloadText(rawData)
             });
+
+            try { await writeAccess(condoRef, condominioId, plateNumber, decision); }
+            catch (accessError) { logger.error('ANPR no pudo guardar el acceso', { message: accessError.message, condominioId }); }
 
             if (authorized && decision.visitIdToMark) {
                 await condoRef.collection('visitas').doc(decision.visitIdToMark)

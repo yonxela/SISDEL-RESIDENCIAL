@@ -1686,11 +1686,14 @@ async function run() {
         await oikos(`(() => { document.getElementById('res-plate-add').value = ' q-555 tst '; resAddPlate(); })()`);
         const added = await waitFor('la placa nueva queda como vehiculo del vecino en la base', async () => (await condoRef.collection('vehiculos').where('userId', '==', 'u-ana').where('plate', '==', 'Q555TST').get()).docs[0] || null);
         record('con su condominio, su marbete y la placa limpia en mayusculas', !!added && added.get('condominioId') === CONDO && /^MAR/.test(String(added.get('marbeteCode'))) && added.get('plateNorm') === 'Q555TST', JSON.stringify(added && added.data()));
+        // La base ya la tiene un instante antes de que la pantalla termine de pintar la lista: se espera a la pantalla
+        await waitFor('la lista y el aviso de la pantalla se actualizan', async () => { const u = await plUi(); return u.placas.includes('Q555TST') && u.msg === 'Placa Q555TST agregada.'; });
         const pl1 = await plUi();
         equal('y se ve en la lista, con el aviso', [pl1.placas.includes('Q555TST'), pl1.msg], [true, 'Placa Q555TST agregada.']);
         equal('el residente no cambio (agregar placas no lo marca como modificado ni lo guarda)', await oikos(`resIsDirty()`), false);
         await oikos(`document.querySelector('#res-plates-list [data-plate="Q555TST"] .res-plate-del').click()`);
         await waitFor('quitarla la borra de la base', async () => (await dbPlates('u-ana')).length === anaPlates.length && !(await dbPlates('u-ana')).includes('Q555TST'));
+        await waitFor('la pantalla quita la placa de la lista', async () => !(await plUi()).placas.includes('Q555TST'));
         equal('y sale de la lista', (await plUi()).placas, anaPlates);
         equal('un residente nuevo sigue viendo el campo de placas de siempre', await oikos(`(() => { closeModal('modal-resident'); openModal('modal-resident'); const d = (id) => document.getElementById(id); return [!d('res-plates-new').classList.contains('hidden'), d('res-plates-edit').classList.contains('hidden')]; })()`), [true, true]);
         // La X fija: con el formulario desplazado hasta Guardar la X sigue arriba, a la vista

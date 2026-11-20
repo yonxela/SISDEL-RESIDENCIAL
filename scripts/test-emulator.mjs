@@ -295,6 +295,23 @@ async function run() {
     const orphans = await getDocs(collection(master.db, 'camera_logs_huerfanos'));
     equal('lecturas sin condominio quedan para el master', orphans.size, 2);
 
+    // Registro de ingresos y salidas (accesos.js): cada lectura de la camara que no es un aviso repetido queda como una ENTRADA con sus campos propios
+    {
+        const accSnap = await getDocs(collection(admin.db, `condominios/${A}/accesos`));
+        const camera = accSnap.docs.map((d) => d.data()).filter((x) => x.source === 'camara');
+        const by = (plate) => camera.filter((x) => x.plate === plate);
+        equal('camara: una lectura por cada registro del historial de la camara (el aviso repetido no suma)', camera.length, logs.docs.filter((d) => d.data().rawPayload !== undefined).length);
+        const one = (plate) => { const x = by(plate)[0] || {}; return { direction: x.direction, kind: x.kind, via: x.via, outcome: x.outcome, userId: x.userId, casa: x.casa, moroso: x.moroso, guardId: x.guardId, source: x.source }; };
+        equal('camara: el vecino al dia entra como vehiculo suyo, con su casa y sin guardia', [by('P987XYZ').length, one('P987XYZ'), by('P987XYZ')[0].vehicleId, by('P987XYZ')[0].day.length, by('P987XYZ')[0].at.length],
+            [1, { direction: 'entrada', kind: 'vehiculo', via: 'camara', outcome: 'autorizado', userId: 'u-ana', casa: 'Casa 12', moroso: false, guardId: undefined, source: 'camara' }, 'veh-ana-1', 10, 24]);
+        equal('camara: el moroso con gracia entra con aviso de mora', one('P111MOR'), { direction: 'entrada', kind: 'vehiculo', via: 'camara', outcome: 'aviso_mora', userId: 'u-maria', casa: 'Casa 23', moroso: true, guardId: undefined, source: 'camara' });
+        equal('camara: la visita programada es una visita, con su visitante y el vecino que la autoriza',
+            [one('P123ABC').kind, by('P123ABC')[0].visitId, by('P123ABC')[0].visitorName, one('P123ABC').userId, by('P123ABC')[0].name, one('P123ABC').outcome], ['visita', 'vis-hoy', 'Roberto Herrera', 'u-ana', 'Ana García', 'autorizado']);
+        equal('camara: el vecino temporal es una visita de tipo temporal (no un vecino)', [one('M456DEF').kind, by('M456DEF')[0].visitType, by('M456DEF')[0].visitId], ['visita', 'temporal', 'vis-temporal']);
+        equal('camara: una placa desconocida queda como denegada y sin vecino', [one('P000ZZZ').outcome, one('P000ZZZ').userId, by('P000ZZZ')[0].reason], ['denegado', undefined, 'Placa no registrada']);
+        equal('camara: una visita pendiente muy vieja ya no vale: queda denegada como placa desconocida', [one('P999OLD').outcome, by('P999OLD')[0].reason], ['denegado', 'Placa no registrada']);
+    }
+
     // ───────── Auditor: lee todo su condominio, no escribe nada ─────────
     // Clave secreta de la camara: mientras el condominio no la tenga, entra como antes; con clave, solo con ella
     {
@@ -1549,6 +1566,43 @@ async function run() {
     await denied('garita: salida sola no escribe el historial de ingresos', () => setDoc(rref(gSal, 'camera_logs', 'log-sal'), { id: 'log-sal', condominioId: A, plate: 'X', status: 'Authorized', reason: '', createdAt: ts() }));
     await denied('garita: salida sin ver el historial no lee las salidas', () => getDocs(rcol(gSal, 'salidas')));
     await denied('garita: una salida registrada no se edita', () => updateDoc(rref(gSal, 'salidas', 'sal-1'), { name: 'Otro' }));
+
+    // Registro de ingresos y salidas (accesos.js): un registro por cada movimiento; solo se agrega, con el usuario de quien lo registra
+    const accDoc = (id, who, extra = {}) => ({ id, condominioId: A, at: ts(), day: localDate(0), direction: 'entrada', kind: 'residente', via: 'qr', outcome: 'autorizado', moroso: false, source: 'garita',
+        guardId: who, guardName: 'Guardia', userId: 'u-ana', name: 'Ana García', casa: 'Casa 12', reason: 'Acceso QR', ...extra });
+    await allowed('accesos: registrar ingresos anota un ingreso con sus campos', () => setDoc(rref(gIng, 'accesos', 'acc-1'), accDoc('acc-1', 'u-gin')));
+    await allowed('accesos: un ingreso de visita lleva la visita, su vecino y su placa', () => setDoc(rref(gIng, 'accesos', 'acc-v'), accDoc('acc-v', 'u-gin', { kind: 'visita', visitId: 'vis-hoy', visitorName: 'Roberto Herrera', visitType: 'temporal', plate: 'P-123ABC', via: 'lista' })));
+    await allowed('accesos: un ingreso con aviso de mora', () => setDoc(rref(gIng, 'accesos', 'acc-m'), accDoc('acc-m', 'u-gin', { outcome: 'aviso_mora', moroso: true, kind: 'vehiculo', vehicleId: 'veh-maria-1', plate: 'P-111MOR' })));
+    await allowed('accesos: registrar salidas anota una salida', () => setDoc(rref(gSal, 'accesos', 'acc-2'), accDoc('acc-2', 'u-gsa', { direction: 'salida' })));
+    await denied('accesos: registrar ingresos no anota salidas', () => setDoc(rref(gIng, 'accesos', 'acc-3'), accDoc('acc-3', 'u-gin', { direction: 'salida' })));
+    await denied('accesos: registrar salidas no anota ingresos', () => setDoc(rref(gSal, 'accesos', 'acc-4'), accDoc('acc-4', 'u-gsa')));
+    await denied('accesos: verificar codigos solo no anota nada', () => setDoc(rref(gVer, 'accesos', 'acc-5'), accDoc('acc-5', 'u-gve')));
+    await denied('accesos: nadie anota a nombre de otro guardia', () => setDoc(rref(gIng, 'accesos', 'acc-6'), accDoc('acc-6', 'u-fernando')));
+    await denied('accesos: el registro dice que lo hizo la garita (la camara escribe desde el servidor)', () => setDoc(rref(gIng, 'accesos', 'acc-7'), accDoc('acc-7', 'u-gin', { source: 'camara' })));
+    await denied('accesos: no se anota un campo de mas', () => setDoc(rref(gIng, 'accesos', 'acc-8'), accDoc('acc-8', 'u-gin', { secreto: 'x' })));
+    await denied('accesos: no se anota sin alguno de los campos fijos', async () => { const d = accDoc('acc-9', 'u-gin'); delete d.day; return setDoc(rref(gIng, 'accesos', 'acc-9'), d); });
+    await denied('accesos: el id es el del documento', () => setDoc(rref(gIng, 'accesos', 'acc-10'), accDoc('otro-id', 'u-gin')));
+    await denied('accesos: no se anota en otro condominio', () => setDoc(rref(gIng, 'accesos', 'acc-11'), accDoc('acc-11', 'u-gin', { condominioId: B })));
+    await denied('accesos: el movimiento, el medio y el resultado son de la lista', async () => {
+        await setDoc(rref(gIng, 'accesos', 'acc-12'), accDoc('acc-12', 'u-gin', { via: 'telepatia' }));
+    });
+    await denied('accesos: el tipo es de la lista', () => setDoc(rref(gIng, 'accesos', 'acc-13'), accDoc('acc-13', 'u-gin', { kind: 'mascota' })));
+    await denied('accesos: el resultado es de la lista', () => setDoc(rref(gIng, 'accesos', 'acc-14'), accDoc('acc-14', 'u-gin', { outcome: 'quien sabe' })));
+    await denied('accesos: un texto no pasa de 300 letras', () => setDoc(rref(gIng, 'accesos', 'acc-15'), accDoc('acc-15', 'u-gin', { reason: 'x'.repeat(301) })));
+    await denied('accesos: la fecha es un texto de 24 letras', () => setDoc(rref(gIng, 'accesos', 'acc-16'), accDoc('acc-16', 'u-gin', { at: 12345 })));
+    await denied('accesos: moroso es verdadero o falso', () => setDoc(rref(gIng, 'accesos', 'acc-17'), accDoc('acc-17', 'u-gin', { moroso: 'si' })));
+    await denied('accesos: un registro no se cambia', () => updateDoc(rref(gIng, 'accesos', 'acc-1'), { outcome: 'denegado' }));
+    await denied('accesos: un registro no se borra (ni el administrador)', () => deleteDoc(rref(admin, 'accesos', 'acc-1')));
+    await denied('accesos: el administrador tampoco cambia uno', () => updateDoc(rref(admin, 'accesos', 'acc-1'), { name: 'Otro' }));
+    await denied('accesos: el master tampoco borra uno desde una pantalla', () => deleteDoc(doc(master.db, `condominios/${A}/accesos/acc-1`)));
+    await denied('accesos: un vecino no anota', () => setDoc(rref(ana, 'accesos', 'acc-18'), accDoc('acc-18', 'u-ana')));
+    await denied('accesos: un vecino no los lee', () => getDocs(rcol(ana, 'accesos')));
+    await allowed('accesos: el administrador los lee', async () => { const snap = await getDocs(rcol(admin, 'accesos')); if (snap.size < 3) throw new Error(`esperaba 3 o mas, hay ${snap.size}`); });
+    await allowed('accesos: el guardia que ve el historial los lee por fecha', () => getDocs(query(rcol(guard, 'accesos'), where('at', '>=', '2000-01-01T00:00:00.000Z'), orderBy('at', 'desc'))));
+    await allowed('accesos: el auditor los lee', () => getDocs(rcol(auditor, 'accesos')));
+    await denied('accesos: el auditor no anota', () => setDoc(rref(auditor, 'accesos', 'acc-19'), accDoc('acc-19', 'u-sofia')));
+    await denied('accesos: quien registra salidas sin ver el historial no los lee', () => getDocs(rcol(gSal, 'accesos')));
+    await denied('accesos: no se leen los de otro condominio', () => getDocs(collection(guard.db, `condominios/${B}/accesos`)));
     await createUserAs(admin, mkUser('u-gar2', 'Garitero de plantilla', 'operador', { privilegios: overridesOf('sys-garitero') }), 'PGAR2');
     const gar2 = await loginAs('PGAR2');
     await allowed('el garitero de la plantilla registra salidas', () => setDoc(rref(gar2, 'salidas', 'sal-6'), exitDoc('sal-6', 'vehiculo')));

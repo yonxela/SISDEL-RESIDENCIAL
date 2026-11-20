@@ -16,7 +16,7 @@ const SISDEL = (() => {
 
     const COL = {
         condos: 'condominios', users: 'usuarios', visits: 'visitas', vehicles: 'vehiculos',
-        messages: 'mensajes', cameraLogs: 'camera_logs', exits: 'salidas',
+        messages: 'mensajes', cameraLogs: 'camera_logs', exits: 'salidas', access: 'accesos',
         globalMessages: 'mensajes_globales', codes: 'codigos', templates: 'plantillas_privilegios'
     };
 
@@ -879,6 +879,47 @@ const SISDEL = (() => {
         } catch (error) { reportError('createExit', error); return null; }
     }
 
+    // ── Registro de ingresos y salidas (coleccion accesos; ver accesos.js) ──
+    // Cada ingreso o salida de un vecino, un vehiculo o una visita queda como un registro con campos propios (quien, casa,
+    // placa, medio, resultado y que guardia lo registro). Solo se agrega: ni las reglas ni esta pantalla lo cambian o borran.
+    // La camara de placas escribe los suyos desde el servidor (functions/src/anpr/webhook.js).
+    async function createAccess(condominioId, input) {
+        try {
+            await authReady();
+            const A = window.SisdelAccesos;
+            if (!A) throw new Error('Falta accesos.js: debe cargarse antes que sisdel-core.js');
+            const session = getSession() || {};
+            const ref = sub(condominioId, COL.access).doc();
+            const record = A.build({ ...input, id: ref.id, condominioId, source: 'garita', guardId: session.userId || '', guardName: session.userName || '' });
+            if (!record) throw new Error('Registro de acceso incompleto');
+            await ref.set(record);
+            return record;
+        } catch (error) { reportError('createAccess', error); return null; }
+    }
+
+    // Movimientos entre dos instantes ISO [desde, hasta), del mas nuevo al mas viejo (null si la consulta falla)
+    async function getAccessBetween(condominioId, fromIso, toIso, max = 5000) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, COL.access)
+                .where('at', '>=', fromIso)
+                .where('at', '<', toIso)
+                .orderBy('at', 'desc')
+                .limit(max)
+                .get(SERVER);
+            return snap.docs.map((d) => toObj(COL.access, d));
+        } catch (error) { reportError('getAccessBetween', error); return null; }
+    }
+
+    // Instante del primer movimiento registrado ('' si aun no hay ninguno; null si la consulta falla)
+    async function getFirstAccessAt(condominioId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, COL.access).orderBy('at', 'asc').limit(1).get(SERVER);
+            return snap.empty ? '' : String(snap.docs[0].data().at || '');
+        } catch (error) { reportError('getFirstAccessAt', error); return null; }
+    }
+
     // Salidas entre dos instantes ISO [desde, hasta), de la mas nueva a la mas vieja (null si la consulta falla)
     async function getExitsBetween(condominioId, fromIso, toIso, max = 5000) {
         try {
@@ -1239,6 +1280,7 @@ const SISDEL = (() => {
         getMessages, createMessage, markMessageRead, deleteMessage,
         createCameraLog, getCameraLogsToday, getCameraLogsBetween, subscribeCameraLogs,
         createExit, getExitsBetween, getExitsToday,
+        createAccess, getAccessBetween, getFirstAccessAt,
         login, getSession, logout, requireAuth, reportPageLoad, localToday,
         showToast, copyText, copyButton, formatDate, formatDateTime, getRoleName, getPaymentBadge, confirmDialog, seedDemoData
     };

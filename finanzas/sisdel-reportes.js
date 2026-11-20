@@ -411,6 +411,7 @@
     // `owed.mora` = la mora a hoy) deja SOLO a los vecinos con algo vencido (o mora) y SOLO las columnas de los periodos que
     // alguien debe (los meses del ano en curso y los anos anteriores que ya trae el mapa). Una cuota que sigue en su plazo no
     // cuenta. opts.minMonths: solo quienes deben ese numero de meses o mas (1 = todos, tambien quien solo debe mora).
+    // opts.order ('unit' | 'name' | 'months' | 'debt') y opts.dir ('asc' | 'desc') ordenan a los vecinos (ver abajo).
     // Devuelve { columns, rows: [{ row, amounts, months, late, mora, total }], totals, hasMora, residents }: `amounts` va
     // paralelo a `columns` (0 = no debe ese periodo); total = cuotas vencidas + mora, que es lo que dicen Morosos y la Tabla general.
     function moraList(map, opts) {
@@ -426,6 +427,28 @@
             const amounts = columns.map((col) => cellOf(x, col));
             return { row: x, amounts: amounts.map(fromCents), months: x.lateMonths || 0, late: fromCents(lateOf(x)), mora: fromCents(moraOf(x)), total: fromCents(lateOf(x) + moraOf(x)) };
         });
+        // Orden (opts.order + opts.dir): 'unit' (numero de lote o casa, natural: A2 antes que A10), 'name' (alfabetico), 'months'
+        // (morosidad: meses adeudados) o 'debt' (total adeudado); dir 'asc' o 'desc'. Los empates se resuelven siempre igual,
+        // sin importar el sentido: en 'months' por el total (el mayor primero), en 'debt' por los meses (el mayor primero), y al
+        // final por lote y por nombre de menor a mayor. Sin opts.order queda el orden del mapa.
+        const order = ['unit', 'name', 'months', 'debt'].includes(options.order) ? options.order : '';
+        if (order) {
+            const sign = options.dir === 'desc' ? -1 : 1;
+            const natural = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { sensitivity: 'base', numeric: true });
+            const unitOf = (x) => x.row.resident.unit;
+            const nameOf = (x) => x.row.resident.name;
+            rows.sort((a, b) => {
+                let primary = 0;
+                if (order === 'unit') primary = natural(unitOf(a), unitOf(b));
+                else if (order === 'name') primary = natural(nameOf(a), nameOf(b));
+                else if (order === 'months') primary = a.months - b.months;
+                else primary = cents(a.total) - cents(b.total);
+                if (primary) return primary * sign;
+                if (order === 'months') { const t = cents(b.total) - cents(a.total); if (t) return t; }
+                if (order === 'debt') { const m = b.months - a.months; if (m) return m; }
+                return natural(unitOf(a), unitOf(b)) || natural(nameOf(a), nameOf(b));
+            });
+        }
         const sumOf = (get) => kept.reduce((a, x) => a + get(x), 0);
         const totals = {
             byColumn: columns.map((col) => fromCents(sumOf((x) => cellOf(x, col)))),

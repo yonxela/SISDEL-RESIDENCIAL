@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120b"></script>
+    <script src="./sisdel-reportes.js?v=20261120c"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -839,11 +839,19 @@
                                     <select id="ml-fase" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer"></select>
                                 </div>
                                 <div>
-                                    <label for="ml-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Orden</label>
-                                    <select id="ml-order" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
-                                        <option value="unit">Por número de lote o casa</option>
-                                        <option value="debt">De mayor a menor deuda</option>
-                                        <option value="name">Alfabético</option>
+                                    <label for="ml-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Ordenar por</label>
+                                    <select id="ml-order" onchange="moraListFiltersChanged('order')" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="unit">Número de lote o casa</option>
+                                        <option value="months">Morosidad (meses adeudados)</option>
+                                        <option value="debt">Total adeudado (dinero)</option>
+                                        <option value="name">Nombre (alfabético)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="ml-dir" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Sentido</label>
+                                    <select id="ml-dir" onchange="moraListFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="asc">Ascendente (menor a mayor, A a Z)</option>
+                                        <option value="desc">Descendente (mayor a menor, Z a A)</option>
                                     </select>
                                 </div>
                                 <div>
@@ -7813,7 +7821,10 @@
         // hoy: la misma cifra de Morosos, la Tabla general y Residentes). Una cuota que sigue en su plazo (el mes completo y hasta
         // el dia 5 del siguiente) no cuenta. El calculo esta en SisdelReportesOikos.moraList (finanzas/sisdel-reportes.js).
         // `var` y funciones: el reporte puede pintarse antes de que corra una variable de aqui.
-        var moraListOrder = (() => { try { const v = localStorage.getItem('sisdel_mora_orden'); return v === 'debt' || v === 'name' ? v : 'unit'; } catch (e) { return 'unit'; } })();
+        var moraListOrder = (() => { try { const v = localStorage.getItem('sisdel_mora_orden'); return v === 'debt' || v === 'name' || v === 'months' ? v : 'unit'; } catch (e) { return 'unit'; } })();
+        // El sentido natural de cada orden: por morosidad y por dinero, el mayor primero; por lote y por nombre, de menor a mayor
+        function moraListNaturalDir(order) { return order === 'months' || order === 'debt' ? 'desc' : 'asc'; }
+        var moraListDir = (() => { try { const v = localStorage.getItem('sisdel_mora_sentido'); return v === 'asc' || v === 'desc' ? v : moraListNaturalDir(moraListOrder); } catch (e) { return moraListNaturalDir(moraListOrder); } })();
         var moraListFase = '';
         var moraListSearch = '';
         var moraListMin = 1;
@@ -7833,6 +7844,8 @@
             if (searchBox) searchBox.value = moraListSearch;
             const order = document.getElementById('ml-order');
             if (order) order.value = moraListOrder;
+            const dir = document.getElementById('ml-dir');
+            if (dir) dir.value = moraListDir;
             const min = document.getElementById('ml-min');
             if (min) min.value = String(moraListMin);
             const select = document.getElementById('ml-fase');
@@ -7848,20 +7861,30 @@
             select.disabled = !fases.length;
             select.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente';
         }
-        function moraListFiltersChanged() {
+        // source 'order': se cambio "Ordenar por": el sentido pasa al natural de ese orden (morosidad y dinero: el mayor primero), y se puede invertir
+        function moraListFiltersChanged(source) {
             const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
             moraListFase = val('ml-fase');
-            moraListOrder = ['debt', 'name'].includes(val('ml-order')) ? val('ml-order') : 'unit';
+            moraListOrder = ['debt', 'name', 'months'].includes(val('ml-order')) ? val('ml-order') : 'unit';
+            moraListDir = source === 'order' ? moraListNaturalDir(moraListOrder) : (val('ml-dir') === 'desc' ? 'desc' : 'asc');
+            const dirEl = document.getElementById('ml-dir');
+            if (dirEl) dirEl.value = moraListDir;
             moraListMin = [1, 2, 3, 6, 12].includes(Number(val('ml-min'))) ? Number(val('ml-min')) : 1;
-            try { localStorage.setItem('sisdel_mora_orden', moraListOrder); } catch (e) { /* solo se pierde la preferencia */ }
+            try { localStorage.setItem('sisdel_mora_orden', moraListOrder); localStorage.setItem('sisdel_mora_sentido', moraListDir); } catch (e) { /* solo se pierde la preferencia */ }
             renderCurrentReport();
         }
-        function moraListOrderText() { return moraListOrder === 'debt' ? 'de mayor a menor deuda' : moraListOrder === 'name' ? 'en orden alfabético' : 'por número de lote o casa'; }
+        function moraListOrderText() {
+            const desc = moraListDir === 'desc';
+            if (moraListOrder === 'months') return desc ? 'de mayor a menor morosidad (más meses adeudados primero)' : 'de menor a mayor morosidad (menos meses adeudados primero)';
+            if (moraListOrder === 'debt') return desc ? 'de mayor a menor total adeudado' : 'de menor a mayor total adeudado';
+            if (moraListOrder === 'name') return desc ? 'en orden alfabético de Z a A' : 'en orden alfabético de A a Z';
+            return desc ? 'por número de lote o casa, de mayor a menor' : 'por número de lote o casa, de menor a mayor';
+        }
 
         function buildMoraListReport() {
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            const { map, today } = sisdelPayMap({ fase: moraListFase, order: moraListOrder, search: moraListSearch });
-            const list = SisdelReportesOikos.moraList(map, { minMonths: moraListMin });
+            const { map, today } = sisdelPayMap({ fase: moraListFase, order: 'unit', search: moraListSearch });
+            const list = SisdelReportesOikos.moraList(map, { minMonths: moraListMin, order: moraListOrder, dir: moraListDir });
             // Con una busqueda, lo que coincide va resaltado (SisdelBusqueda.highlight escapa todo lo que viene de la base)
             const show = (text) => (moraListSearch ? SisdelBusqueda.highlight(String(text || ''), moraListSearch) : esc(text));
             const nameOf = (r) => show((r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'));

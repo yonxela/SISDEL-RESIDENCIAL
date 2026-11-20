@@ -411,6 +411,23 @@ equal('con 12 meses o mas no sale nadie y no queda ninguna columna', [R.moraList
 equal('un mapa sin morosos da un listado vacio', [R.moraList({ rows: mlMap.rows.filter((x) => x.resident.id === 'u2'), columns: mlMap.columns }).rows.length, R.moraList({ rows: [], columns: [] }).columns.length, R.moraList(null).rows.length], [0, 0, 0]);
 equal('las celdas son las del mapa: lo que debe cada mes sale en rojo (status owed)', [mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-09'].status, mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-08'].status, mlMap.rows.find((x) => x.resident.id === 'u3').cells['2026-11'].status], ['owed', 'paid', 'pending']);
 equal('en el navegador tambien existe moraList', typeof R.moraList, 'function');
+// Orden del listado: lote, nombre, morosidad (meses) y total adeudado, ascendente o descendente
+const mlOrder = (order, dir, minMonths) => R.moraList(mlMap, { order, dir, minMonths }).rows.map((x) => x.row.resident.unit);
+equal('por lote de menor a mayor (natural: A2 antes que A10) y de mayor a menor', [mlOrder('unit', 'asc'), mlOrder('unit', 'desc')], [['A002', 'A003', 'A010'], ['A010', 'A003', 'A002']]);
+equal('por nombre de A a Z y de Z a A', [mlOrder('name', 'asc'), mlOrder('name', 'desc')], [['A003', 'A010', 'A002'], ['A002', 'A010', 'A003']]);
+equal('por morosidad (meses adeudados): de mayor a menor y de menor a mayor', [mlOrder('months', 'desc'), mlOrder('months', 'asc')], [['A002', 'A010', 'A003'], ['A003', 'A010', 'A002']]);
+equal('por total adeudado: de mayor a menor y de menor a mayor', [mlOrder('debt', 'desc'), mlOrder('debt', 'asc')], [['A002', 'A010', 'A003'], ['A003', 'A010', 'A002']]);
+// Empates: dos vecinos con los mismos meses se ordenan por su total (el mayor primero) y despues por lote, sin importar el sentido
+const tie = { columns: [{ key: '2026-09', kind: 'month', label: 'Sep 2026' }], rows: [
+    { resident: { id: 't1', name: 'Zeta', unit: 'B2' }, lateMonths: 1, late: 100, owed: { mora: 0 }, cells: { '2026-09': { status: 'owed', late: 100 } } },
+    { resident: { id: 't2', name: 'Alfa', unit: 'B1' }, lateMonths: 1, late: 300, owed: { mora: 0 }, cells: { '2026-09': { status: 'owed', late: 300 } } },
+    { resident: { id: 't3', name: 'Beta', unit: 'B3' }, lateMonths: 1, late: 100, owed: { mora: 0 }, cells: { '2026-09': { status: 'owed', late: 100 } } }
+] };
+const tieOrder = (order, dir) => R.moraList(tie, { order, dir }).rows.map((x) => x.row.resident.unit);
+equal('empate en meses: el que mas debe primero, y a igual deuda por lote; igual en los dos sentidos', [tieOrder('months', 'desc'), tieOrder('months', 'asc')], [['B1', 'B2', 'B3'], ['B1', 'B2', 'B3']]);
+equal('empate en dinero: el de mas meses primero y a igual, por lote', [tieOrder('debt', 'desc')], [['B1', 'B2', 'B3']]);
+equal('sin pedir orden queda el del mapa, y un orden que no existe tambien', [R.moraList(tie).rows.map((x) => x.row.resident.unit), R.moraList(tie, { order: 'otro' }).rows.map((x) => x.row.resident.unit)], [['B2', 'B1', 'B3'], ['B2', 'B1', 'B3']]);
+equal('ordenar no cambia las columnas ni los totales', [JSON.stringify(R.moraList(mlMap, { order: 'debt', dir: 'desc' }).totals), JSON.stringify(R.moraList(mlMap).totals)], [JSON.stringify(R.moraList(mlMap).totals), JSON.stringify(R.moraList(mlMap).totals)]);
 
 // ───────── Saldo a favor (pedido del usuario el 2026-11-18) ─────────
 console.log('\nSaldo a favor: a que cuotas se aplica');

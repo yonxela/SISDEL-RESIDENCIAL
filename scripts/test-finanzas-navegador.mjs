@@ -1180,12 +1180,24 @@ async function run() {
         record('el lote y el nombre quedan fijos al desplazarse a la derecha', ml0.pinned);
         // Orden, minimo de meses y buscador
         const mlSet = async (id, value) => { await oikos(`(() => { const el = document.getElementById(${JSON.stringify(id)}); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event(${JSON.stringify(id === 'ml-search' ? 'input' : 'change')})); })()`); await sleep(id === 'ml-search' ? 450 : 250); return oikos(MLJS); };
+        // Ordenar por + sentido: al cambiar "Ordenar por" el sentido pasa al natural (morosidad y dinero: el mayor primero; lote y nombre: de menor a mayor)
+        const mlDirValue = () => oikos(`document.getElementById('ml-dir').value`);
+        const mlMonths = await mlSet('ml-order', 'months');
+        record('por morosidad (meses adeudados): el que mas meses debe primero y el sentido pasa a descendente', JSON.stringify(mlMonths.units) === JSON.stringify(['A002', 'A010']) && mlMonths.meses.every((m, i) => i === 0 || mlMonths.meses[i - 1] >= m) && (await mlDirValue()) === 'desc', JSON.stringify([mlMonths.units, mlMonths.meses]));
+        const mlMonthsAsc = await mlSet('ml-dir', 'asc');
+        record('con sentido ascendente, el que menos meses debe primero', JSON.stringify(mlMonthsAsc.units) === JSON.stringify(['A010', 'A002']), JSON.stringify(mlMonthsAsc.units));
         const mlDebt = await mlSet('ml-order', 'debt');
-        record('de mayor a menor deuda: los totales no suben', mlDebt.totals.every((t, i) => i === 0 || mlDebt.totals[i - 1] >= t - 0.006), JSON.stringify(mlDebt.totals.slice(0, 8)));
+        record('por total adeudado: de mayor a menor (los totales no suben) y el sentido pasa a descendente', mlDebt.totals.every((t, i) => i === 0 || mlDebt.totals[i - 1] >= t - 0.006) && (await mlDirValue()) === 'desc', JSON.stringify(mlDebt.totals));
         const mlName = await mlSet('ml-order', 'name');
-        record('alfabetico: los nombres van en orden', mlName.names.every((n, i) => i === 0 || mlName.names[i - 1].localeCompare(n, 'es', { sensitivity: 'base', numeric: true }) <= 0), JSON.stringify(mlName.names.slice(0, 5)));
+        record('alfabetico de A a Z: los nombres van en orden y el sentido pasa a ascendente', mlName.names.every((n, i) => i === 0 || mlName.names[i - 1].localeCompare(n, 'es', { sensitivity: 'base', numeric: true }) <= 0) && (await mlDirValue()) === 'asc', JSON.stringify(mlName.names));
+        const mlNameDesc = await mlSet('ml-dir', 'desc');
+        record('alfabetico de Z a A: los nombres van al reves', mlNameDesc.names.every((n, i) => i === 0 || mlNameDesc.names[i - 1].localeCompare(n, 'es', { sensitivity: 'base', numeric: true }) >= 0) && JSON.stringify(mlNameDesc.names) === JSON.stringify([...mlName.names].reverse()), JSON.stringify(mlNameDesc.names));
         const mlUnit = await mlSet('ml-order', 'unit');
-        record('por lote: los lotes van en orden natural (A2 antes que A10)', mlUnit.units.every((u, i) => i === 0 || mlUnit.units[i - 1].localeCompare(u, 'es', { sensitivity: 'base', numeric: true }) <= 0), JSON.stringify(mlUnit.units.slice(0, 6)));
+        record('por lote: los lotes van en orden natural (A2 antes que A10)', mlUnit.units.every((u, i) => i === 0 || mlUnit.units[i - 1].localeCompare(u, 'es', { sensitivity: 'base', numeric: true }) <= 0) && (await mlDirValue()) === 'asc', JSON.stringify(mlUnit.units));
+        const mlUnitDesc = await mlSet('ml-dir', 'desc');
+        record('por lote de mayor a menor', JSON.stringify(mlUnitDesc.units) === JSON.stringify([...mlUnit.units].reverse()), JSON.stringify(mlUnitDesc.units));
+        record('el orden y el sentido quedan dichos arriba, en el resumen del reporte', /de mayor a menor/.test(await oikos(`currentReportData.summary`)));
+        await mlSet('ml-dir', 'asc');
         const mlMin = await mlSet('ml-min', '3');
         record('"3 meses o mas" deja solo a quien debe tantos', mlMin.n === 1 && mlMin.meses.every((m) => m >= 3), JSON.stringify(mlMin.meses));
         await mlSet('ml-min', '1');

@@ -768,6 +768,30 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     }
     const oikosX = [...read('finanzas/index.html').matchAll(/onclick="closeModal\('[a-z-]+'\)"[^>]*>\s*<i class="fas fa-times[^"]*"><\/i>/g)].map((m) => m[0]);
     yes('las X de las ventanas de OIKOS (una por ventana, arriba a la derecha) son un 30 % mas grandes', oikosX.length === (read('finanzas/index.html').match(/<div id="modal-[\w-]+"/g) || []).length && oikosX.some((tag) => tag.includes("closeModal('modal-resident')")) && oikosX.every((tag) => /sisdel-x-(lg|md)/.test(tag)) && /\.sisdel-x-lg \{ font-size: 1\.46rem; \}/.test(read('finanzas/index.html')) && /\.sisdel-x-md \{ font-size: 1\.3rem; \}/.test(read('finanzas/index.html')));
+    {
+        // "Crear nueva categoria" en el Gasto de OIKOS (pedido del usuario el 2026-11-20)
+        const oik = read('finanzas/index.html');
+        const expModal = oik.slice(oik.indexOf('<div id="modal-expense"'), oik.indexOf('<div id="modal-bulk-charge"'));
+        yes('el Gasto trae el boton "Crear nueva categoria" junto a Categoria, con su recuadro (nombre, Guardar y Cancelar) arriba del campo',
+            /id="exp-cat-new-btn" onclick="openNewExpCategory\(\)"[^>]*>[\s\S]{0,60}Crear nueva categoría<\/button>/.test(expModal)
+            && expModal.indexOf('id="exp-cat-new-btn"') < expModal.indexOf('id="exp-cat-new"') && expModal.indexOf('id="exp-cat-new"') < expModal.indexOf('id="exp-concept-input"')
+            && /id="exp-cat-new-name" maxlength="60"/.test(expModal) && /onclick="saveNewExpCategory\(\)"/.test(expModal) && /onclick="closeNewExpCategory\(\)"/.test(expModal)
+            && /<button type="button" id="exp-cat-new-btn"/.test(expModal) && /<button type="button" id="exp-cat-new-save"/.test(expModal));
+        yes('Enter en el nombre guarda la categoria sin enviar el gasto; Escape cierra el recuadro',
+            /function newExpCategoryKey\(event\) \{[\s\S]{0,200}event\.key === 'Enter'\) \{ event\.preventDefault\(\); saveNewExpCategory\(\);[\s\S]{0,120}event\.key === 'Escape'\)/.test(oik));
+        yes('la categoria nueva va a settings.customExpenseConcepts (la que sube la sincronizacion) y no se repite sin importar mayusculas ni acentos',
+            /function expCategoryKey\(c\) \{[\s\S]{0,80}normalize\('NFD'\)/.test(oik) && /function saveNewExpCategory\(\) \{[\s\S]{0,700}findExpCategory\(name\)[\s\S]{0,300}createAndSelectExpCategory\(name\)/.test(oik)
+            && /function createAndSelectExpCategory\(cat\) \{[\s\S]{0,500}const existing = findExpCategory\(normalized\);[\s\S]{0,80}s\.customExpenseConcepts\.push\(normalized\);\s*Store\.set\('settings', s\);/.test(oik));
+        yes('"Crear ..." de la lista guarda lo escrito tal cual (antes, en minusculas) y refresca la lista de Configuracion (antes llamaba a una funcion que no existe)',
+            /expCategPendingCreate = raw \|\| q;/.test(oik) && /renderExpCategoryDropdown\(q, \(input\.value \|\| ''\)\.trim\(\)\)/.test(oik) && !/renderExpCategoryDropdown\(\(event\.target\.value \|\| ''\)\.toLowerCase\(\)\)/.test(oik)
+            && /typeof renderCustomConceptsSettings === 'function'/.test(oik) && !/renderCustomConcepts\(\)/.test(oik));
+        yes('el recuadro empieza cerrado al abrir el Gasto y los conceptos de Configuracion se escapan al pintarlos',
+            /if \(id === 'modal-expense'\) \{[\s\S]{0,700}closeNewExpCategory\(\);/.test(oik) && /function renderCustomConceptsSettings\(\) \{[\s\S]{0,800}\$\{esc\(c\)\} <button type="button" onclick="removeCustomConcept\('income'[\s\S]{0,600}\$\{esc\(c\)\} <button type="button" onclick="removeCustomConcept\('expense'/.test(oik));
+        yes('las reglas y la sincronizacion dejan agregar categorias de gasto a quien registra egresos (el bloqueo pide lo mismo)',
+            /!finChanged\(\)\.hasAny\(\['customExpenseConcepts'\]\) \|\| pFinanzasConfigConceptos\(condoId\) \|\| pFinanzasEgresosRegistrar\(condoId\)/.test(read('firestore.rules'))
+            && /customExpenseConcepts'\)\) needs\.push\(\['finanzas\.config_conceptos', 'finanzas\.egresos_registrar'\]\)/.test(read('finanzas-sync.js'))
+            && /\(openNewExpCategory\|saveNewExpCategory\|closeNewExpCategory\)\\\(\/, \['egresos_registrar', 'config_conceptos'\]\]/.test(read('finanzas-bloqueo.js')));
+    }
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

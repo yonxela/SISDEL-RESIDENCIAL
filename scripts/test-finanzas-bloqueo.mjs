@@ -71,6 +71,11 @@ equal('el formulario de pagos y el de egresos exigen cada uno el suyo', [
     blocked("handleTransactionSubmit(event, 'income')", only('pagos_registrar')), blocked("handleTransactionSubmit(event, 'income')", only('egresos_registrar')),
     blocked("handleTransactionSubmit(event, 'expense')", only('egresos_registrar')), blocked("handleTransactionSubmit(event, 'expense')", only('pagos_registrar'))
 ], [false, true, false, true]);
+equal('"Crear nueva categoria" del Gasto: con registrar egresos o con editar los conceptos (las reglas dejan cualquiera de los dos)', [
+    blocked('openNewExpCategory()', only('egresos_registrar')), blocked('saveNewExpCategory()', only('egresos_registrar')),
+    blocked('saveNewExpCategory()', only('config_conceptos')), blocked('closeNewExpCategory()', only('config_conceptos')),
+    blocked('saveNewExpCategory()', only('pagos_registrar')), blocked('openNewExpCategory()', none)
+], [false, false, false, false, true, true]);
 
 console.log('\nPantallas');
 equal('con todo, la primera pantalla es el tablero', B.firstView(all), 'dashboard');

@@ -1650,7 +1650,21 @@
                      Si no encuentra coincidencia, ofrece "Crear [texto]" como nuevo
                      concepto que se persiste en customExpenseConcepts. -->
                 <div class="relative">
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Categoría <span class="text-rose-500">*</span></label>
+                    <!-- SISDEL: boton "Crear nueva categoria" (pedido del usuario el 2026-11-20): antes solo se creaba escribiendo un
+                         texto que no existia y eligiendo "Crear ..." en la lista, y nadie lo encontraba -->
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <label for="exp-concept-input" class="block text-xs font-bold text-slate-400 uppercase">Categoría <span class="text-rose-500">*</span></label>
+                        <button type="button" id="exp-cat-new-btn" onclick="openNewExpCategory()" class="inline-flex items-center gap-1 px-2 py-1 -my-1 text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-md transition" title="Agregar una categoría a la lista del condominio"><i class="fas fa-plus-circle"></i> Crear nueva categoría</button>
+                    </div>
+                    <div id="exp-cat-new" class="hidden mb-2 p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20">
+                        <label for="exp-cat-new-name" class="block text-xs font-bold text-emerald-800 dark:text-emerald-300 mb-1">Nombre de la nueva categoría</label>
+                        <input type="text" id="exp-cat-new-name" maxlength="60" autocomplete="off" spellcheck="false" onkeydown="newExpCategoryKey(event)" oninput="checkNewExpCategory()" class="w-full px-3 py-2 bg-white dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="Ej. Pago de fumigación">
+                        <p id="exp-cat-new-msg" class="hidden mt-1 text-xs font-semibold" role="status"></p>
+                        <div class="flex justify-end gap-2 mt-2">
+                            <button type="button" id="exp-cat-new-cancel" onclick="closeNewExpCategory()" class="px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300">Cancelar</button>
+                            <button type="button" id="exp-cat-new-save" onclick="saveNewExpCategory()" class="px-3 py-1.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg">Guardar categoría</button>
+                        </div>
+                    </div>
                     <input
                         type="text"
                         id="exp-concept-input"
@@ -6726,7 +6740,76 @@
                 ? all.filter(c => c.toLowerCase().includes(q))
                 : all;
             expCategHighlightIdx = 0;
-            renderExpCategoryDropdown(q);
+            renderExpCategoryDropdown(q, (input.value || '').trim());
+        }
+
+        // SISDEL: "Crear nueva categoria" (boton del Gasto). La categoria queda en settings.customExpenseConcepts, la misma
+        // lista de "Crear ..." y de Configuracion; la sube finanzas-sync.js y la dejan las reglas a quien registra egresos
+        // (finanzas.egresos_registrar) o edita los conceptos (finanzas.config_conceptos). Se compara sin mayusculas ni acentos.
+        function expCategoryKey(c) {
+            return String(c || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+        }
+        function findExpCategory(name) {
+            const k = expCategoryKey(name);
+            return k ? getAllExpCategories().find(c => expCategoryKey(c) === k) || null : null;
+        }
+        function setNewExpCategoryMsg(text, kind) {
+            const msg = document.getElementById('exp-cat-new-msg');
+            if (!msg) return;
+            msg.textContent = text || '';
+            msg.classList.toggle('hidden', !text);
+            msg.classList.toggle('text-rose-600', kind === 'error');
+            msg.classList.toggle('dark:text-rose-400', kind === 'error');
+            msg.classList.toggle('text-amber-700', kind === 'warn');
+            msg.classList.toggle('dark:text-amber-300', kind === 'warn');
+        }
+        function openNewExpCategory() {
+            const box = document.getElementById('exp-cat-new');
+            const name = document.getElementById('exp-cat-new-name');
+            if (!box || !name) return;
+            closeExpCategoryDropdown();
+            box.classList.remove('hidden');
+            // Lo que ya se escribio en Categoria y no existe sirve de punto de partida
+            const typed = (document.getElementById('exp-concept-input').value || '').trim();
+            name.value = typed && !findExpCategory(typed) ? typed.slice(0, 60) : '';
+            checkNewExpCategory();
+            name.focus();
+        }
+        function closeNewExpCategory() {
+            const box = document.getElementById('exp-cat-new');
+            if (box) box.classList.add('hidden');
+            const name = document.getElementById('exp-cat-new-name');
+            if (name) name.value = '';
+            setNewExpCategoryMsg('');
+        }
+        function checkNewExpCategory() {
+            const name = (document.getElementById('exp-cat-new-name').value || '').trim();
+            const existing = findExpCategory(name);
+            setNewExpCategoryMsg(existing ? `Ya existe «${existing}»: al guardar se elige esa.` : '', 'warn');
+        }
+        function saveNewExpCategory() {
+            const el = document.getElementById('exp-cat-new-name');
+            const name = String(el.value || '').replace(/\s+/g, ' ').trim();
+            if (name.length < 3) {
+                setNewExpCategoryMsg('Escriba el nombre de la categoría (3 letras o más).', 'error');
+                el.focus();
+                return;
+            }
+            const existing = findExpCategory(name);
+            if (existing) {
+                closeNewExpCategory();
+                selectExpCategory(existing);
+                showToast(`La categoría «${existing}» ya existía: quedó elegida`);
+                return;
+            }
+            createAndSelectExpCategory(name);
+            closeNewExpCategory();
+            showToast(`Categoría «${name}» creada y elegida`);
+        }
+        function newExpCategoryKey(event) {
+            // Enter guarda la categoria (no envia el gasto) y Escape cierra el recuadro
+            if (event.key === 'Enter') { event.preventDefault(); saveNewExpCategory(); }
+            else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNewExpCategory(); }
         }
 
         // Texto pendiente para "Crear nuevo" — lo guardamos a nivel módulo
@@ -6734,7 +6817,7 @@
         // atributo HTML (evita problemas de escapado).
         let expCategPendingCreate = '';
 
-        function renderExpCategoryDropdown(q) {
+        function renderExpCategoryDropdown(q, raw) {
             const dd = document.getElementById('exp-categ-dropdown');
             if (!dd) return;
             const hasExactMatch = q && expCategFiltered.some(c => c.toLowerCase() === q);
@@ -6753,8 +6836,9 @@
             if (q && !hasExactMatch) {
                 // Guardamos el texto pendiente en una var del módulo y el
                 // handler lo lee de ahí — mismo motivo que con selectByIdx.
-                expCategPendingCreate = q;
-                const safeQ = esc(q);
+                // SISDEL: con lo escrito tal cual (antes se guardaba en minusculas: "pago de fumigacion")
+                expCategPendingCreate = raw || q;
+                const safeQ = esc(expCategPendingCreate);
                 html += `<div onmousedown="event.preventDefault(); createAndSelectPending()" class="px-3 py-2 cursor-pointer text-sm font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 border-t border-slate-200 dark:border-slate-600"><i class="fas fa-plus-circle mr-1"></i> Crear &quot;${safeQ}&quot;</div>`;
             } else {
                 expCategPendingCreate = '';
@@ -6798,18 +6882,18 @@
             if (!normalized) return;
             const s = Store.get('settings');
             if (!s.customExpenseConcepts) s.customExpenseConcepts = [];
-            const exists = s.customExpenseConcepts.some(c => String(c).toLowerCase() === normalized.toLowerCase());
-            const isDefault = DEFAULT_EXP_CATEGORIES.some(c => c.toLowerCase() === normalized.toLowerCase());
-            if (!exists && !isDefault) {
+            // SISDEL: sin mayusculas ni acentos ("Fumigacion" es la misma que "fumigación"): se elige la que ya existe
+            const existing = findExpCategory(normalized);
+            if (!existing) {
                 s.customExpenseConcepts.push(normalized);
                 Store.set('settings', s);
                 // Refrescar lista de conceptos personalizados en la pestaña
-                // Configuración → Conceptos Recurrentes, si está abierta.
-                if (typeof renderCustomConcepts === 'function') {
-                    try { renderCustomConcepts(); } catch (e) { /* ignore */ }
+                // Configuración → Conceptos Recurrentes, si está abierta (SISDEL: la funcion se llama renderCustomConceptsSettings).
+                if (typeof renderCustomConceptsSettings === 'function') {
+                    try { renderCustomConceptsSettings(); } catch (e) { /* ignore */ }
                 }
             }
-            selectExpCategory(normalized);
+            selectExpCategory(existing || normalized);
         }
 
         function handleExpCategoryKey(event) {
@@ -6828,12 +6912,12 @@
                 event.preventDefault();
                 if (!isOpen) { filterExpCategories(); return; }
                 expCategHighlightIdx = Math.min(expCategHighlightIdx + 1, expCategFiltered.length - 1);
-                renderExpCategoryDropdown((event.target.value || '').toLowerCase());
+                renderExpCategoryDropdown((event.target.value || '').trim().toLowerCase(), (event.target.value || '').trim());
             } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 if (!isOpen) return;
                 expCategHighlightIdx = Math.max(0, expCategHighlightIdx - 1);
-                renderExpCategoryDropdown((event.target.value || '').toLowerCase());
+                renderExpCategoryDropdown((event.target.value || '').trim().toLowerCase(), (event.target.value || '').trim());
             } else if (event.key === 'Escape') {
                 closeExpCategoryDropdown();
             }
@@ -9185,8 +9269,10 @@
         // ========== SETTINGS ==========
         function renderCustomConceptsSettings() {
             const s = Store.get('settings');
-            document.getElementById('inc-concepts-list').innerHTML = (s.customIncomeConcepts || []).map((c, i) => `<span class="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">${c} <button type="button" onclick="removeCustomConcept('income', ${i})" class="ml-1.5 text-emerald-600 hover:text-emerald-900"><i class="fas fa-times"></i></button></span>`).join('');
-            document.getElementById('exp-concepts-list').innerHTML = (s.customExpenseConcepts || []).map((c, i) => `<span class="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">${c} <button type="button" onclick="removeCustomConcept('expense', ${i})" class="ml-1.5 text-rose-600 hover:text-rose-900"><i class="fas fa-times"></i></button></span>`).join('');
+            // SISDEL: los conceptos los escribe cualquiera que registra egresos o cargos: se escapan al pintarlos
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            document.getElementById('inc-concepts-list').innerHTML = (s.customIncomeConcepts || []).map((c, i) => `<span class="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">${esc(c)} <button type="button" onclick="removeCustomConcept('income', ${i})" class="ml-1.5 text-emerald-600 hover:text-emerald-900"><i class="fas fa-times"></i></button></span>`).join('');
+            document.getElementById('exp-concepts-list').innerHTML = (s.customExpenseConcepts || []).map((c, i) => `<span class="inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">${esc(c)} <button type="button" onclick="removeCustomConcept('expense', ${i})" class="ml-1.5 text-rose-600 hover:text-rose-900"><i class="fas fa-times"></i></button></span>`).join('');
         }
 
         function addCustomConcept(type) {
@@ -9902,6 +9988,7 @@
                 document.getElementById('exp-concept-input').value = '';
                 const dd = document.getElementById('exp-categ-dropdown');
                 if (dd) dd.classList.add('hidden');
+                closeNewExpCategory();   // SISDEL: el recuadro "Crear nueva categoria" empieza cerrado
                 document.getElementById('exp-receipt-num').value = ''; clearReceiptImg('exp');
                 const expNotes = document.getElementById('exp-notes'); if (expNotes) expNotes.value = '';
             }

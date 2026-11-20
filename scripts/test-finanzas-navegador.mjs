@@ -1509,6 +1509,34 @@ async function run() {
         equal('WhatsApp: resumen con fase, lote, residente y placa (sin el codigo del marbete)', mbOut.waHeaders, ['Fase', 'Lote', 'Residente', 'Placa']);
         await oikos(`(() => { Store.get = window.__mbRealGet; renderCurrentReport(); })()`);
 
+        console.log('\nGasto: boton "Crear nueva categoria"');
+        const catOut = await oikos(`(() => {
+            navigate('accounting'); openModal('modal-expense');
+            const d = (id) => document.getElementById(id);
+            const list = () => (Store.get('settings').customExpenseConcepts || []).filter((c) => c === 'Fumigación de Áreas Verdes').length;
+            const before = { boton: d('exp-cat-new-btn').offsetParent !== null, abierto: !d('exp-cat-new').classList.contains('hidden') };
+            d('exp-cat-new-btn').click();
+            const opened = [!d('exp-cat-new').classList.contains('hidden'), document.activeElement === d('exp-cat-new-name')];
+            d('exp-cat-new-name').value = '  Fumigación de   Áreas Verdes ';
+            const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+            d('exp-cat-new-name').dispatchEvent(enter);
+            const created = { enterNoEnvia: enter.defaultPrevented, abierto: !d('exp-cat-new').classList.contains('hidden'), categoria: d('exp-concept-input').value, veces: list() };
+            d('exp-cat-new-btn').click(); d('exp-cat-new-name').value = 'FUMIGACION DE AREAS VERDES'; checkNewExpCategory();
+            const aviso = d('exp-cat-new-msg').textContent;
+            d('exp-concept-input').value = ''; saveNewExpCategory();
+            const again = { categoria: d('exp-concept-input').value, veces: list() };
+            d('exp-concept-input').value = 'fumi'; filterExpCategories();
+            const sugerida = [...document.querySelectorAll('#exp-categ-dropdown > div')].map((x) => x.textContent.trim())[0];
+            closeModal('modal-expense');
+            return { before, opened, created, aviso, again, sugerida };
+        })()`);
+        equal('el Gasto trae el boton y el recuadro empieza cerrado; el boton lo abre con el foco en el nombre', [catOut.before, catOut.opened], [{ boton: true, abierto: false }, [true, true]]);
+        equal('Enter guarda la categoria (sin enviar el gasto) con los espacios limpios y la deja elegida', catOut.created, { enterNoEnvia: true, abierto: false, categoria: 'Fumigación de Áreas Verdes', veces: 1 });
+        equal('la misma sin acentos ni mayusculas avisa, se elige la que ya existe y no se repite', [catOut.aviso, catOut.again], ['Ya existe «Fumigación de Áreas Verdes»: al guardar se elige esa.', { categoria: 'Fumigación de Áreas Verdes', veces: 1 }]);
+        equal('y sale en las sugerencias de Categoria', catOut.sugerida, 'Fumigación de Áreas Verdes');
+        equal('se guarda en la nube', await idle(), 'ok');
+        equal('la categoria queda en la configuracion del condominio (la ven todos los equipos)', ((await condoRef.collection('finanzas_config').doc('oikos_settings').get()).data().customExpenseConcepts || []).filter((c) => c === 'Fumigación de Áreas Verdes').length, 1);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

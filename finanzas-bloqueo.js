@@ -120,6 +120,9 @@
         [/^saveSettings\(/, CONFIG_WRITE_KEYS],
         [/^setFeeMode\(/, ['config_cuota']],
         [/^(addCustomConcept|removeCustomConcept)\(/, ['config_conceptos']],
+        // "Crear nueva categoria" del Gasto: las reglas dejan agregar a customExpenseConcepts a quien registra egresos o
+        // a quien edita los conceptos (basta uno)
+        [/^(openNewExpCategory|saveNewExpCategory|closeNewExpCategory)\(/, ['egresos_registrar', 'config_conceptos']],
     ];
 
     // Privilegios (basta uno) que dejan ver un bloque; sin ninguno se oculta con estos selectores.

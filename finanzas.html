@@ -113,8 +113,8 @@
     <script src="privilegios.js?v=20261121a"></script>
     <script src="sisdel-core.js?v=20261121a"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261121b"></script>
-    <script src="finanzas-bloqueo.js?v=20261121b"></script>
+    <script src="finanzas-sync.js?v=20261121c"></script>
+    <script src="finanzas-bloqueo.js?v=20261121c"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -387,28 +387,50 @@
                 };
             }
 
-            // Placas del residente que se edita en OIKOS (pedido del usuario el 2026-11-20): ver, agregar y quitar las placas de sus
-            // vehiculos desde su formulario. Solo con "Ver vehiculos" (vehiculos.ver); agregar pide vehiculos.crear y quitar
-            // vehiculos.eliminar, que tambien exigen las reglas (la pantalla solo oculta los botones). Cada llamada es la misma que
-            // hace el panel de administracion (SISDEL.getVehicles / createVehicle / deleteVehicle).
-            window.sisdelPlates = null;
-            if (SISDEL.can('vehiculos.ver')) {
-                window.sisdelPlates = {
-                    canAdd: SISDEL.can('vehiculos.crear'),
-                    canRemove: SISDEL.can('vehiculos.eliminar'),
+            // Vehiculos de los residentes (pestana Vehiculos del formulario del residente de OIKOS, pedido del usuario el 2026-11-20):
+            // OIKOS los lee y escribe por window.parent.sisdelResidentVehicles (no confundir con sisdelVehicles, que es la escucha del reporte de marbetes). Solo con "Ver vehiculos" (vehiculos.ver) y poder ver
+            // residentes; `can` dice que mas puede hacer este usuario (registrar, editar, quitar: cada uno su privilegio, y las reglas
+            // de la coleccion vehiculos tambien lo exigen). Los datos son los de siempre (placa, marca, modelo y color: los usa la garita).
+            window.sisdelResidentVehicles = null;
+            if (SISDEL.can('vehiculos.ver') && SISDEL.can('finanzas.residentes_ver')) {
+                const vehiclesRef = () => window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('vehiculos');
+                const cleanText = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+                const plateOf = (v) => String(v && v.plate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                window.sisdelResidentVehicles = {
+                    can: { create: SISDEL.can('vehiculos.crear'), edit: SISDEL.can('vehiculos.editar'), remove: SISDEL.can('vehiculos.eliminar') },
+                    // Los vehiculos de un vecino, los mas viejos primero. Si la lectura falla se avisa (no se muestra una lista vacia)
                     async list(userId) {
-                        const vehicles = await SISDEL.getVehicles(userId);
-                        return (vehicles || []).map((v) => ({ id: String(v.id), plate: String(v.plate || '') }));
+                        const snap = await vehiclesRef().where('userId', '==', String(userId)).get();
+                        return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
                     },
-                    async add(userId, plate) {
-                        if (!SISDEL.can('vehiculos.crear')) return null;
-                        const vehicle = await SISDEL.createVehicle(userId, condoId, plate, '', '', '');
-                        return vehicle ? { id: String(vehicle.id), plate: String(vehicle.plate || plate) } : null;
+                    // Los vehiculos del condominio con esa placa (ya sin guiones ni espacios): para avisar si ya esta en otro vecino
+                    async findPlate(plate) {
+                        const norm = plateOf({ plate });
+                        if (!norm) return [];
+                        const snap = await vehiclesRef().where('plateNorm', '==', norm).get();
+                        return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
                     },
-                    async remove(vehicleId) {
-                        if (!SISDEL.can('vehiculos.eliminar')) return false;
-                        return !!(await SISDEL.deleteVehicle(vehicleId));
-                    }
+                    // Registra un vehiculo con su marbete (el mismo createVehicle de siempre); devuelve el vehiculo o null
+                    async create(userId, v) {
+                        return SISDEL.createVehicle(String(userId), condoId, plateOf(v), cleanText(v.brand, 40), cleanText(v.model, 40), cleanText(v.color, 30));
+                    },
+                    // Cambia la placa, marca, modelo y color de un vehiculo (el marbete no cambia); true si se guardo
+                    async update(vehicleId, v) {
+                        const plate = plateOf(v);
+                        if (!vehicleId || !plate) return false;
+                        try {
+                            await vehiclesRef().doc(String(vehicleId)).update({
+                                plate, plateNorm: plate, brand: cleanText(v.brand, 40), model: cleanText(v.model, 40), color: cleanText(v.color, 30),
+                                updatedAt: new Date().toISOString()
+                            });
+                            return true;
+                        } catch (error) {
+                            console.warn('Sistema Financiero: no se pudo cambiar el vehiculo', error && error.code);
+                            return false;
+                        }
+                    },
+                    // Quita un vehiculo (el mismo deleteVehicle de siempre); true si se borro
+                    async remove(vehicleId) { return SISDEL.deleteVehicle(String(vehicleId)); }
                 };
             }
 
@@ -437,8 +459,12 @@
                 onResidentCreated: (name, code) => {
                     SISDEL.showToast(`${name} quedó registrado como vecino en SISDEL. Código de acceso: ${code}`, 'success');
                 },
-                // Las placas que se escriben al crear un residente en OIKOS quedan como vehiculos del vecino
-                createVehicle: (userId, plate) => SISDEL.createVehicle(userId, condoId, plate, '', '', ''),
+                // Los vehiculos que se agregan al crear un residente en OIKOS (pestana Vehiculos) quedan como vehiculos del vecino:
+                // cada uno con su placa, marca, modelo y color (antes solo eran placas sueltas, texto)
+                createVehicle: (userId, item) => {
+                    const v = typeof item === 'string' ? { plate: item } : (item || {});
+                    return SISDEL.createVehicle(userId, condoId, String(v.plate || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(), String(v.brand || '').slice(0, 40), String(v.model || '').slice(0, 40), String(v.color || '').slice(0, 30));
+                },
                 onRemoteChange: (kind) => {
                     if (!iframe) return;
                     // OIKOS vacio una lista (p. ej. "Borrar todo"): se restauro desde la nube y se recarga

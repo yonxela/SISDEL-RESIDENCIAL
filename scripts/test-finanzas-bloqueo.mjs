@@ -77,12 +77,6 @@ equal('"Crear nueva categoria" del Gasto: con registrar egresos o con editar los
     blocked('saveNewExpCategory()', only('pagos_registrar')), blocked('openNewExpCategory()', none)
 ], [false, false, false, false, true, true]);
 
-equal('placas del residente: agregar y quitar piden editar residentes y el bloque se oculta sin ese privilegio', [
-    blocked('resAddPlate()', only('residentes_editar')), blocked('resRemovePlate(this.dataset.id)', only('residentes_editar')),
-    blocked('resAddPlate()', only('residentes_crear')), blocked('resRemovePlate(this.dataset.id)', none),
-    B.cssFor(only('residentes_ver')).includes('#res-plates-edit'), B.cssFor(only('residentes_editar')).includes('#res-plates-edit')
-], [false, false, true, true, true, false]);
-
 equal('Generar codigo boton de panico (menu del residente): todo pide contactar residentes y se oculta sin ese privilegio', [
     ...['openPanicQr(this.dataset.id)', "panicQrSetSize(this.value)", 'panicQrSetPaper(this.value)', 'panicQrCopyLink()', 'printPanicQr()', 'downloadPanicQrPDF()', 'sendPanicQrWhatsApp()'].map((a) => blocked(a, only('residentes_contactar'))),
     blocked('openPanicQr(this.dataset.id)', only('residentes_ver')), blocked('printPanicQr()', only('reportes_exportar')),

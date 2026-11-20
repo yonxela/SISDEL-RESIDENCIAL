@@ -1674,29 +1674,8 @@ async function run() {
         equal('se guarda en la nube', await idle(), 'ok');
         equal('la categoria queda en la configuracion del condominio (la ven todos los equipos)', ((await condoRef.collection('finanzas_config').doc('oikos_settings').get()).data().customExpenseConcepts || []).filter((c) => c === 'Fumigación de Áreas Verdes').length, 1);
 
-        console.log('\nResidente: la X de cerrar fija y las placas de sus vehiculos al editarlo');
-        // El puente de placas es el real (finanzas.html, con vehiculos.ver / crear / eliminar del administrador) y la base la del emulador
-        const dbPlates = async (uid) => (await condoRef.collection('vehiculos').where('userId', '==', uid).get()).docs.map((d) => d.get('plate')).sort();
-        await oikos(`(() => { window.confirm = () => true; navigate('residents'); editResident('u-ana'); return true; })()`);
-        await page.waitFor(`(() => { try { const d = document.querySelector('#frameBox iframe').contentWindow.document; return d.querySelectorAll('#res-plates-list [data-plate]').length > 0; } catch (e) { return false; } })()`, 'las placas de Ana en su formulario', 20000);
-        const plUi = () => oikos(`(() => { const d = (id) => document.getElementById(id); const vis = (id) => !!d(id) && !d(id).classList.contains('hidden');
-            return { edit: vis('res-plates-edit'), nuevo: vis('res-plates-new'), fila: vis('res-plates-add-row'), placas: [...document.querySelectorAll('#res-plates-list [data-plate]')].map((x) => x.dataset.plate).sort(), quitar: document.querySelectorAll('#res-plates-list .res-plate-del').length, msg: d('res-plates-msg').textContent }; })()`);
-        const anaPlates = await dbPlates('u-ana');
-        const pl0 = await plUi();
-        equal('editar a un vecino muestra sus placas de verdad (las de la base), con agregar y quitar', [pl0.edit, pl0.nuevo, pl0.fila, pl0.placas, pl0.quitar], [true, false, true, anaPlates, anaPlates.length]);
-        await oikos(`(() => { document.getElementById('res-plate-add').value = ' q-555 tst '; resAddPlate(); })()`);
-        const added = await waitFor('la placa nueva queda como vehiculo del vecino en la base', async () => (await condoRef.collection('vehiculos').where('userId', '==', 'u-ana').where('plate', '==', 'Q555TST').get()).docs[0] || null);
-        record('con su condominio, su marbete y la placa limpia en mayusculas', !!added && added.get('condominioId') === CONDO && /^MAR/.test(String(added.get('marbeteCode'))) && added.get('plateNorm') === 'Q555TST', JSON.stringify(added && added.data()));
-        // La base ya la tiene un instante antes de que la pantalla termine de pintar la lista: se espera a la pantalla
-        await waitFor('la lista y el aviso de la pantalla se actualizan', async () => { const u = await plUi(); return u.placas.includes('Q555TST') && u.msg === 'Placa Q555TST agregada.'; });
-        const pl1 = await plUi();
-        equal('y se ve en la lista, con el aviso', [pl1.placas.includes('Q555TST'), pl1.msg], [true, 'Placa Q555TST agregada.']);
-        equal('el residente no cambio (agregar placas no lo marca como modificado ni lo guarda)', await oikos(`resIsDirty()`), false);
-        await oikos(`document.querySelector('#res-plates-list [data-plate="Q555TST"] .res-plate-del').click()`);
-        await waitFor('quitarla la borra de la base', async () => (await dbPlates('u-ana')).length === anaPlates.length && !(await dbPlates('u-ana')).includes('Q555TST'));
-        await waitFor('la pantalla quita la placa de la lista', async () => !(await plUi()).placas.includes('Q555TST'));
-        equal('y sale de la lista', (await plUi()).placas, anaPlates);
-        equal('un residente nuevo sigue viendo el campo de placas de siempre', await oikos(`(() => { closeModal('modal-resident'); openModal('modal-resident'); const d = (id) => document.getElementById(id); return [!d('res-plates-new').classList.contains('hidden'), d('res-plates-edit').classList.contains('hidden')]; })()`), [true, true]);
+        console.log('\nResidente: la X de cerrar fija');
+        await oikos(`(() => { window.confirm = () => true; navigate('residents'); return true; })()`);
         // La X fija: con el formulario desplazado hasta Guardar la X sigue arriba, a la vista
         const xOut = await oikos(`(async () => {
             closeModal('modal-resident'); await new Promise((r) => setTimeout(r, 400));
@@ -1924,6 +1903,101 @@ async function run() {
         const restore = (v) => (v === undefined ? FieldValue.delete() : v);
         await usersRef.doc('u-ana').update({ paymentStatus: restore(statusBefore.ana) });
         await usersRef.doc('u-maria').update({ paymentStatus: restore(statusBefore.maria) });
+
+        // ───────── Vehiculos del residente (pedido del usuario el 2026-11-20): pestana Vehiculos del formulario ─────────
+        // Va al final a proposito: crea un residente nuevo (un vecino de SISDEL) y las pruebas de antes cuentan residentes
+        console.log('\nVehiculos: pestana Vehiculos del formulario del residente');
+        const vehDocs = async (userId) => (await condoRef.collection('vehiculos').where('userId', '==', userId).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        const vehByPlate = async (norm) => (await condoRef.collection('vehiculos').where('plateNorm', '==', norm).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        const vehWait = async () => { for (let i = 0; i < 80; i++) { if (await oikos(`!resVehBusy && !resVehLoading`)) return true; await sleep(250); } return false; };
+        const vehToast = () => oikos(`document.getElementById('toast-msg').innerText`);
+        const vehSet = (fields) => oikos(`(() => { const f = ${JSON.stringify(fields)}; Object.keys(f).forEach((k) => { document.getElementById('res-veh-' + k).value = f[k]; }); })()`);
+        await oikos(`(() => { window.__realConfirm3 = window.confirm; window.__confirms = []; window.__confirmAnswer = true; window.confirm = (m) => { window.__confirms.push(String(m)); return window.__confirmAnswer; }; navigate('residents'); })()`);
+        equal('con "Ver vehiculos" el puente existe y dice que mas puede hacer el usuario (registrar, editar y quitar)', await oikos(`(() => { const b = resVehBridge(); return b ? b.can : null; })()`), { create: true, edit: true, remove: true });
+        const anaBefore = await vehDocs('u-ana');
+        await oikos(`editResident('u-ana')`);
+        equal('al editar un residente sale la pestana Vehiculos junto a las otras tres', await oikos(`[...document.querySelectorAll('#res-tabs [data-res-tab]')].map((b) => [b.getAttribute('data-res-tab'), b.classList.contains('hidden')])`), [['datos', false], ['owner', false], ['fee', false], ['veh', false]]);
+        equal('la pestana trae los vehiculos que el vecino ya tenia en SISDEL', [await vehWait(), (await oikos(`resVehicles.map((v) => v.plate)`)).sort()], [true, anaBefore.map((v) => v.plate).sort()]);
+        equal('la pestana muestra solo su contenido, con una fila por vehiculo, y Datos ya no pide placas', await oikos(`(() => { resTab('veh'); const shown = [...document.querySelectorAll('#form-resident [data-res-pane]')].filter((p) => !p.classList.contains('hidden')).map((p) => p.getAttribute('data-res-pane')); return [shown, !!document.getElementById('res-plates'), document.querySelectorAll('#res-veh-list [data-veh-row]').length]; })()`), [['veh'], false, anaBefore.length]);
+        // Agregar
+        await vehSet({ plate: 'p-777 vh', brand: 'Toyota', model: 'Corolla 2018', color: 'Blanco' });
+        await oikos(`resVehSave()`); await vehWait();
+        const added = await vehByPlate('P777VH');
+        equal('Agregar guarda el vehiculo del vecino con la placa limpia, su marca, modelo, color y su marbete', [added.length, added[0] && [added[0].userId, added[0].plate, added[0].plateNorm, added[0].brand, added[0].model, added[0].color, /^MAR/.test(added[0].marbeteCode || ''), added[0].condominioId]], [1, ['u-ana', 'P777VH', 'P777VH', 'Toyota', 'Corolla 2018', 'Blanco', true, CONDO]]);
+        equal('queda en la lista, el formulario se limpia y el aviso lo confirma', await oikos(`[resVehicles.some((v) => v.plateNorm === 'P777VH'), document.getElementById('res-veh-plate').value, document.getElementById('toast-msg').innerText, document.querySelectorAll('#res-veh-list [data-veh-row]').length]`), [true, '', 'Vehículo P777VH agregado', anaBefore.length + 1]);
+        await vehSet({ plate: 'P-777VH' });
+        await oikos(`resVehSave()`); await vehWait();
+        equal('la misma placa dos veces en el vecino no se deja', [(await vehByPlate('P777VH')).length, (await vehToast()).includes('ya tiene la placa P777VH')], [1, true]);
+        await oikos(`document.getElementById('toast-msg').innerText = ''`);
+        await vehSet({ plate: 'ab' });
+        await oikos(`resVehSave()`);
+        equal('una placa de menos de 3 caracteres no se guarda', [(await vehToast()).includes('Escriba la placa'), (await vehDocs('u-ana')).length], [true, anaBefore.length + 1]);
+        await oikos(`document.getElementById('toast-msg').innerText = ''`);
+        equal('Enter en un campo agrega el vehiculo (aqui avisa que falta la placa) y no deja que el formulario se envie', await oikos(`(() => { const input = document.getElementById('res-veh-plate'); input.value = ''; const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }); input.dispatchEvent(ev); return [ev.defaultPrevented, document.getElementById('toast-msg').innerText.includes('Escriba la placa')]; })()`), [true, true]);
+        // Editar
+        const addedId = added[0].id;
+        await oikos(`resVehStartEdit(${JSON.stringify(addedId)})`);
+        equal('Editar carga el vehiculo en el formulario, cambia el boton y muestra Cancelar', await oikos(`['plate', 'brand', 'model', 'color'].map((k) => document.getElementById('res-veh-' + k).value).concat([document.getElementById('res-veh-save-text').textContent, !document.getElementById('res-veh-cancel').classList.contains('hidden')])`), ['P777VH', 'Toyota', 'Corolla 2018', 'Blanco', 'Guardar cambios', true]);
+        await vehSet({ color: 'Negro', model: '<b>Yaris</b>' });
+        await oikos(`resVehSave()`); await vehWait();
+        const edited = (await vehDocs('u-ana')).find((v) => v.id === addedId);
+        equal('Guardar cambios actualiza color y modelo, deja el mismo marbete y anota la fecha del cambio', [edited.color, edited.model, edited.marbeteCode === added[0].marbeteCode, typeof edited.updatedAt, edited.plate, edited.plateNorm], ['Negro', '<b>Yaris</b>', true, 'string', 'P777VH', 'P777VH']);
+        equal('lo escrito se muestra como texto (nunca como HTML) y el formulario vuelve a Agregar', await oikos(`[!!document.querySelector('#res-veh-list b'), document.getElementById('res-veh-list').textContent.includes('<b>Yaris</b>'), document.getElementById('res-veh-save-text').textContent]`), [false, true, 'Agregar vehículo']);
+        equal('Cancelar deja de editar y limpia el formulario', await oikos(`(() => { resVehStartEdit(${JSON.stringify(addedId)}); resVehCancelEdit(); return [document.getElementById('res-veh-plate').value, resVehEditing, document.getElementById('res-veh-cancel').classList.contains('hidden')]; })()`), ['', null, true]);
+        // La misma placa en otro vecino: se pregunta antes
+        const anaName = await oikos(`Store.get('residents').find((r) => r.id === 'u-ana').name`);
+        await oikos(`(() => { window.__confirms.length = 0; window.__confirmAnswer = false; editResident('u-maria'); resTab('veh'); })()`); await vehWait();
+        await vehSet({ plate: 'P777VH' });
+        await oikos(`resVehSave()`); await vehWait();
+        const askedOther = await oikos(`window.__confirms.slice()`);
+        equal('una placa que ya es de otro vecino pregunta antes (con su nombre) y, si se dice que no, no se registra', [askedOther.length, /P777VH/.test(askedOther[0] || ''), (askedOther[0] || '').includes(anaName), (await vehByPlate('P777VH')).length], [1, true, true, 1]);
+        await oikos(`(() => { window.__confirms.length = 0; window.__confirmAnswer = true; })()`);
+        await oikos(`resVehSave()`); await vehWait();
+        const dupes = await vehByPlate('P777VH');
+        const mariaVeh = dupes.find((v) => v.userId === 'u-maria');
+        equal('si se dice que si, se registra tambien en el otro vecino', [dupes.length, !!mariaVeh], [2, true]);
+        await oikos(`resVehRemove(${JSON.stringify(mariaVeh.id)})`); await vehWait();
+        equal('Quitar pregunta antes y borra el vehiculo de ese vecino', [(await oikos(`window.__confirms.slice(-1)[0]`)).includes('P777VH'), (await vehByPlate('P777VH')).map((v) => v.userId)], [true, ['u-ana']]);
+        // Los privilegios de la pestana
+        await oikos(`(() => { editResident('u-ana'); resTab('veh'); })()`); await vehWait();
+        const nVeh = anaBefore.length + 1;
+        const gate = async (can) => { await page.evaluate(`(() => { window.sisdelResidentVehicles.can = ${JSON.stringify(can)}; })()`); return oikos(`(() => { resVehPaint(); return [document.getElementById('res-veh-form').classList.contains('hidden'), document.querySelectorAll('#res-veh-list [data-veh-act="edit"]').length, document.querySelectorAll('#res-veh-list [data-veh-act="del"]').length, document.querySelectorAll('#res-veh-list [data-veh-row]').length]; })()`); };
+        equal('sin editar ni quitar solo se ve la lista y el formulario de agregar', await gate({ create: true, edit: false, remove: false }), [false, 0, 0, nVeh]);
+        equal('sin registrar vehiculos no hay formulario, pero si editar y quitar', await gate({ create: false, edit: true, remove: true }), [true, nVeh, nVeh, nVeh]);
+        await oikos(`document.getElementById('toast-msg').innerText = ''`);
+        await vehSet({ plate: 'P000NO' });
+        await oikos(`resVehSave()`);
+        equal('sin el privilegio de registrar, guardar se rechaza aunque se fuerce desde la consola', [(await vehToast()).includes('no puede registrar'), (await vehByPlate('P000NO')).length], [true, 0]);
+        await gate({ create: true, edit: true, remove: true });
+        // Si no se pueden bajar los vehiculos se dice (no se muestra una lista vacia como si no hubiera) y cambiar rapido de vecino no mezcla listas
+        await page.evaluate(`(() => { window.__realVehList = window.sisdelResidentVehicles.list; window.sisdelResidentVehicles.list = async () => { throw new Error('sin red'); }; })()`);
+        await oikos(`editResident('u-ana')`); await vehWait();
+        equal('si fallan al bajar, la pestana lo avisa', await oikos(`[resVehFailed, document.getElementById('res-veh-list').textContent.includes('No se pudieron cargar')]`), [true, true]);
+        await page.evaluate(`(() => { const real = window.__realVehList; window.sisdelResidentVehicles.list = (id) => new Promise((ok) => setTimeout(() => ok(real(id)), id === 'u-ana' ? 600 : 10)); })()`);
+        await oikos(`(() => { editResident('u-ana'); editResident('u-maria'); })()`);
+        await sleep(1200); await vehWait();
+        equal('al pasar rapido de un vecino a otro, la lista es la del ultimo (la respuesta tardia del anterior se descarta)', await oikos(`[resVehicles.every((v) => v.userId === 'u-maria'), resVehLoading, residentBeingEditedId]`), [true, false, 'u-maria']);
+        await page.evaluate(`(() => { window.sisdelResidentVehicles.list = window.__realVehList; })()`);
+        // Sin el puente (sin "Ver vehiculos" u OIKOS fuera de SISDEL) no hay pestana
+        await page.evaluate(`(() => { window.__realVeh = window.sisdelResidentVehicles; window.sisdelResidentVehicles = null; })()`);
+        equal('sin el puente de vehiculos la pestana no sale', await oikos(`(() => { editResident('u-ana'); resVehReset(); return document.getElementById('res-tab-veh').classList.contains('hidden'); })()`), true);
+        await page.evaluate(`(() => { window.sisdelResidentVehicles = window.__realVeh; })()`);
+        // Quitar el que se agrego a Ana: queda como estaba
+        await oikos(`editResident('u-ana')`); await vehWait();
+        await oikos(`resVehRemove(${JSON.stringify(addedId)})`); await vehWait();
+        equal('Quitar deja a Ana como estaba', (await vehDocs('u-ana')).map((v) => v.plate).sort(), anaBefore.map((v) => v.plate).sort());
+        // Un residente nuevo: los vehiculos esperan y se registran cuando el vecino existe
+        await oikos(`openModal('modal-resident')`);
+        equal('un residente nuevo tambien tiene la pestana, sin vehiculos y avisando que se registran al guardar', await oikos(`(() => { resTab('veh'); return [!document.getElementById('res-tab-veh').classList.contains('hidden'), resVehPending.length, document.getElementById('res-veh-note').textContent.includes('cuando se guarda el residente'), document.querySelectorAll('#res-veh-list [data-veh-row]').length]; })()`), [true, 0, true, 0]);
+        await vehSet({ plate: 'p 555 nw', brand: 'Honda', model: 'Civic', color: 'Gris' });
+        await oikos(`resVehSave()`); await vehWait();
+        equal('agregar en un residente nuevo lo deja en la lista (y cuenta como cambio sin guardar) sin escribir nada en SISDEL todavia', [await oikos(`[resVehPending.map((v) => v.plate), resIsDirty()]`), (await vehByPlate('P555NW')).length], [[['P555NW'], true], 0]);
+        await oikos(`(() => { const set = (i, v) => { document.getElementById(i).value = v; }; set('res-name', 'Vecino Vehiculos'); set('res-unit', 'VEH-1'); document.getElementById('res-type-lote').click(); handleResidentSubmit({ preventDefault() {} }); })()`);
+        equal('el residente se guarda', await idle(), 'ok');
+        const newVecino = await waitFor('el residente nuevo queda registrado como vecino de SISDEL', async () => { const s = await condoRef.collection('usuarios').where('name', '==', 'Vecino Vehiculos').get(); return s.empty ? null : s.docs[0].id; }, 40000);
+        const newVeh = newVecino ? await waitFor('y sus vehiculos se registran', async () => { const d = await vehDocs(newVecino); return d.length ? d : null; }, 30000) : null;
+        equal('con placa, marca, modelo, color y marbete', newVeh && [newVeh.length, newVeh[0].plate, newVeh[0].brand, newVeh[0].model, newVeh[0].color, /^MAR/.test(newVeh[0].marbeteCode || '')], [1, 'P555NW', 'Honda', 'Civic', 'Gris', true]);
+        await oikos(`(() => { window.confirm = window.__realConfirm3; })()`);
 
         console.log('\nCerrar sesion');
         record('sin errores en la consola durante la prueba', page.errors.length === 0, JSON.stringify([...new Set(page.errors)].slice(0, 4)));

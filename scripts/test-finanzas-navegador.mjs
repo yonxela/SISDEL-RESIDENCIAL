@@ -1406,6 +1406,7 @@ async function run() {
         await oikos(`(() => {
             const mk = (id, name, unit, fase, status) => ({ id: id, name: name, unit: unit, fase: fase, status: status || 'active', waterUnits: 0, balance: 0 });
             const residents = [mk('u-ana', 'Ana García', 'Casa 12', 'B'), mk('u-maria', 'María Rodríguez', 'Casa 23', 'A'), mk('mb-x', 'Sin <b>Carro</b>', 'Casa 5', 'A'), mk('mb-y', 'Sin Fase', 'Casa 9', ''), mk('mb-z', 'Ya Finiquitado', 'Casa 1', 'A', 'closed')];
+            residents[1].balance = -100000;   // Maria debe (en mora): su marbete sale en rojo; Ana esta al dia: en verde
             window.__mbRealGet = Store.get;
             Store.get = function (k) { return k === 'residents' ? residents : window.__mbRealGet.call(Store, k); };
             navigate('reports');
@@ -1431,20 +1432,20 @@ async function run() {
             };
         })()`;
         const mb0 = await oikos(MBJS);
-        const mbRow = (no, fase, unit, name, plate, veh, color, code) => [no, fase, unit, name, plate, veh, color, code, ''];
-        equal('una fila por vehiculo, agrupadas por fase (A, B y Sin fase al final), por lote en cada fase y un subtotal por fase; el finiquitado no sale', mb0.rows, [
-            mbRow('1', 'Fase A', 'Casa 5', 'Sin <b>Carro</b>', 'Sin vehículo registrado', '', '', ''),
-            mbRow('2', 'Fase A', 'Casa 23', 'María Rodríguez', 'P-111MOR', 'Honda Fit', 'Gris', 'MARTEST3'),
-            mbRow('', 'Fase A', 'Subtotal', '2 residentes (1 sin vehículo)', '1 vehículo', '', '', '1 con código'),
-            mbRow('1', 'Fase B', 'Casa 12', 'Ana García', 'P-222BBB', 'Mazda 3', 'Rojo', 'MARTEST2'),
-            mbRow('2', 'Fase B', 'Casa 12', 'Ana García', 'P-987XYZ', 'Toyota Corolla', 'Blanco', 'MARTEST1'),
-            mbRow('', 'Fase B', 'Subtotal', '1 residente', '2 vehículos', '', '', '2 con código'),
-            mbRow('1', 'Sin fase', 'Casa 9', 'Sin Fase', 'Sin vehículo registrado', '', '', ''),
-            mbRow('', 'Sin fase', 'Subtotal', '1 residente (1 sin vehículo)', '0 vehículos', '', '', '')
+        const mbRow = (no, fase, unit, name, plate, veh, color, code, estado) => [no, fase, unit, name, plate, veh, color, code, estado, ''];
+        equal('una fila por vehiculo, agrupadas por fase (A, B y Sin fase al final), por lote en cada fase, con su estado de pago y un subtotal por fase; el finiquitado no sale', mb0.rows, [
+            mbRow('1', 'Fase A', 'Casa 5', 'Sin <b>Carro</b>', 'Sin vehículo registrado', '', '', '', 'Al día'),
+            mbRow('2', 'Fase A', 'Casa 23', 'María Rodríguez', 'P-111MOR', 'Honda Fit', 'Gris', 'MARTEST3', 'En mora'),
+            mbRow('', 'Fase A', 'Subtotal', '2 residentes (1 sin vehículo)', '1 vehículo', '', '', '1 con código', '1 en mora'),
+            mbRow('1', 'Fase B', 'Casa 12', 'Ana García', 'P-222BBB', 'Mazda 3', 'Rojo', 'MARTEST2', 'Al día'),
+            mbRow('2', 'Fase B', 'Casa 12', 'Ana García', 'P-987XYZ', 'Toyota Corolla', 'Blanco', 'MARTEST1', 'Al día'),
+            mbRow('', 'Fase B', 'Subtotal', '1 residente', '2 vehículos', '', '', '2 con código', '0 en mora'),
+            mbRow('1', 'Sin fase', 'Casa 9', 'Sin Fase', 'Sin vehículo registrado', '', '', '', 'Al día'),
+            mbRow('', 'Sin fase', 'Subtotal', '1 residente (1 sin vehículo)', '0 vehículos', '', '', '', '0 en mora')
         ]);
-        equal('las filas de subtotal van marcadas y la fila de totales suma todo', [mb0.subtotals, mb0.totals], [[2, 5, 7], ['TOTAL', '3 fases', '', '4 residentes (2 sin vehículo)', '3 vehículos', '', '', '3 con código', '']]);
+        equal('las filas de subtotal van marcadas y la fila de totales suma todo', [mb0.subtotals, mb0.totals], [[2, 5, 7], ['TOTAL', '3 fases', '', '4 residentes (2 sin vehículo)', '3 vehículos', '', '', '3 con código', '1 en mora', '']]);
         equal('arriba, en grande: marbetes, residentes con y sin vehiculo y fases', mb0.kpis, ['3 marbetes (vehículos registrados)', '2 residentes con vehículo', '2 residentes sin vehículo registrado', '3 fases']);
-        record('en pantalla no sale la columna de la firma (solo al imprimir, en el PDF y en Excel), y los filtros se ven', mb0.filtersShown && mb0.screenHeaders.length === 8 && !mb0.screenHeaders.includes('Recibido (firma)') && mb0.headers[8] === 'Recibido (firma)' && mb0.domCells === 8 && mb0.domRows === 8, JSON.stringify(mb0.screenHeaders));
+        record('en pantalla no sale la columna de la firma (solo al imprimir, en el PDF y en Excel), y los filtros se ven', mb0.filtersShown && mb0.screenHeaders.length === 9 && !mb0.screenHeaders.includes('Recibido (firma)') && mb0.headers[9] === 'Recibido (firma)' && mb0.headers[8] === 'Estado de pago' && mb0.domCells === 9 && mb0.domRows === 8, JSON.stringify(mb0.screenHeaders));
         record('el nombre con HTML se escapa al pintarlo (no se vuelve HTML)', mb0.tbodyHtml.includes('Sin &lt;b&gt;Carro&lt;/b&gt;') && !mb0.tbodyHtml.includes('<b>Carro'));
         equal('la flecha de fase ofrece las que existen y "Sin fase"', mb0.faseOptions, ['Todas las fases', 'Fase A', 'Fase B', 'Sin fase']);
         record('con vehiculos registrados no hay aviso', mb0.notice === '', mb0.notice);
@@ -1478,23 +1479,31 @@ async function run() {
             const first = cards[0];
             const name = first.querySelector('.mbc-name');
             const detail = first.querySelector('.mbc-detail');
-            const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '');
+            const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '', '<u>');
+            const bands = cards.map((c) => { const b = c.querySelector('.mbc-plate'); const r = document.createRange(); r.selectNodeContents(b); return { cls: b.className, bg: getComputedStyle(b).backgroundColor, ratio: b.getBoundingClientRect().width / r.getBoundingClientRect().width, inCard: b.getBoundingClientRect().width < c.getBoundingClientRect().width }; });
             return {
                 shown: !box.classList.contains('hidden') && document.getElementById('rep-table-wrap').classList.contains('hidden'),
                 plates: cards.map((c) => c.querySelector('.mbc-plate').textContent),
                 kinds: cards.map((c) => c.querySelector('.mbc-kind').textContent.toUpperCase()),
                 where: cards.map((c) => c.querySelector('.mbc-where').textContent),
                 details: cards.map((c) => c.querySelector('.mbc-detail').textContent),
+                bands: bands,
+                status: cards.map((c) => c.querySelector('.mbc-status').textContent),
+                nameBlock: getComputedStyle(name).display === 'block' && getComputedStyle(name).textAlign === 'center' && name.getBoundingClientRect().top > detail.getBoundingClientRect().top + 2,
+                legend: (box.querySelector('.mb-legend') || {}).textContent || '',
+                asOf: currentReportData.cardsAsOf,
                 headers: Array.from(box.querySelectorAll('h4')).map((h) => h.textContent.replace(/\\s+/g, ' ').trim()),
                 nameWeight: getComputedStyle(name).fontWeight,
                 nameRatio: parseFloat(getComputedStyle(name).fontSize) / parseFloat(getComputedStyle(detail).fontSize),
                 bg: getComputedStyle(first).backgroundColor,
-                escaped: esc.includes('&lt;b&gt;Nombre') && !esc.includes('<b>Nombre') && esc.includes('&lt;i&gt;X') && !esc.includes('<s>')
+                escaped: esc.includes('&lt;b&gt;Nombre') && !esc.includes('<b>Nombre') && esc.includes('&lt;i&gt;X') && !esc.includes('<s>') && esc.includes('&lt;u&gt;') && !esc.includes('<u>')
             };
         })()`);
         record('en pantalla se ven los marbetes (y no la tabla): uno por vehiculo, agrupados por fase', mbCards.shown && JSON.stringify(mbCards.plates) === JSON.stringify(['P-111MOR', 'P-222BBB', 'P-987XYZ']) && /^Fase A · 1 marbete · 1 residente sin vehículo registrado$/.test(mbCards.headers[0]) && /^Fase B · 2 marbetes$/.test(mbCards.headers[1]), JSON.stringify([mbCards.plates, mbCards.headers]));
         record('cada marbete como el del vecino: placa, MARBETE VEHICULAR, lote y fase, y "Vehiculo: ... Residente: ..." en fondo oscuro', mbCards.kinds.every((k) => k === 'MARBETE VEHICULAR') && JSON.stringify(mbCards.where) === JSON.stringify(['Casa 23 · Fase A', 'Casa 12 · Fase B', 'Casa 12 · Fase B']) && mbCards.details[0] === 'Vehículo: Honda Fit Gris. Residente: María Rodríguez' && mbCards.bg === 'rgb(30, 41, 59)', JSON.stringify(mbCards));
-        record('el nombre del residente va en negrita y un 25 % mas grande', Number(mbCards.nameWeight) >= 700 && Math.abs(mbCards.nameRatio - 1.25) < 0.02, JSON.stringify([mbCards.nameWeight, mbCards.nameRatio]));
+        record('el nombre del residente va en negrita y un 25 % mas grande, en su propia linea y centrado', Number(mbCards.nameWeight) >= 700 && Math.abs(mbCards.nameRatio - 1.25) < 0.02 && mbCards.nameBlock, JSON.stringify([mbCards.nameWeight, mbCards.nameRatio, mbCards.nameBlock]));
+        record('la placa va en una franja roja si el residente esta en mora y verde si esta al dia, un poco mas ancha que las letras', mbCards.bands[0].cls.includes('mbc-band-late') && mbCards.bands[0].bg === 'rgb(220, 38, 38)' && mbCards.bands.slice(1).every((b) => b.cls.includes('mbc-band-ok') && b.bg === 'rgb(22, 163, 74)') && mbCards.bands.every((b) => b.ratio > 1.05 && b.ratio < 1.6 && b.inCard), JSON.stringify(mbCards.bands));
+        record('cada marbete dice su estado con la fecha (el color solo no basta) y arriba esta la leyenda de colores', /^\d\d\/\d\d\/\d{4}$/.test(mbCards.asOf) && mbCards.status[0] === 'En mora al ' + mbCards.asOf && mbCards.status.slice(1).every((t) => t === 'Al día al ' + mbCards.asOf) && /Franja verde: al día/.test(mbCards.legend) && /Franja roja: en mora/.test(mbCards.legend), JSON.stringify([mbCards.status, mbCards.legend]));
         record('los textos del marbete se escapan', mbCards.escaped);
         const mbCardOut = await oikos(`(async () => {
             const out = {};
@@ -1503,7 +1512,7 @@ async function run() {
             window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
             await printCurrentReport();
             window.open = savedOpen;
-            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)') };
+            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)'), late: (html.match(/mbc-band-late/g) || []).length >= 1, ok: (html.match(/class="mbc-plate mbc-band-ok"/g) || []).length === 2, legend: html.includes('en mora, al ') };
             const Orig = window.jspdf.jsPDF;
             const texts = [];
             const sizes = {};
@@ -1513,12 +1522,12 @@ async function run() {
             let pdfError = '';
             try { await downloadCurrentReportPDF(); } catch (e) { pdfError = String(e && e.message || e); }
             window.jspdf.jsPDF = Orig;
-            out.pdf = { error: pdfError, saved: saved, plates: ['P-111MOR', 'P-222BBB', 'P-987XYZ'].every((p) => texts.includes(p)), kind: texts.filter((x) => x === 'MARBETE VEHICULAR').length, name: sizes['Ana García'], label: Object.keys(sizes).filter((k) => /Residente:$/.test(k)).map((k) => sizes[k])[0], pages: texts.some((x) => /^Página 1 de 2$/.test(x)), qrRects: rects };
+            out.pdf = { error: pdfError, saved: saved, plates: ['P-111MOR', 'P-222BBB', 'P-987XYZ'].every((p) => texts.includes(p)), kind: texts.filter((x) => x === 'MARBETE VEHICULAR').length, name: sizes['Ana García'], label: Object.keys(sizes).filter((k) => /Residente:$/.test(k)).map((k) => sizes[k])[0], pages: texts.some((x) => /^Página 1 de 2$/.test(x)), qrRects: rects, late: texts.filter((x) => /^EN MORA AL \\d\\d\\/\\d\\d\\/\\d{4}$/.test(x)).length, ok: texts.filter((x) => /^AL DÍA AL \\d\\d\\/\\d\\d\\/\\d{4}$/.test(x)).length };
             out.excelHeaders = currentReportModel(true).tables[0].headers;
             return out;
         })()`);
-        record('Imprimir con la vista de marbetes saca los marbetes (no la tabla): 3, con su QR, una fase por hoja de oficio, 3 x 3', mbCardOut.print.cards === 3 && mbCardOut.print.pages === 2 && mbCardOut.print.qr === 3 && mbCardOut.print.oficio && mbCardOut.print.grid && mbCardOut.print.name && mbCardOut.print.big && mbCardOut.print.noTable, JSON.stringify(mbCardOut.print));
-        record('PDF con la vista de marbetes: los 3 marbetes con su QR dibujado, el nombre en negrita de 10 pt (8 pt el texto: un 25 % mas) y "Pagina 1 de 2"', !mbCardOut.pdf.error && /^marbetes-villa-ferrer-/.test(mbCardOut.pdf.saved) && mbCardOut.pdf.plates && mbCardOut.pdf.kind === 3 && mbCardOut.pdf.name === '10b' && mbCardOut.pdf.label === '8' && mbCardOut.pdf.pages && mbCardOut.pdf.qrRects > 100, JSON.stringify(mbCardOut.pdf));
+        record('Imprimir con la vista de marbetes saca los marbetes (no la tabla): 3, con su QR, una fase por hoja de oficio, 3 x 3', mbCardOut.print.cards === 3 && mbCardOut.print.pages === 2 && mbCardOut.print.qr === 3 && mbCardOut.print.oficio && mbCardOut.print.grid && mbCardOut.print.name && mbCardOut.print.big && mbCardOut.print.noTable && mbCardOut.print.late && mbCardOut.print.ok && mbCardOut.print.legend, JSON.stringify(mbCardOut.print));
+        record('PDF con la vista de marbetes: los 3 marbetes con su QR dibujado, el nombre en negrita de 10 pt (8 pt el texto: un 25 % mas) y "Pagina 1 de 2"', !mbCardOut.pdf.error && /^marbetes-villa-ferrer-/.test(mbCardOut.pdf.saved) && mbCardOut.pdf.plates && mbCardOut.pdf.kind === 3 && mbCardOut.pdf.name === '10b' && mbCardOut.pdf.label === '8' && mbCardOut.pdf.pages && mbCardOut.pdf.qrRects > 100 && mbCardOut.pdf.late === 1 && mbCardOut.pdf.ok === 2, JSON.stringify(mbCardOut.pdf));
         equal('Excel sigue siendo el listado de control', mbCardOut.excelHeaders, mb0.headers);
         // Vista "Listado de control": la tabla, con el nombre en negrita y un 25 % mas grande, y sus salidas
         await mbSet('mb-view', 'list');
@@ -1557,7 +1566,7 @@ async function run() {
             out.waHeaders = w.tables[0].headers;
             return out;
         })()`);
-        record('Excel: las nueve columnas (con la firma), el No. como numero, el nombre, la placa y los subtotales en negrita y la fila TOTAL', JSON.stringify(mbOut.excelHeaders) === JSON.stringify(mb0.headers) && mbOut.excelNo === 1 && mbOut.excelPlateBold && mbOut.excelSubtotalBold && mbOut.excelTotal === 'TOTAL' && /^impresion-de-marbetes-por-fase/.test(mbOut.fileName), JSON.stringify(mbOut));
+        record('Excel: las diez columnas (con el estado de pago y la firma), el No. como numero, el nombre, la placa y los subtotales en negrita y la fila TOTAL', JSON.stringify(mbOut.excelHeaders) === JSON.stringify(mb0.headers) && mbOut.excelNo === 1 && mbOut.excelPlateBold && mbOut.excelSubtotalBold && mbOut.excelTotal === 'TOTAL' && /^impresion-de-marbetes-por-fase/.test(mbOut.fileName), JSON.stringify(mbOut));
         record('Imprimir: oficio horizontal con el titulo, la columna de la firma, los subtotales y los nombres escapados', Object.values(mbOut.print).every(Boolean), JSON.stringify(mbOut.print));
         record('PDF: se genera sin errores, con el titulo y "Pagina 1 de N"', !mbOut.pdf.error && /^impresion-de-marbetes-por-fase/.test(mbOut.pdf.saved) && mbOut.pdf.title && mbOut.pdf.footer, JSON.stringify(mbOut.pdf));
         equal('WhatsApp: resumen con fase, lote, residente y placa (sin el codigo del marbete)', mbOut.waHeaders, ['Fase', 'Lote', 'Residente', 'Placa']);

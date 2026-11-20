@@ -8725,6 +8725,16 @@
         function marbeteFaseText(f) { return f ? faseLabel(f) : 'Sin fase'; }
         function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
+        // Estado de pago del marbete (pedido del usuario el 2026-11-20: la placa en una franja roja si esta en mora y verde si
+        // esta al dia): en mora = algo ya vencido, como en Residentes y Recordatorios (checkIsMoroso: la cuota que sigue en su
+        // plazo no cuenta), o mora sin pagar, como en Morosos. Es el estado del dia en que se imprime: por eso el marbete dice la fecha
+        function marbeteLate(r) {
+            if (!r) return false;
+            if (checkIsMoroso(r)) return true;
+            try { return sisdelOwedOf(r).mora > 0.004; } catch (e) { return false; }
+        }
+        function marbeteAsOf() { const k = localDayKey(new Date()); return k.slice(8, 10) + '/' + k.slice(5, 7) + '/' + k.slice(0, 4); }
+
         function buildMarbetesReport() {
             startMarbeteVehicles();
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -8758,21 +8768,31 @@
             const rows = [];
             const meta = [];
             const cards = [];
+            // El estado de cada residente se calcula una vez (puede tener varios vehiculos)
+            const lateMemo = new Map();
+            const lateOf = (r) => { const k = String(r.id); if (!lateMemo.has(k)) lateMemo.set(k, marbeteLate(r)); return lateMemo.get(k); };
+            let lateTotal = 0;
             list.groups.forEach(function (g) {
                 const fase = marbeteFaseText(g.fase);
                 const items = [];
+                let lateRes = 0;
+                const seen = new Set();
                 g.rows.forEach(function (x) {
                     const r = x.resident;
                     const v = x.vehicle;
+                    const late = lateOf(r);
+                    if (!seen.has(String(r.id))) { seen.add(String(r.id)); if (late) lateRes++; }
                     rows.push([
                         String(x.n), esc(fase), show(r.unit || '—'), show(r.name || ''),
                         v ? (v.plate ? show(v.plate) : muted('Sin placa')) : muted('Sin vehículo registrado'),
-                        v ? show([v.brand, v.model].filter(Boolean).join(' ')) : '', v ? show(v.color) : '', v ? show(v.code) : '', ''
+                        v ? show([v.brand, v.model].filter(Boolean).join(' ')) : '', v ? show(v.color) : '', v ? show(v.code) : '',
+                        late ? '<span class="font-semibold text-rose-600 dark:text-rose-400">En mora</span>' : '<span class="font-semibold text-emerald-600 dark:text-emerald-400">Al día</span>', ''
                     ]);
                     meta.push(null);
-                    if (v) items.push({ fase: fase, unit: String(r.unit || ''), name: String(r.name || ''), plate: v.plate, brand: v.brand, model: v.model, color: v.color, code: v.code });
+                    if (v) items.push({ fase: fase, unit: String(r.unit || ''), name: String(r.name || ''), plate: v.plate, brand: v.brand, model: v.model, color: v.color, code: v.code, late: late });
                 });
-                rows.push(['', esc(fase), 'Subtotal', plural(g.residents, 'residente', 'residentes') + (g.without ? ' (' + g.without + ' sin vehículo)' : ''), plural(g.vehicles, 'vehículo', 'vehículos'), '', '', g.withCode ? plural(g.withCode, 'con código', 'con código') : '', '']);
+                lateTotal += lateRes;
+                rows.push(['', esc(fase), 'Subtotal', plural(g.residents, 'residente', 'residentes') + (g.without ? ' (' + g.without + ' sin vehículo)' : ''), plural(g.vehicles, 'vehículo', 'vehículos'), '', '', g.withCode ? plural(g.withCode, 'con código', 'con código') : '', lateRes + ' en mora', '']);
                 meta.push({ kind: 'subtotal' });
                 cards.push({ fase: fase, items: items, without: g.without });
             });
@@ -8795,19 +8815,20 @@
                     { tone: 'pending', value: String(t.without), label: t.without === 1 ? 'residente sin vehículo registrado' : 'residentes sin vehículo registrado' },
                     { tone: 'none', value: String(t.groups), label: t.groups === 1 ? 'fase' : 'fases' }
                 ],
-                highlightsNote: list.groups.map(g => marbeteFaseText(g.fase) + ': ' + plural(g.vehicles, 'marbete', 'marbetes')).join(' · ') + (list.groups.length ? ' · ' : '') + filterText,
+                highlightsNote: list.groups.map(g => marbeteFaseText(g.fase) + ': ' + plural(g.vehicles, 'marbete', 'marbetes')).join(' · ') + (list.groups.length ? ' · ' : '')
+                    + (cards.length ? (function () { const all = cards.flatMap(c => c.items); const late = all.filter(x => x.late).length; return 'marbetes: ' + (all.length - late) + ' al día (verde) y ' + late + ' en mora (rojo) al ' + marbeteAsOf() + ' · '; })() : '') + filterText,
                 hint: marbetesView === 'cards' ? 'Imprimir y PDF sacan estos marbetes (9 por hoja de oficio, una fase por hoja); Excel saca el listado de control' : 'Imprimir, PDF y Excel sacan este listado, con la columna de la firma de recibido',
                 notice: notice,
                 emptyText: marbetesSearch || marbetesFase || marbetesShow !== 'all' || repTypeFilter ? 'Ningún residente coincide con los filtros.' : 'No hay residentes vigentes.',
-                headers: ['No.', 'Fase', 'Lote / Casa', 'Residente', 'Placa', 'Marca y modelo', 'Color', 'Código del marbete', 'Recibido (firma)'],
-                leftCols: [1, 2, 3, 4, 5, 6, 7, 8],
-                nowrapCols: [1, 2, 4, 7],
+                headers: ['No.', 'Fase', 'Lote / Casa', 'Residente', 'Placa', 'Marca y modelo', 'Color', 'Código del marbete', 'Estado de pago', 'Recibido (firma)'],
+                leftCols: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                nowrapCols: [1, 2, 4, 7, 8],
                 emphasisCols: [2, 3, 4],
                 emphasisScale: { 3: 1.25 },
                 printOnlyLast: true,
                 rows: rows,
                 rowsMeta: meta,
-                totals: ['TOTAL', plural(t.groups, 'fase', 'fases'), '', plural(t.residents, 'residente', 'residentes') + (t.without ? ' (' + t.without + ' sin vehículo)' : ''), plural(t.vehicles, 'vehículo', 'vehículos'), '', '', t.withCode ? plural(t.withCode, 'con código', 'con código') : '', ''],
+                totals: ['TOTAL', plural(t.groups, 'fase', 'fases'), '', plural(t.residents, 'residente', 'residentes') + (t.without ? ' (' + t.without + ' sin vehículo)' : ''), plural(t.vehicles, 'vehículo', 'vehículos'), '', '', t.withCode ? plural(t.withCode, 'con código', 'con código') : '', lateTotal + ' en mora', ''],
                 numericCols: [0],
                 // WhatsApp: fase, lote, residente y placa (sin el codigo del marbete)
                 compact: {
@@ -8816,8 +8837,9 @@
                     totals: ['TOTAL', '', plural(t.residents, 'residente', 'residentes'), plural(t.vehicles, 'vehículo', 'vehículos')],
                     numericCols: []
                 },
-                // Los marbetes de cada fase (solo vehiculos; los textos sin escapar: se escapan al armar cada tarjeta)
+                // Los marbetes de cada fase (solo vehiculos; los textos sin escapar: se escapan al armar cada tarjeta) y el dia del estado de pago
                 cards: cards,
+                cardsAsOf: marbeteAsOf(),
                 chartType: 'bar',
                 chartLabels: list.groups.map(g => marbeteFaseText(g.fase)),
                 chartDatasets: [
@@ -8877,12 +8899,13 @@
         // "Toyota Corolla Blanco" (lo que se sepa del vehiculo; en "Mi Marbete" es marca y color)
         function marbeteVehicleText(x) { return [x.brand, x.model, x.color].map(function (v) { return String(v || '').trim(); }).filter(Boolean).join(' '); }
         // Una tarjeta (la misma en pantalla y en la impresion; cambia solo el tamano, con MARBETE_CARD_CSS y el de cada salida)
-        function marbeteCardHtml(x, qrHtml) {
+        function marbeteCardHtml(x, qrHtml, asOf) {
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const veh = marbeteVehicleText(x);
             return '<div class="mbc">'
-                + '<div class="mbc-plate">' + esc(x.plate || 'Sin placa') + '</div>'
+                + '<div class="mbc-plate-row"><span class="mbc-plate ' + (x.late ? 'mbc-band-late' : 'mbc-band-ok') + '">' + esc(x.plate || 'Sin placa') + '</span></div>'
                 + '<div class="mbc-kind">Marbete vehicular</div>'
+                + '<div class="mbc-status ' + (x.late ? 'mbc-st-late' : 'mbc-st-ok') + '">' + (x.late ? 'En mora' : 'Al día') + (asOf ? ' al ' + esc(asOf) : '') + '</div>'
                 + '<div class="mbc-where">' + esc([x.unit, x.fase].filter(Boolean).join(' · ')) + '</div>'
                 + '<div class="mbc-qr">' + (qrHtml || '<span class="mbc-code">' + esc(x.code || 'Sin código') + '</span>') + '</div>'
                 + '<div class="mbc-detail">' + (veh ? 'Vehículo: ' + esc(veh) + '. ' : '') + 'Residente: <b class="mbc-name">' + esc(x.name) + '</b></div>'
@@ -8890,14 +8913,21 @@
         }
         // Los colores de la ventana "Mi Marbete" (vecino.html en tema oscuro); el nombre en negrita y un 25 % mas grande
         var MARBETE_CARD_CSS = '.mbc{background:#1e293b;border:1px solid #334155;color:#f8fafc;text-align:center;display:flex;flex-direction:column;align-items:center;box-sizing:border-box;font-family:Inter,Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-            + '.mbc-plate{font-weight:700;line-height:1.1;letter-spacing:.02em;word-break:break-all}'
+            + '.mbc-plate-row{max-width:100%}'
+            // La franja de la placa: verde al dia, roja en mora; un poco mas ancha que las letras de la placa
+            + '.mbc-plate{display:inline-block;max-width:100%;padding:.06em .45em .08em;border-radius:.2em;color:#fff;font-weight:700;line-height:1.1;letter-spacing:.02em;word-break:break-all}'
+            + '.mbc-band-ok{background:#16a34a}'
+            + '.mbc-band-late{background:#dc2626}'
+            + '.mbc-status{font-weight:700;text-transform:uppercase;letter-spacing:.04em}'
+            + '.mbc-st-ok{color:#4ade80}'
+            + '.mbc-st-late{color:#f87171}'
             + '.mbc-kind{color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}'
             + '.mbc-where{color:#cbd5e1;font-weight:600}'
             + '.mbc-qr{background:#fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box}'
             + '.mbc-qr svg{display:block;width:100%;height:100%}'
             + '.mbc-code{color:#0f172a;font-family:monospace;word-break:break-all}'
             + '.mbc-detail{color:#cbd5e1;line-height:1.35;overflow-wrap:anywhere}'
-            + '.mbc-name{font-weight:700;font-size:1.25em;color:#f8fafc}';
+            + '.mbc-name{font-weight:700;font-size:1.25em;color:#f8fafc;display:block;margin-top:.15em}';
         function marbetesCount(d) { return ((d && d.cards) || []).reduce(function (a, g) { return a + g.items.length; }, 0); }
 
         // En pantalla: una seccion por fase con sus marbetes (en lugar de la tabla). La libreria del QR se carga la primera vez
@@ -8907,11 +8937,14 @@
                 + '#rep-mb-cards .mb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}'
                 + '#rep-mb-cards .mbc{border-radius:16px;padding:20px 16px 18px}'
                 + '#rep-mb-cards .mbc-plate{font-size:1.7rem}'
-                + '#rep-mb-cards .mbc-kind{font-size:.72rem;margin-top:6px}'
+                + '#rep-mb-cards .mbc-kind{font-size:.72rem;margin-top:8px}'
+                + '#rep-mb-cards .mbc-status{font-size:.72rem;margin-top:4px}'
                 + '#rep-mb-cards .mbc-where{font-size:.8rem;margin-top:6px}'
                 + '#rep-mb-cards .mbc-qr{width:180px;height:180px;padding:12px;border-radius:12px;margin:14px 0}'
                 + '#rep-mb-cards .mbc-code{font-size:.75rem}'
-                + '#rep-mb-cards .mbc-detail{font-size:.9rem}</style>';
+                + '#rep-mb-cards .mbc-detail{font-size:.9rem}'
+                + '#rep-mb-cards .mb-legend{display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center}'
+                + '#rep-mb-cards .mb-sw{display:inline-block;width:2.2em;height:1.1em;border-radius:4px;vertical-align:middle;margin-right:6px}</style>';
             const groups = (d.cards || []).filter(function (g) { return g.items.length || g.without; });
             const total = marbetesCount(d);
             if (!total) {
@@ -8919,10 +8952,14 @@
                 return style + '<div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400"><i class="fas fa-id-card text-3xl opacity-40 mb-2"></i><p>'
                     + esc(without ? 'No hay marbetes con estos filtros: ' + plural(without, 'residente no tiene', 'residentes no tienen') + ' vehículo registrado. Véalos en «Listado de control».' : 'No hay marbetes con estos filtros.') + '</p></div>';
             }
-            return style + groups.map(function (g) {
+            const legend = '<div class="mb-legend bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200">'
+                + '<span><span class="mb-sw" style="background:#16a34a"></span>Franja verde: al día</span>'
+                + '<span><span class="mb-sw" style="background:#dc2626"></span>Franja roja: en mora (algo vencido o mora sin pagar)</span>'
+                + '<span class="text-slate-500 dark:text-slate-400">Estado al ' + esc(d.cardsAsOf || '') + ': el marbete impreso dice esa fecha</span></div>';
+            return style + legend + groups.map(function (g) {
                 return '<section><h4 class="text-base font-bold text-slate-900 dark:text-white mb-3">' + esc(g.fase)
                     + ' <span class="font-normal text-sm text-slate-500 dark:text-slate-400">· ' + esc(plural(g.items.length, 'marbete', 'marbetes')) + (g.without ? ' · ' + esc(plural(g.without, 'residente sin vehículo registrado', 'residentes sin vehículo registrado')) : '') + '</span></h4>'
-                    + (g.items.length ? '<div class="mb-grid">' + g.items.map(function (x) { return marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : ''); }).join('') + '</div>' : '')
+                    + (g.items.length ? '<div class="mb-grid">' + g.items.map(function (x) { return marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : '', d.cardsAsOf); }).join('') + '</div>' : '')
                     + '</section>';
             }).join('');
         }
@@ -8948,23 +8985,27 @@
             const s = Store.get('settings') || {};
             const condo = s.name || 'Residencial';
             const groups = ((data && data.cards) || []).filter(g => g.items.length);
-            const pages = groups.map(g => '<section class="fase-page"><h2>' + esc(condo) + ' · ' + esc(g.fase) + ' <small>' + esc(plural(g.items.length, 'marbete', 'marbetes')) + '</small></h2><div class="grid">'
-                + g.items.map(x => marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : '')).join('') + '</div></section>').join('');
+            const legend = '<span class="legend"><i style="background:#16a34a"></i>al día <i style="background:#dc2626"></i>en mora, al ' + esc(data.cardsAsOf || '') + '</span>';
+            const pages = groups.map(g => '<section class="fase-page"><h2><span>' + esc(condo) + ' · ' + esc(g.fase) + ' <small>' + esc(plural(g.items.length, 'marbete', 'marbetes')) + '</small></span>' + legend + '</h2><div class="grid">'
+                + g.items.map(x => marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : '', data.cardsAsOf)).join('') + '</div></section>').join('');
             return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Marbetes - ${esc(condo)}</title>
                 <style>
                     @page{size:8.5in 13in;margin:10mm}
                     *{box-sizing:border-box}
                     body{font-family:Inter,Arial,Helvetica,sans-serif;margin:0;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
                     .fase-page + .fase-page{break-before:page;page-break-before:always}
-                    h2{font-size:13px;margin:0 0 3mm;color:#334155}
+                    h2{font-size:13px;margin:0 0 3mm;color:#334155;display:flex;justify-content:space-between;align-items:center;gap:4mm;width:195mm}
                     h2 small{font-weight:400;color:#64748b}
+                    .legend{font-size:9px;font-weight:600;color:#475569;white-space:nowrap}
+                    .legend i{display:inline-block;width:7mm;height:3mm;border-radius:1mm;margin:0 1.2mm 0 3mm;vertical-align:-0.4mm}
                     .grid{display:grid;grid-template-columns:repeat(3,62mm);gap:4mm 4.5mm}
                     ${MARBETE_CARD_CSS}
                     .mbc{width:62mm;height:96mm;padding:5mm 3.5mm 4mm;border-radius:4mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
                     .mbc-plate{font-size:21pt}
-                    .mbc-kind{font-size:6.5pt;margin-top:1.2mm}
-                    .mbc-where{font-size:7.5pt;margin-top:1.2mm}
-                    .mbc-qr{width:42mm;height:42mm;padding:2mm;border-radius:3mm;margin:3mm 0}
+                    .mbc-kind{font-size:6.5pt;margin-top:1.6mm}
+                    .mbc-status{font-size:7pt;margin-top:.8mm}
+                    .mbc-where{font-size:7.5pt;margin-top:.8mm}
+                    .mbc-qr{width:40mm;height:40mm;padding:2mm;border-radius:3mm;margin:2.5mm 0}
                     .mbc-code{font-size:7pt}
                     .mbc-detail{font-size:8pt}
                 </style></head><body>${pages}</body></html>`;
@@ -9004,23 +9045,43 @@
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [215.9, 330.2] });
             const pageW = doc.internal.pageSize.getWidth();
             const W = 62, H = 96, GX = 4.5, GY = 4, X0 = (pageW - (W * 3 + GX * 2)) / 2, Y0 = 17;
+            const asOf = currentReportData.cardsAsOf || '';
+            // La leyenda de colores, a la derecha del titulo de cada hoja
+            const legend = () => {
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(71, 85, 105);
+                const late = txt('en mora, al ' + asOf), ok = txt('al día');
+                let lx = pageW - X0 - doc.getTextWidth(late);
+                doc.text(late, lx, 12);
+                lx -= 8.5; doc.setFillColor(220, 38, 38); doc.roundedRect(lx, 9.4, 7, 3, 0.8, 0.8, 'F');
+                lx -= 3 + doc.getTextWidth(ok); doc.text(ok, lx, 12);
+                lx -= 8.5; doc.setFillColor(22, 163, 74); doc.roundedRect(lx, 9.4, 7, 3, 0.8, 0.8, 'F');
+            };
             const card = (x, left, top) => {
                 const cx = left + W / 2;
                 doc.setFillColor(30, 41, 59); doc.setDrawColor(51, 65, 85); doc.setLineWidth(0.3);
                 doc.roundedRect(left, top, W, H, 4, 4, 'FD');
-                // La placa (mas chica si no cabe)
-                doc.setFont('helvetica', 'bold'); doc.setTextColor(248, 250, 252);
+                // La placa sobre su franja (verde al dia, roja en mora), un poco mas ancha que las letras; mas chica si no cabe
+                doc.setFont('helvetica', 'bold');
                 let size = 21;
                 const plate = txt(x.plate || 'Sin placa');
                 doc.setFontSize(size);
-                while (size > 10 && doc.getTextWidth(plate) > W - 7) { size -= 1; doc.setFontSize(size); }
-                doc.text(plate, cx, top + 12, { align: 'center' });
+                while (size > 10 && doc.getTextWidth(plate) > W - 14) { size -= 1; doc.setFontSize(size); }
+                const em = size * 0.3528;
+                const bandW = Math.min(W - 6, doc.getTextWidth(plate) + em * 0.9), bandH = em * 1.3, bandY = top + 4.5;
+                if (x.late) doc.setFillColor(220, 38, 38); else doc.setFillColor(22, 163, 74);
+                doc.roundedRect(cx - bandW / 2, bandY, bandW, bandH, 1.6, 1.6, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.text(plate, cx, bandY + bandH / 2 + em * 0.36, { align: 'center' });
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(148, 163, 184);
-                doc.text('MARBETE VEHICULAR', cx, top + 17, { align: 'center' });
+                doc.text('MARBETE VEHICULAR', cx, top + 18.8, { align: 'center' });
+                // El estado con su fecha (el color solo no basta: quien no distingue rojo y verde, o un marbete viejo)
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+                if (x.late) doc.setTextColor(248, 113, 113); else doc.setTextColor(74, 222, 128);
+                doc.text(txt((x.late ? 'EN MORA' : 'AL DÍA') + (asOf ? ' AL ' + asOf : '')), cx, top + 22.4, { align: 'center' });
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(203, 213, 225);
-                doc.text(txt([x.unit, x.fase].filter(Boolean).join(' · ')), cx, top + 21.5, { align: 'center' });
+                doc.text(txt([x.unit, x.fase].filter(Boolean).join(' · ')), cx, top + 26, { align: 'center' });
                 // El QR en su recuadro blanco
-                const box = 42, qx = cx - box / 2, qy = top + 25;
+                const box = 40, qx = cx - box / 2, qy = top + 28.5;
                 doc.setFillColor(255, 255, 255);
                 doc.roundedRect(qx, qy, box, box, 3, 3, 'F');
                 if (lib && x.code) {
@@ -9034,7 +9095,7 @@
                 }
                 // "Vehiculo: ... Residente:" y el nombre en negrita y un 25 % mas grande (8 pt -> 10 pt)
                 const veh = marbeteVehicleText(x);
-                let y = qy + box + 5.5;
+                let y = qy + box + 5;
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(203, 213, 225);
                 doc.splitTextToSize(txt((veh ? 'Vehículo: ' + veh + '. ' : '') + 'Residente:'), W - 8).slice(0, 2).forEach(line => { doc.text(line, cx, y, { align: 'center' }); y += 3.6; });
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(248, 250, 252);
@@ -9050,6 +9111,7 @@
                         first = false;
                         doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(51, 65, 85);
                         doc.text(txt(condo + ' · ' + g.fase + ' · ' + plural(g.items.length, 'marbete', 'marbetes') + (i ? ' (continuación)' : '')), X0, 12);
+                        legend();
                     }
                     card(x, X0 + (k % 3) * (W + GX), Y0 + Math.floor(k / 3) * (H + GY));
                 });

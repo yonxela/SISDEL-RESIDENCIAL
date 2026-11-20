@@ -501,9 +501,10 @@
             if (c <= 0 && m <= 0) return;
             capital += c;
             mora += m;
+            // amount: lo que se cargo (si es mas que capital, ya se abono una parte)
             rows.push({
-                id: item.id, kind: item.kind, label: label(item), capital: fromCents(c), dueDate: item.dueDate || null,
-                overdue: !!item.overdue, mora: fromCents(m), total: fromCents(c + m)
+                id: item.id, kind: item.kind, period: item.period || null, label: label(item), amount: fromCents(Math.max(0, cents(item.amount))),
+                capital: fromCents(c), dueDate: item.dueDate || null, overdue: !!item.overdue, mora: fromCents(m), total: fromCents(c + m)
             });
         });
         if (options.total !== undefined && options.total !== null) {
@@ -517,6 +518,78 @@
             }
         }
         return { rows, capital: fromCents(capital), mora: fromCents(mora), total: fromCents(capital + mora) };
+    }
+
+    // withDueDates: el estado de un residente (SisdelMora.stateOf) con el vencimiento de cada cuota que diga `dueOf(period)`
+    // ('AAAA-MM-DD', el ultimo dia para pagar sin atraso). Para los condominios SIN regla de mora: el motor reparte los
+    // pagos (lo mas antiguo primero) pero, sin regla, da por vencida la cuota al terminar su mes; el plazo de todos los
+    // condominios es el mes y hasta el dia 5 del siguiente (SisdelCuotas.dueKey). Una cuota vence el dia siguiente a
+    // dueOf; un cargo que no es cuota mensual sigue vencido de una vez. Recalcula overdueCapital. No cambia `state`.
+    function withDueDates(state, dueOf, today) {
+        if (!state) return state;
+        const day = String(today || '').slice(0, 10);
+        let overdue = 0;
+        const items = (state.items || []).map((item) => {
+            const out = Object.assign({}, item);
+            if (item.kind === 'fee' && item.period && typeof dueOf === 'function') {
+                const due = String(dueOf(item.period) || '');
+                if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+                    out.dueDate = due;
+                    out.overdue = cents(item.capital) > 0 && day > due;
+                }
+            }
+            if (out.overdue) overdue += Math.max(0, cents(item.capital));
+            return out;
+        });
+        return Object.assign({}, state, { items, overdueCapital: fromCents(overdue) });
+    }
+
+    // pendingByYear: las filas de pendingRows juntas por ano ("Cuotas de 2019 (12)"), para un resumen corto (WhatsApp)
+    // cuando son muchas. Las filas sin mes (cargos y el ajuste) quedan aparte, cada una como venia. Suma en centavos.
+    // opts.max: como mucho tantos grupos; si hay mas, los anos mas antiguos van juntos ("Cuotas de 2008 a 2016 (108)")
+    function pendingByYear(list, opts) {
+        const groups = pendingYears(list);
+        const max = Math.max(2, parseInt((opts || {}).max, 10) || 0);
+        if (!(opts && opts.max) || groups.length <= max) return groups;
+        const years = groups.filter((g) => g.kind === 'year');
+        const extra = groups.length - max + 1; // cuantos anos se juntan en uno
+        if (extra < 2 || years.length < extra) return groups;
+        const old = years.slice(0, extra);
+        let count = 0; let capitalC = 0; let moraC = 0;
+        old.forEach((g) => { count += g.count; capitalC += cents(g.capital); moraC += cents(g.mora); });
+        const merged = {
+            year: old[0].year, kind: 'year', count, overdue: old.some((g) => g.overdue),
+            label: `Cuotas de ${old[0].year} a ${old[old.length - 1].year} (${count})`,
+            capital: fromCents(capitalC), mora: fromCents(moraC), total: fromCents(capitalC + moraC)
+        };
+        const first = groups.indexOf(old[0]);
+        return groups.filter((g) => !old.includes(g)).slice(0, first).concat([merged], groups.filter((g) => !old.includes(g)).slice(first));
+    }
+    function pendingYears(list) {
+        const groups = [];
+        const byYear = new Map();
+        ((list && list.rows) || []).forEach((row) => {
+            const year = /^\d{4}-\d{2}$/.test(String(row.period || '')) ? String(row.period).slice(0, 4) : null;
+            if (!year) { groups.push(Object.assign({ count: 1 }, row)); return; }
+            let g = byYear.get(year);
+            if (!g) {
+                g = { year, kind: 'year', label: '', count: 0, capitalC: 0, moraC: 0, overdue: false };
+                byYear.set(year, g);
+                groups.push(g);
+            }
+            g.count += 1;
+            g.capitalC += cents(row.capital);
+            g.moraC += cents(row.mora);
+            g.overdue = g.overdue || !!row.overdue;
+        });
+        return groups.map((g) => {
+            if (g.kind !== 'year') return g;
+            return {
+                year: g.year, kind: 'year', count: g.count, overdue: g.overdue,
+                label: `${g.count === 1 ? 'Cuota' : 'Cuotas'} de ${g.year} (${g.count})`,
+                capital: fromCents(g.capitalC), mora: fromCents(g.moraC), total: fromCents(g.capitalC + g.moraC)
+            };
+        });
     }
 
     // ───────── Listado general de propietarios ─────────
@@ -743,5 +816,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, periodLabel, accountDebt, pendingRows, withDueDates, pendingByYear, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
 });

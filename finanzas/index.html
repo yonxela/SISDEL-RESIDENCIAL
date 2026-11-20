@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120d"></script>
+    <script src="./sisdel-reportes.js?v=20261120e"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -1732,8 +1732,55 @@
                 </div>
                 <button onclick="closeModal('modal-estado-cuenta')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
+            <!-- SISDEL: dos vistas (pedido del usuario el 2026-11-20: "ese estado de cuenta solo debe mostrar las cuotas pendientes de
+                 pago y columna de la mora si es que aplica y el saldo total"). "Cuotas pendientes" (la de siempre al abrir, y la que
+                 sale al imprimir, en PDF, Excel y WhatsApp desde ella o desde el pago) y "Con movimientos" (el estado de cuenta
+                 completo de antes, con el libro: desde ahi se abre el detalle de cada movimiento y se anula). ecSetView -->
+            <div id="ec-tabs" class="flex gap-1 border-b border-slate-200 dark:border-slate-700 mb-4" role="tablist">
+                <button type="button" id="ec-tab-pending" onclick="ecSetView('pending')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Cuotas pendientes</button>
+                <button type="button" id="ec-tab-movs" onclick="ecSetView('movs')" role="tab" class="px-4 py-2 text-sm font-bold border-b-2 -mb-px transition">Con movimientos</button>
+            </div>
             <!-- SISDEL: toda la parte central se desplaza junta (filtros, resumen y las dos tablas); el encabezado y los botones quedan fijos -->
             <div class="flex-1 min-h-0 overflow-y-auto -mr-2 pr-2">
+            <!-- SISDEL: CUOTAS PENDIENTES: solo lo que falta pagar, a hoy. Una fila por cuota (o cargo) con su vencimiento, lo que
+                 falta de ella y, si el condominio cobra mora o la cuota la trae, su mora y su total; abajo el total. Las cifras son
+                 las de Residentes y los reportes (sisdelOwedOf): ecDue() -->
+            <div id="ec-pane-pending">
+                <div id="ec-due-box" class="grid gap-3 items-stretch mb-4">
+                    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-3 rounded-xl text-center">
+                        <p class="text-xs text-amber-600 font-semibold uppercase">Cuotas pendientes</p>
+                        <p class="text-lg font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap" id="ec-due-capital">Q0.00</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight" id="ec-due-count"></p>
+                    </div>
+                    <div id="ec-due-mora-card" class="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-3 rounded-xl text-center">
+                        <p class="text-xs text-amber-600 font-semibold uppercase">+ Mora</p>
+                        <p class="text-lg font-bold text-amber-700 dark:text-amber-400 whitespace-nowrap" id="ec-due-mora">Q0.00</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">a hoy, de las cuotas vencidas</p>
+                    </div>
+                    <div id="ec-due-total-card" class="p-3 rounded-xl text-center border-2">
+                        <p class="text-xs font-bold uppercase" id="ec-due-total-label">= Total que debe</p>
+                        <p class="text-2xl font-extrabold whitespace-nowrap" id="ec-due-total">Q0.00</p>
+                        <p class="text-[11px] leading-tight" id="ec-due-total-note"></p>
+                    </div>
+                </div>
+                <!-- SISDEL: el saldo a favor del residente (hoy) y a que meses llega: se descuenta solo de las proximas cuotas -->
+                <div id="ec-credit-cover" class="hidden mb-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
+                    <p class="font-bold"><i class="fas fa-piggy-bank mr-1.5"></i>Saldo a favor <span id="ec-credit-amount" class="font-mono">Q0.00</span></p>
+                    <p class="text-xs mt-0.5" id="ec-credit-text"></p>
+                </div>
+                <div id="ec-due-wrap" class="mb-3 rounded-xl border border-slate-200 dark:border-slate-600 overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead id="ec-due-head" class="sticky top-0"></thead>
+                        <tbody id="ec-due-body" class="text-slate-700 dark:text-slate-200 divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+                        <tfoot id="ec-due-foot"></tfoot>
+                    </table>
+                </div>
+                <div id="ec-due-empty" class="hidden mb-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-6 text-center text-emerald-800 dark:text-emerald-200">
+                    <i class="fas fa-circle-check text-3xl block mb-2"></i><p class="font-bold">No tiene cuotas pendientes de pago.</p>
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-1" id="ec-due-note"></p>
+            </div>
+            <div id="ec-pane-movs" class="hidden">
             <div class="flex flex-wrap items-end gap-3 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
                 <div><label class="block text-xs font-bold text-slate-500 uppercase mb-1">Desde</label><input type="date" id="ec-date-from" class="px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" onchange="renderEstadoCuenta()"></div>
                 <div><label class="block text-xs font-bold text-slate-500 uppercase mb-1">Hasta</label><input type="date" id="ec-date-to" class="px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" onchange="renderEstadoCuenta()"></div>
@@ -1768,11 +1815,6 @@
                 </div>
                 <p class="mt-2 text-[11px] text-slate-500 dark:text-slate-400" id="ec-mora-note"></p>
             </div>
-            <!-- SISDEL: el saldo a favor del residente (hoy) y a que meses llega: se descuenta solo de las proximas cuotas -->
-            <div id="ec-credit-cover" class="hidden mb-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-200">
-                <p class="font-bold"><i class="fas fa-piggy-bank mr-1.5"></i>Saldo a favor <span id="ec-credit-amount" class="font-mono">Q0.00</span></p>
-                <p class="text-xs mt-0.5" id="ec-credit-text"></p>
-            </div>
             <div class="grid grid-cols-3 gap-3 mb-4">
                 <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/50 p-3 rounded-xl text-center"><p class="text-xs text-emerald-600 font-semibold uppercase">Pagos</p><p class="text-lg font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap" id="ec-total-inc">$0.00</p></div>
                 <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/50 p-3 rounded-xl text-center"><p class="text-xs text-rose-600 font-semibold uppercase">Cargos</p><p class="text-lg font-bold text-rose-700 dark:text-rose-400 whitespace-nowrap" id="ec-total-charges">$0.00</p></div>
@@ -1795,12 +1837,13 @@
                 </table>
             </div>
             </div>
+            </div>
             <div class="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <p class="text-xs text-slate-400"><i class="fas fa-info-circle mr-1"></i>Generado el <span id="ec-gen-date"></span></p>
                 <!-- SISDEL: las cuatro salidas del estado de cuenta, como los demas reportes: WhatsApp al residente (con su telefono),
                      Excel de verdad (.xlsx), imprimir y PDF. Ver shareEstadoCuentaWhatsApp y exportEstadoCuentaExcel -->
                 <div class="flex flex-wrap justify-end gap-2 ml-auto">
-                    <button onclick="shareEstadoCuentaWhatsApp()" title="Abre WhatsApp con el resumen y los últimos movimientos; al teléfono del residente si lo tiene" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition shadow-md"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
+                    <button onclick="shareEstadoCuentaWhatsApp()" title="Abre WhatsApp con el estado de cuenta (la vista elegida); al teléfono del residente si lo tiene" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition shadow-md"><i class="fab fa-whatsapp mr-2"></i>Enviar por WhatsApp</button>
                     <button onclick="exportEstadoCuentaExcel()" class="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg font-semibold text-sm transition"><i class="fas fa-file-excel mr-2"></i>Exportar a Excel</button>
                     <button onclick="printEstadoCuenta()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-2"></i>Imprimir</button>
                     <button onclick="downloadEstadoCuentaPDF()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition shadow-md"><i class="fas fa-file-pdf mr-2"></i>Descargar PDF</button>
@@ -9021,7 +9064,7 @@
                     <td class="py-1.5 pl-3 pr-1">${can ? `<input type="checkbox" class="disc-check w-4 h-4 accent-amber-600 cursor-pointer" data-id="${ecEsc(id)}" onclick="discToggle(this)" ${on ? 'checked' : ''} aria-label="Descontar la mora de ${ecEsc(row.label)}">` : ''}</td>
                     <td class="py-1.5 px-2 whitespace-nowrap text-slate-800 dark:text-slate-100">${ecEsc(row.label)}</td>
                     <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap text-slate-700 dark:text-slate-200">${formatMoney(row.capital)}</td>
-                    <td class="py-1.5 px-2 whitespace-nowrap text-xs ${row.overdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(row))}</td>
+                    <td class="py-1.5 px-2 whitespace-nowrap text-xs ${ecLate(row) ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(row))}</td>
                     <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap ${row.mora > 0.004 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'} ${on && off >= row.mora - 0.004 ? 'line-through' : ''}">${formatMoney(row.mora)}</td>
                     <td class="py-1.5 px-2 text-right font-mono whitespace-nowrap font-bold text-amber-700 dark:text-amber-300">${on ? '-' + formatMoney(off) : ''}</td>
                     <td class="py-1.5 px-2 pr-3 text-right font-mono whitespace-nowrap font-bold text-slate-800 dark:text-white">${formatMoney(total)}</td>
@@ -9460,6 +9503,26 @@
 
         // ========== ESTADO DE CUENTA (ACCOUNT STATEMENT) ==========
         let ecResidentId = null;
+        // SISDEL: la vista elegida: 'pending' (solo las cuotas pendientes, la mora si aplica y el total: la de siempre al abrir)
+        // o 'movs' (el estado de cuenta completo, con el libro de movimientos). Imprimir, PDF, Excel y WhatsApp sacan la vista elegida
+        let ecView = 'pending';
+        function ecPaintTabs() {
+            [['ec-tab-pending', 'pending'], ['ec-tab-movs', 'movs']].forEach(([id, key]) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const on = ecView === key;
+                el.setAttribute('aria-selected', on ? 'true' : 'false');
+                el.className = 'px-4 py-2 text-sm font-bold border-b-2 -mb-px transition ' + (on ? 'border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200');
+            });
+            const pending = document.getElementById('ec-pane-pending');
+            if (pending) pending.classList.toggle('hidden', ecView !== 'pending');
+            const movs = document.getElementById('ec-pane-movs');
+            if (movs) movs.classList.toggle('hidden', ecView !== 'movs');
+        }
+        function ecSetView(view) {
+            ecView = view === 'movs' ? 'movs' : 'pending';
+            ecPaintTabs();
+        }
 
         // SISDEL: deja listo el estado de cuenta de un residente (periodo: este ano) sin abrir la ventana. Lo usan la ventana y
         // las salidas directas desde el pago (ecQuick*), asi las dos dicen lo mismo. Devuelve el residente o null
@@ -9467,6 +9530,8 @@
             const r = (Store.get('residents') || []).find(x => String(x.id) === String(id));
             if (!r) return null;
             ecResidentId = r.id;
+            ecView = 'pending';   // SISDEL: siempre abre (y sale desde el pago) con las cuotas pendientes
+            ecPaintTabs();
             document.getElementById('ec-resident-info').textContent = r.unit + ' - ' + r.name + (isResidentActive(r) ? '' : ' · FINIQUITADO' + (r.closedAt ? ' el ' + new Date(r.closedAt).toLocaleDateString('es-MX') : ''));
             const sd = document.getElementById('ec-show-deleted'); if (sd) sd.checked = false;
             // Default: current year
@@ -9559,6 +9624,11 @@
         function ecDebt() {
             const ms = ecMora();
             if (!ms || typeof SisdelReportesOikos === 'undefined') return null;
+            return ecRowsOf(ms, false);
+        }
+        // Las tres cifras (accountDebt) y la lista de lo pendiente (pendingRows) de un estado de mora. longLabel: el mes
+        // completo ("Noviembre 2026", para la vista de cuotas pendientes); si no, el corto ("Nov 2026")
+        function ecRowsOf(ms, longLabel) {
             const debt = SisdelReportesOikos.accountDebt(ms);
             // Los conceptos de los cargos que no son cuota (los escribe un usuario: se escapan al pintarlos). Solo se buscan si
             // hay alguno: casi todo lo pendiente son cuotas y recorrer todos los movimientos del condominio cuesta
@@ -9569,16 +9639,280 @@
             };
             const short = (text) => { const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim(); return s.length > 48 ? s.slice(0, 47) + '...' : s; };
             const label = (item) => {
-                if (item.kind === 'fee' && item.period) return SisdelReportesOikos.periodLabel(item.period);
+                if (item.kind === 'fee' && item.period) return longLabel ? feePeriodLongLabel(item.period) : SisdelReportesOikos.periodLabel(item.period);
                 return (item.kind === 'mora' ? 'Mora: ' : 'Cargo: ') + (short(conceptOf(item.id)) || 'sin concepto');
             };
             const list = SisdelReportesOikos.pendingRows(ms, { label, total: debt.total, adjustLabel: 'Movimientos con fecha posterior a hoy' });
             return { ms, debt, list };
         }
+        // ─── SISDEL: la vista "Cuotas pendientes" (pedido del usuario el 2026-11-20) ───────────────────────────────────────
+        // Solo lo que falta pagar HOY: una fila por cuota o cargo con su vencimiento y lo que falta de ella; si el condominio
+        // cobra mora (o una cuota trae mora fija) tambien su mora y su total; abajo el total que debe. Con o sin regla de mora
+        // (antes, sin ella, el estado de cuenta solo traia el libro: cargos, pagos y un saldo con signo). El total es el de
+        // Residentes y los reportes. Devuelve { r, ms, debt, list, withMora, showMora, today } o null.
+        function ecDue() {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(ecResidentId));
+            if (!r || typeof SisdelReportesOikos === 'undefined' || typeof SisdelMora === 'undefined') return null;
+            const today = localDayKey(new Date());
+            let ms = ecMora();   // con regla de mora (sin ella: null)
+            const withMora = !!ms;
+            if (!ms) {
+                // Sin regla de mora: el motor reparte los pagos (lo mas antiguo primero) sin cargar mora, y cada cuota vence con
+                // el plazo de todos los condominios (el mes y hasta el dia 5 del siguiente: sisdelPeriodDue, el de checkIsMoroso).
+                // El total es el del libro, como en ecMora (sin mora calculada, moraDaily es cero)
+                const state = SisdelReportesOikos.withDueDates(SisdelMora.stateOf(r.id, Store.get('transactions') || [], {}, today), sisdelPeriodDue, today);
+                ms = Object.assign({}, state, { total: Math.round(((parseFloat(sisdelLedgerBalance(r.id)) || 0) - (state.moraDaily || 0) + (state.moraWaived || 0) + Number.EPSILON) * 100) / 100 });
+            }
+            const { debt, list } = ecRowsOf(ms, true);
+            return { r, ms, debt, list, withMora, showMora: withMora || list.mora > 0, today };
+        }
+        // "abonado Q100.00 de Q350.00" si ya se pago una parte de la cuota; '' si no
+        // (una cuota ya pagada a la que solo le queda la mora dice eso)
+        function ecPaidPart(row) {
+            if (row.kind === 'ajuste' || !(row.amount > 0)) return '';
+            if (row.kind !== 'mora' && !(row.capital > 0.004) && row.mora > 0.004) return 'cuota pagada: solo debe la mora';
+            const paid = Math.round((row.amount - row.capital) * 100) / 100;
+            return paid > 0.004 ? `abonado ${formatMoney(paid)} de ${formatMoney(row.amount)}` : '';
+        }
+        // "6 cuotas por pagar" y, si a alguna ya pagada solo le queda la mora, "· 23 solo con mora"
+        function ecDueCount(list) {
+            const rows = list.rows.filter(x => x.kind !== 'ajuste');
+            const toPay = rows.filter(x => x.capital > 0.004).length;
+            const moraOnly = rows.length - toPay;
+            return toPay + ' ' + (toPay === 1 ? 'cuota por pagar' : 'cuotas por pagar') + (moraOnly ? ` · ${moraOnly} solo con mora` : '');
+        }
+        function ecDueDay(dd) { return new Date(dd.today + 'T12:00:00').toLocaleDateString('es-MX'); }
+        // La tabla de la vista para el PDF, la impresion, el Excel y WhatsApp (las columnas de la pantalla).
+        // numbers = true: montos como numeros (Excel)
+        function ecDueTable(dd, numbers) {
+            const money = (n) => (numbers ? Math.round((Number(n) || 0) * 100) / 100 : formatMoney(n));
+            const withNote = (r) => { const p = ecPaidPart(r); return r.label + (p ? ' (' + p + ')' : ''); };
+            const m = dd.showMora;
+            return {
+                headers: m ? ['Cuota', 'Vence', 'Pendiente', 'Mora', 'Total'] : ['Cuota', 'Vence', 'Pendiente'],
+                rows: dd.list.rows.map(r => m ? [withNote(r), ecDueText(r), money(r.capital), money(r.mora), money(r.total)] : [withNote(r), ecDueText(r), money(r.capital)]),
+                total: m ? ['TOTAL', ecDueCount(dd.list), money(dd.list.capital), money(dd.list.mora), money(dd.list.total)] : ['TOTAL', ecDueCount(dd.list), money(dd.list.capital)],
+                numeric: m ? [2, 3, 4] : [2]
+            };
+        }
+        // La nota de abajo: a que dia son las cifras y como se cobra la mora (o el plazo de pago, sin mora)
+        function ecDueNoteText(dd) {
+            const rule = dd.withMora ? `Mora: ${sisdelMoraRuleText()}.` : 'Cada cuota se paga sin atraso durante su mes y hasta el día 5 del siguiente.';
+            const waived = dd.ms && dd.ms.moraWaived > 0.004 ? ` Mora descontada: ${formatMoney(dd.ms.moraWaived)} (ya no la debe).` : '';
+            return `Al ${ecDueDay(dd)}: lo que falta pagar de cada cuota. ${rule}${waived}`;
+        }
+        function renderEcDue() {
+            const box = document.getElementById('ec-due-box');
+            const dd = ecDue();
+            if (!box || !dd) return;
+            const { debt, list, showMora } = dd;
+            box.style.gridTemplateColumns = showMora ? '1fr 1fr 1.25fr' : '1fr 1.25fr';
+            document.getElementById('ec-due-capital').textContent = formatMoney(debt.pending);
+            document.getElementById('ec-due-count').textContent = ecDueCount(list) + (debt.upcoming > 0 ? ` · vencido ${formatMoney(debt.overdue)} · por vencer ${formatMoney(debt.upcoming)}` : '');
+            document.getElementById('ec-due-mora-card').classList.toggle('hidden', !showMora);
+            document.getElementById('ec-due-mora').textContent = formatMoney(debt.mora);
+            const owes = debt.total > 0.004;
+            document.getElementById('ec-due-total-card').className = 'p-3 rounded-xl text-center border-2 ' + (owes ? 'bg-rose-100 dark:bg-rose-900/30 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300' : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300');
+            document.getElementById('ec-due-total-label').textContent = owes ? (showMora ? '= Total que debe' : 'Total que debe') : 'Al día';
+            document.getElementById('ec-due-total').textContent = formatMoney(debt.total);
+            document.getElementById('ec-due-total-note').textContent = debt.credit > 0 ? `Saldo a favor ${formatMoney(debt.credit)}` : `al ${ecDueDay(dd)}`;
+            document.getElementById('ec-due-note').textContent = ecDueNoteText(dd);
+            const empty = list.rows.length === 0;
+            document.getElementById('ec-due-wrap').classList.toggle('hidden', empty);
+            document.getElementById('ec-due-empty').classList.toggle('hidden', !empty);
+            if (empty) return;
+            const th = (text, right) => `<th class="py-2 px-4${right ? ' text-right' : ''}">${text}</th>`;
+            document.getElementById('ec-due-head').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 text-xs text-slate-500 uppercase">${th('Cuota')}${th('Vence')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr>`;
+            const num = 'py-2 px-4 text-right font-mono whitespace-nowrap';
+            // Cada cuota abre el detalle de su movimiento (desde ahi se anula, con su privilegio); el ajuste no es un movimiento
+            document.getElementById('ec-due-body').innerHTML = list.rows.map(r => {
+                const paid = ecPaidPart(r);
+                const open = r.id ? ` data-tx="${ecEsc(r.id)}" onclick="openTxDetail(this.dataset.tx)" title="Ver el movimiento"` : '';
+                return `<tr class="${r.id ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 ' : ''}${ecLate(r) || r.kind === 'ajuste' ? '' : 'bg-amber-50/60 dark:bg-amber-900/10'}"${open}>
+                <td class="py-2 px-4 font-medium min-w-[13rem]"><span class="whitespace-nowrap">${ecEsc(r.label)}</span>${paid ? `<span class="block text-[11px] font-normal text-slate-500 dark:text-slate-400">${ecEsc(paid)}</span>` : ''}</td>
+                <td class="py-2 px-4 text-xs whitespace-nowrap ${ecLate(r) ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(r))}</td>
+                <td class="${num}${showMora ? '' : ' font-bold'}">${formatMoney(r.capital)}</td>${showMora ? `
+                <td class="${num} ${r.mora > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}">${formatMoney(r.mora)}</td>
+                <td class="${num} font-bold">${formatMoney(r.total)}</td>` : ''}</tr>`;
+            }).join('');
+            document.getElementById('ec-due-foot').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 font-bold text-slate-700 dark:text-slate-100">
+                <td class="py-2 px-4 uppercase text-xs">Total</td><td class="py-2 px-4 text-xs font-semibold text-slate-500 dark:text-slate-300">${ecDueCount(list)}</td>
+                <td class="${num}${showMora ? '' : ' text-rose-700 dark:text-rose-300'}">${formatMoney(list.capital)}</td>${showMora ? `
+                <td class="${num}">${formatMoney(list.mora)}</td>
+                <td class="${num} text-rose-700 dark:text-rose-300">${formatMoney(list.total)}</td>` : ''}</tr>`;
+        }
+        // El modelo de la vista para el Excel y WhatsApp (reportes-export.js). forText = true: WhatsApp (montos con formato
+        // y, con mas de 12 cuotas, juntas por ano: un mensaje con cientos de filas no se lee); false: Excel (numeros, todas)
+        function ecDueModel(forText) {
+            const dd = ecDue();
+            if (!dd) return null;
+            const { r, debt, list, showMora } = dd;
+            const s = Store.get('settings') || {};
+            const money = (n) => forText ? formatMoney(n) : Math.round((Number(n) || 0) * 100) / 100;
+            const real = list.rows.filter(x => x.kind !== 'ajuste');
+            const kpis = [{ label: 'Cuotas pendientes', value: real.length ? `${ecDueCount(list)} (desde ${real[0].label})` : 'ninguna' }, { label: 'Monto de las cuotas', value: money(debt.pending) }];
+            if (debt.upcoming > 0) kpis.push({ label: 'De ellas, aún no vencen', value: money(debt.upcoming) });
+            if (showMora) kpis.push({ label: 'Mora a hoy', value: money(debt.mora) });
+            kpis.push({ label: debt.total > 0.004 ? 'TOTAL QUE DEBE' : 'AL DÍA: TOTAL QUE DEBE', value: money(debt.total) });
+            if (dd.ms && dd.ms.moraWaived > 0.004) kpis.push({ label: 'Mora descontada', value: money(dd.ms.moraWaived) });
+            const creditCov = ecCreditCover(r);
+            if (creditCov) kpis.push({ label: 'Saldo a favor', value: money(creditCov.credit) }, { label: 'Aplicación del saldo a favor', value: creditCoverText(creditCov) });
+            const table = ecDueTable(dd, !forText);
+            let tableOut = { title: 'Cuotas pendientes de pago', headers: table.headers, rows: list.rows.length ? table.rows.concat([table.total]) : [], numeric: table.numeric };
+            if (forText && list.rows.length > 12) {
+                const groups = SisdelReportesOikos.pendingByYear(list, { max: 11 });
+                tableOut = {
+                    title: 'Cuotas pendientes por año',
+                    headers: showMora ? ['Cuotas', 'Pendiente', 'Mora', 'Total'] : ['Cuotas', 'Pendiente'],
+                    rows: groups.map(g => showMora ? [g.label, money(g.capital), money(g.mora), money(g.total)] : [g.label, money(g.capital)])
+                        .concat([showMora ? ['TOTAL', money(list.capital), money(list.mora), money(list.total)] : ['TOTAL', money(list.capital)]]),
+                    numeric: showMora ? [1, 2, 3] : [1]
+                };
+            }
+            return {
+                title: 'Estado de cuenta',
+                subtitle: (r.unit || '') + ' - ' + (r.name || '') + ' · al ' + ecDueDay(dd),
+                condoName: s.name || '',
+                at: new Date(),
+                kpis,
+                tables: [tableOut],
+                fileName: 'Estado_Cuenta_' + String(r.unit || '').trim().replace(/[^\w-]+/g, '_') + '_' + String(r.name || '').trim().replace(/[^\wÀ-ÿ-]+/g, '_')
+            };
+        }
+        // Imprimir la vista: encabezado, las cifras grandes, el saldo a favor, la tabla y la nota. Lo que escriben los
+        // usuarios (nombre, casa, condominio, concepto de un cargo) se escapa: se escribe en una ventana nueva del mismo origen
+        function printEcDue() {
+            const dd = ecDue();
+            if (!dd) return;
+            const { r, debt, list, showMora } = dd;
+            const s = Store.get('settings') || {};
+            const owes = debt.total > 0.004;
+            const box = (bg, border, color, label, value, sub, big) => `<div style="flex:${big ? 1.25 : 1};background:${bg};border:${big ? 2 : 1}px solid ${border};padding:12px;border-radius:10px;text-align:center"><p style="font-size:11px;font-weight:700;color:${color};margin:0;text-transform:uppercase">${label}</p><p style="font-size:${big ? 22 : 18}px;font-weight:800;color:${color};margin:4px 0 2px;white-space:nowrap">${value}</p><p style="font-size:10px;color:#64748b;margin:0">${sub}</p></div>`;
+            const boxes = box('#fffbeb', '#fde68a', '#92400e', 'Cuotas pendientes', formatMoney(debt.pending), ecEsc(ecDueCount(list)) + (debt.upcoming > 0 ? ` · por vencer ${formatMoney(debt.upcoming)}` : ''))
+                + (showMora ? box('#fffbeb', '#fde68a', '#92400e', '+ Mora', formatMoney(debt.mora), 'a hoy, de las cuotas vencidas') : '')
+                + (owes ? box('#ffe4e6', '#fb7185', '#9f1239', showMora ? '= Total que debe' : 'Total que debe', formatMoney(debt.total), `al ${ecDueDay(dd)}`, true)
+                    : box('#ecfdf5', '#6ee7b7', '#065f46', 'Al día', formatMoney(0), debt.credit > 0 ? 'Saldo a favor ' + formatMoney(debt.credit) : `al ${ecDueDay(dd)}`, true));
+            const creditCov = ecCreditCover(r);
+            const creditHtml = creditCov ? `<div class="ec-credit-print" style="background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 14px;border-radius:10px;margin-bottom:16px;color:#065f46"><p style="margin:0;font-size:13px;font-weight:700">Saldo a favor <span style="white-space:nowrap">${formatMoney(creditCov.credit)}</span></p><p style="margin:3px 0 0;font-size:11px">${ecEsc(creditCoverText(creditCov))}</p></div>` : '';
+            const cell = 'padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;white-space:nowrap';
+            const th = (txt, right) => `<th style="padding:7px 10px;text-align:${right ? 'right' : 'left'};font-size:11px;text-transform:uppercase;color:#475569;white-space:nowrap">${txt}</th>`;
+            const money = (n, extra) => `<td style="${cell};text-align:right;font-family:monospace${extra || ''}">${formatMoney(n)}</td>`;
+            const body = list.rows.map(x => {
+                const paid = ecPaidPart(x);
+                return `<tr style="${ecLate(x) || x.kind === 'ajuste' ? '' : 'background:#fffbeb;'}"><td style="${cell};white-space:normal;font-weight:600">${ecEsc(x.label)}${paid ? `<span style="display:block;font-size:10px;font-weight:400;color:#64748b">${ecEsc(paid)}</span>` : ''}</td><td style="${cell};font-size:11px;color:${ecLate(x) ? '#be123c' : '#64748b'}">${ecEsc(ecDueText(x))}</td>${money(x.capital, showMora ? '' : ';font-weight:700')}${showMora ? money(x.mora, x.mora > 0 ? ';color:#be123c' : ';color:#94a3b8') + money(x.total, ';font-weight:700') : ''}</tr>`;
+            }).join('');
+            const tableHtml = list.rows.length
+                ? `<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><thead><tr style="background:#f1f5f9">${th('Cuota')}${th('Vence')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr></thead><tbody>${body}</tbody>
+                <tfoot><tr style="background:#e2e8f0;font-weight:700"><td style="${cell}">TOTAL</td><td style="${cell};font-size:11px;color:#475569">${ecEsc(ecDueCount(list))}</td>${money(list.capital, showMora ? '' : ';color:#9f1239')}${showMora ? money(list.mora) + money(list.total, ';color:#9f1239') : ''}</tr></tfoot></table>`
+                : `<p style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;padding:16px;border-radius:10px;text-align:center;font-weight:700">No tiene cuotas pendientes de pago.</p>`;
+            const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${ecEsc(r.name)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}thead{display:table-header-group}tfoot{display:table-row-group}tr{page-break-inside:avoid}@media print{body{padding:16px}}</style></head><body>
+                <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${ecEsc(s.name || 'OIKOS')}</p></div>
+                <div style="margin-bottom:16px"><h2 style="margin:0;font-size:18px">${ecEsc(r.unit)} - ${ecEsc(r.name)}</h2><p style="color:#64748b;font-size:13px;margin:4px 0">Cuotas pendientes de pago al ${ecDueDay(dd)}</p></div>
+                <div style="display:flex;gap:12px;margin-bottom:16px;align-items:stretch">${boxes}</div>
+                ${creditHtml}
+                ${tableHtml}
+                <p style="font-size:11px;color:#64748b;margin:0">${ecEsc(ecDueNoteText(dd))}</p>
+                <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
+            </body></html>`;
+            const w = window.open('', '_blank', 'width=800,height=600');
+            w.document.write(html); w.document.close();
+            setTimeout(() => { w.print(); }, 500);
+        }
+        // El PDF de la vista (jsPDF + AutoTable de OIKOS; la fuente es Latin-1: latin1 de reportes-export.js)
+        function downloadEcDuePDF() {
+            const dd = ecDue();
+            if (!dd) return;
+            const { r, debt, list, showMora } = dd;
+            const s = Store.get('settings') || {};
+            const L = (v) => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(v) : String(v == null ? '' : v));
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.setFillColor(79, 70, 229); doc.rect(0, 0, 210, 28, 'F');
+            doc.setTextColor(255, 255, 255); doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+            doc.text('ESTADO DE CUENTA', 14, 13);
+            doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+            doc.text(L(s.name || 'OIKOS'), 14, 21);
+            doc.setFontSize(9);
+            const gen = 'Generado: ' + new Date().toLocaleString('es-MX');
+            doc.text(gen, 210 - 14 - doc.getTextWidth(gen), 21);
+            doc.setTextColor(30, 30, 50); doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+            doc.text(L(r.unit + ' - ' + r.name), 14, 40);
+            doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139);
+            doc.text(L('Cuotas pendientes de pago al ' + ecDueDay(dd)), 14, 47);
+            // Las cifras grandes: cuotas pendientes (+ mora) = total que debe (o al dia)
+            let y = 52;
+            const owes = debt.total > 0.004;
+            const cards = [{ title: 'CUOTAS PENDIENTES', value: formatMoney(debt.pending), sub: ecDueCount(list) + (debt.upcoming > 0 ? ' · por vencer ' + formatMoney(debt.upcoming) : ''), fill: [255, 251, 235], color: [146, 64, 14] }];
+            if (showMora) cards.push({ title: '+ MORA', value: formatMoney(debt.mora), sub: 'a hoy, de las cuotas vencidas', fill: [255, 251, 235], color: [146, 64, 14] });
+            cards.push(owes
+                ? { title: showMora ? '= TOTAL QUE DEBE' : 'TOTAL QUE DEBE', value: formatMoney(debt.total), sub: 'al ' + ecDueDay(dd), fill: [255, 228, 230], color: [159, 18, 57], border: [251, 113, 133], big: true }
+                : { title: 'AL DIA', value: formatMoney(0), sub: debt.credit > 0 ? 'Saldo a favor ' + formatMoney(debt.credit) : 'al ' + ecDueDay(dd), fill: [236, 253, 245], color: [6, 95, 70], border: [110, 231, 183], big: true });
+            const gap = 8;
+            const width = (182 - gap * (cards.length - 1)) / cards.length;
+            cards.forEach((c, i) => {
+                const x = 14 + i * (width + gap);
+                doc.setFillColor(...c.fill);
+                if (c.border) { doc.setDrawColor(...c.border); doc.setLineWidth(0.6); doc.roundedRect(x, y, width, 25, 2, 2, 'FD'); doc.setDrawColor(0); doc.setLineWidth(0.2); }
+                else doc.roundedRect(x, y, width, 25, 2, 2, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...c.color);
+                doc.text(L(c.title), x + 3, y + 6);
+                doc.setFontSize(c.big ? 15 : 12); doc.text(c.value, x + 3, y + 15);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(100, 116, 139);
+                doc.text(doc.splitTextToSize(L(c.sub), width - 6).slice(0, 2), x + 3, y + 20);   // en dos lineas si no cabe en la caja
+            });
+            y += 31;
+            const creditCov = ecCreditCover(r);
+            if (creditCov) {
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+                const lines = doc.splitTextToSize(L(creditCoverText(creditCov)), 174);
+                const h = 10 + lines.length * 3.6;
+                doc.setFillColor(236, 253, 245); doc.setDrawColor(167, 243, 208); doc.setLineWidth(0.4); doc.roundedRect(14, y, 182, h, 2, 2, 'FD');
+                doc.setDrawColor(0); doc.setLineWidth(0.2);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(6, 95, 70);
+                doc.text(L('Saldo a favor ' + formatMoney(creditCov.credit)), 18, y + 6);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+                doc.text(lines, 18, y + 10.5);
+                y += h + 5;
+            }
+            if (list.rows.length) {
+                const t = ecDueTable(dd, false);
+                const amountCols = showMora ? [2, 3, 4] : [2];
+                const columnStyles = { 1: { cellWidth: 'wrap' } };
+                amountCols.forEach(i => { columnStyles[i] = { halign: 'right', cellWidth: 'wrap' }; });
+                columnStyles[amountCols[amountCols.length - 1]].fontStyle = 'bold';
+                doc.autoTable({
+                    startY: y, head: [t.headers], body: t.rows.map(row => row.map(L)), foot: [t.total.map(L)], showFoot: 'lastPage', theme: 'striped',
+                    headStyles: { fillColor: [79, 70, 229], fontSize: 8 }, bodyStyles: { fontSize: 8 },
+                    footStyles: { fillColor: [226, 232, 240], textColor: [30, 41, 59], fontSize: 9 },
+                    // Los montos y el vencimiento no se parten en dos lineas; la cuota se lleva el resto del ancho
+                    columnStyles,
+                    didParseCell: (data) => {
+                        if ((data.section === 'head' || data.section === 'foot') && amountCols.includes(data.column.index)) data.cell.styles.halign = 'right';
+                        const row = data.section === 'body' ? list.rows[data.row.index] : null;
+                        if (row && data.column.index === 1 && ecLate(row)) data.cell.styles.textColor = [190, 18, 60];
+                        if (row && !ecLate(row) && row.kind !== 'ajuste') data.cell.styles.fillColor = [255, 251, 235];
+                    }
+                });
+                y = doc.lastAutoTable.finalY + 6;
+            } else {
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(6, 95, 70);
+                doc.text('No tiene cuotas pendientes de pago.', 14, y + 6);
+                y += 12;
+            }
+            if (y > 280) { doc.addPage(); y = 20; }
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+            doc.text(doc.splitTextToSize(L(ecDueNoteText(dd)), 182), 14, y);
+            doc.save('Estado_Cuenta_' + String(r.unit || '').replace(/\s+/g, '_') + '_' + String(r.name || '').replace(/\s+/g, '_') + '.pdf');
+            showToast('PDF de Estado de Cuenta generado.');
+        }
+        // SISDEL: una fila ya vencio si el motor lo dice (overdue: debe capital y paso su plazo), si no tiene plazo (un cargo
+        // que no es cuota) o si lleva mora (la mora solo corre despues del plazo). Antes bastaba overdue, que es false en una
+        // cuota ya pagada a la que solo le queda la mora, y esa fila salia "aun no vence"
+        function ecLate(row) { return !!row && row.kind !== 'ajuste' && (!!row.overdue || !row.dueDate || row.mora > 0.004); }
         function ecDueText(row) {
             if (row.kind === 'ajuste') return '';
             if (!row.dueDate) return 'Inmediato';
-            return new Date(row.dueDate + 'T00:00:00').toLocaleDateString('es-MX') + (row.overdue ? '' : ' (aún no vence)');
+            return new Date(row.dueDate + 'T00:00:00').toLocaleDateString('es-MX') + (ecLate(row) ? '' : ' (aún no vence)');
         }
         // La tabla "Cuotas pendientes y su mora" para el PDF, la impresion, el Excel y WhatsApp.
         // numbers = true: los montos van como numeros (Excel); si no, con su formato.
@@ -9600,10 +9934,10 @@
             const real = rows.filter(r => r.kind !== 'ajuste');
             document.getElementById('ec-pending-count').textContent = `(${real.length} ${real.length === 1 ? 'pendiente' : 'pendientes'}${real.length ? ' · desde ' + real[0].label : ''})`;
             const num = 'py-2 px-4 text-right font-mono whitespace-nowrap';
-            document.getElementById('ec-pending-body').innerHTML = rows.map(r => `<tr class="${r.overdue || r.kind === 'ajuste' ? '' : 'bg-amber-50/60 dark:bg-amber-900/10'}">
+            document.getElementById('ec-pending-body').innerHTML = rows.map(r => `<tr class="${ecLate(r) || r.kind === 'ajuste' ? '' : 'bg-amber-50/60 dark:bg-amber-900/10'}">
                 <td class="py-2 px-4 font-medium">${ecEsc(r.label)}</td>
                 <td class="${num}">${formatMoney(r.capital)}</td>
-                <td class="py-2 px-4 text-xs whitespace-nowrap ${r.overdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(r))}</td>
+                <td class="py-2 px-4 text-xs whitespace-nowrap ${ecLate(r) ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(r))}</td>
                 <td class="${num} ${r.mora > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}">${formatMoney(r.mora)}</td>
                 <td class="${num} font-bold">${formatMoney(r.total)}</td></tr>`).join('');
             document.getElementById('ec-pending-foot').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 font-bold text-slate-700 dark:text-slate-100">
@@ -9652,6 +9986,7 @@
             const showDeleted = !!document.getElementById('ec-show-deleted')?.checked;
             const { r, rows, totInc, totChg, opening, balance } = getEcData(showDeleted);
             if (!r) return;
+            renderEcDue();   // SISDEL: la vista "Cuotas pendientes" (la otra, "Con movimientos", es lo de abajo)
             document.getElementById('ec-total-inc').textContent = formatMoney(totInc);
             document.getElementById('ec-total-charges').textContent = formatMoney(totChg);
             const balEl = document.getElementById('ec-balance');
@@ -9958,6 +10293,7 @@
 
         function downloadEstadoCuentaPDF() {
             if (!window.jspdf || !window.jspdf.jsPDF) return alert('Cargando PDF, intente en 2s.');
+            if (ecView !== 'movs') return downloadEcDuePDF();   // SISDEL: la vista elegida (cuotas pendientes)
             const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
@@ -10044,7 +10380,7 @@
                         if (data.section === 'head' && [1, 3, 4].includes(data.column.index)) data.cell.styles.halign = 'right';
                         if (data.section === 'foot' && data.column.index > 0) data.cell.styles.halign = data.column.index === 2 ? 'left' : 'right';
                         const row = data.section === 'body' ? dd.list.rows[data.row.index] : null;
-                        if (row && !row.overdue && row.kind !== 'ajuste') data.cell.styles.textColor = [146, 64, 14];
+                        if (row && !ecLate(row) && row.kind !== 'ajuste') data.cell.styles.textColor = [146, 64, 14];
                     }
                 });
                 y = doc.lastAutoTable.finalY + 9;
@@ -10134,7 +10470,7 @@
         }
         function exportEstadoCuentaExcel() {
             if (typeof SisdelReportExport === 'undefined') return alert('El módulo de exportación no cargó. Recargue la página e intente de nuevo.');
-            const model = ecReportModel(false);
+            const model = ecView === 'movs' ? ecReportModel(false) : ecDueModel(false);
             if (!model) return;
             const blob = new Blob([SisdelReportExport.buildXlsx(model)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
@@ -10147,7 +10483,7 @@
         // ultimos movimientos). Si el residente tiene telefono, el mensaje va dirigido a el; si no, se elige el contacto
         function shareEstadoCuentaWhatsApp() {
             if (typeof SisdelReportExport === 'undefined') return alert('El módulo de exportación no cargó. Recargue la página e intente de nuevo.');
-            const model = ecReportModel(true);
+            const model = ecView === 'movs' ? ecReportModel(true) : ecDueModel(true);
             if (!model) return;
             const r = Store.get('residents').find(x => x.id === ecResidentId);
             const phone = String((r && r.contact) || '').replace(/\D/g, '');
@@ -10160,6 +10496,7 @@
         }
 
         function printEstadoCuenta() {
+            if (ecView !== 'movs') return printEcDue();   // SISDEL: la vista elegida (cuotas pendientes)
             const { r, rows, totInc, totChg, opening, balance } = getEcData();
             if (!r) return;
             const s = Store.get('settings');
@@ -10185,7 +10522,7 @@
             })() : '';
             const pendingHtml = dd && dd.list.rows.length ? (() => {
                 const th = (txt, right) => `<th style="padding:7px 10px;text-align:${right ? 'right' : 'left'};font-size:11px;text-transform:uppercase;color:#92400e;white-space:nowrap">${txt}</th>`;
-                const body = dd.list.rows.map(r => `<tr style="${r.overdue || r.kind === 'ajuste' ? '' : 'background:#fffbeb;'}"><td style="${cell};white-space:normal;font-weight:500">${esc(r.label)}</td><td style="${cell};text-align:right">${formatMoney(r.capital)}</td><td style="${cell};font-size:11px;color:${r.overdue ? '#be123c' : '#64748b'}">${esc(ecDueText(r))}</td><td style="${cell};text-align:right;color:${r.mora > 0 ? '#be123c' : '#94a3b8'}">${formatMoney(r.mora)}</td><td style="${cell};text-align:right;font-weight:700">${formatMoney(r.total)}</td></tr>`).join('');
+                const body = dd.list.rows.map(r => `<tr style="${ecLate(r) || r.kind === 'ajuste' ? '' : 'background:#fffbeb;'}"><td style="${cell};white-space:normal;font-weight:500">${esc(r.label)}</td><td style="${cell};text-align:right">${formatMoney(r.capital)}</td><td style="${cell};font-size:11px;color:${ecLate(r) ? '#be123c' : '#64748b'}">${esc(ecDueText(r))}</td><td style="${cell};text-align:right;color:${r.mora > 0 ? '#be123c' : '#94a3b8'}">${formatMoney(r.mora)}</td><td style="${cell};text-align:right;font-weight:700">${formatMoney(r.total)}</td></tr>`).join('');
                 return `<h3 style="margin:0 0 6px;font-size:14px;color:#92400e">Cuotas pendientes y su mora</h3>
                 <table style="width:100%;border-collapse:collapse;margin-bottom:24px"><thead><tr style="background:#fef3c7">${th('Cuota')}${th('Pendiente', true)}${th('Vence')}${th('Mora', true)}${th('Total', true)}</tr></thead><tbody>${body}</tbody>
                 <tfoot><tr style="background:#e2e8f0;font-weight:700"><td style="${cell}">TOTAL</td><td style="${cell};text-align:right">${formatMoney(dd.list.capital)}</td><td style="${cell}"></td><td style="${cell};text-align:right">${formatMoney(dd.list.mora)}</td><td style="${cell};text-align:right;color:#9f1239">${formatMoney(dd.list.total)}</td></tr></tfoot></table>

@@ -328,6 +328,38 @@ console.log('\nEstado de cuenta: lo que debe el residente');
     equal('con saldo a favor no debe nada y se informa el saldo a favor', R.accountDebt(credit), { pending: 0, overdue: 0, upcoming: 0, mora: 0, total: 0, credit: 700 });
     equal('un residente sin movimientos no tiene filas', R.pendingRows(standing([], '2026-11-16'), { total: 0 }).rows, []);
     equal('sin regla de mora no hay cifras (la pantalla usa el saldo de siempre)', [R.accountDebt(null), R.accountDebt(undefined)], [null, null]);
+
+    // ── Vista "Cuotas pendientes" (2026-11-20): tambien sin regla de mora ──
+    // Como el vecino 82 de Delco II: deuda de 2025 pagada en enero, enero a mayo pagados, Q100 de junio y nada despues
+    const plain = [{ id: 'atr25', type: 'charge', kind: 'extra', amount: 1500, resiId: 'r1', date: at12('2025-12-31'), concept: 'Cuotas atrasadas de 2025' }];
+    for (let m = 1; m <= 11; m++) { const p = `2026-${String(m).padStart(2, '0')}`; plain.push(feeTx(p, m < 4 ? 250 : 350)); }
+    plain.push({ id: 'p25', type: 'income', amount: 1500, resiId: 'r1', date: at12('2026-01-15') });
+    [1, 2, 3, 4, 5].forEach((m) => plain.push({ id: 'pm' + m, type: 'income', amount: m < 4 ? 250 : 350, resiId: 'r1', date: at12(`2026-0${m}-15`) }));
+    plain.push({ id: 'pjun', type: 'income', amount: 100, resiId: 'r1', date: at12('2026-06-20') });
+    const due35 = (p) => { const [y, m] = p.split('-').map(Number); return m === 12 ? `${y + 1}-01-05` : `${y}-${String(m + 1).padStart(2, '0')}-05`; };
+    const raw = Mora.stateOf('r1', plain, {}, '2026-11-20');
+    const dated = R.withDueDates(raw, due35, '2026-11-20');
+    const plainLedger = round2(plain.reduce((sum, t) => sum + (t.type === 'income' ? 1 : -1) * t.amount, 0));
+    const plainMs = Object.assign({}, dated, { total: plainLedger });
+    const plainDebt = R.accountDebt(plainMs);
+    const plainList = R.pendingRows(plainMs, { total: plainDebt.total });
+    equal('sin regla de mora: lo pendiente es lo que dice el libro, sin mora, con noviembre aun en su plazo', plainDebt, { pending: 2000, overdue: 1650, upcoming: 350, mora: 0, total: 2000, credit: 0 });
+    equal('sin regla de mora: una fila por cuota sin pagar (junio con su abono), con el vencimiento del dia 5 del mes siguiente', plainList.rows.map((r) => [r.period, r.amount, r.capital, r.dueDate, r.overdue, r.mora]),
+        [['2026-06', 350, 250, '2026-07-05', true, 0], ['2026-07', 350, 350, '2026-08-05', true, 0], ['2026-08', 350, 350, '2026-09-05', true, 0], ['2026-09', 350, 350, '2026-10-05', true, 0], ['2026-10', 350, 350, '2026-11-05', true, 0], ['2026-11', 350, 350, '2026-12-05', false, 0]]);
+    const early = Mora.stateOf('r1', [feeTx('2026-10')], {}, '2026-11-03');
+    equal('sin el plazo de 35 dias el motor da la cuota por vencida al terminar su mes (por eso withDueDates)', [raw.items.find((i) => i.period === '2026-10').dueDate, early.overdueCapital, R.withDueDates(early, due35, '2026-11-03').overdueCapital], ['2026-10-31', 300, 0]);
+    equal('withDueDates no cambia el estado que recibe ni toca los cargos que no son cuota', [raw.items[0].dueDate === dated.items[0].dueDate, raw.items.find((i) => i.period === '2026-11').dueDate], [true, '2026-11-30']);
+    equal('el dia 5 todavia es plazo; el 6 ya vencio', [R.withDueDates(Mora.stateOf('r1', [feeTx('2026-10')], {}, '2026-11-05'), due35, '2026-11-05').overdueCapital, R.withDueDates(Mora.stateOf('r1', [feeTx('2026-10')], {}, '2026-11-06'), due35, '2026-11-06').overdueCapital], [0, 300]);
+    equal('sin estado no hay nada que fechar', R.withDueDates(null, due35, '2026-11-20'), null);
+
+    // Juntas por ano (WhatsApp): las 227 cuotas de C070 en a lo mas 12 lineas que suman lo mismo
+    const byYear = R.pendingByYear(bigList);
+    equal('por ano: una linea por ano, del mas antiguo al mas nuevo, con su cuenta', [byYear.length, byYear[0].label, byYear[0].count, byYear[18].label, byYear[18].count], [19, 'Cuotas de 2008 (12)', 12, 'Cuotas de 2026 (11)', 11]);
+    const merged = R.pendingByYear(bigList, { max: 11 });
+    equal('con max, los anos mas antiguos van juntos y la suma no cambia', [merged.length, merged[0].label, merged[0].count, round2(merged.reduce((s, g) => s + g.total, 0)) === bigList.total], [11, 'Cuotas de 2008 a 2016 (108)', 108, true]);
+    const mixed = R.pendingByYear(futureList);
+    equal('un cargo sin mes o el ajuste quedan aparte, como venian', mixed.map((g) => [g.kind, g.label, g.total]), [['year', 'Cuota de 2026 (1)', 309], ['ajuste', 'Fechados despues de hoy', 120]]);
+    equal('pocas filas: max no junta nada', R.pendingByYear(list, { max: 11 }).length, 1);
 }
 
 console.log('\nCopia en el navegador');

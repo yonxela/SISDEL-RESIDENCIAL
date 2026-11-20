@@ -160,6 +160,9 @@ async function run() {
         equal('pantalla: el total de la tabla es el total que debe (pendiente, mora y total)', [foot[1], foot[3], foot[4]], [pending, mora, due]);
         equal('pantalla: las filas que aun no vencen se distinguen', await oikos(`[...document.querySelectorAll('#ec-pending-body tr')].pop().children[2].textContent.includes('aún no vence')`), true);
 
+        // Lo de siempre (con el libro de movimientos) es la vista "Con movimientos"; al abrir se ve "Cuotas pendientes"
+        equal('abre en la vista Cuotas pendientes', await oikos(`[ecView, document.getElementById('ec-pane-pending').classList.contains('hidden'), document.getElementById('ec-pane-movs').classList.contains('hidden')]`), ['pending', false, true]);
+        await oikos(`ecSetView('movs')`);
         const printed = await oikos(`(() => { let html = ''; window.open = () => ({ document: { write(h) { html = h; }, close() {} }, print() {} }); printEstadoCuenta(); return html; })()`);
         record('impresion: trae primero el total que debe, la tabla de cuotas pendientes y su total', /= Total que debe/.test(printed) && printed.includes('Cuotas pendientes y su mora') && printed.includes(`Q${due.toLocaleString('en-US', { minimumFractionDigits: 2 })}`) && (printed.match(/<tbody>/g) || []).length === 2, printed.slice(0, 80));
         equal('impresion: una fila por cuota pendiente mas las del periodo', (printed.match(/<tr/g) || []).length >= 227 + 1, true);
@@ -176,8 +179,56 @@ async function run() {
 
         const pdf = await oikos(`(() => { const api = window.jspdf.jsPDF.API; let out = { pages: 0, name: '' }; api.save = function (n) { out = { pages: this.getNumberOfPages(), name: n }; return this; }; downloadEstadoCuentaPDF(); return out; })()`);
         record('PDF: se genera sin errores, con varias paginas por las 227 cuotas', pdf.pages >= 4 && /^Estado_Cuenta_/.test(pdf.name), JSON.stringify(pdf));
+
+        console.log('\nEstado de cuenta: solo las cuotas pendientes, la mora si aplica y el total');
+        await oikos(`ecSetView('pending')`);
+        const dueScreen = await oikos(`(() => ({
+            capital: document.getElementById('ec-due-capital').textContent, mora: document.getElementById('ec-due-mora').textContent, total: document.getElementById('ec-due-total').textContent,
+            label: document.getElementById('ec-due-total-label').textContent, moraShown: !document.getElementById('ec-due-mora-card').classList.contains('hidden'),
+            head: [...document.querySelectorAll('#ec-due-head th')].map(th => th.textContent), rows: [...document.querySelectorAll('#ec-due-body tr')].map(tr => tr.children[0].textContent),
+            foot: [...document.querySelectorAll('#ec-due-foot td')].map(td => td.textContent), clickable: !!document.querySelector('#ec-due-body tr[data-tx][onclick="openTxDetail(this.dataset.tx)"]'),
+            ledgerHidden: document.getElementById('ec-pane-movs').classList.contains('hidden') }))()`);
+        equal('con mora: las cifras son las de siempre (pendiente + mora = total)', [money(dueScreen.capital), money(dueScreen.mora), money(dueScreen.total), dueScreen.label, dueScreen.moraShown], [pending, mora, due, '= Total que debe', true]);
+        equal('con mora: la tabla trae Cuota, Vence, Pendiente, Mora y Total y una fila por cuota, con el mes completo', [dueScreen.head, dueScreen.rows.length, dueScreen.rows[0], dueScreen.rows[226]], [['Cuota', 'Vence', 'Pendiente', 'Mora', 'Total'], 227, 'Enero 2008', 'Noviembre 2026']);
+        equal('con mora: el total de la tabla es el total que debe y no se ve el libro de movimientos', [dueScreen.foot[1], money(dueScreen.foot[2]), money(dueScreen.foot[3]), money(dueScreen.foot[4]), dueScreen.ledgerHidden, dueScreen.clickable], ['227 cuotas por pagar', pending, mora, due, true, true]);
+        const duePrinted = await oikos(`(() => { let html = ''; window.open = () => ({ document: { write(h) { html = h; }, close() {} }, print() {} }); printEstadoCuenta(); return html; })()`);
+        record('impresion: solo las cuotas pendientes con su mora y el total (sin pagos, cargos ni movimientos)', duePrinted.includes('Cuotas pendientes de pago al') && /= Total que debe/.test(duePrinted) && !/Movimientos del per/.test(duePrinted) && !/>PAGOS</.test(duePrinted) && !/Saldo anterior/.test(duePrinted) && (duePrinted.match(/<tbody>/g) || []).length === 1 && (duePrinted.match(/<tr/g) || []).length === 227 + 2, duePrinted.slice(0, 120));
+        equal('impresion: ningun monto puede partirse en dos lineas', (duePrinted.match(/<td style="[^"]*text-align:right[^"]*"/g) || []).filter((cell) => !cell.includes('white-space:nowrap')).length, 0);
+        const dueWa = decodeURIComponent(String(await oikos(`(() => { let url = ''; window.open = (u) => { url = u; return null; }; shareEstadoCuentaWhatsApp(); return url; })()`)).split('text=')[1] || '');
+        record('WhatsApp: el total que debe, la mora y las cuotas juntas por ano en a lo mas 12 lineas (sin movimientos)', /TOTAL QUE DEBE: \*Q[\d,.]+\*/.test(dueWa) && /Mora a hoy: \*Q[\d,.]+\*/.test(dueWa) && /Cuotas pendientes por año/.test(dueWa) && /Cuotas de 2008 a 2016 \(108\)/.test(dueWa) && !/movimientos/i.test(dueWa) && !/fila\(s\) más/.test(dueWa) && dueWa.length <= 3400, dueWa.slice(0, 300));
+        const dueModel = await oikos(`ecDueModel(false)`);
+        const dueLast = dueModel.tables[0].rows[dueModel.tables[0].rows.length - 1];
+        equal('Excel: una sola hoja con las cuotas pendientes y su total, con numeros', [dueModel.tables.length, dueModel.tables[0].title, dueModel.tables[0].rows.length, dueLast[0], dueLast[2], dueLast[3], dueLast[4]], [1, 'Cuotas pendientes de pago', 228, 'TOTAL', pending, mora, due]);
+        const duePdf = await oikos(`(() => { const api = window.jspdf.jsPDF.API; let out = { pages: 0, name: '' }; api.save = function (n) { out = { pages: this.getNumberOfPages(), name: n }; return this; }; downloadEstadoCuentaPDF(); return out; })()`);
+        record('PDF: se genera sin errores, con las 227 cuotas', duePdf.pages >= 4 && /^Estado_Cuenta_/.test(duePdf.name), JSON.stringify(duePdf));
+        // Un pago que cubre la cuota pero no la mora (primero la cuota, como en La Perla): esa cuota ya vencio y solo debe la mora
+        const moraOnly = await oikos(`(() => {
+            const txs = ['2026-01', '2026-02', '2026-03'].map(p => ({ id: 'fee_y_' + p, type: 'charge', kind: 'fee', period: p, amount: 300, resiId: 'u-ana', date: p + '-05T18:00:00.000Z' }));
+            txs.push({ id: 'pay_y', type: 'income', amount: 600, resiId: 'u-ana', date: '2026-11-10T18:00:00.000Z' });
+            const state = SisdelMora.stateOf('u-ana', txs, { fee: 300, moraRules: [{ from: '2000-01-01', percent: 3, graceDays: 5, payFirst: 'fee' }] }, '2026-11-16');
+            ecMora = () => Object.assign({}, state, { total: Math.round((-300 - state.moraDaily) * 100) / 100 });
+            renderEstadoCuenta();
+            const rows = [...document.querySelectorAll('#ec-due-body tr')].map(tr => [...tr.children].map(td => td.textContent.trim()));
+            return { foot: document.querySelectorAll('#ec-due-foot td')[1].textContent, rows };
+        })()`);
+        equal('una cuota pagada a la que solo le queda la mora dice eso, ya vencio y no cuenta como cuota por pagar', [moraOnly.foot, moraOnly.rows.length, moraOnly.rows[0][0], /aún no vence/.test(moraOnly.rows[0][1]), moraOnly.rows[0][2], moraOnly.rows[2][0]],
+            ['1 cuota por pagar · 2 solo con mora', 3, 'Enero 2026cuota pagada: solo debe la mora', false, 'Q0.00', 'Marzo 2026']);
         // Devuelve todo como estaba
         await oikos(`(() => { ecMora = __real.ecMora; sisdelMoraRuleText = __real.sisdelMoraRuleText; window.open = __real.open; if (__real.jsPdfSave) window.jspdf.jsPDF.API.save = __real.jsPdfSave; closeModal('modal-estado-cuenta'); })()`);
+
+        // Sin regla de mora (como Delco II): antes solo se veia el libro; ahora las cuotas que faltan, sin columna de mora
+        const plainDue = await oikos(`(() => {
+            openEstadoCuenta('u-ana');
+            const r = Store.get('residents').find(x => x.id === 'u-ana');
+            const rows = [...document.querySelectorAll('#ec-due-body tr')];
+            return { noRule: !SisdelMora.enabled(Store.get('settings')), owed: sisdelOwedOf(r).total, total: document.getElementById('ec-due-total').textContent,
+                moraShown: !document.getElementById('ec-due-mora-card').classList.contains('hidden'), head: [...document.querySelectorAll('#ec-due-head th')].map(th => th.textContent),
+                last: rows.length ? rows[rows.length - 1].children[1].textContent : '', sum: Math.round(rows.reduce((s, tr) => s + Number(tr.children[2].textContent.replace(/[^0-9.-]/g, '')), 0) * 100) / 100,
+                period: feePeriodLongLabel(currentFeePeriod()), labels: rows.map(tr => tr.children[0].textContent) };
+        })()`);
+        equal('sin regla de mora: el total es lo que debe en Residentes y la tabla no trae mora', [plainDue.noRule, money(plainDue.total), plainDue.sum, plainDue.moraShown, plainDue.head], [true, plainDue.owed, plainDue.owed, false, ['Cuota', 'Vence', 'Pendiente']]);
+        record('sin regla de mora: la cuota del mes sale pendiente y aun en su plazo (vence el dia 5 del mes siguiente)', plainDue.labels.includes(plainDue.period) && /^5\/\d{1,2}\/\d{4} \(aún no vence\)$/.test(plainDue.last), JSON.stringify(plainDue));
+        await oikos(`closeModal('modal-estado-cuenta')`);
 
         console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');
         // WhatsApp de mentira (no sale nada): se ve a quien le tocaria. A los residentes de prueba se les pone un telefono solo en pantalla.
@@ -616,7 +667,7 @@ async function run() {
         const waQuickText = decodeURIComponent(String(waQuick[0]).split('text=')[1] || '');
         record('Enviar por WhatsApp abre WhatsApp con el estado de cuenta del residente elegido, sin salir del pago', /wa\.me/.test(waQuick[0]) && /ESTADO DE CUENTA|Estado de cuenta/i.test(waQuickText) && waQuickText.includes('Ana') && waQuick[1] && waQuick[2] && waQuick[3] && waQuick[4] === 'u-ana', JSON.stringify([waQuick.slice(1), waQuickText.slice(0, 120)]));
         const printedQuick = await oikos(`(() => { window.__printed = ''; ecQuickPrint('inc'); return [window.__printed, document.getElementById('ec-date-from').value === new Date().getFullYear() + '-01-01']; })()`);
-        record('Imprimir abre la impresion del estado de cuenta (este ano, con lo que debe hoy)', /ESTADO DE CUENTA/.test(printedQuick[0]) && printedQuick[0].includes('Ana') && printedQuick[1], String(printedQuick[0]).slice(0, 120));
+        record('Imprimir abre la impresion del estado de cuenta: solo las cuotas pendientes y lo que debe hoy', /ESTADO DE CUENTA/.test(printedQuick[0]) && printedQuick[0].includes('Ana') && printedQuick[0].includes('Cuotas pendientes de pago al') && !/Movimientos del per/.test(printedQuick[0]) && printedQuick[1], String(printedQuick[0]).slice(0, 120));
         const pdfQuick = await oikos(`(() => { const api = window.jspdf.jsPDF.API; let out = { pages: 0, name: '' }; api.save = function (n) { out = { pages: this.getNumberOfPages(), name: n }; return this; }; ecQuickPDF('inc'); return out; })()`);
         record('Descargar PDF genera el PDF del estado de cuenta del residente', pdfQuick.pages >= 1 && /^Estado_Cuenta_/.test(pdfQuick.name), JSON.stringify(pdfQuick));
         const viewQuick = await oikos(`(() => { ecQuickView('inc'); const ec = document.getElementById('modal-estado-cuenta'); return [!ec.classList.contains('hidden-section'), document.getElementById('ec-resident-info').textContent.includes('Ana'), !document.getElementById('modal-income').classList.contains('hidden-section')]; })()`);
@@ -629,8 +680,9 @@ async function run() {
         await oikos(`(() => { document.getElementById('inc-resident').value = 'u-ana'; updateIncomeConcepts(); document.getElementById('inc-concept-type').value = 'custom'; handleIncomeConceptChange(); document.getElementById('inc-concept-custom').value = 'Pago con estado de cuenta'; document.getElementById('inc-amount').value = '12.34'; document.getElementById('inc-receipt-num').value = 'EC-QUICK-1'; checkIncomeDoc(); handleTransactionSubmit({ preventDefault() {} }, 'income'); })()`);
         await sleep(500);
         equal('el comprobante del pago muestra el bloque del estado de cuenta con el residente', [await oikos(ecShown('voucher-ec')), await oikos(`document.getElementById('voucher-ec-who').textContent.includes('Ana')`)], [true, true]);
-        const waVoucher = await oikos(`(() => { window.__opened.length = 0; ecQuickWhatsApp('voucher'); return [window.__opened[0] || '', ecResidentId, !document.getElementById('modal-voucher-options').classList.contains('hidden-section')]; })()`);
-        record('desde el comprobante, WhatsApp manda el estado de cuenta que ya trae ese pago, y el comprobante sigue abierto', /wa\.me/.test(waVoucher[0]) && decodeURIComponent(String(waVoucher[0])).includes('12.34') && waVoucher[1] === 'u-ana' && waVoucher[2], JSON.stringify([waVoucher.slice(1), decodeURIComponent(String(waVoucher[0])).slice(0, 160)]));
+        // Sale la vista Cuotas pendientes: lo que debe DESPUES de este pago (el total de Residentes, que ya lo descuenta)
+        const waVoucher = await oikos(`(() => { window.__opened.length = 0; ecQuickWhatsApp('voucher'); const owed = sisdelOwedOf(Store.get('residents').find((r) => r.id === 'u-ana')).total; return [window.__opened[0] || '', ecResidentId, !document.getElementById('modal-voucher-options').classList.contains('hidden-section'), formatMoney(owed), ecView]; })()`);
+        record('desde el comprobante, WhatsApp manda lo que debe ya con ese pago (cuotas pendientes), y el comprobante sigue abierto', /wa\.me/.test(waVoucher[0]) && decodeURIComponent(String(waVoucher[0])).includes('TOTAL QUE DEBE: *' + waVoucher[3] + '*') && waVoucher[1] === 'u-ana' && waVoucher[2] && waVoucher[4] === 'pending', JSON.stringify([waVoucher.slice(1), decodeURIComponent(String(waVoucher[0])).slice(0, 400)]));
         equal('desde el comprobante, Mostrar cierra el comprobante y abre el estado de cuenta', await oikos(`(() => { ecQuickView('voucher'); return [document.getElementById('modal-voucher-options').classList.contains('hidden-section') || document.getElementById('modal-voucher-options').classList.contains('opacity-0'), !document.getElementById('modal-estado-cuenta').classList.contains('hidden-section')]; })()`), [true, true]);
         await oikos(`closeModal('modal-estado-cuenta')`);
         equal('el comprobante de un egreso no ofrece estado de cuenta', await oikos(`(() => { const realGet = Store.get; Store.get = (k) => (k === 'transactions' ? realGet(k).concat([{ id: 'egreso-de-prueba', type: 'expense', concept: 'Reparaciones', amount: 10, date: new Date().toISOString() }]) : realGet(k)); try { openVoucherOptions('egreso-de-prueba'); return [!document.getElementById('modal-voucher-options').classList.contains('hidden-section'), document.getElementById('voucher-ec').classList.contains('hidden')]; } finally { Store.get = realGet; } })()`), [true, true]);
@@ -699,6 +751,8 @@ async function run() {
         equal('la lista de Residentes dice hasta que mes cubre el saldo a favor (y el detalle al pasar el mouse)', listLine, [over.until, over.expected]);
         const ec = await oikos(`(() => { openEstadoCuenta('u-maria'); const box = document.getElementById('ec-credit-cover'); const out = [!box.classList.contains('hidden'), document.getElementById('ec-credit-amount').textContent === formatMoney(${over.target}), document.getElementById('ec-credit-text').textContent]; const model = ecReportModel(true); out.push((model.kpis || []).some((k) => k.label === 'Aplicación del saldo a favor' && k.value === document.getElementById('ec-credit-text').textContent)); return out; })()`);
         equal('el estado de cuenta muestra el saldo a favor y a que meses llega, y lo lleva a Excel y WhatsApp', ec, [true, true, over.expected, true]);
+        const alDia = await oikos(`(() => { openEstadoCuenta('u-maria'); const m = ecDueModel(true); return [document.getElementById('ec-due-total-label').textContent, !document.getElementById('ec-due-empty').classList.contains('hidden'), document.getElementById('ec-due-wrap').classList.contains('hidden'), m.kpis.some((k) => k.label === 'Aplicación del saldo a favor')]; })()`);
+        equal('con saldo a favor: Cuotas pendientes dice Al dia, que no tiene cuotas pendientes y a que meses llega lo que pago de mas', alDia, ['Al día', true, true, true]);
         const noCredit = await oikos(`(() => { openEstadoCuenta('u-ana'); const hidden = document.getElementById('ec-credit-cover').classList.contains('hidden'); const r = Store.get('residents').find((x) => x.id === 'u-ana'); return [hidden, residentShownBalance(r).shown > 0.004]; })()`);
         equal('quien no tiene saldo a favor no ve el recuadro', noCredit[0], !noCredit[1]);
         await oikos(`(() => { closeModal('modal-estado-cuenta'); window.alert = window.__real.alert; window.confirm = window.__real.confirm; })()`);

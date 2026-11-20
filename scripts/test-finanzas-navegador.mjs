@@ -1101,6 +1101,31 @@ async function run() {
         equal('el ultimo dia para pagar noviembre es el 5 de diciembre y diciembre el 5 de enero; con regla de mora por dia (La Perla) es el mismo', [windowCases.due, windowCases.dueConRegla], [['2026-12-05', '2027-01-05'], ['2026-12-05', '2027-01-05']]);
         equal('Configuracion muestra el plazo fijo de 5 dias y no se puede cambiar', await oikos(`(() => { navigate('settings'); const g = document.getElementById('cfg-grace'); return [g.value, g.readOnly]; })()`), ['5', true]);
 
+        console.log('\nTabla general: buscador inteligente (ver solo a un residente)');
+        await oikos(`(() => { navigate('reports'); selectReport('pay-map'); })()`);
+        await sleep(700);
+        const pmAll = await oikos(`currentReportData.rows.length`);
+        const pmSearch = async (text) => {
+            await oikos(`(() => { const el = document.getElementById('pm-search'); el.value = ${JSON.stringify(text)}; payMapSearchChanged(); })()`);
+            await sleep(450);
+            return oikos(`({ n: currentReportData.rows.length, names: currentReportData.rows.map((r) => stripCellHtml(r[0])), summary: currentReportData.summary, marks: (document.getElementById('rep-tbody').innerHTML.match(/<mark/g) || []).length, empty: document.getElementById('rep-empty-text').textContent, cards: document.getElementById('rep-highlights').innerText.replace(/\\s+/g, ' ').slice(0, 120) })`);
+        };
+        record('el buscador esta en la Tabla general y sin escribir nada muestra a todos', pmAll >= 2 && (await oikos(`!!document.getElementById('pm-search') && getComputedStyle(document.getElementById('rep-paymap-filters')).display !== 'none'`)), String(pmAll));
+        const pmMaria = await pmSearch('maria');
+        record('"maria" (sin acento ni mayuscula) deja solo a Maria, con lo que coincide resaltado y la busqueda dicha arriba', pmMaria.n >= 1 && pmMaria.n < pmAll && pmMaria.names.every((n) => /mar[ií]a/i.test(n)) && pmMaria.marks >= 1 && /búsqueda: «maria»/.test(pmMaria.summary), JSON.stringify(pmMaria));
+        const pmWords = await pmSearch('rod MARÍA');
+        equal('las palabras van en cualquier orden y cada una es el principio de otra ("rod MARÍA" encuentra a Maria Rodriguez)', pmWords.names.some((n) => /Mar[ií]a Rodr[ií]guez/.test(n)), true);
+        const pmCasa = await pmSearch('casa 12');
+        record('buscar por casa: "casa 12" encuentra a quien vive en la 12', pmCasa.n >= 1 && pmCasa.names.some((n) => /12/.test(n)), JSON.stringify(pmCasa.names));
+        const pmNone = await pmSearch('zzzz');
+        record('sin coincidencias no muestra filas y lo dice', pmNone.n === 0 && /Ningún residente coincide con «zzzz»/.test(pmNone.empty), JSON.stringify(pmNone));
+        const pmClear = await pmSearch('');
+        equal('al borrar el texto vuelven todos', pmClear.n, pmAll);
+        await pmSearch('maria');
+        const pmExport = await oikos(`(() => { const m = currentReportModel(true); return { filas: m.tables[0].rows.length, texto: m.tables[0].rows.map((r) => r[0]).join('|'), marcas: /<mark|&lt;mark/.test(JSON.stringify(m)) }; })()`);
+        record('el Excel (y la impresion y el PDF) salen solo de quien se busco, sin etiquetas de resaltado: una fila por residente mas la de totales', pmExport.filas >= 2 && pmExport.filas < pmAll + 1 && /Mar[ií]a/.test(pmExport.texto) && !pmExport.marcas, JSON.stringify(pmExport));
+        await pmSearch('');
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

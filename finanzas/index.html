@@ -826,6 +826,15 @@
                             <!-- SISDEL: filtros de la Tabla general (una linea por vecino; pedido del usuario el 2026-11-20): la fase, el orden
                                  (por deuda, por lote como una hoja o por nombre) y si cada mes muestra la cuota o la cuota con su mora -->
                             <div id="rep-paymap-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <!-- SISDEL: buscador inteligente (pedido del usuario el 2026-11-20): ver solo a un residente. No importan mayusculas
+                                     ni acentos, cada palabra es el principio de alguna del residente y van en cualquier orden -->
+                                <div class="min-w-[16rem] flex-1 max-w-md">
+                                    <label for="pm-search" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Buscar residente</label>
+                                    <div class="relative">
+                                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+                                        <input type="search" id="pm-search" autocomplete="off" spellcheck="false" oninput="payMapSearchChanged()" placeholder="Nombre, casa o lote, fase, teléfono..." class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                </div>
                                 <div>
                                     <label for="pm-fase" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fase</label>
                                     <select id="pm-fase" onchange="payMapFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer"></select>
@@ -7532,6 +7541,8 @@
             // La Tabla general se puede ver de una fase (Morosos no pasa la fase: trae a todos)
             if (extra.fase === SisdelReportesOikos.NO_FASE) residents = residents.filter(r => !String(r.fase || '').trim());
             else if (extra.fase) residents = residents.filter(r => String(r.fase || '').trim() === extra.fase);
+            // Buscador inteligente (solo la Tabla general): nombre, casa o lote, fase, telefono, correo, NIT...
+            if (extra.search) residents = SisdelBusqueda.filter(residents, extra.search, residentSearchFields);
             // Residentes de la carga inicial (dados de alta hasta un dia despues de la carga): sus meses anteriores a
             // "cobrar desde" sin cuota cuentan como pagados. Uno que entro despues no: antes de entrar no debia nada.
             const loadAt = sisdelInitialLoadAt();
@@ -7575,7 +7586,23 @@
         var payMapOrder = (() => { try { const v = localStorage.getItem('sisdel_tabla_orden'); return v === 'unit' || v === 'name' ? v : 'debt'; } catch (e) { return 'debt'; } })();
         var payMapView = (() => { try { return localStorage.getItem('sisdel_tabla_ver') === 'total' ? 'total' : 'fee'; } catch (e) { return 'fee'; } })();
         var payMapFase = '';
+        var payMapSearch = '';
+        var payMapSearchTimer = null;
+        // El buscador de la Tabla general: filtra a los residentes antes de armar el reporte, asi las cifras de arriba, los
+        // totales, la impresion, el PDF, el Excel y WhatsApp salen solo de quienes coinciden. Espera un instante al escribir.
+        function payMapSearchChanged() {
+            clearTimeout(payMapSearchTimer);
+            payMapSearchTimer = setTimeout(function () {
+                const el = document.getElementById('pm-search');
+                const next = el ? el.value.trim() : '';
+                if (next === payMapSearch) return;
+                payMapSearch = next;
+                renderCurrentReport();
+            }, 160);
+        }
         function payMapPrepareFilters() {
+            const searchBox = document.getElementById('pm-search');
+            if (searchBox) searchBox.value = payMapSearch;
             const order = document.getElementById('pm-order');
             if (order) order.value = payMapOrder;
             const view = document.getElementById('pm-view');
@@ -7615,8 +7642,9 @@
         function buildPayMapReport() {
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             const withMora = payMapView === 'total';
-            const { map, today } = sisdelPayMap({ fase: payMapFase, order: payMapOrder, coverage: true, mora: withMora });
-            const nameOf = function (r) { return esc((r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)')); };
+            const { map, today } = sisdelPayMap({ fase: payMapFase, order: payMapOrder, search: payMapSearch, coverage: true, mora: withMora });
+            // Con una busqueda, lo que coincide del nombre va resaltado (SisdelBusqueda.highlight escapa todo lo que viene de la base)
+            const nameOf = function (r) { const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)'); return payMapSearch ? SisdelBusqueda.highlight(label, payMapSearch) : esc(label); };
             const faseOf = function (r) { const f = String(r.fase || '').trim(); return f ? esc(f) : '—'; };
             const typeOf = function (r) { return unitTypeOf(r) === 'casa' ? 'Casa' : 'Lote'; };
             // Lo que dice cada mes: lo que debe (rojo), "Pagado" o "Adelantado" (verde), en blanco si esta en su plazo. Con
@@ -7650,7 +7678,7 @@
             const debt = { pending: sum(x => x.owed.pending), mora: sum(x => x.owed.mora), total: sum(x => x.owed.total) };
             return {
                 title: 'Tabla general',
-                summary: map.late + ' en mora · ' + map.pending + ' con cuota en su plazo · ' + map.upToDate + ' al día · al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + (withMora ? ' · cada mes con su mora' : '') + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
+                summary: map.late + ' en mora · ' + map.pending + ' con cuota en su plazo · ' + map.upToDate + ' al día · al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + (payMapSearch ? ' · búsqueda: «' + payMapSearch + '»' : '') + (withMora ? ' · cada mes con su mora' : '') + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
                 hideSummary: true,
                 kpisFromTotals: false,
                 // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); tambien
@@ -7660,7 +7688,7 @@
                     { tone: 'blank', value: String(map.pending), label: 'con cuota en su plazo' },
                     { tone: 'paid', value: String(map.upToDate), label: 'al día en cuotas' }
                 ].concat(sisdelDebtHighlights(debt), totalCredit > 0 ? [{ tone: 'paid', value: formatMoney(totalCredit), label: 'saldo a favor (pagos adelantados)' }] : []),
-                highlightsNote: 'Al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + ' · total = cuotas y cargos pendientes + mora a hoy' + (withMora ? ' · cada mes con su mora' : ''),
+                highlightsNote: 'Al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + (payMapSearch ? ' · búsqueda: «' + payMapSearch + '»' : '') + ' · total = cuotas y cargos pendientes + mora a hoy' + (withMora ? ' · cada mes con su mora' : ''),
                 legend: [
                     { tone: 'owed', text: withMora ? 'Rojo: debe (ya venció), con la mora de esa cuota' : 'Rojo: debe (ya venció)' },
                     { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') + (map.advancePaid ? '; "Adelantado": cubierto con su saldo a favor' : '') },
@@ -7668,7 +7696,7 @@
                     { tone: 'none', text: 'Gris: sin cuota' }
                 ],
                 hint: 'Toque un residente para ver su estado de cuenta',
-                emptyText: 'No hay residentes.',
+                emptyText: payMapSearch ? 'Ningún residente coincide con «' + payMapSearch + '».' : 'No hay residentes.',
                 headers: ['Residente', 'Fase', 'Tipo'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total que debe', 'Saldo a favor', 'Pagado hasta']),
                 leftCols: [1, 2],
                 rows: rows,

@@ -29,15 +29,7 @@
         .pq-msg { font-weight: 700; font-size: 0.85rem; margin: 0.6rem 0 0; }
         .pq-msg.bad { color: #dc2626; }
         .pq-panic { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; }
-        /* El boton grande: redondo, rojo, con el icono del boton de panico; se mantiene presionado 2 segundos */
-        .pq-big { position: relative; overflow: hidden; width: min(72vw, 15.5rem); aspect-ratio: 1; border-radius: 50%; border: 0.55rem solid rgba(220,38,38,0.25);
-            background: radial-gradient(circle at 50% 38%, #ef4444, #b91c1c 70%); color: #fff; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
-            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; font-weight: 900; font-size: 1.45rem; letter-spacing: 0.08em;
-            box-shadow: 0 14px 34px rgba(220,38,38,0.45); background-clip: padding-box; }
-        .pq-big:disabled { opacity: 0.7; cursor: progress; }
-        .pq-big .fill { position: absolute; left: 0; bottom: 0; right: 0; height: 0; background: rgba(255,255,255,0.28); }
-        .pq-big span { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
-        .pq-hint { font-weight: 700; color: var(--text-secondary); margin: 0; }
+        /* El boton grande (el circulo que se llena al mantenerlo presionado, igual que en el portal del vecino) lo pone panico-boton.js */
         .pq-warn { font-size: 0.82rem; color: #d97706; font-weight: 700; text-align: center; margin: 0; }
         .panic-status { width: 100%; box-sizing: border-box; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.92rem; }
         .panic-status.calm { background: var(--bg-surface); border: 1px solid var(--border-strong); }
@@ -82,14 +74,8 @@
 
         <!-- El boton -->
         <section class="pq-panic" id="pqStepPanic" hidden>
-            <button class="pq-big" id="btnPanicHold" type="button" aria-label="Botón de pánico: mantener presionado 2 segundos">
-                <div class="fill" id="panicFill"></div>
-                <span>
-                    <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    PÁNICO
-                </span>
-            </button>
-            <p class="pq-hint">Mantenga presionado 2 segundos</p>
+            <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
+            <div id="panicBtnHost"></div>
             <p class="pq-warn" id="pqNoGps" hidden>Sin su ubicación la alerta sale igual, con su lote y su nombre, pero sin el mapa.</p>
             <div class="panic-status" id="panicStatus" hidden></div>
         </section>
@@ -103,6 +89,7 @@
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
+    <script src="panico-boton.js?v=20261120a"></script>
     <script src="panico-qr.js?v=20261120b"></script>
     <script>
         (() => {
@@ -245,19 +232,23 @@
                 api('panicDevice', { action: 'unlink', secret }).catch(() => {});
             });
 
-            // ── El boton: mantener presionado 2 segundos (como en el portal del vecino) ──
-            const panicBtn = $('btnPanicHold');
-            const panicFill = $('panicFill');
+            // ── El boton: mantener presionado 2 segundos (el mismo circulo del portal del vecino) ──
+            // Se llena mientras se mantiene presionado y, ya lleno, busca la ubicacion y manda la alerta; cuando el servidor la
+            // guarda dice ALERTA ENVIADA (panico-boton.js)
             const panicStatus = $('panicStatus');
-            const HOLD_MS = 2000;
-            let holdTimer = null;
             let pollTimer = null;
             let current = null;
-            const PANIC_TEXT = {
-                ACTIVE: 'Alerta enviada. La garita y la administración ya fueron avisadas. Manténgase en un lugar seguro.',
-                ATTENDED: 'Su alerta fue atendida',
+            const panicButton = SisdelPanicoBoton.mount($('panicBtnHost'), {
+                size: 'min(72vw, 15.5rem)',
+                onHoldStart: () => SisdelRondas.gps.start(), // tambien calienta el GPS mientras pasan los 2 segundos
+                onFire: () => firePanic()
+            });
+            const PANIC_HEAD = { ACTIVE: 'ALERTA ENVIADA', ATTENDED: 'ALERTA ATENDIDA', RESOLVED: 'ALERTA RESUELTA', CANCELLED: 'ALERTA CANCELADA' };
+            const PANIC_BODY = {
+                ACTIVE: 'La garita y la administración ya fueron avisadas. Manténgase en un lugar seguro.',
+                ATTENDED: 'Ya vienen en camino o la están atendiendo.',
                 RESOLVED: 'Su alerta fue resuelta.',
-                CANCELLED: 'Alerta cancelada.'
+                CANCELLED: 'Usted canceló la alerta.'
             };
             function status(text, calm) {
                 panicStatus.hidden = !text;
@@ -266,16 +257,21 @@
             }
             function showAlert(a) {
                 current = a;
+                panicButton.setState(SisdelPanicoBoton.stateForAlert(a.status)); // enviada y atendida bloquean el boton; cancelada o resuelta lo liberan
                 panicStatus.hidden = false;
                 panicStatus.className = 'panic-status' + (['RESOLVED', 'CANCELLED'].includes(a.status) ? ' calm' : '');
                 panicStatus.textContent = '';
                 const strong = document.createElement('strong');
-                strong.textContent = (PANIC_TEXT[a.status] || a.status) + (a.status === 'ATTENDED' && a.attendedByName ? ` por ${a.attendedByName}.` : (a.status === 'ATTENDED' ? '.' : ''));
+                strong.style.cssText = 'font-size:1.05rem;letter-spacing:0.04em;';
+                strong.textContent = PANIC_HEAD[a.status] || a.status;
+                const body = document.createElement('div');
+                body.style.marginTop = '0.25rem';
+                body.textContent = (PANIC_BODY[a.status] || '') + (a.status === 'ATTENDED' && a.attendedByName ? ` Atendida por ${a.attendedByName}.` : '');
                 const when = document.createElement('div');
                 when.className = 'text-xs text-muted';
                 when.style.marginTop = '0.25rem';
                 when.textContent = (a.createdAt ? new Date(a.createdAt).toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : '') + (a.hasLocation ? '' : ' · sin ubicación GPS');
-                panicStatus.append(strong, when);
+                panicStatus.append(strong, body, when);
                 if (a.status === 'ACTIVE' && link && link.canCancel) {
                     const cancel = document.createElement('button');
                     cancel.className = 'btn btn-ghost btn-sm';
@@ -310,45 +306,27 @@
                 }, 15000);
             }
             async function firePanic() {
-                if (!link) return;
-                panicBtn.disabled = true;
-                status('Enviando alerta... obteniendo su ubicación');
+                if (!link) { panicButton.setState('ready'); return; }
+                status('');
                 try {
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
                     const pos = await SisdelRondas.gps.bestPosition(6000);
-                    const res = await api('panicDevice', { action: 'alert', secret: link.secret, lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null });
+                    const sending = api('panicDevice', { action: 'alert', secret: link.secret, lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null });
+                    // Aunque la respuesta tarde (poca senal), cuando llegue el boton pasa solo a ALERTA ENVIADA
+                    sending.then((res) => { if (res.ok && res.alert) follow(res.alert); }, () => {});
+                    // Sin respuesta en 20 segundos se avisa que no se pudo confirmar, para no dejar el boton en ENVIANDO...
+                    const res = await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
                     if (res.ok) {
                         if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
-                        follow(res.alert);
-                    } else if (res.relink) { status(''); needRelink(res.error); }
-                    else status(res.error);
+                        panicButton.setState('sent'); // ya esta guardada en el servidor
+                    } else if (res.relink) { panicButton.setState('ready'); needRelink(res.error); }
+                    else { panicButton.setState('error'); status(res.error); }
                 } catch (e) {
                     console.error(e);
-                    status('No se pudo enviar la alerta: no hay conexión. Intente de nuevo o llame a la garita por teléfono.');
-                } finally { setTimeout(() => { panicBtn.disabled = false; }, 5000); }
+                    panicButton.setState('error');
+                    status('No se pudo confirmar el envío de la alerta: revise su conexión y vuelva a intentarlo; si es urgente, llame a la garita por teléfono.');
+                }
             }
-            function holdStartFn(e) {
-                if (panicBtn.disabled) return;
-                e.preventDefault();
-                SisdelRondas.gps.start(); // tambien calienta el GPS mientras pasan los 2 segundos
-                panicFill.style.transition = `height ${HOLD_MS}ms linear`;
-                panicFill.style.height = '100%';
-                holdTimer = setTimeout(() => { holdTimer = null; panicFill.style.transition = 'none'; panicFill.style.height = '0'; firePanic(); }, HOLD_MS);
-            }
-            function holdEndFn() {
-                if (!holdTimer) return;
-                clearTimeout(holdTimer);
-                holdTimer = null;
-                panicFill.style.transition = 'none';
-                panicFill.style.height = '0';
-            }
-            panicBtn.addEventListener('pointerdown', holdStartFn);
-            ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => panicBtn.addEventListener(ev, holdEndFn));
-            panicBtn.addEventListener('contextmenu', (e) => e.preventDefault());
-            // Teclado: confirmacion en lugar de mantener presionado
-            panicBtn.addEventListener('keydown', (e) => {
-                if ((e.key === 'Enter' || e.key === ' ') && confirm('¿Activar la alerta de pánico?')) { e.preventDefault(); firePanic(); }
-            });
         })();
     </script>
 </body>

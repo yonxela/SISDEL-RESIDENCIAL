@@ -416,6 +416,7 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `functions/src/anpr/` | Webhook de la cámara LPR. |
 | `rondin/` | SISDEL RONDÍN con su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
 | `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
+| `panico-boton.js` | El botón de pánico de mantener presionado (círculo que se llena; al terminar dice ALERTA ENVIADA), el mismo en el portal del vecino y en el QR de pánico. |
 | `gps-ayuda.js` | Botón "Activar ubicación" y la ayuda para activarla según el teléfono (portal del vecino y QR de pánico). |
 | `panico.html`, `panico-qr.js`, `functions/src/panico-qr.js` | QR de pánico por vecino: la tarjeta que se imprime en Reportes, la página que abre al escanearla y las funciones que vinculan el teléfono y envían la alerta. `vendor/qrcode-generator-1.4.4.js` (MIT) dibuja el QR en el navegador. |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |

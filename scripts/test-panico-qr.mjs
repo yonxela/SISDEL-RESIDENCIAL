@@ -330,6 +330,7 @@ console.log('\nReglas y paginas');
     yes('admin.html carga panico-qr.js antes de reportes-ui.js', admin.indexOf('src="panico-qr.js') > 0 && admin.indexOf('src="panico-qr.js') < admin.indexOf('src="reportes-ui.js'));
     const rp = read('reportes-ui.js');
     yes('el reporte usa la libreria de vendor/ y el privilegio reportes.panico_qr', /tag\.src = PQ\(\)\.QR_LIB;/.test(rp) && /can\('reportes\.panico_qr'\)/.test(rp) && /else if \(def\.id === 'panico-qr'\) renderPanicQr\(def\);/.test(rp));
+    yes('la vista previa muestra TODAS las tarjetas (no solo las primeras), pintadas de 40 en 40 y cortando la pintada anterior al cambiar un filtro', /const cards = Q\.cardsFor\(list, origin, condoId\);/.test(rp) && !/list\.slice\(0, PREVIEW\)/.test(rp) && /const PREVIEW_CHUNK = 40;/.test(rp) && /if \(mine !== paintSeq \|\| !preview\.isConnected\) return;/.test(rp) && /if \(next < cards\.length\) setTimeout\(paintChunk, 0\);/.test(rp));
     yes('el reporte avisa si el boton de panico de vecinos esta apagado en RONDIN', /SisdelRondas\.neighborPanicEnabled\(\)\.then/.test(rp) && /los QR no enviarán alertas hasta activarlo/.test(rp));
     yes('el reporte no manda nada a otro servicio para hacer el QR (sin APIs de QR externas)', !/api\.qrserver|chart\.googleapis|quickchart/i.test(rp + read('panico-qr.js')));
 }

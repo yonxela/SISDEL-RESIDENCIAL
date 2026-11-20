@@ -531,7 +531,11 @@ const SisdelReportes = (() => {
                 const matrix = matrixCache.get(card.url);
                 return { ...card, matrix, svg: Q.qrSvg(matrix) };
             };
-            const PREVIEW = 12;
+            // La vista previa muestra TODAS las tarjetas (pedido del usuario el 2026-11-20: "que muestre a todos los vecinos";
+            // antes solo las primeras 12). Se pintan de 40 en 40 para que la pagina no se trabe con un condominio grande
+            // (La Perla: 719); cambiar un filtro antes de terminar corta la pintada anterior (paintSeq)
+            const PREVIEW_CHUNK = 40;
+            let paintSeq = 0;
             const faseLabel = (f) => (f ? (/^fase\b/i.test(f) ? f : `Fase ${f}`) : 'Sin fase');
             body.innerHTML = `
                 <div class="rp-head">
@@ -614,11 +618,21 @@ const SisdelReportes = (() => {
                 $('pqSummary').textContent = list.length
                     ? `${list.length} tarjeta${list.length === 1 ? '' : 's'} · ${sheets} hoja${sheets === 1 ? '' : 's'} ${L.paper.label.toLowerCase()} (${L.perPage} por hoja)`
                     : (pqState.mode === 'picked' ? 'Marque a los vecinos que quiere imprimir.' : 'No hay vecinos para imprimir.');
-                const cards = Q.cardsFor(list.slice(0, PREVIEW), origin, condoId).map(withQr);
-                $('pqPreview').innerHTML = cards.map((c) => Q.cardHtml(c, pqState.size, c.svg, condoName)).join('')
-                    + (list.length > PREVIEW ? `<p class="text-sm text-muted" style="align-self:center; color:#334155;">y ${list.length - PREVIEW} más en la impresión</p>` : '');
-                $('pqPreview').style.display = list.length ? '' : 'none';
+                const preview = $('pqPreview');
+                const cards = Q.cardsFor(list, origin, condoId);
+                const mine = ++paintSeq;
+                const size = pqState.size;
+                preview.innerHTML = '';
+                preview.style.display = list.length ? '' : 'none';
                 $('pqPrint').disabled = $('pqPdf').disabled = !list.length;
+                let next = 0;
+                (function paintChunk() {
+                    if (mine !== paintSeq || !preview.isConnected) return;
+                    const chunk = cards.slice(next, next + PREVIEW_CHUNK).map(withQr);
+                    preview.insertAdjacentHTML('beforeend', chunk.map((c) => Q.cardHtml(c, size, c.svg, condoName)).join(''));
+                    next += PREVIEW_CHUNK;
+                    if (next < cards.length) setTimeout(paintChunk, 0);
+                })();
             }
             if (!document.getElementById('pqCardStyles')) {
                 const style = document.createElement('style');

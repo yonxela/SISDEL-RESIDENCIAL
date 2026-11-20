@@ -1672,6 +1672,40 @@
     </div>
     <!-- SISDEL: con el cobro manual, aplicar la cuota del mes a todos pide la clave de quien la aplica (ver applyFeeRun y
          confirmOwnCode en functions/src/auth.js): asi nadie aplica una cuota por error o con la sesion abierta de otro -->
+    <!-- SISDEL: CONTACTAR A UN RESIDENTE (pedido del usuario el 2026-11-20). "Contactar" y "Enviar desde mi WhatsApp" del menu de cada
+         residente abren esta ventana en vez de mandar de una vez (y de avisar "escriba el aviso general" a quien no esta en mora): se
+         elige que enviar (aviso de morosidad, aviso general, estado de cuenta o un mensaje propio), el texto se puede escribir o cambiar
+         antes de enviarlo y se elige desde donde sale (el WhatsApp del condominio o el propio). Ver openContact en el script. -->
+    <div id="modal-contact" class="fixed inset-0 z-[60] flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeModal('modal-contact')}">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-6 sm:p-8 max-h-[92vh] overflow-y-auto border-t-4 border-emerald-500">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center min-w-0">
+                    <div class="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fab fa-whatsapp text-emerald-600 text-lg"></i></div>
+                    <div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Contactar al residente</h3><p id="ct-who" class="text-sm text-slate-500 dark:text-slate-400 truncate"></p></div>
+                </div>
+                <button type="button" onclick="closeModal('modal-contact')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 -mt-2 -mr-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
+            </div>
+            <div id="ct-chip" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4"></div>
+            <p class="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 mb-2">¿Qué desea enviar?</p>
+            <div id="ct-kinds" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4"></div>
+            <div class="flex items-end justify-between mb-1">
+                <label for="ct-text" class="block text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Mensaje (puede escribirlo o cambiarlo)</label>
+                <button type="button" id="ct-reset" onclick="contactResetText()" class="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">Volver al texto original</button>
+            </div>
+            <textarea id="ct-text" rows="12" oninput="contactTextChanged()" spellcheck="true" class="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm leading-relaxed focus:ring-2 focus:ring-emerald-500"></textarea>
+            <div class="flex items-center justify-between mt-1 text-xs text-slate-500 dark:text-slate-400"><span id="ct-count"></span><span>Lo que va entre asteriscos sale en negrita en WhatsApp.</span></div>
+            <p id="ct-note" class="hidden mt-3 p-3 rounded-lg text-sm bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200"></p>
+            <p id="ct-error" class="hidden mt-3 text-sm font-semibold text-rose-600 dark:text-rose-400"></p>
+            <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <button type="button" onclick="contactOpenStatement()" class="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"><i class="fas fa-file-invoice-dollar mr-1.5"></i>Ver el estado de cuenta completo</button>
+                <div class="flex flex-wrap gap-2 ml-auto">
+                    <button type="button" onclick="closeModal('modal-contact')" class="px-4 py-2 text-slate-600 dark:text-slate-300">Cancelar</button>
+                    <button type="button" id="ct-send-mine" onclick="contactSendMine()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm transition" title="Abre su WhatsApp con el mensaje: usted pulsa Enviar y sale de su número"><i class="fas fa-mobile-screen-button mr-1.5"></i>Enviar desde mi WhatsApp</button>
+                    <button type="button" id="ct-send-server" onclick="contactSendServer()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold text-sm transition" title="Sale del número de WhatsApp del condominio"><i class="fab fa-whatsapp mr-1.5"></i>Enviar desde el WhatsApp del condominio</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="modal-fee-confirm" class="fixed inset-0 z-[60] flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeFeeConfirm()}">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 border-t-4 border-amber-500">
             <div class="flex items-start justify-between mb-4">
@@ -5122,17 +5156,205 @@
             resMarkClean(); resNavRefresh();   // SISDEL: estado limpio y contador de la navegacion
         }
 
-        // Contactar (menu de tres puntos de cada residente): el mismo mensaje de Recordatorios (el de mora si esta en mora;
-        // si no, el aviso general) con el total que debe, enviado desde el WhatsApp del condominio con confirmacion.
-        function contactWhatsApp(residentId) {
-            const r = Store.get('residents').find(x => String(x.id) === String(residentId));
+        // Contactar (menu de tres puntos de cada residente): abre la ventana "Contactar al residente" (ver abajo): se elige que enviar
+        // (aviso de morosidad, aviso general, estado de cuenta o un mensaje propio), se escribe o cambia el texto y se elige desde que
+        // WhatsApp sale. Antes mandaba de una vez el aviso de mora o el general y, a quien no estaba en mora, avisaba "escriba el aviso
+        // general en Recordatorios" si no estaba escrito.
+        function contactWhatsApp(residentId) { openContact(residentId); }
+
+        // ───────── SISDEL: ventana "Contactar al residente" (pedido del usuario el 2026-11-20) ─────────
+        // Cuatro clases de mensaje, cada una con su texto armado con los datos de hoy del residente y editable antes de enviarlo (lo que se
+        // edita queda por clase mientras la ventana esta abierta): el aviso de morosidad y el aviso general (los de Recordatorios; el
+        // general sin escribir se escribe aqui mismo, sin salir), el estado de cuenta (un resumen corto con lo que debe, mes por mes: cabe
+        // en los 1000 caracteres del servidor) y un mensaje propio. Sale desde el WhatsApp del condominio (servidor, con su aviso de lo que
+        // paso de verdad: remSendOne) o desde el WhatsApp propio (openMyWhatsApp: se abre el chat y la persona pulsa Enviar). Con el
+        // WhatsApp oficial de Meta, desde el servidor solo salen los avisos con su plantilla y sin cambiar el texto.
+        var CONTACT_KINDS = [
+            { id: 'mora', icon: 'fa-triangle-exclamation', title: 'Aviso de morosidad', text: 'Recordatorio de pago con lo que debe hoy' },
+            { id: 'general', icon: 'fa-bullhorn', title: 'Aviso general', text: 'Un aviso de la administración' },
+            { id: 'estado', icon: 'fa-file-invoice-dollar', title: 'Estado de cuenta', text: 'Resumen de lo que debe, mes por mes' },
+            { id: 'propio', icon: 'fa-pen', title: 'Mensaje propio', text: 'Escriba lo que quiera decirle' }
+        ];
+        var contactState = null;   // { id, kind, orig, drafts, sending }
+        function contactDayText(day) { const p = String(day || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
+        // El estado de cuenta en texto: cuotas pendientes, mora, total que debe, los meses vencidos y el ultimo pago
+        function contactStatementText(r) {
+            const s = Store.get('settings') || {};
+            const o = sisdelOwedOf(r);
+            const { map, today } = sisdelPayMap({ only: [r] });
+            const list = SisdelReportesOikos.moraList(map);
+            const row = list.rows[0] || null;
+            const lines = ['*Estado de cuenta* - ' + (s.name || 'OIKOS'), (r.name || '') + (r.unit ? ' (' + r.unit + ')' : '') + ' · al ' + contactDayText(today), ''];
+            if (o.total > 0.004) {
+                // Las partes siempre suman el total: cuotas vencidas + cuota todavia en su plazo + mora a hoy
+                const late = row ? row.late : 0;
+                const upcoming = Math.round((o.pending - late) * 100) / 100;
+                if (late > 0.004) lines.push('Cuotas vencidas: ' + formatMoney(late));
+                if (upcoming > 0.004) lines.push('Cuota que todavía está en su plazo: ' + formatMoney(upcoming) + ' (aún no vence)');
+                if (o.mora > 0.004) lines.push('Mora a hoy: ' + formatMoney(o.mora));
+                lines.push('*Total que debe: ' + formatMoney(o.total) + '*');
+                const months = [];
+                if (row) list.columns.forEach(function (c, i) { if (row.amounts[i] > 0) months.push([c.kind === 'month' ? feePeriodLongLabel(c.key) : c.label, row.amounts[i]]); });
+                if (months.length) {
+                    lines.push('', 'Meses vencidos:');
+                    months.slice(0, 10).forEach(function (m) { lines.push('• ' + m[0] + ': ' + formatMoney(m[1])); });
+                    if (months.length > 10) lines.push('• y ' + (months.length - 10) + ' períodos más');
+                }
+            } else {
+                lines.push('Está al día en sus cuotas. ¡Gracias!');
+                const balance = parseFloat(r.balance) || 0;
+                if (balance > 0.004) lines.push('Saldo a favor: ' + formatMoney(balance));
+            }
+            const last = (Store.get('transactions') || []).filter(function (t) { return t && !t.deleted && t.type === 'income' && String(t.resiId) === String(r.id) && !isOpeningCredit(t); })
+                .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); })[0];
+            if (last) lines.push('', 'Último pago: ' + formatMoney(last.amount) + ' el ' + contactDayText(localDayKey(last.date)));
+            lines.push('', 'Para cualquier duda, comuníquese con la administración.');
+            const text = lines.join('\n');
+            return text.length > 950 ? text.slice(0, 947) + '...' : text;
+        }
+        // Con el WhatsApp oficial de Meta el texto de los avisos es el de la plantilla aprobada ('' si no la hay; null sin Meta)
+        function contactTemplateText(kind, r) {
+            if (!remMetaMode()) return null;
+            const tpl = remConn.templates ? remConn.templates[kind === 'mora' ? 'mora' : 'general'] : null;
+            return tpl ? reminderText(remTemplateAsText(tpl), r) : '';
+        }
+        function contactOriginals(r) {
+            const saved = reminderMessagesSaved();
+            const notice = function (kind, text) { const t = contactTemplateText(kind, r); return t ? t : reminderText(text, r); };
+            return {
+                mora: notice('mora', saved.mora),
+                general: notice('general', saved.general),
+                estado: contactStatementText(r),
+                propio: 'Estimado(a) ' + (r.name || '') + (r.unit ? ' (' + r.unit + ')' : '') + ':\n'
+            };
+        }
+        function contactResident() { return contactState ? (Store.get('residents') || []).find(x => String(x.id) === contactState.id) || null : null; }
+        function openContact(residentId) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
             if (!r) return alert('No se encontró al residente.');
             if (!String(r.contact || '').replace(/[^0-9]/g, '')) return alert('No hay teléfono registrado');
-            const saved = reminderMessagesSaved();
-            const isMora = checkIsMoroso(r);
-            const template = isMora ? saved.mora : saved.general;
-            if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) return alert('Escriba el aviso general en Recordatorios (Mensajes varios) y use "Guardar para todos" antes de contactar a un residente que no está en mora.');
-            remSendOne(r, reminderText(template, r), isMora ? 'mora' : 'varios');
+            // Lo primero que se ofrece: el aviso de morosidad a quien esta en mora; el estado de cuenta a quien debe (en su plazo); el aviso general a quien esta al dia
+            const kind = checkIsMoroso(r) ? 'mora' : (sisdelOwedOf(r).total > 0.004 ? 'estado' : 'general');
+            const orig = contactOriginals(r);
+            contactState = { id: String(r.id), kind: kind, orig: orig, drafts: Object.assign({}, orig), sending: false };
+            setContactError('');
+            openModal('modal-contact');
+            paintContact(true);
+        }
+        function paintContact(setText) {
+            const st = contactState;
+            const r = contactResident();
+            if (!st || !r) return;
+            const o = sisdelOwedOf(r);
+            const mora = checkIsMoroso(r);
+            document.getElementById('ct-who').textContent = (r.unit ? r.unit + ' · ' : '') + (r.name || '') + ' · Tel. ' + (r.contact || '');
+            const chip = document.getElementById('ct-chip');
+            chip.className = 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4 ' + (mora ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' : o.total > 0.004 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300');
+            chip.textContent = mora ? 'En mora · debe ' + formatMoney(o.total) : o.total > 0.004 ? 'Cuota en su plazo · debe ' + formatMoney(o.total) : 'Al día en sus cuotas';
+            document.getElementById('ct-kinds').innerHTML = CONTACT_KINDS.map(function (k) {
+                const off = k.id === 'mora' && !mora;
+                const on = k.id === st.kind;
+                return '<button type="button"' + (off ? ' disabled title="Solo para quien está en mora"' : '') + ' onclick="contactSetKind(\'' + k.id + '\')" data-kind="' + k.id + '" class="text-left px-4 py-3 rounded-xl border-2 transition '
+                    + (on ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500') + (off ? ' opacity-50 cursor-not-allowed' : '') + '">'
+                    + '<span class="flex items-center gap-2 font-bold text-sm dark:text-white"><i class="fas ' + k.icon + ' w-4 text-center ' + (on ? 'text-emerald-600' : 'text-slate-400') + '"></i>' + k.title + '</span>'
+                    + '<span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">' + k.text + '</span></button>';
+            }).join('');
+            if (setText) document.getElementById('ct-text').value = st.drafts[st.kind];
+            contactRefresh();
+        }
+        // Por que el envio desde el WhatsApp del condominio no se puede ahora ('hide': OIKOS fuera de SISDEL, sin servidor; '' = se puede)
+        function contactServerReason(text) {
+            const st = contactState;
+            if (!remBridge()) return 'hide';
+            const known = remKnownBlock();
+            if (known) return known === 'desconectado' ? 'El WhatsApp del condominio está desconectado: use "Enviar desde mi WhatsApp".' : 'WhatsApp no deja salir los mensajes del número del condominio (lo restringió): use "Enviar desde mi WhatsApp".';
+            if (remMetaMode()) {
+                if (st.kind !== 'mora' && st.kind !== 'general') return 'Con el WhatsApp oficial solo salen los avisos con su plantilla aprobada: el estado de cuenta y el mensaje propio se envían desde "Enviar desde mi WhatsApp".';
+                if (!contactTemplateText(st.kind, contactResident())) return 'Este aviso no tiene plantilla aprobada de Meta: envíelo desde "Enviar desde mi WhatsApp".';
+                if (text.trim() !== st.orig[st.kind].trim()) return 'Con el WhatsApp oficial solo sale el texto aprobado; para cambiarlo use "Enviar desde mi WhatsApp".';
+            }
+            if (text.length > 1000) return 'El mensaje pasa de 1000 caracteres: acórtelo para enviarlo desde el WhatsApp del condominio (desde su propio WhatsApp no hay límite).';
+            return '';
+        }
+        function contactRefresh() {
+            const st = contactState;
+            if (!st) return;
+            const text = document.getElementById('ct-text').value;
+            document.getElementById('ct-count').textContent = text.length + (text.length === 1 ? ' carácter' : ' caracteres');
+            document.getElementById('ct-reset').classList.toggle('invisible', text === st.orig[st.kind]);
+            const reason = contactServerReason(text);
+            const btn = document.getElementById('ct-send-server');
+            btn.classList.toggle('hidden', reason === 'hide');
+            btn.disabled = (!!reason && reason !== 'hide') || st.sending;
+            const note = document.getElementById('ct-note');
+            note.textContent = reason && reason !== 'hide' ? reason : '';
+            note.classList.toggle('hidden', !(reason && reason !== 'hide'));
+        }
+        function setContactError(message) {
+            const el = document.getElementById('ct-error');
+            if (!el) return;
+            el.textContent = message || '';
+            el.classList.toggle('hidden', !message);
+        }
+        function contactTextChanged() {
+            if (!contactState) return;
+            contactState.drafts[contactState.kind] = document.getElementById('ct-text').value;
+            setContactError('');
+            contactRefresh();
+        }
+        function contactSetKind(kind) {
+            const st = contactState;
+            if (!st || kind === st.kind || !CONTACT_KINDS.some(k => k.id === kind)) return;
+            if (kind === 'mora' && !checkIsMoroso(contactResident())) return;
+            st.drafts[st.kind] = document.getElementById('ct-text').value;
+            st.kind = kind;
+            setContactError('');
+            paintContact(true);
+        }
+        function contactResetText() {
+            const st = contactState;
+            if (!st) return;
+            st.drafts[st.kind] = st.orig[st.kind];
+            document.getElementById('ct-text').value = st.orig[st.kind];
+            setContactError('');
+            contactRefresh();
+        }
+        // El texto a enviar, o '' (con el motivo escrito en la ventana) si falta escribirlo
+        function contactCheck() {
+            const text = (document.getElementById('ct-text').value || '').trim();
+            if (!text) { setContactError('Escriba el mensaje antes de enviarlo.'); return ''; }
+            if (text.includes(SISDEL_REMINDER_PLACEHOLDER)) { setContactError('Escriba el aviso donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ' antes de enviarlo.'); return ''; }
+            setContactError('');
+            return text;
+        }
+        function contactSendMine() {
+            const st = contactState;
+            const r = contactResident();
+            if (!st || !r) return;
+            const text = contactCheck();
+            if (!text) return;
+            if (openMyWhatsApp(r.contact, text)) { myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || '')); closeModal('modal-contact'); }
+        }
+        async function contactSendServer() {
+            const st = contactState;
+            const r = contactResident();
+            if (!st || !r || st.sending) return;
+            const text = contactCheck();
+            if (!text || contactServerReason(text)) return;
+            st.sending = true;
+            contactRefresh();
+            const btn = document.getElementById('ct-send-server');
+            const label = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Enviando...';
+            let ok = false;
+            try { ok = await remSendOne(r, text, st.kind === 'mora' ? 'mora' : 'varios', { noConfirm: true }); }
+            finally { st.sending = false; btn.innerHTML = label; contactRefresh(); }
+            if (ok && contactState === st) closeModal('modal-contact');
+        }
+        function contactOpenStatement() {
+            const id = contactState ? contactState.id : '';
+            closeModal('modal-contact');
+            if (id) openEstadoCuenta(id);
         }
 
         // SISDEL: Envio de recordatorios por WhatsApp. Lista en orden alfabetico, busqueda inteligente (la de Residentes) y
@@ -5336,37 +5558,39 @@
             paintRemConnection();
             paintReminderBulk();
         }
-        async function remSendOne(r, text, mode) {
+        // opts.noConfirm: el mensaje ya se reviso en la ventana "Contactar al residente" (no se vuelve a preguntar). Devuelve true si el
+        // mensaje salio (o se abrio su WhatsApp) y false si no.
+        async function remSendOne(r, text, mode, opts) {
             const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
             // Su propio WhatsApp con el mensaje ya escrito (uno por uno y con su clic: ver "Enviar desde MI WhatsApp" abajo)
-            const manual = () => { if (openMyWhatsApp(r.contact, text)) myWhatsAppToast(label); };
+            const manual = () => { if (openMyWhatsApp(r.contact, text)) { myWhatsAppToast(label); return true; } return false; };
             const bridge = remBridge();
             if (!bridge) return manual();
             // Si ya se sabe que el numero del condominio no puede enviar no se le pide nada al servidor (cada intento puede alargar el
             // castigo de WhatsApp): se ofrece Mi WhatsApp de una vez
             const known = remKnownBlock();
-            if (known) { if (confirm(remMineAsk(known, label))) manual(); return; }
+            if (known) return confirm(remMineAsk(known, label)) ? manual() : false;
             const preview = text.length > 400 ? text.slice(0, 400) + '...' : text;
-            if (!confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return;
+            if (!(opts && opts.noConfirm) && !confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return false;
             const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
             if (!result.ok) {
                 const restricted = /no está dejando salir/i.test(result.error);
                 if (restricted || /no está conectado/i.test(result.error)) {
                     const kind = restricted ? 'restringido' : 'desconectado';
                     remNoteBlock(kind, result.error);
-                    if (confirm(remMineAsk(kind, label))) manual();
-                    return;
+                    return confirm(remMineAsk(kind, label)) ? manual() : false;
                 }
                 alert(result.error);
-                return;
+                return false;
             }
             // "Enviado" solo decia que UltraMsg lo acepto (el 2026-11-16 los mensajes salian "enviados" y no llegaban): el servidor mira
             // unos segundos que dice UltraMsg del mensaje y aqui se cuenta lo que paso de verdad.
             const outcome = remOutcome(result);
-            if (outcome === 'ok') return showToast(`Mensaje enviado a ${label}: WhatsApp lo recibió${result.delivery === 'entregado' ? ' y llegó al teléfono' : ''}.`);
-            if (outcome === 'rejected') { if (confirm(`El mensaje a ${label} NO llegó: ${result.deliveryText}\n\n¿Abrir WhatsApp para enviarlo a mano?`)) return manual(); return; }
-            if (outcome === 'unconfirmed') return alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).\n\nNo lo dé por entregado: revise de nuevo en un momento o pregunte al residente.`);
+            if (outcome === 'ok') { showToast(`Mensaje enviado a ${label}: WhatsApp lo recibió${result.delivery === 'entregado' ? ' y llegó al teléfono' : ''}.`); return true; }
+            if (outcome === 'rejected') return confirm(`El mensaje a ${label} NO llegó: ${result.deliveryText}\n\n¿Abrir WhatsApp para enviarlo a mano?`) ? manual() : false;
+            if (outcome === 'unconfirmed') { alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).\n\nNo lo dé por entregado: revise de nuevo en un momento o pregunte al residente.`); return true; }
             alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
+            return false;
         }
         // Resultado de un envio suelto: ok (WhatsApp lo recibio), rejected (WhatsApp lo rechazo), unconfirmed (aceptado pero sin confirmar), failed
         function remOutcome(result) {
@@ -5416,15 +5640,8 @@
         function myWhatsAppToast(label) {
             showToast(`Se abrió ${remManualDest === 'app' ? 'WhatsApp' : 'WhatsApp Web'} con el mensaje${label ? ' para ' + label : ''}: pulse Enviar allá (sale de su número).`);
         }
-        // Menu de cada residente: el mismo mensaje de Contactar (el de mora si esta en mora; si no, el aviso general), desde SU WhatsApp
-        function contactMyWhatsApp(residentId) {
-            const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
-            if (!r) return alert('No se encontró al residente.');
-            const saved = reminderMessagesSaved();
-            const template = checkIsMoroso(r) ? saved.mora : saved.general;
-            if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) return alert('Escriba el aviso general en Recordatorios (Mensajes varios) y use "Guardar para todos" antes de escribirle a un residente que no está en mora.');
-            if (openMyWhatsApp(r.contact, reminderText(template, r))) myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || ''));
-        }
+        // Menu de cada residente: abre la misma ventana de Contactar (ahi se elige el mensaje y se envia desde SU WhatsApp con el boton azul)
+        function contactMyWhatsApp(residentId) { openContact(residentId); }
         // Boton "Mi WhatsApp" de cada fila de Recordatorios: el mensaje de la ventana para ese residente
         function sendReminderMine(residentId) {
             const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
@@ -7688,7 +7905,7 @@
         function sisdelPayMap(opts) {
             const extra = opts || {};
             const today = localDayKey(new Date());
-            let residents = reportResidents();   // SISDEL: todos, o solo lotes / solo casas segun el filtro del reporte
+            let residents = extra.only || reportResidents();   // SISDEL: todos, o solo lotes / solo casas segun el filtro del reporte (only: solo estos residentes, p. ej. el estado de cuenta por WhatsApp)
             // La Tabla general se puede ver de una fase (Morosos no pasa la fase: trae a todos)
             if (extra.fase === SisdelReportesOikos.NO_FASE) residents = residents.filter(r => !String(r.fase || '').trim());
             else if (extra.fase) residents = residents.filter(r => String(r.fase || '').trim() === extra.fase);

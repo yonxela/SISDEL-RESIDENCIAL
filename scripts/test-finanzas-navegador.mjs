@@ -590,10 +590,100 @@ async function run() {
             window.__opened.length = 0; const realSaved = reminderMessagesSaved;
             reminderMessagesSaved = () => ({ mora: 'Mora de {nombre}', general: 'General para {nombre}' });
             const r = Store.get('residents').find((x) => String(x.id) === ${JSON.stringify(fase3[1][0])});
-            try { contactMyWhatsApp(r.id); } finally { reminderMessagesSaved = realSaved; }
-            return [(checkIsMoroso(r) ? 'Mora de ' : 'General para ') + r.name, window.__opened.map(([u]) => [new URL(u).searchParams.get('phone'), new URL(u).searchParams.get('text')])];
+            const mora = checkIsMoroso(r);
+            try { contactMyWhatsApp(r.id); contactSetKind(mora ? 'mora' : 'general'); document.getElementById('ct-send-mine').click(); } finally { reminderMessagesSaved = realSaved; }
+            return [(mora ? 'Mora de ' : 'General para ') + r.name, window.__opened.map(([u]) => [new URL(u).searchParams.get('phone'), new URL(u).searchParams.get('text')])];
         })()`);
-        equal('Enviar desde mi WhatsApp del menu del residente abre su WhatsApp con el texto de Contactar (mora o aviso general)', menuMine[1], [[fase3[1][2], menuMine[0]]]);
+        equal('Enviar desde mi WhatsApp del menu abre la ventana de contactar y, al elegir el aviso y enviar, abre su WhatsApp con ese texto (mora o aviso general)', menuMine[1], [[fase3[1][2], menuMine[0]]]);
+        // Ventana "Contactar al residente" (pedido del usuario el 2026-11-20): elegir que enviar, escribir o cambiar el texto y elegir desde donde sale
+        console.log('\nContactar al residente: ventana con aviso, estado de cuenta o mensaje propio');
+        const ct = (js) => oikos(js);
+        const ctRes = await ct(`(() => { const ok = Store.get('residents').filter((x) => String(x.contact || '').replace(/\\D/g, '').length >= 8); const r = ok.find((x) => checkIsMoroso(x)) || ok[0]; return { id: String(r.id), name: r.name, moroso: checkIsMoroso(r), owes: sisdelOwedOf(r).total > 0.004 }; })()`);
+        const ctOpen = await ct(`(() => {
+            window.__alerts2 = []; const realAlert = window.alert; window.alert = (m) => window.__alerts2.push(String(m)); window.__realAlert2 = realAlert;
+            window.__opened.length = 0;
+            contactWhatsApp(${JSON.stringify(ctRes.id)});
+            const modal = document.getElementById('modal-contact');
+            return { visible: !modal.classList.contains('hidden-section'), kinds: [...document.querySelectorAll('#ct-kinds button')].map((b) => [b.dataset.kind, b.disabled]), kind: contactState.kind, text: document.getElementById('ct-text').value, alerts: window.__alerts2.length, who: document.getElementById('ct-who').textContent, chip: document.getElementById('ct-chip').textContent };
+        })()`);
+        record('Contactar abre la ventana (sin cuadros de aviso) con las cuatro clases de mensaje y el texto ya armado', ctOpen.visible && ctOpen.alerts === 0 && JSON.stringify(ctOpen.kinds.map((k) => k[0])) === JSON.stringify(['mora', 'general', 'estado', 'propio']) && ctOpen.text.length > 20 && ctOpen.who.includes(ctRes.name), JSON.stringify(ctOpen).slice(0, 300));
+        record('lo primero que ofrece: el aviso de morosidad a quien esta en mora; el estado de cuenta a quien debe; el aviso general a quien esta al dia', ctOpen.kind === (ctRes.moroso ? 'mora' : ctRes.owes ? 'estado' : 'general') && /debe|Al día/.test(ctOpen.chip), `${ctOpen.kind} / ${ctOpen.chip}`);
+        const ctEstado = await ct(`(() => { contactSetKind('estado'); const t = document.getElementById('ct-text').value; return { text: t, len: t.length, kind: contactState.kind }; })()`);
+        record('el estado de cuenta en texto trae el nombre, lo que debe o que esta al dia, el ultimo pago y cabe en 1000 caracteres', ctEstado.kind === 'estado' && /\*Estado de cuenta\*/.test(ctEstado.text) && (/\*Total que debe: Q/.test(ctEstado.text) || /Está al día/.test(ctEstado.text)) && ctEstado.len < 1000 && ctEstado.text.includes(ctRes.name), ctEstado.text.slice(0, 260));
+        const ctDraft = await ct(`(() => {
+            const area = document.getElementById('ct-text');
+            area.value = 'Estado editado a mano'; contactTextChanged();
+            const resetShown = !document.getElementById('ct-reset').classList.contains('invisible');
+            contactSetKind('propio'); const propio = area.value;
+            contactSetKind('estado'); const back = area.value;
+            contactResetText(); const reset = area.value;
+            return { resetShown, propio, back, resetDiffers: reset !== 'Estado editado a mano', resetHidden: document.getElementById('ct-reset').classList.contains('invisible') };
+        })()`);
+        record('lo que se edita queda por clase al cambiar de una a otra, y "Volver al texto original" lo restaura', ctDraft.resetShown && /^Estimado\(a\) /.test(ctDraft.propio) && ctDraft.back === 'Estado editado a mano' && ctDraft.resetDiffers && ctDraft.resetHidden, JSON.stringify(ctDraft));
+        const ctPlaceholder = await ct(`(() => {
+            const real = reminderMessagesSaved; reminderMessagesSaved = () => ({ mora: 'Mora de {nombre}', general: 'General para {nombre}: ' + SISDEL_REMINDER_PLACEHOLDER });
+            let out = {};
+            try {
+                contactWhatsApp(${JSON.stringify(ctRes.id)}); contactSetKind('general');
+                window.__opened.length = 0;
+                document.getElementById('ct-send-mine').click();
+                out.errorShown = !document.getElementById('ct-error').classList.contains('hidden'); out.error = document.getElementById('ct-error').textContent; out.opened = window.__opened.length;
+                const area = document.getElementById('ct-text');
+                area.value = area.value.replace(SISDEL_REMINDER_PLACEHOLDER, 'Reunión el sábado a las 10:00'); contactTextChanged();
+                document.getElementById('ct-send-mine').click();
+                out.openedAfter = window.__opened.map(([u]) => new URL(u).searchParams.get('text'));
+                out.closed = document.getElementById('modal-contact').classList.contains('hidden-section') || document.getElementById('modal-contact').classList.contains('opacity-0');
+            } finally { reminderMessagesSaved = real; }
+            return out;
+        })()`);
+        record('el aviso general sin escribir se escribe ahi mismo: no se envia con el hueco, avisa en la ventana y despues sale con lo escrito', ctPlaceholder.errorShown && /Escriba el aviso donde dice/.test(ctPlaceholder.error) && ctPlaceholder.opened === 0 && ctPlaceholder.openedAfter.length === 1 && /Reunión el sábado a las 10:00/.test(ctPlaceholder.openedAfter[0]), JSON.stringify(ctPlaceholder).slice(0, 300));
+        const ctPropio = await ct(`(() => {
+            window.__opened.length = 0; contactWhatsApp(${JSON.stringify(ctRes.id)}); contactSetKind('propio');
+            document.getElementById('ct-text').value = 'Hola, buen día'; contactTextChanged();
+            document.getElementById('ct-send-mine').click();
+            return window.__opened.map(([u]) => { const q = new URL(u); return [q.searchParams.get('phone'), q.searchParams.get('text')]; });
+        })()`);
+        record('un mensaje propio sale desde mi WhatsApp al telefono del residente', ctPropio.length === 1 && ctPropio[0][1] === 'Hola, buen día' && /^502\d{8}$/.test(ctPropio[0][0]), JSON.stringify(ctPropio));
+        const ctServer = await ct(`(async () => {
+            const bridge = window.parent.sisdelWhatsApp; const real = { one: bridge.one, conn: remConn, confirm: window.confirm };
+            const calls = []; const asked = [];
+            bridge.one = async (a) => { calls.push(a); return { ok: true, sent: true, delivery: 'entregado' }; };
+            window.confirm = (m) => { asked.push(String(m)); return true; };
+            remConn = { connected: true, confirming: true, at: Date.now() };
+            const out = {};
+            try {
+                contactWhatsApp(${JSON.stringify(ctRes.id)}); contactSetKind('propio');
+                document.getElementById('ct-text').value = 'Mensaje por el servidor'; contactTextChanged();
+                out.enabled = !document.getElementById('ct-send-server').disabled;
+                await contactSendServer();
+                out.calls = calls.map((c) => [c.residentId, c.text, c.mode]); out.asked = asked.length;
+                out.closed = document.getElementById('modal-contact').classList.contains('hidden-section') || document.getElementById('modal-contact').classList.contains('opacity-0');
+                // El numero del condominio desconectado: el boton queda apagado y dice por que
+                remConn = { connected: false, message: 'desconectado', at: Date.now() };
+                contactWhatsApp(${JSON.stringify(ctRes.id)});
+                out.offDisabled = document.getElementById('ct-send-server').disabled; out.offNote = document.getElementById('ct-note').textContent; out.mineEnabled = !document.getElementById('ct-send-mine').disabled;
+                // Un mensaje de mas de 1000 caracteres no sale por el servidor (si por mi WhatsApp)
+                remConn = { connected: true, confirming: true, at: Date.now() };
+                contactWhatsApp(${JSON.stringify(ctRes.id)}); contactSetKind('propio');
+                document.getElementById('ct-text').value = 'x'.repeat(1001); contactTextChanged();
+                out.longDisabled = document.getElementById('ct-send-server').disabled; out.longNote = document.getElementById('ct-note').textContent;
+            } finally { bridge.one = real.one; remConn = real.conn; window.confirm = real.confirm; closeModal('modal-contact'); }
+            return out;
+        })()`);
+        record('desde el WhatsApp del condominio: el aviso va al servidor con el texto de la ventana, sin volver a preguntar, y la ventana se cierra', ctServer.enabled && JSON.stringify(ctServer.calls) === JSON.stringify([[ctRes.id, 'Mensaje por el servidor', 'varios']]) && ctServer.asked === 0 && ctServer.closed, JSON.stringify(ctServer).slice(0, 300));
+        record('con el numero del condominio desconectado o con un texto de mas de 1000 caracteres, ese boton se apaga y lo explica; Mi WhatsApp sigue', ctServer.offDisabled && /desconectado/.test(ctServer.offNote) && ctServer.mineEnabled && ctServer.longDisabled && /1000 caracteres/.test(ctServer.longNote), JSON.stringify([ctServer.offNote, ctServer.longNote]));
+        const ctMora = await ct(`(() => {
+            const r = Store.get('residents').find((x) => String(x.contact || '').replace(/\\D/g, '').length >= 8 && !checkIsMoroso(x));
+            if (!r) return null;
+            contactWhatsApp(r.id);
+            const card = document.querySelector('#ct-kinds button[data-kind="mora"]');
+            const before = contactState.kind; contactSetKind('mora');
+            return { disabled: card.disabled, kind: contactState.kind, before };
+        })()`);
+        record('quien no esta en mora no puede recibir el aviso de morosidad (la tarjeta esta apagada)', ctMora === null || (ctMora.disabled && ctMora.kind === ctMora.before && ctMora.kind !== 'mora'), JSON.stringify(ctMora));
+        const ctStatement = await ct(`(() => { window.__realAlert2 && (window.alert = window.__realAlert2); contactWhatsApp(${JSON.stringify(ctRes.id)}); contactOpenStatement(); return { contactClosed: document.getElementById('modal-contact').classList.contains('hidden-section') || document.getElementById('modal-contact').classList.contains('opacity-0'), statementOpen: !document.getElementById('modal-estado-cuenta').classList.contains('hidden-section') }; })()`);
+        record('"Ver el estado de cuenta completo" cierra la ventana y abre el estado de cuenta del residente', ctStatement.contactClosed && ctStatement.statementOpen, JSON.stringify(ctStatement));
+        await ct(`(() => { closeModal('modal-estado-cuenta'); window.__opened.length = 0; })()`);
         const chatMine = await oikos(`(() => {
             window.__opened.length = 0;
             chatNewResident = Store.get('residents').find((x) => String(x.id) === ${JSON.stringify(fase3[0][0])}); chatCurrentId = null; renderChatPane();

@@ -68,7 +68,7 @@
         [/^openEstadoCuenta\(/, ['residentes_estado']],
         // Chat de WhatsApp con los residentes (la pantalla Chats WhatsApp y el boton del menu de cada residente)
         [/^(openResidentChat|openChat|startChatWith|toggleChatNew|setChatFilter|sendChatFromInput|chatSendFromMine|loadChatHistoryNow)\(/, ['whatsapp_chat']],
-        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|contactMyWhatsApp|sendReminderMine|remManualStart|remManualOpen|remManualNext|remManualSkip|remManualStop|remManualClose|remManualSetDest|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
+        [/^(openReminders|renderRemindersList|setReminderMode|renderReminderPreview|contactWhatsApp|contactSingleWhatsApp|sendReminder|resetReminderMessages|sendRemindersToAll|sendReminderTest|controlRemCampaign|checkRemConnection|reconcileRemCampaign|resendRemCampaign|setRemFase|showRemRecipients|hideRemRecipients|setRemRecTab|renderRemRecipients|contactMyWhatsApp|openContact|contactSetKind|contactResetText|contactTextChanged|contactSendMine|contactSendServer|contactOpenStatement|sendReminderMine|remManualStart|remManualOpen|remManualNext|remManualSkip|remManualStop|remManualClose|remManualSetDest|remTogglePick|remPickAll|remClearPicks|remToggleOnlySelected)\(/, ['residentes_contactar']],
         // Guardar el mensaje de los recordatorios para todos cambia la configuracion del condominio (settings.reminderMessages)
         [/^saveReminderMessages\(/, ['config_general']],
         // Bancos: abrir y editar cuentas, registrar movimientos y transferencias, anular. La cuenta favorita la decide el
@@ -140,7 +140,7 @@
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],
         [['residentes_finiquitar'], ['#residents-table-body .dropdown button[onclick^="openFiniquito("]', '#residents-table-body .dropdown button[onclick^="reactivateResident("]', '#modal-finiquito']],
         [['residentes_eliminar'], ['#residents-table-body .dropdown button[onclick^="deleteResident("]']],
-        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#modal-reminders']],
+        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#modal-reminders', '#modal-contact']],
         [['cuotas_mes'], ['#view-residents button[onclick="openFeeRun()"]', '#modal-fee-run']],
         [['cuotas_corregir'], ['.dup-fee-banner button[onclick="fixDuplicateFees()"]']],
         [['cargos_crear'], ['#view-accounting button[onclick="openModal(\'modal-bulk-charge\')"]', '#modal-bulk-charge']],

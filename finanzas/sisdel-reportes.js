@@ -679,6 +679,80 @@
         };
     }
 
+    // ── Impresion de marbetes por fase (pedido del usuario el 2026-11-20) ──
+    // Un marbete es la calcomania del vehiculo de un vecino (vehiculos/{id} de SISDEL: placa, marca, modelo, color y
+    // marbeteCode, el codigo del QR con que la garita reconoce al vehiculo). Agrupa a los residentes por FASE (en orden
+    // natural: 1, 2, 2A...; "Sin fase" al final) y, dentro de cada fase, por lote o casa (natural: A2 antes que A10) o por
+    // nombre. Una fila por vehiculo; un residente sin vehiculo registrado sale en una fila sin placa (para anotarla a mano y
+    // para saber a quien le falta registrarlo). Los vehiculos de alguien que no esta en `residents` (un vecino finiquitado o
+    // eliminado) no se listan: se cuentan en `orphans`.
+    // residents: [{ id, name, unit, fase }]; vehicles: [{ id, userId, plate, brand, model, color, marbeteCode }].
+    // opts: { fase ('' = todas, NO_FASE = sin fase, o una fase), show ('all' = todos, 'with' = solo con vehiculo, 'without' =
+    //   solo sin vehiculo), order ('unit' | 'name') }.
+    // Devuelve { groups: [{ fase, rows: [{ resident, vehicle (o null), n }], residents, withVehicle, vehicles, without, withCode }],
+    //   totals: { groups, residents, withVehicle, vehicles, without, withCode }, fases (las que existen), withoutFase, orphans }.
+    // `n` es el numero de la fila dentro de su fase (1, 2, 3...).
+    function marbetesList(residents, vehicles, opts) {
+        const options = opts || {};
+        const text = (v) => String(v == null ? '' : v).trim();
+        const faseOf = (r) => text(r.fase);
+        const wantFase = String(options.fase || '');
+        const show = options.show === 'with' || options.show === 'without' ? options.show : 'all';
+        const all = (residents || []).filter((r) => r && r.id !== undefined && r.id !== null && r.id !== '');
+        const fases = Array.from(new Set(all.map(faseOf).filter(Boolean))).sort(collator);
+        const withoutFase = all.filter((r) => !faseOf(r)).length;
+
+        const known = new Set(all.map((r) => String(r.id)));
+        const byOwner = new Map();
+        let orphans = 0;
+        (vehicles || []).forEach((v) => {
+            if (!v || v.userId === undefined || v.userId === null || v.userId === '') return;
+            const owner = String(v.userId);
+            if (!known.has(owner)) { orphans++; return; }
+            if (!byOwner.has(owner)) byOwner.set(owner, []);
+            byOwner.get(owner).push({
+                id: text(v.id), plate: text(v.plate).toUpperCase(), brand: text(v.brand), model: text(v.model),
+                color: text(v.color), code: text(v.marbeteCode)
+            });
+        });
+        byOwner.forEach((list) => list.sort((a, b) => collator(a.plate, b.plate) || collator(a.id, b.id)));
+
+        const byUnit = (a, b) => collator(text(a.unit), text(b.unit)) || collator(text(a.name), text(b.name));
+        const byName = (a, b) => collator(text(a.name), text(b.name)) || collator(text(a.unit), text(b.unit));
+        const groupsMap = new Map();
+        all.forEach((r) => {
+            const f = faseOf(r);
+            if (wantFase === NO_FASE ? f : (wantFase && f !== wantFase)) return;
+            const own = byOwner.get(String(r.id)) || [];
+            if (show === 'with' && !own.length) return;
+            if (show === 'without' && own.length) return;
+            if (!groupsMap.has(f)) groupsMap.set(f, []);
+            groupsMap.get(f).push(r);
+        });
+        // Las fases en orden natural y "Sin fase" (la clave vacia) al final
+        const keys = Array.from(groupsMap.keys()).sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || collator(a, b));
+        const groups = keys.map((f) => {
+            const list = groupsMap.get(f).sort(options.order === 'name' ? byName : byUnit);
+            const rows = [];
+            let withVehicle = 0;
+            let withCode = 0;
+            list.forEach((r) => {
+                const own = byOwner.get(String(r.id)) || [];
+                if (!own.length) { rows.push({ resident: r, vehicle: null, n: rows.length + 1 }); return; }
+                withVehicle++;
+                own.forEach((v) => { if (v.code) withCode++; rows.push({ resident: r, vehicle: v, n: rows.length + 1 }); });
+            });
+            const vehiclesCount = rows.filter((x) => x.vehicle).length;
+            return { fase: f, rows, residents: list.length, withVehicle, vehicles: vehiclesCount, without: list.length - withVehicle, withCode };
+        });
+        const sum = (key) => groups.reduce((a, g) => a + g[key], 0);
+        return {
+            groups,
+            totals: { groups: groups.length, residents: sum('residents'), withVehicle: sum('withVehicle'), vehicles: sum('vehicles'), without: sum('without'), withCode: sum('withCode') },
+            fases, withoutFase, orphans
+        };
+    }
+
     // Texto de una celda que puede traer HTML (p. ej. el boton del No. de documento)
     function plain(value) {
         if (value === null || value === undefined) return '';
@@ -816,5 +890,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, periodLabel, accountDebt, pendingRows, withDueDates, pendingByYear, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, marbetesList, periodLabel, accountDebt, pendingRows, withDueDates, pendingByYear, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
 });

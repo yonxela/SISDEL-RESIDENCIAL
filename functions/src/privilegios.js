@@ -190,6 +190,7 @@
                 { key: 'finanzas.reportes_gastos', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de gastos por categoría', description: 'En qué se gasta el dinero del condominio.', requires: ['finanzas.ver'], enforce: 'pantalla' },
                 { key: 'finanzas.reportes_libro', sub: 'Reportes', parent: 'finanzas.usar', label: 'Estado de cuenta general', description: 'El libro cronológico de pagos y egresos con saldo acumulado.', requires: ['finanzas.ver'], enforce: 'pantalla' },
                 { key: 'finanzas.reportes_resumen', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte financiero mensual o por período', description: 'Ingresos netos, gastos y balance, con su resumen para WhatsApp.', requires: ['finanzas.contabilidad_ver'], enforce: 'pantalla' },
+                { key: 'finanzas.reportes_marbetes', sub: 'Reportes', parent: 'finanzas.usar', label: 'Reporte de marbetes por fase', description: 'Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) para imprimir y entregar los marbetes, con sus calcomanías con código QR.', requires: ['finanzas.ver', 'vehiculos.ver'], sensitive: true, enforce: 'pantalla' },
                 { key: 'finanzas.reportes_exportar', sub: 'Reportes', parent: 'finanzas.usar', label: 'Exportar e imprimir', description: 'Descargar o imprimir reportes, estados de cuenta y listas en PDF o Excel: saca datos del sistema.', requires: ['finanzas.ver'], sensitive: true, enforce: 'pantalla' },
 
                 { key: 'finanzas.bancos_ver', sub: 'Bancos', parent: 'finanzas.usar', label: 'Ver bancos', description: 'Las cuentas bancarias con su saldo y sus movimientos. Los pagos y gastos que se registran entran solos a la cuenta favorita.', requires: ['finanzas.ver'], enforce: 'pantalla' },
@@ -386,7 +387,8 @@
         {
             id: 'sys-contador', name: 'Contador / tesorero', role: 'operador', system: true,
             description: 'Solo el Sistema Financiero (residentes, pagos, egresos y reportes) y los datos de los vecinos que necesita. Los privilegios de gerente (cargos y saldos, anular, cambiar fechas y nombres, eliminar) se le marcan aparte.',
-            claves: [...tree('usuarios.ver'), 'usuarios.crear', 'usuarios.editar', 'usuarios.ficha', 'mensajes.recibir', ...tree('finanzas.ver', 'finanzas.usar')]
+            // Sin el reporte de marbetes: pide ver los vehiculos de los vecinos, que el contador no necesita
+            claves: [...tree('usuarios.ver'), 'usuarios.crear', 'usuarios.editar', 'usuarios.ficha', 'mensajes.recibir', ...without(tree('finanzas.ver', 'finanzas.usar'), 'finanzas.reportes_marbetes')]
         },
         {
             id: 'sys-jefe-seguridad', name: 'Jefe de seguridad', role: 'operador', system: true,

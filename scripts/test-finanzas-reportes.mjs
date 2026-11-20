@@ -488,6 +488,34 @@ const prepaid = [
 const pmPrepaid = R.paymentMap([{ id: 'ad', name: 'Adelantado' }], prepaid, { today: '2026-05-20' });
 equal('Tabla general: Q 1,000 en enero pagan enero, febrero y marzo enteros (verde) y Q 100 de abril, que sigue en rojo', ['2026-01', '2026-02', '2026-03', '2026-04'].map((k) => [pmPrepaid.rows[0].cells[k].status, pmPrepaid.rows[0].cells[k].owed]), [['paid', 0], ['paid', 0], ['paid', 0], ['owed', 200]]);
 
+// ── Impresion de marbetes por fase (pedido del usuario el 2026-11-20) ──
+const mbRes = [
+    { id: 'r1', name: 'Zoila', unit: 'A10', fase: 'A' },
+    { id: 'r2', name: 'Beto', unit: 'A2', fase: 'A' },
+    { id: 'r3', name: 'Carla', unit: 'B1', fase: '2' },
+    { id: 'r4', name: 'Dario', unit: 'C5', fase: '' },
+    { id: 'r5', name: 'Elena', unit: 'B7', fase: '10' }
+];
+const mbVeh = [
+    { id: 'v1', userId: 'r1', plate: 'p-200bbb', brand: 'Toyota', model: 'Hilux', color: 'Blanco', marbeteCode: 'MAR1' },
+    { id: 'v2', userId: 'r1', plate: 'P-100AAA', brand: 'Kia', model: 'Rio', color: 'Rojo', marbeteCode: 'MAR2' },
+    { id: 'v3', userId: 'r3', plate: 'M-300CCC', brand: 'Honda', model: '', color: '', marbeteCode: '' },
+    { id: 'v4', userId: 'ya-no-esta', plate: 'P-999ZZZ', marbeteCode: 'MAR9' },
+    { id: 'v5', userId: '', plate: 'P-000', marbeteCode: 'MAR0' }
+];
+const mb = (o) => R.marbetesList(mbRes, mbVeh, o);
+const mbAll = mb();
+equal('marbetes: una fase por grupo, en orden natural (2 antes que 10, letras despues) y "Sin fase" al final', mbAll.groups.map((g) => g.fase), ['2', '10', 'A', '']);
+equal('marbetes: dentro de la fase, por lote o casa en orden natural (A2 antes que A10) y una fila por vehiculo, por placa', mbAll.groups[2].rows.map((x) => [x.n, x.resident.unit, x.vehicle && x.vehicle.plate]), [[1, 'A2', null], [2, 'A10', 'P-100AAA'], [3, 'A10', 'P-200BBB']]);
+equal('marbetes: la placa en mayusculas y los datos del vehiculo con su codigo', mbAll.groups[2].rows[2].vehicle, { id: 'v1', plate: 'P-200BBB', brand: 'Toyota', model: 'Hilux', color: 'Blanco', code: 'MAR1' });
+equal('marbetes: subtotales por fase (residentes, con vehiculo, vehiculos, sin vehiculo, con codigo)', mbAll.groups.map((g) => [g.residents, g.withVehicle, g.vehicles, g.without, g.withCode]), [[1, 1, 1, 0, 0], [1, 0, 0, 1, 0], [2, 1, 2, 1, 2], [1, 0, 0, 1, 0]]);
+equal('marbetes: totales y los vehiculos de alguien que ya no esta (sin listar)', [mbAll.totals, mbAll.orphans], [{ groups: 4, residents: 5, withVehicle: 2, vehicles: 3, without: 3, withCode: 2 }, 1]);
+equal('marbetes: las fases que existen y cuantos no tienen fase', [mbAll.fases, mbAll.withoutFase], [['2', '10', 'A'], 1]);
+equal('marbetes: una fase, o solo los que no tienen fase', [mb({ fase: 'A' }).groups.map((g) => g.fase), mb({ fase: R.NO_FASE }).groups.map((g) => g.rows.map((x) => x.resident.name))], [['A'], [['Dario']]]);
+equal('marbetes: solo con vehiculo o solo sin vehiculo', [mb({ show: 'with' }).groups.map((g) => g.rows.map((x) => x.resident.name)), mb({ show: 'without' }).totals], [[['Carla'], ['Zoila', 'Zoila']], { groups: 3, residents: 3, withVehicle: 0, vehicles: 0, without: 3, withCode: 0 }]);
+equal('marbetes: por nombre dentro de la fase', mb({ order: 'name', fase: 'A' }).groups[0].rows.map((x) => x.resident.name), ['Beto', 'Zoila', 'Zoila']);
+equal('marbetes: sin vehiculos registrados salen todos sin placa; sin residentes no hay grupos', [R.marbetesList(mbRes, []).totals.without, R.marbetesList([], mbVeh).groups.length, R.marbetesList(null, null).totals.residents], [5, 0, 0]);
+
 const sandbox = { self: {} };
 vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-reportes.js'), sandbox);

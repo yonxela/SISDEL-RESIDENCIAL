@@ -110,11 +110,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261118n"></script>
-    <script src="sisdel-core.js?v=20261118n"></script>
+    <script src="privilegios.js?v=20261120m"></script>
+    <script src="sisdel-core.js?v=20261120m"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261120c"></script>
-    <script src="finanzas-bloqueo.js?v=20261120c"></script>
+    <script src="finanzas-sync.js?v=20261120m"></script>
+    <script src="finanzas-bloqueo.js?v=20261120m"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -210,7 +210,7 @@
             function openReportFromHash(win) {
                 if (deepLinkDone) return;
                 deepLinkDone = true;
-                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|mora-list|pay-map|owners|mora-discounts|account-statement|resumen)$/.exec(window.location.hash);
+                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|mora-list|pay-map|owners|marbetes|mora-discounts|account-statement|resumen)$/.exec(window.location.hash);
                 if (!match) return;
                 try {
                     if (match[1] === 'resumen') {
@@ -347,6 +347,40 @@
                                 }, (error) => { console.warn('Sistema Financiero: no se pudieron leer las claves de los residentes', error && error.code); });
                         }
                         return () => { codeListeners.delete(callback); };
+                    }
+                };
+            }
+
+            // Vehiculos de los vecinos (coleccion vehiculos), en tiempo real: los usa el reporte "Impresion de marbetes por fase"
+            // de OIKOS (window.parent.sisdelVehicles.watch). Solo con "Ver vehiculos" (vehiculos.ver, que tambien exigen las
+            // reglas) y el privilegio del reporte. La escucha se abre cuando OIKOS la pide (al abrir el reporte), no al cargar
+            // la pagina. El callback recibe la lista ({ id, userId, plate, brand, model, color, marbeteCode }) o, si no se pudo
+            // leer, null y el codigo del error.
+            window.sisdelVehicles = null;
+            if (SISDEL.can('vehiculos.ver') && SISDEL.can('finanzas.reportes_marbetes')) {
+                const vehicleListeners = new Set();
+                let lastVehicles = null;
+                let stopVehicles = null;
+                const text = (v) => (v == null ? '' : String(v));
+                window.sisdelVehicles = {
+                    watch(callback) {
+                        if (typeof callback !== 'function') return () => {};
+                        vehicleListeners.add(callback);
+                        if (lastVehicles) { try { callback(lastVehicles); } catch (error) { console.error(error); } }
+                        if (!stopVehicles) {
+                            stopVehicles = window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('vehiculos')
+                                .onSnapshot((snap) => {
+                                    lastVehicles = snap.docs.map((d) => {
+                                        const x = d.data() || {};
+                                        return { id: d.id, userId: text(x.userId), plate: text(x.plate), brand: text(x.brand), model: text(x.model), color: text(x.color), marbeteCode: text(x.marbeteCode) };
+                                    });
+                                    vehicleListeners.forEach((fn) => { try { fn(lastVehicles); } catch (error) { console.error(error); } });
+                                }, (error) => {
+                                    console.warn('Sistema Financiero: no se pudieron leer los vehiculos de los vecinos', error && error.code);
+                                    vehicleListeners.forEach((fn) => { try { fn(null, (error && error.code) || 'error'); } catch (e) { console.error(e); } });
+                                });
+                        }
+                        return () => { vehicleListeners.delete(callback); };
                     }
                 };
             }

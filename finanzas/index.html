@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120e"></script>
+    <script src="./sisdel-reportes.js?v=20261120m"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -815,6 +815,7 @@
                                 <li><button type="button" onclick="selectReport('mora-list')" id="rep-tab-mora-list" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Solo los vecinos con morosidad: número de lote, nombre, una columna por cada mes que deben (en rojo) y el total que adeudan."><span>Listado de vecinos con morosidad</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('marbetes')" id="rep-tab-marbetes" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) con un subtotal por fase, para imprimir y entregar los marbetes; también imprime las calcomanías con su código QR."><span>Impresión de marbetes por fase</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('mora-discounts')" id="rep-tab-mora-discounts" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo."><span>Descuentos de mora</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
@@ -955,6 +956,40 @@
                                         <option value="debt">Solo los que deben</option>
                                     </select>
                                 </div>
+                            </div>
+                            <!-- SISDEL: filtros de la Impresion de marbetes por fase (pedido del usuario el 2026-11-20): buscador inteligente (tambien
+                                 por placa, marca o color), fase, a quienes mostrar (con o sin vehiculo) y el orden dentro de cada fase. "Imprimir
+                                 marbetes" saca las calcomanias (una por vehiculo, con su codigo QR) de lo que se ve, una fase por hoja. -->
+                            <div id="rep-marbetes-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div class="min-w-[16rem] flex-1 max-w-md">
+                                    <label for="mb-search" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Buscar</label>
+                                    <div class="relative">
+                                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+                                        <input type="search" id="mb-search" autocomplete="off" spellcheck="false" oninput="marbetesSearchChanged()" placeholder="Lote o casa, nombre, placa, marca, color..." class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="mb-fase" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fase</label>
+                                    <select id="mb-fase" onchange="marbetesFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer"></select>
+                                </div>
+                                <div>
+                                    <label for="mb-show" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Mostrar</label>
+                                    <select id="mb-show" onchange="marbetesFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="all">Todos los residentes</option>
+                                        <option value="with">Solo los que tienen vehículo</option>
+                                        <option value="without">Solo los que no tienen vehículo</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="mb-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Orden en cada fase</label>
+                                    <select id="mb-order" onchange="marbetesFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="unit">Por lote o casa</option>
+                                        <option value="name">Alfabético</option>
+                                    </select>
+                                </div>
+                                <button type="button" id="rep-marbetes-print" onclick="printMarbeteCards()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition" title="Imprimir las calcomanías de los marbetes que se ven (una por vehículo, con su código QR), una fase por hoja. Para guardarlas en PDF, elija Guardar como PDF en la ventana de impresión.">
+                                    <i class="fas fa-id-card mr-1.5"></i>Imprimir marbetes
+                                </button>
                             </div>
                             <button onclick="renderCurrentReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition">
                                 <i class="fas fa-sync-alt mr-1.5"></i>Actualizar
@@ -6895,6 +6930,7 @@
             'mora-list': 'Listado de vecinos con morosidad',
             'pay-map': 'Tabla general',
             owners: 'Listado general de propietarios',
+            marbetes: 'Impresión de marbetes por fase',
             'mora-discounts': 'Descuentos de mora',
             'account-statement': 'Estado de cuenta general'
         };
@@ -6933,9 +6969,12 @@
             const moraListWrap = document.getElementById('rep-moralist-filters');
             if (moraListWrap) moraListWrap.style.display = key === 'mora-list' ? '' : 'none';
             if (key === 'mora-list') moraListPrepareFilters();
+            const marbetesWrap = document.getElementById('rep-marbetes-filters');
+            if (marbetesWrap) marbetesWrap.style.display = key === 'marbetes' ? '' : 'none';
+            if (key === 'marbetes') marbetesPrepareFilters();
             // SISDEL: lote o casa: el filtro va en los reportes por residente
             const typeWrap = document.getElementById('rep-type-wrap');
-            const byResident = key === 'morosos' || key === 'mora-list' || key === 'pay-map' || key === 'owners';
+            const byResident = key === 'morosos' || key === 'mora-list' || key === 'pay-map' || key === 'owners' || key === 'marbetes';
             if (typeWrap) typeWrap.style.display = byResident ? '' : 'none';
             if (byResident) unitTypeOptions(document.getElementById('rep-type'), unitTypeCounts(Store.get('residents') || []), repTypeFilter || '');
             renderCurrentReport();
@@ -6953,6 +6992,7 @@
             else if (currentReportKey === 'mora-list') currentReportData = buildMoraListReport();
             else if (currentReportKey === 'pay-map') currentReportData = buildPayMapReport();
             else if (currentReportKey === 'owners') currentReportData = buildOwnersReport();
+            else if (currentReportKey === 'marbetes') currentReportData = buildMarbetesReport();
             else if (currentReportKey === 'mora-discounts') currentReportData = buildMoraDiscountReport();
             paintReportTable();
             if (repChartVisible) paintReportChart();
@@ -6993,8 +7033,17 @@
                     + '</div>' : '');
         }
 
+        // SISDEL: printOnlyLast: la ultima columna (la firma de recibido de la Impresion de marbetes) solo va en la impresion,
+        // el PDF y el Excel; en pantalla no se pinta (seria una columna vacia)
+        function reportScreenView(d) {
+            if (!d || !d.printOnlyLast) return d;
+            const n = d.headers.length - 1;
+            const cut = (row) => (Array.isArray(row) ? row.slice(0, n) : row);
+            return Object.assign({}, d, { headers: d.headers.slice(0, n), rows: (d.rows || []).map(cut), totals: d.totals ? cut(d.totals) : d.totals, cellStatus: d.cellStatus ? d.cellStatus.map(cut) : d.cellStatus });
+        }
+
         function paintReportTable() {
-            const d = currentReportData;
+            const d = reportScreenView(currentReportData);
             const titleEl = document.getElementById('rep-title');
             const summaryEl = document.getElementById('rep-summary');
             const thead = document.getElementById('rep-thead');
@@ -8370,6 +8419,267 @@
                     { label: 'Deuda por mora', data: top.map(x => x.mora), color: 'rgba(249,115,22,0.7)', border: '#EA580C' }
                 ]
             };
+        }
+
+        // ─── SISDEL: Impresion de marbetes por fase (pedido del usuario el 2026-11-20) ───
+        // Un marbete es la calcomania del vehiculo de un vecino. SISDEL guarda cada vehiculo (placa, marca, modelo, color y el
+        // codigo del marbete: el del QR con que la garita reconoce al vehiculo) y finanzas.html los entrega en tiempo real
+        // (window.parent.sisdelVehicles, solo con "Ver vehiculos" y el privilegio de este reporte). Los residentes vigentes van
+        // agrupados por fase (las que existen; "Sin fase" al final) con un subtotal por fase; quien no tiene vehiculo sale con la
+        // placa en blanco (para anotarla a mano y para saber a quien le falta registrarlo). El calculo es marbetesList de
+        // finanzas/sisdel-reportes.js. Imprimir, PDF y Excel son los de todos los reportes (con la columna "Recibido (firma)",
+        // que en pantalla no se pinta: printOnlyLast) e "Imprimir marbetes" saca las calcomanias. `var` y funciones: el reporte
+        // puede pintarse antes de que corra una variable de aqui.
+        var marbetesFase = '';
+        var marbetesShow = 'all';
+        var marbetesOrder = 'unit';
+        var marbetesSearch = '';
+        var marbetesSearchTimer = null;
+        function marbetesBridge() {
+            try { return window.parent && window.parent !== window ? window.parent.sisdelVehicles : null; } catch (e) { return null; }
+        }
+        // La escucha se abre la primera vez que se pide el reporte. window.sisdelVehicleList: lo que llego (null mientras carga);
+        // window.sisdelVehicleError: el codigo si no se pudo leer. Al llegar algo nuevo se vuelve a pintar el reporte si esta abierto
+        function startMarbeteVehicles() {
+            if (window.sisdelVehiclesWatching) return;
+            const bridge = marbetesBridge();
+            if (!bridge || typeof bridge.watch !== 'function') return;
+            window.sisdelVehiclesWatching = true;
+            let timer = null;
+            bridge.watch(function (list, error) {
+                if (Array.isArray(list)) { window.sisdelVehicleList = list; window.sisdelVehicleError = ''; }
+                else window.sisdelVehicleError = String(error || 'error');
+                clearTimeout(timer);
+                timer = setTimeout(function () {
+                    const pane = document.getElementById('rep-detail');
+                    if (currentReportKey === 'marbetes' && pane && !pane.classList.contains('hidden')) renderCurrentReport();
+                }, 120);
+            });
+        }
+        function marbetesSearchChanged() {
+            clearTimeout(marbetesSearchTimer);
+            marbetesSearchTimer = setTimeout(function () {
+                const el = document.getElementById('mb-search');
+                const next = el ? el.value.trim() : '';
+                if (next === marbetesSearch) return;
+                marbetesSearch = next;
+                renderCurrentReport();
+            }, 160);
+        }
+        // Las fases que existen entre los residentes (y "Sin fase" si unos la tienen y otros no); conserva la elegida
+        function marbetesPrepareFilters() {
+            const searchBox = document.getElementById('mb-search');
+            if (searchBox) searchBox.value = marbetesSearch;
+            const show = document.getElementById('mb-show');
+            if (show) show.value = marbetesShow;
+            const order = document.getElementById('mb-order');
+            if (order) order.value = marbetesOrder;
+            const select = document.getElementById('mb-fase');
+            if (!select) return;
+            const residents = (Store.get('residents') || []).filter(isResidentActive);
+            const fases = faseValues(residents);
+            const withoutFase = residents.some(r => !String(r.fase || '').trim());
+            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">' + SisdelBusqueda.escapeHtml(faseLabel(f)) + '</option>'));
+            if (fases.length && withoutFase) opts.push('<option value="' + SisdelReportesOikos.NO_FASE + '">Sin fase</option>');
+            select.innerHTML = opts.join('');
+            select.value = Array.from(select.options).some(o => o.value === marbetesFase) ? marbetesFase : '';
+            marbetesFase = select.value;
+            select.disabled = !fases.length;
+            select.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente (o con "Fases por sector" en Residentes)';
+        }
+        function marbetesFiltersChanged() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+            marbetesFase = val('mb-fase');
+            marbetesShow = val('mb-show') === 'with' || val('mb-show') === 'without' ? val('mb-show') : 'all';
+            marbetesOrder = val('mb-order') === 'name' ? 'name' : 'unit';
+            renderCurrentReport();
+        }
+        function marbeteFaseText(f) { return f ? faseLabel(f) : 'Sin fase'; }
+        function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+        function buildMarbetesReport() {
+            startMarbeteVehicles();
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const R = SisdelReportesOikos;
+            const bridge = marbetesBridge();
+            const loaded = Array.isArray(window.sisdelVehicleList);
+            const vehicles = loaded ? window.sisdelVehicleList : [];
+            const loadError = bridge && !loaded ? (window.sisdelVehicleError || '') : '';
+            // Solo los residentes vigentes (un finiquitado ya no recibe marbete); la busqueda tambien mira sus vehiculos
+            const allActive = (Store.get('residents') || []).filter(isResidentActive);
+            const activeIds = new Set(allActive.map(r => String(r.id)));
+            const ownVehicles = new Map();
+            vehicles.forEach(v => { const k = String(v.userId || ''); if (!ownVehicles.has(k)) ownVehicles.set(k, []); ownVehicles.get(k).push(v); });
+            const orphans = vehicles.filter(v => !activeIds.has(String(v.userId || ''))).length;
+            let residents = reportResidents().filter(isResidentActive);
+            if (marbetesSearch) {
+                residents = SisdelBusqueda.filter(residents, marbetesSearch, r => residentSearchFields(r).concat((ownVehicles.get(String(r.id)) || []).flatMap(v => [v.plate, v.brand, v.model, v.color, v.marbeteCode])));
+            }
+            const list = R.marbetesList(residents, vehicles, { fase: marbetesFase, show: marbetesShow, order: marbetesOrder });
+            const t = list.totals;
+            const show = (text) => (marbetesSearch ? SisdelBusqueda.highlight(String(text || ''), marbetesSearch) : esc(text));
+            const muted = (text) => '<span class="italic text-slate-400 dark:text-slate-500">' + esc(text) + '</span>';
+            const filterText = [
+                marbetesFase ? (marbetesFase === R.NO_FASE ? 'sin fase' : faseLabel(marbetesFase)) : 'todas las fases',
+                marbetesShow === 'with' ? 'solo los que tienen vehículo' : marbetesShow === 'without' ? 'solo los que no tienen vehículo' : '',
+                marbetesOrder === 'name' ? 'en orden alfabético' : 'por lote o casa',
+                marbetesSearch ? 'búsqueda: «' + marbetesSearch + '»' : '',
+                repTypeFilter ? unitTypeFilterText(repTypeFilter) : ''
+            ].filter(Boolean).join(' · ');
+
+            const rows = [];
+            const meta = [];
+            const cards = [];
+            list.groups.forEach(function (g) {
+                const fase = marbeteFaseText(g.fase);
+                const items = [];
+                g.rows.forEach(function (x) {
+                    const r = x.resident;
+                    const v = x.vehicle;
+                    rows.push([
+                        String(x.n), esc(fase), show(r.unit || '—'), show(r.name || ''),
+                        v ? (v.plate ? show(v.plate) : muted('Sin placa')) : muted('Sin vehículo registrado'),
+                        v ? show([v.brand, v.model].filter(Boolean).join(' ')) : '', v ? show(v.color) : '', v ? show(v.code) : '', ''
+                    ]);
+                    meta.push(null);
+                    items.push({ unit: String(r.unit || ''), name: String(r.name || ''), plate: v ? v.plate : '', brand: v ? v.brand : '', model: v ? v.model : '', color: v ? v.color : '', code: v ? v.code : '' });
+                });
+                rows.push(['', esc(fase), 'Subtotal', plural(g.residents, 'residente', 'residentes') + (g.without ? ' (' + g.without + ' sin vehículo)' : ''), plural(g.vehicles, 'vehículo', 'vehículos'), '', '', g.withCode ? plural(g.withCode, 'con código', 'con código') : '', '']);
+                meta.push({ kind: 'subtotal' });
+                cards.push({ fase: fase, items: items });
+            });
+
+            let notice = '';
+            if (!bridge) notice = 'No se pueden leer los vehículos de los vecinos: su usuario necesita el privilegio «Ver vehículos». Mientras tanto, cada residente sale con la placa en blanco para anotarla a mano.';
+            else if (loadError) notice = 'No se pudieron leer los vehículos de los vecinos (' + loadError + '). Cada residente sale con la placa en blanco; vuelva a intentarlo con Actualizar.';
+            else if (!loaded) notice = 'Cargando los vehículos de los vecinos...';
+            else if (!vehicles.length) notice = 'Todavía no hay vehículos registrados en este condominio: cada residente sale con la placa en blanco para anotarla a mano. Los vehículos se registran en la ficha de cada vecino del panel del administrador, en el portal del vecino (Mi Marbete) o con las placas al crear el residente aquí.';
+            if (orphans && loaded) notice = (notice ? notice + ' ' : '') + (orphans === 1 ? 'Un vehículo de un vecino finiquitado o que ya no está en Residentes no se incluye.' : orphans + ' vehículos de vecinos finiquitados o que ya no están en Residentes no se incluyen.');
+
+            return {
+                title: 'Impresión de marbetes por fase',
+                summary: plural(t.vehicles, 'marbete', 'marbetes') + ' (vehículos) de ' + plural(t.residents, 'residente', 'residentes') + ' en ' + plural(t.groups, 'fase', 'fases') + ' · ' + filterText,
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [
+                    { tone: 'total', value: String(t.vehicles), label: t.vehicles === 1 ? 'marbete (vehículo registrado)' : 'marbetes (vehículos registrados)' },
+                    { tone: 'paid', value: String(t.withVehicle), label: t.withVehicle === 1 ? 'residente con vehículo' : 'residentes con vehículo' },
+                    { tone: 'pending', value: String(t.without), label: t.without === 1 ? 'residente sin vehículo registrado' : 'residentes sin vehículo registrado' },
+                    { tone: 'none', value: String(t.groups), label: t.groups === 1 ? 'fase' : 'fases' }
+                ],
+                highlightsNote: list.groups.map(g => marbeteFaseText(g.fase) + ': ' + plural(g.vehicles, 'marbete', 'marbetes')).join(' · ') + (list.groups.length ? ' · ' : '') + filterText,
+                hint: 'Imprimir marbetes saca las calcomanías de lo que se ve (una por vehículo, con su código QR), una fase por hoja',
+                notice: notice,
+                emptyText: marbetesSearch || marbetesFase || marbetesShow !== 'all' || repTypeFilter ? 'Ningún residente coincide con los filtros.' : 'No hay residentes vigentes.',
+                headers: ['No.', 'Fase', 'Lote / Casa', 'Residente', 'Placa', 'Marca y modelo', 'Color', 'Código del marbete', 'Recibido (firma)'],
+                leftCols: [1, 2, 3, 4, 5, 6, 7, 8],
+                nowrapCols: [1, 2, 4, 7],
+                emphasisCols: [2, 4],
+                printOnlyLast: true,
+                rows: rows,
+                rowsMeta: meta,
+                totals: ['TOTAL', plural(t.groups, 'fase', 'fases'), '', plural(t.residents, 'residente', 'residentes') + (t.without ? ' (' + t.without + ' sin vehículo)' : ''), plural(t.vehicles, 'vehículo', 'vehículos'), '', '', t.withCode ? plural(t.withCode, 'con código', 'con código') : '', ''],
+                numericCols: [0],
+                // WhatsApp: fase, lote, residente y placa (sin el codigo del marbete)
+                compact: {
+                    headers: ['Fase', 'Lote', 'Residente', 'Placa'],
+                    rows: list.groups.flatMap(g => g.rows.map(x => [esc(marbeteFaseText(g.fase)), esc(x.resident.unit || '—'), esc(x.resident.name || ''), x.vehicle ? esc(x.vehicle.plate || 'Sin placa') : 'Sin vehículo'])),
+                    totals: ['TOTAL', '', plural(t.residents, 'residente', 'residentes'), plural(t.vehicles, 'vehículo', 'vehículos')],
+                    numericCols: []
+                },
+                // Para "Imprimir marbetes" (los textos sin escapar: se escapan al armar la hoja)
+                cards: cards,
+                chartType: 'bar',
+                chartLabels: list.groups.map(g => marbeteFaseText(g.fase)),
+                chartDatasets: [
+                    { label: 'Marbetes (vehículos registrados)', data: list.groups.map(g => g.vehicles), color: 'rgba(59,130,246,0.7)', border: '#2563EB' },
+                    { label: 'Residentes sin vehículo', data: list.groups.map(g => g.without), color: 'rgba(251,191,36,0.7)', border: '#D97706' }
+                ]
+            };
+        }
+
+        // Las calcomanias de los marbetes que se ven en el reporte: una por vehiculo (o por residente sin vehiculo, con la placa
+        // en blanco para anotarla), con el condominio, el lote o casa, la fase, la placa, el vehiculo, el residente y el codigo
+        // QR del marbete (el que lee la garita). Una fase por hoja, 10 por hoja de oficio (8.5 x 13 pulgadas), con linea de corte.
+        // El QR lo dibuja qrcodejs (la misma libreria del portal del vecino); sin conexion sale solo el codigo escrito.
+        function marbeteCardsHtml(data) {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const s = Store.get('settings') || {};
+            const condo = s.name || 'Residencial';
+            const groups = ((data && data.cards) || []).filter(g => g.items.length);
+            const card = (fase, x) => '<div class="card">'
+                + '<div class="top"><span class="condo">' + esc(condo) + '</span><span class="kind">Marbete vehicular</span></div>'
+                + '<div class="body"><div class="info">'
+                + '<div class="row"><div><div class="lbl">Lote / Casa</div><div class="unit">' + esc(x.unit || '—') + '</div></div><div class="fase">' + esc(fase) + '</div></div>'
+                + '<div class="lbl">Placa</div><div class="plate">' + (x.plate ? esc(x.plate) : '<span class="blank"></span>') + '</div>'
+                + '<div class="veh">' + esc([x.brand, x.model].filter(Boolean).join(' ') + (x.color ? ' · ' + x.color : '')) + '</div>'
+                + '<div class="name">' + esc(x.name) + '</div>'
+                + '</div><div class="qrbox">' + (x.code ? '<div class="qr" data-code="' + esc(x.code) + '"></div><div class="code">' + esc(x.code) + '</div>' : '<div class="noqr">' + (x.plate ? 'Sin código' : 'Sin vehículo registrado') + '</div>') + '</div></div>'
+                + '</div>';
+            const pages = groups.map(g => '<section class="fase-page"><h2>' + esc(condo) + ' · ' + esc(g.fase) + ' <small>' + esc(plural(g.items.length, 'marbete', 'marbetes')) + '</small></h2><div class="grid">'
+                + g.items.map(x => card(g.fase, x)).join('') + '</div></section>').join('');
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Marbetes - ${esc(condo)}</title>
+                <style>
+                    /* Oficio (8.5 x 13 pulgadas) vertical: 2 columnas x 5 filas de 95 x 54 mm */
+                    @page{size:8.5in 13in;margin:10mm}
+                    *{box-sizing:border-box}
+                    body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+                    .fase-page + .fase-page{break-before:page;page-break-before:always}
+                    h2{font-size:14px;margin:0 0 4mm;color:#334155}
+                    h2 small{font-weight:400;color:#64748b}
+                    .grid{display:grid;grid-template-columns:95mm 95mm;gap:4mm 5mm}
+                    .card{height:54mm;border:1px dashed #94a3b8;border-radius:3mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid;display:flex;flex-direction:column}
+                    .top{background:#1e3a8a;color:#fff;padding:1.6mm 3mm;display:flex;justify-content:space-between;align-items:center;gap:2mm}
+                    .condo{font-weight:700;font-size:10px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                    .kind{font-size:8px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;opacity:.9}
+                    .body{flex:1;display:flex;gap:2mm;padding:2mm 3mm}
+                    .info{flex:1;min-width:0;display:flex;flex-direction:column}
+                    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:2mm}
+                    .lbl{font-size:7px;text-transform:uppercase;color:#64748b;letter-spacing:.05em}
+                    .unit{font-size:22px;font-weight:800;line-height:1.05}
+                    .fase{font-size:10px;font-weight:700;background:#e0e7ff;color:#3730a3;border-radius:2mm;padding:.6mm 2mm;white-space:nowrap}
+                    .plate{font-family:'Courier New',monospace;font-size:17px;font-weight:700;letter-spacing:.04em;margin-bottom:.6mm}
+                    .plate .blank{display:inline-block;width:38mm;border-bottom:1px solid #0f172a;height:5mm}
+                    .veh{font-size:9px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                    .name{margin-top:auto;font-size:9px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                    .qrbox{width:30mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
+                    .qr{width:28mm;height:28mm}
+                    .qr img,.qr canvas{width:28mm !important;height:28mm !important}
+                    .code{font-family:'Courier New',monospace;font-size:7px;margin-top:1mm;word-break:break-all;text-align:center}
+                    .noqr{font-size:8px;color:#94a3b8;border:1px dashed #cbd5e1;border-radius:2mm;width:28mm;height:28mm;display:flex;align-items:center;justify-content:center;text-align:center}
+                    .qr-off .qr{display:none}
+                </style></head><body>${pages}
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" onerror="window.qrFailed=true"><\/script>
+                <script>
+                    // Dibuja los QR y abre la impresion; sin la libreria (sin conexion) imprime con el codigo escrito
+                    (function () {
+                        var printed = false;
+                        function go() { if (printed) return; printed = true; setTimeout(function () { try { window.print(); } catch (e) {} }, 400); }
+                        function draw() {
+                            if (typeof QRCode === 'undefined') { document.body.classList.add('qr-off'); go(); return; }
+                            var boxes = document.querySelectorAll('.qr[data-code]');
+                            for (var i = 0; i < boxes.length; i++) {
+                                try { new QRCode(boxes[i], { text: boxes[i].getAttribute('data-code'), width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+                            }
+                            go();
+                        }
+                        if (document.readyState === 'complete') draw(); else window.addEventListener('load', draw);
+                        setTimeout(function () { if (!printed) { document.body.classList.add('qr-off'); go(); } }, 8000);
+                    })();
+                <\/script>
+            </body></html>`;
+        }
+
+        function printMarbeteCards() {
+            if (currentReportKey !== 'marbetes' || !currentReportData) return;
+            const groups = (currentReportData.cards || []).filter(g => g.items.length);
+            if (!groups.length) { alert('No hay marbetes para imprimir con estos filtros.'); return; }
+            const count = groups.reduce((a, g) => a + g.items.length, 0);
+            const w = window.open('', '_blank', 'width=900,height=700');
+            if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
+            w.document.write(marbeteCardsHtml(currentReportData));
+            w.document.close();
+            showToast(plural(count, 'marbete listo', 'marbetes listos') + ' para imprimir (' + plural(groups.length, 'fase', 'fases') + ', una por hoja).');
         }
 
         // ========== REPORTS (mensual del dashboard, distinto al módulo nuevo) ==========

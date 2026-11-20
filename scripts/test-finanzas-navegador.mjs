@@ -1399,6 +1399,116 @@ async function run() {
         record('PDF: se genera sin errores, con el nombre del reporte, la leyenda y "Pagina 1 de N" en el pie', !mlOut.pdfError && /listado-de-vecinos-con-morosidad/.test(mlOut.pdfSaved) && mlOut.pdfFooter && mlOut.pdfLegend && mlOut.pdfTitle, JSON.stringify([mlOut.pdfError, mlOut.pdfSaved, mlOut.pdfFooter, mlOut.pdfLegend, mlOut.pdfTitle]));
         await oikos(`(() => { Store.get = window.__mlRealGet; renderCurrentReport(); })()`);
 
+        console.log('\nImpresion de marbetes por fase');
+        // Los vehiculos son los del seed (Ana con dos y Maria con uno) y llegan de verdad por el puente de finanzas.html
+        // (window.sisdelVehicles); los residentes son de mentira (solo en pantalla, nada se guarda), con fases, uno sin vehiculo
+        // con HTML en el nombre, uno sin fase y uno finiquitado (no sale).
+        await oikos(`(() => {
+            const mk = (id, name, unit, fase, status) => ({ id: id, name: name, unit: unit, fase: fase, status: status || 'active', waterUnits: 0, balance: 0 });
+            const residents = [mk('u-ana', 'Ana García', 'Casa 12', 'B'), mk('u-maria', 'María Rodríguez', 'Casa 23', 'A'), mk('mb-x', 'Sin <b>Carro</b>', 'Casa 5', 'A'), mk('mb-y', 'Sin Fase', 'Casa 9', ''), mk('mb-z', 'Ya Finiquitado', 'Casa 1', 'A', 'closed')];
+            window.__mbRealGet = Store.get;
+            Store.get = function (k) { return k === 'residents' ? residents : window.__mbRealGet.call(Store, k); };
+            navigate('reports');
+            selectReport('marbetes');
+        })()`);
+        await waitFor('los vehiculos de los vecinos llegan de SISDEL por el puente de finanzas.html', async () => oikos(`Array.isArray(window.sisdelVehicleList) && window.sisdelVehicleList.length >= 3 && currentReportData && /marbete/i.test(currentReportData.title) && !/Cargando/.test(currentReportData.notice || '') && currentReportData.rows.some((r) => /P-987XYZ/.test(r[4]))`));
+        const MBJS = `(() => {
+            const d = currentReportData;
+            const txt = (c) => stripCellHtml(c);
+            return {
+                headers: d.headers,
+                screenHeaders: Array.from(document.querySelectorAll('#rep-thead th')).map((th) => th.textContent.trim()),
+                rows: d.rows.map((r) => r.map(txt)),
+                subtotals: d.rowsMeta.map((m, i) => (m && m.kind === 'subtotal' ? i : -1)).filter((i) => i >= 0),
+                totals: d.totals.map(txt),
+                notice: d.notice || '',
+                kpis: d.highlights.map((h) => h.value + ' ' + h.label),
+                filtersShown: getComputedStyle(document.getElementById('rep-marbetes-filters')).display !== 'none',
+                faseOptions: Array.from(document.getElementById('mb-fase').options).map((o) => o.textContent),
+                domRows: document.querySelectorAll('#rep-tbody tr').length,
+                domCells: document.querySelectorAll('#rep-tbody tr:first-child td').length,
+                tbodyHtml: document.getElementById('rep-tbody').innerHTML
+            };
+        })()`;
+        const mb0 = await oikos(MBJS);
+        const mbRow = (no, fase, unit, name, plate, veh, color, code) => [no, fase, unit, name, plate, veh, color, code, ''];
+        equal('una fila por vehiculo, agrupadas por fase (A, B y Sin fase al final), por lote en cada fase y un subtotal por fase; el finiquitado no sale', mb0.rows, [
+            mbRow('1', 'Fase A', 'Casa 5', 'Sin <b>Carro</b>', 'Sin vehículo registrado', '', '', ''),
+            mbRow('2', 'Fase A', 'Casa 23', 'María Rodríguez', 'P-111MOR', 'Honda Fit', 'Gris', 'MARTEST3'),
+            mbRow('', 'Fase A', 'Subtotal', '2 residentes (1 sin vehículo)', '1 vehículo', '', '', '1 con código'),
+            mbRow('1', 'Fase B', 'Casa 12', 'Ana García', 'P-222BBB', 'Mazda 3', 'Rojo', 'MARTEST2'),
+            mbRow('2', 'Fase B', 'Casa 12', 'Ana García', 'P-987XYZ', 'Toyota Corolla', 'Blanco', 'MARTEST1'),
+            mbRow('', 'Fase B', 'Subtotal', '1 residente', '2 vehículos', '', '', '2 con código'),
+            mbRow('1', 'Sin fase', 'Casa 9', 'Sin Fase', 'Sin vehículo registrado', '', '', ''),
+            mbRow('', 'Sin fase', 'Subtotal', '1 residente (1 sin vehículo)', '0 vehículos', '', '', '')
+        ]);
+        equal('las filas de subtotal van marcadas y la fila de totales suma todo', [mb0.subtotals, mb0.totals], [[2, 5, 7], ['TOTAL', '3 fases', '', '4 residentes (2 sin vehículo)', '3 vehículos', '', '', '3 con código', '']]);
+        equal('arriba, en grande: marbetes, residentes con y sin vehiculo y fases', mb0.kpis, ['3 marbetes (vehículos registrados)', '2 residentes con vehículo', '2 residentes sin vehículo registrado', '3 fases']);
+        record('en pantalla no sale la columna de la firma (solo al imprimir, en el PDF y en Excel), y los filtros se ven', mb0.filtersShown && mb0.screenHeaders.length === 8 && !mb0.screenHeaders.includes('Recibido (firma)') && mb0.headers[8] === 'Recibido (firma)' && mb0.domCells === 8 && mb0.domRows === 8, JSON.stringify(mb0.screenHeaders));
+        record('el nombre con HTML se escapa al pintarlo (no se vuelve HTML)', mb0.tbodyHtml.includes('Sin &lt;b&gt;Carro&lt;/b&gt;') && !mb0.tbodyHtml.includes('<b>Carro'));
+        equal('la flecha de fase ofrece las que existen y "Sin fase"', mb0.faseOptions, ['Todas las fases', 'Fase A', 'Fase B', 'Sin fase']);
+        record('con vehiculos registrados no hay aviso', mb0.notice === '', mb0.notice);
+        const mbSet = async (id, value) => { await oikos(`(() => { const el = document.getElementById(${JSON.stringify(id)}); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event(${JSON.stringify(id === 'mb-search' ? 'input' : 'change')})); })()`); await sleep(id === 'mb-search' ? 450 : 250); return oikos(MBJS); };
+        const mbA = await mbSet('mb-fase', 'A');
+        equal('una fase: solo sus filas y su subtotal', mbA.rows.map((r) => r[1] + ' ' + r[2]), ['Fase A Casa 5', 'Fase A Casa 23', 'Fase A Subtotal']);
+        const mbNoFase = await mbSet('mb-fase', '__none__');
+        equal('"Sin fase": solo los que no tienen fase', mbNoFase.rows.map((r) => r[2]), ['Casa 9', 'Subtotal']);
+        await mbSet('mb-fase', '');
+        const mbWith = await mbSet('mb-show', 'with');
+        equal('solo los que tienen vehiculo', mbWith.rows.filter((r) => r[0]).map((r) => r[4]), ['P-111MOR', 'P-222BBB', 'P-987XYZ']);
+        const mbWithout = await mbSet('mb-show', 'without');
+        equal('solo los que no tienen vehiculo', mbWithout.rows.filter((r) => r[0]).map((r) => r[2]), ['Casa 5', 'Casa 9']);
+        await mbSet('mb-show', 'all');
+        const mbPlate = await mbSet('mb-search', 'p-987');
+        record('el buscador encuentra por placa (sin importar mayusculas), con lo encontrado resaltado', mbPlate.rows.filter((r) => r[0]).every((r) => r[3] === 'Ana García') && mbPlate.rows.some((r) => r[4] === 'P-987XYZ') && /<mark/.test(mbPlate.tbodyHtml), JSON.stringify(mbPlate.rows.map((r) => r[3])));
+        const mbBrand = await mbSet('mb-search', 'honda');
+        equal('y por marca', mbBrand.rows.filter((r) => r[0]).map((r) => r[3]), ['María Rodríguez']);
+        const mbNone = await mbSet('mb-search', 'zzzz');
+        record('sin coincidencias no hay filas y lo dice', mbNone.rows.length === 0 && /Ningún residente coincide/.test(await oikos(`document.getElementById('rep-empty-text').textContent`)));
+        await mbSet('mb-search', '');
+        const mbName = await mbSet('mb-order', 'name');
+        equal('en orden alfabetico dentro de cada fase', mbName.rows.filter((r) => r[1] === 'Fase A' && r[0]).map((r) => r[3]), ['María Rodríguez', 'Sin <b>Carro</b>']);
+        await mbSet('mb-order', 'unit');
+        // Las salidas: Excel, imprimir, PDF y las calcomanias
+        const mbOut = await oikos(`(() => {
+            const out = {};
+            const m = currentReportModel(true);
+            const rows = m.tables[0].rows;
+            const v = (c) => (c && typeof c === 'object' ? c.v : c);
+            out.excelHeaders = m.tables[0].headers;
+            out.excelNo = v(rows[0][0]);
+            out.excelPlateBold = rows[1][4] && typeof rows[1][4] === 'object' && rows[1][4].s === 1;
+            out.excelSubtotalBold = rows[2].every((c) => c && typeof c === 'object' && c.s === 1);
+            out.excelTotal = v(rows[rows.length - 1][0]);
+            out.fileName = m.fileName;
+            const savedOpen = window.open;
+            let html = '';
+            window.open = () => ({ document: { write: (h) => { html += h; }, close() {} }, print() {} });
+            printCurrentReport();
+            out.print = { title: html.includes('Impresión de marbetes por fase'), firma: html.includes('Recibido (firma)'), subtotal: html.includes('Subtotal'), escaped: html.includes('Sin &lt;b&gt;Carro') && !html.includes('<b>Carro'), oficio: html.includes('@page{size:13in 8.5in') };
+            html = '';
+            printMarbeteCards();
+            window.open = savedOpen;
+            out.cards = { count: (html.match(/<div class="card">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, codes: ['MARTEST1', 'MARTEST2', 'MARTEST3'].every((c) => html.includes('data-code="' + c + '"')), escaped: html.includes('Sin &lt;b&gt;Carro') && !html.includes('<b>Carro'), qrLib: html.includes('qrcodejs/1.0.0/qrcode.min.js'), oficio: html.includes('@page{size:8.5in 13in'), plates: html.includes('P-987XYZ') && html.includes('P-111MOR'), blank: (html.match(/<span class="blank"><\\/span>/g) || []).length, condo: html.includes('Villa Ferrer') };
+            const Orig = window.jspdf.jsPDF;
+            const texts = [];
+            let saved = '';
+            window.jspdf.jsPDF = function () { const d = new (Function.prototype.bind.apply(Orig, [null].concat(Array.from(arguments))))(); const t = d.text.bind(d); d.text = function (x) { texts.push(Array.isArray(x) ? x.join(' ') : String(x)); return t.apply(null, arguments); }; d.save = function (n) { saved = n; }; return d; };
+            let pdfError = '';
+            try { downloadCurrentReportPDF(); } catch (e) { pdfError = String(e && e.message || e); }
+            window.jspdf.jsPDF = Orig;
+            out.pdf = { error: pdfError, saved: saved, title: texts.some((x) => x === 'Impresión de marbetes por fase'), footer: texts.some((x) => /^Página 1 de \\d+$/.test(x)) };
+            const w = currentReportModel(false);
+            out.waHeaders = w.tables[0].headers;
+            return out;
+        })()`);
+        record('Excel: las nueve columnas (con la firma), el No. como numero, la placa y los subtotales en negrita y la fila TOTAL', JSON.stringify(mbOut.excelHeaders) === JSON.stringify(mb0.headers) && mbOut.excelNo === 1 && mbOut.excelPlateBold && mbOut.excelSubtotalBold && mbOut.excelTotal === 'TOTAL' && /^impresion-de-marbetes-por-fase/.test(mbOut.fileName), JSON.stringify(mbOut));
+        record('Imprimir: oficio horizontal con el titulo, la columna de la firma, los subtotales y los nombres escapados', Object.values(mbOut.print).every(Boolean), JSON.stringify(mbOut.print));
+        record('PDF: se genera sin errores, con el titulo y "Pagina 1 de N"', !mbOut.pdf.error && /^impresion-de-marbetes-por-fase/.test(mbOut.pdf.saved) && mbOut.pdf.title && mbOut.pdf.footer, JSON.stringify(mbOut.pdf));
+        record('Imprimir marbetes: una calcomania por fila (5), una hoja por fase (3), el QR de cada codigo, la placa en blanco para quien no tiene vehiculo y todo escapado', mbOut.cards.count === 5 && mbOut.cards.pages === 3 && mbOut.cards.codes && mbOut.cards.blank === 2 && mbOut.cards.escaped && mbOut.cards.qrLib && mbOut.cards.oficio && mbOut.cards.plates && mbOut.cards.condo, JSON.stringify(mbOut.cards));
+        equal('WhatsApp: resumen con fase, lote, residente y placa (sin el codigo del marbete)', mbOut.waHeaders, ['Fase', 'Lote', 'Residente', 'Placa']);
+        await oikos(`(() => { Store.get = window.__mbRealGet; renderCurrentReport(); })()`);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

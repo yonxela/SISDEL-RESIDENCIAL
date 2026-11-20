@@ -31,7 +31,7 @@
     const PREFIX = 'finanzas.';
     // SISDEL: el reporte financiero (reportes_resumen) tambien abre Reportes: ahi estan el de ingresos, egresos y saldo
     // por mes y el acceso a su ventana
-    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen', 'reportes_descuentos'];
+    const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen', 'reportes_descuentos', 'reportes_marbetes'];
     const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular', 'mora_descontar'];
     const CONFIG_WRITE_KEYS = ['config_general', 'config_cuota', 'config_conceptos'];
 
@@ -47,8 +47,8 @@
     };
     const VIEW_ORDER = ['dashboard', 'residents', 'chats', 'accounting', 'banks', 'reports', 'settings'];
 
-    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'mora-list': 'reportes_morosos', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos', 'mora-discounts': 'reportes_descuentos' };
-    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'mora-list', 'pay-map', 'owners', 'mora-discounts', 'account-statement'];
+    const REPORT_TABS = { income: 'reportes_ingresos', morosos: 'reportes_morosos', 'expense-cat': 'reportes_gastos', 'account-statement': 'reportes_libro', 'month-balance': 'reportes_resumen', 'mora-list': 'reportes_morosos', 'pay-map': 'reportes_morosos', owners: 'reportes_morosos', marbetes: 'reportes_marbetes', 'mora-discounts': 'reportes_descuentos' };
+    const REPORT_TAB_ORDER = ['income', 'expense-cat', 'month-balance', 'morosos', 'mora-list', 'pay-map', 'owners', 'marbetes', 'mora-discounts', 'account-statement'];
 
     // Atributo onclick / onsubmit (cada sentencia) -> privilegios de los que basta UNO.
     const ACTIONS = [
@@ -101,6 +101,9 @@
         // "Ver el reporte" de las graficas del tablero abre ese mismo reporte
         [/^openDashMonthReport\(/, ['reportes_resumen']],
         [/^selectReport\('mora-discounts'\)/, ['reportes_descuentos']],
+        // Impresion de marbetes por fase: el reporte y sus filtros; las calcomanias se imprimen con Exportar e imprimir
+        [/^selectReport\('marbetes'\)/, ['reportes_marbetes']],
+        [/^printMarbeteCards\(/, ['reportes_exportar']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
@@ -164,6 +167,7 @@
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement', '#acc-moves-note button[onclick="openMovementsReport()"]']],
         [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
+        [['reportes_marbetes'], ['#rep-tab-marbetes']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],
         [['reportes_exportar'], [
@@ -173,6 +177,7 @@
             '#modal-res-status button[onclick="exportResStatusPDF()"]', '#modal-res-status button[onclick="exportResStatusExcel()"]',
             '#modal-estado-cuenta button[onclick="printEstadoCuenta()"]', '#modal-estado-cuenta button[onclick="downloadEstadoCuentaPDF()"]', '#modal-estado-cuenta button[onclick="exportEstadoCuentaExcel()"]',
             'button[onclick^="ecQuickPrint("]', 'button[onclick^="ecQuickPDF("]',
+            '#rep-marbetes-print',
             '#btn-export', 'button[onclick="exportCSV()"]'
         ]],
         [['reportes_exportar', 'residentes_contactar'], ['#modal-estado-cuenta button[onclick="shareEstadoCuentaWhatsApp()"]', 'button[onclick^="ecQuickWhatsApp("]']],

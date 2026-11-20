@@ -9,6 +9,22 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
     <style>
+        /* El marbete leido (pedido del usuario el 2026-11-20): como "Mi Marbete" del vecino, con una FRANJA a todo el ancho arriba,
+           VERDE si el vecino esta al dia y ROJA si esta en mora, de alto el doble de la letra de la placa (la placa va dentro).
+           El marbete impreso no lo dice (su franja es celeste): el estado lo da la garita al leerlo */
+        .mbg { background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; color: #f8fafc; text-align: center; margin-bottom: 1.25rem; }
+        .mbg-band { font-size: 2.2rem; height: 2em; display: flex; align-items: center; justify-content: center; padding: 0 .5em; }
+        .mbg-ok .mbg-band { background: #16a34a; }
+        .mbg-late .mbg-band { background: #dc2626; }
+        .mbg-plate { font-size: 1em; font-weight: 800; color: #fff; letter-spacing: .03em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mbg-body { padding: .9rem 1rem 1.1rem; }
+        .mbg-status { font-size: 1.05rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+        .mbg-ok .mbg-status { color: #4ade80; }
+        .mbg-late .mbg-status { color: #f87171; }
+        .mbg-kind { font-size: .72rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; margin-top: .25rem; }
+        .mbg-where { font-size: .85rem; color: #cbd5e1; font-weight: 600; margin-top: .3rem; }
+        .mbg-detail { font-size: .9rem; color: #cbd5e1; line-height: 1.35; margin-top: .6rem; overflow-wrap: anywhere; }
+        .mbg-name { display: block; font-weight: 700; font-size: 1.25em; color: #f8fafc; margin-top: .15rem; }
         /* Fila de botones del encabezado (paneles y Salir): el texto un 30 % mas grande que antes y en negrita (pedido
            del usuario el 2026-11-18, como en admin.html). Antes: botones 1rem */
         .top-bar-actions .btn { font-weight: 700; }
@@ -469,11 +485,21 @@
                         icon.textContent = '🚗';
                         title.textContent = 'RESIDENTE IDENTIFICADO';
                         title.style.color = 'var(--accent)';
+                        // El marbete leido, con su franja verde (al dia) o roja (en mora) a todo el ancho; en mora = el estado de pago
+                        // que calcula el servidor (el mismo de la camara: debe mas de una cuota vencida)
+                        const veh = [obj.brand, obj.model, obj.color].map((v) => String(v || '').trim()).filter(Boolean).join(' ');
+                        const where = [resident.casa, resident.fase ? (/^fase\b/i.test(String(resident.fase).trim()) ? String(resident.fase).trim() : 'Fase ' + String(resident.fase).trim()) : ''].filter(Boolean).join(' · ');
                         info.innerHTML = `
-                        ${vehicleLine}
-                        <hr style="margin:0.5rem 0; opacity:0.1;">
-                        <p><strong>Piloto:</strong> ${esc(resident.name)}</p>
-                        ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">⚠️ ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
+                        <div class="mbg ${isMoroso ? 'mbg-late' : 'mbg-ok'}" id="marbeteLeido">
+                            <div class="mbg-band"><span class="mbg-plate">${esc(obj.plate || 'Sin placa')}</span></div>
+                            <div class="mbg-body">
+                                <div class="mbg-status">${isMoroso ? 'En mora' : 'Al día'}</div>
+                                <div class="mbg-kind">Marbete vehicular</div>
+                                ${where ? `<div class="mbg-where">${esc(where)}</div>` : ''}
+                                <div class="mbg-detail">${veh ? `Vehículo: ${esc(veh)}. ` : ''}Residente:<b class="mbg-name">${esc(resident.name)}</b></div>
+                            </div>
+                        </div>
+                        ${isMoroso ? '<p style="color:var(--danger); font-weight:bold;">ESTADO: MOROSO (Informar)</p>' : '<p style="color:var(--success);">ESTADO: SOLVENTE</p>'}
                     `;
                         if (isMoroso) {
                             showBigStatusScreen('warning', 'MOROSO', `Placa: ${esc(obj.plate)}`);

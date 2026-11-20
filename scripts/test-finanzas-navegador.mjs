@@ -5,6 +5,7 @@
 // No corre con `npm test` porque necesita Chrome instalado:
 //   cd scripts && npm run seed && npm run test:navegador     (con los emuladores levantados)
 import { connect, parseArgs, emulatorTriggersRespond } from './admin.mjs';
+import { FieldValue } from 'firebase-admin/firestore';
 import { launch, sleep } from './chrome.mjs';
 
 const args = parseArgs();
@@ -1479,7 +1480,7 @@ async function run() {
             const first = cards[0];
             const name = first.querySelector('.mbc-name');
             const detail = first.querySelector('.mbc-detail');
-            const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '', '<u>');
+            const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '');
             const bands = cards.map((c) => { const b = c.querySelector('.mbc-plate'); const r = document.createRange(); r.selectNodeContents(b); return { cls: b.className, bg: getComputedStyle(b).backgroundColor, ratio: b.getBoundingClientRect().width / r.getBoundingClientRect().width, inCard: b.getBoundingClientRect().width < c.getBoundingClientRect().width }; });
             return {
                 shown: !box.classList.contains('hidden') && document.getElementById('rep-table-wrap').classList.contains('hidden'),
@@ -1488,7 +1489,7 @@ async function run() {
                 where: cards.map((c) => c.querySelector('.mbc-where').textContent),
                 details: cards.map((c) => c.querySelector('.mbc-detail').textContent),
                 bands: bands,
-                status: cards.map((c) => c.querySelector('.mbc-status').textContent),
+                status: cards.map((c) => !!c.querySelector('.mbc-status')),
                 nameBlock: getComputedStyle(name).display === 'block' && getComputedStyle(name).textAlign === 'center' && name.getBoundingClientRect().top > detail.getBoundingClientRect().top + 2,
                 legend: (box.querySelector('.mb-legend') || {}).textContent || '',
                 asOf: currentReportData.cardsAsOf,
@@ -1496,14 +1497,14 @@ async function run() {
                 nameWeight: getComputedStyle(name).fontWeight,
                 nameRatio: parseFloat(getComputedStyle(name).fontSize) / parseFloat(getComputedStyle(detail).fontSize),
                 bg: getComputedStyle(first).backgroundColor,
-                escaped: esc.includes('&lt;b&gt;Nombre') && !esc.includes('<b>Nombre') && esc.includes('&lt;i&gt;X') && !esc.includes('<s>') && esc.includes('&lt;u&gt;') && !esc.includes('<u>')
+                escaped: esc.includes('&lt;b&gt;Nombre') && !esc.includes('<b>Nombre') && esc.includes('&lt;i&gt;X') && !esc.includes('<s>')
             };
         })()`);
         record('en pantalla se ven los marbetes (y no la tabla): uno por vehiculo, agrupados por fase', mbCards.shown && JSON.stringify(mbCards.plates) === JSON.stringify(['P-111MOR', 'P-222BBB', 'P-987XYZ']) && /^Fase A · 1 marbete · 1 residente sin vehículo registrado$/.test(mbCards.headers[0]) && /^Fase B · 2 marbetes$/.test(mbCards.headers[1]), JSON.stringify([mbCards.plates, mbCards.headers]));
         record('cada marbete como el del vecino: placa, MARBETE VEHICULAR, lote y fase, y "Vehiculo: ... Residente: ..." en fondo oscuro', mbCards.kinds.every((k) => k === 'MARBETE VEHICULAR') && JSON.stringify(mbCards.where) === JSON.stringify(['Casa 23 · Fase A', 'Casa 12 · Fase B', 'Casa 12 · Fase B']) && mbCards.details[0] === 'Vehículo: Honda Fit Gris. Residente: María Rodríguez' && mbCards.bg === 'rgb(30, 41, 59)', JSON.stringify(mbCards));
         record('el nombre del residente va en negrita y un 25 % mas grande, en su propia linea y centrado', Number(mbCards.nameWeight) >= 700 && Math.abs(mbCards.nameRatio - 1.25) < 0.02 && mbCards.nameBlock, JSON.stringify([mbCards.nameWeight, mbCards.nameRatio, mbCards.nameBlock]));
-        record('la placa va en una franja roja si el residente esta en mora y verde si esta al dia, un poco mas ancha que las letras', mbCards.bands[0].cls.includes('mbc-band-late') && mbCards.bands[0].bg === 'rgb(220, 38, 38)' && mbCards.bands.slice(1).every((b) => b.cls.includes('mbc-band-ok') && b.bg === 'rgb(22, 163, 74)') && mbCards.bands.every((b) => b.ratio > 1.05 && b.ratio < 1.6 && b.inCard), JSON.stringify(mbCards.bands));
-        record('cada marbete dice su estado con la fecha (el color solo no basta) y arriba esta la leyenda de colores', /^\d\d\/\d\d\/\d{4}$/.test(mbCards.asOf) && mbCards.status[0] === 'En mora al ' + mbCards.asOf && mbCards.status.slice(1).every((t) => t === 'Al día al ' + mbCards.asOf) && /Franja verde: al día/.test(mbCards.legend) && /Franja roja: en mora/.test(mbCards.legend), JSON.stringify([mbCards.status, mbCards.legend]));
+        record('la placa va en una franja celeste (tambien la de quien esta en mora), un poco mas ancha que las letras', mbCards.bands.every((b) => b.cls === 'mbc-plate mbc-band' && b.bg === 'rgb(56, 189, 248)' && b.ratio > 1.05 && b.ratio < 1.6 && b.inCard), JSON.stringify(mbCards.bands));
+        record('el marbete no dice si el vecino esta en mora (lo muestra la garita al leer el QR) y la nota de arriba lo explica', mbCards.status.every((x) => x === false) && /lo muestra la garita al leer su código QR/.test(mbCards.legend), JSON.stringify([mbCards.status, mbCards.legend]));
         record('los textos del marbete se escapan', mbCards.escaped);
         const mbCardOut = await oikos(`(async () => {
             const out = {};
@@ -1512,7 +1513,7 @@ async function run() {
             window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
             await printCurrentReport();
             window.open = savedOpen;
-            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)'), late: (html.match(/mbc-band-late/g) || []).length >= 1, ok: (html.match(/class="mbc-plate mbc-band-ok"/g) || []).length === 2, legend: html.includes('en mora, al ') };
+            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)'), celeste: (html.match(/class="mbc-plate mbc-band"/g) || []).length === 3 && html.includes('.mbc-band{background:#38bdf8'), noState: !/mbc-band-late|mbc-band-ok|En mora al|Al día al/.test(html) };
             const Orig = window.jspdf.jsPDF;
             const texts = [];
             const sizes = {};
@@ -1522,12 +1523,12 @@ async function run() {
             let pdfError = '';
             try { await downloadCurrentReportPDF(); } catch (e) { pdfError = String(e && e.message || e); }
             window.jspdf.jsPDF = Orig;
-            out.pdf = { error: pdfError, saved: saved, plates: ['P-111MOR', 'P-222BBB', 'P-987XYZ'].every((p) => texts.includes(p)), kind: texts.filter((x) => x === 'MARBETE VEHICULAR').length, name: sizes['Ana García'], label: Object.keys(sizes).filter((k) => /Residente:$/.test(k)).map((k) => sizes[k])[0], pages: texts.some((x) => /^Página 1 de 2$/.test(x)), qrRects: rects, late: texts.filter((x) => /^EN MORA AL \\d\\d\\/\\d\\d\\/\\d{4}$/.test(x)).length, ok: texts.filter((x) => /^AL DÍA AL \\d\\d\\/\\d\\d\\/\\d{4}$/.test(x)).length };
+            out.pdf = { error: pdfError, saved: saved, plates: ['P-111MOR', 'P-222BBB', 'P-987XYZ'].every((p) => texts.includes(p)), kind: texts.filter((x) => x === 'MARBETE VEHICULAR').length, name: sizes['Ana García'], label: Object.keys(sizes).filter((k) => /Residente:$/.test(k)).map((k) => sizes[k])[0], pages: texts.some((x) => /^Página 1 de 2$/.test(x)), qrRects: rects, noState: !texts.some((x) => /^(EN MORA|AL DÍA) AL /.test(x)) };
             out.excelHeaders = currentReportModel(true).tables[0].headers;
             return out;
         })()`);
-        record('Imprimir con la vista de marbetes saca los marbetes (no la tabla): 3, con su QR, una fase por hoja de oficio, 3 x 3', mbCardOut.print.cards === 3 && mbCardOut.print.pages === 2 && mbCardOut.print.qr === 3 && mbCardOut.print.oficio && mbCardOut.print.grid && mbCardOut.print.name && mbCardOut.print.big && mbCardOut.print.noTable && mbCardOut.print.late && mbCardOut.print.ok && mbCardOut.print.legend, JSON.stringify(mbCardOut.print));
-        record('PDF con la vista de marbetes: los 3 marbetes con su QR dibujado, el nombre en negrita de 10 pt (8 pt el texto: un 25 % mas) y "Pagina 1 de 2"', !mbCardOut.pdf.error && /^marbetes-villa-ferrer-/.test(mbCardOut.pdf.saved) && mbCardOut.pdf.plates && mbCardOut.pdf.kind === 3 && mbCardOut.pdf.name === '10b' && mbCardOut.pdf.label === '8' && mbCardOut.pdf.pages && mbCardOut.pdf.qrRects > 100 && mbCardOut.pdf.late === 1 && mbCardOut.pdf.ok === 2, JSON.stringify(mbCardOut.pdf));
+        record('Imprimir con la vista de marbetes saca los marbetes (no la tabla): 3, con su QR, una fase por hoja de oficio, 3 x 3', mbCardOut.print.cards === 3 && mbCardOut.print.pages === 2 && mbCardOut.print.qr === 3 && mbCardOut.print.oficio && mbCardOut.print.grid && mbCardOut.print.name && mbCardOut.print.big && mbCardOut.print.noTable && mbCardOut.print.celeste && mbCardOut.print.noState, JSON.stringify(mbCardOut.print));
+        record('PDF con la vista de marbetes: los 3 marbetes con su QR dibujado, el nombre en negrita de 10 pt (8 pt el texto: un 25 % mas) y "Pagina 1 de 2"', !mbCardOut.pdf.error && /^marbetes-villa-ferrer-/.test(mbCardOut.pdf.saved) && mbCardOut.pdf.plates && mbCardOut.pdf.kind === 3 && mbCardOut.pdf.name === '10b' && mbCardOut.pdf.label === '8' && mbCardOut.pdf.pages && mbCardOut.pdf.qrRects > 100 && mbCardOut.pdf.noState, JSON.stringify(mbCardOut.pdf));
         equal('Excel sigue siendo el listado de control', mbCardOut.excelHeaders, mb0.headers);
         // Vista "Listado de control": la tabla, con el nombre en negrita y un 25 % mas grande, y sus salidas
         await mbSet('mb-view', 'list');
@@ -1585,7 +1586,7 @@ async function run() {
             info: document.getElementById('mbm-info').textContent,
             plates: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).map((p) => p.textContent),
             names: Array.from(document.querySelectorAll('#mbm-body .mbc-name')).map((n) => n.textContent),
-            bands: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).every((p) => /mbc-band-(ok|late)/.test(p.className)),
+            bands: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).every((p) => p.className === 'mbc-plate mbc-band'),
             actions: !document.getElementById('mbm-actions').classList.contains('hidden') && ['mbm-print', 'mbm-pdf', 'mbm-wa'].every((id) => !!document.getElementById(id))
         }))()`);
         record('con su placa en su franja, su nombre y los tres botones (Imprimir, Descargar PDF y Enviar por WhatsApp)', mbm.open && /Ana García/.test(mbm.info) && JSON.stringify(mbm.plates) === JSON.stringify(['P-222BBB', 'P-987XYZ']) && mbm.names.every((n) => n === 'Ana García') && mbm.bands && mbm.actions, JSON.stringify(mbm));
@@ -1830,6 +1831,44 @@ async function run() {
         copy = await page.evaluate(COPY);
         equal('y la copia vieja se borra de localStorage', copy.viejas, []);
         equal('OIKOS lo muestra', await oikos(`Store.get('transactions').some(x => x.id === 'pago-version-anterior')`), true);
+
+        console.log('\nGarita: el marbete leido con su franja verde (al dia) o roja (en mora)');
+        // El guardia del seed lee el marbete escribiendo su codigo (lo mismo que hace el lector). El estado de pago lo escribe el
+        // servidor; aqui se fija para la prueba (Ana al dia, Maria morosa) y despues se devuelve como estaba
+        const usersRef = condoRef.collection('usuarios');
+        const statusBefore = { ana: (await usersRef.doc('u-ana').get()).get('paymentStatus'), maria: (await usersRef.doc('u-maria').get()).get('paymentStatus') };
+        await usersRef.doc('u-ana').update({ paymentStatus: 'al_dia' });
+        await usersRef.doc('u-maria').update({ paymentStatus: 'moroso' });
+        const guard = await newPage({ stepTimeoutMs: 120000 });
+        await guard.login(BASE, 'VP103');
+        await guard.waitFor(`location.pathname.endsWith('/garita.html') && !!document.getElementById('formManual') && typeof SISDEL !== 'undefined'`, 'la garita', 60000);
+        await sleep(1500);
+        const readMarbete = async (code) => {
+            await guard.evaluate(`(() => { document.getElementById('modalResult').style.display = 'none'; const old = document.getElementById('marbeteLeido'); if (old) old.remove(); document.getElementById('manualCode').value = ${JSON.stringify(code)}; document.getElementById('formManual').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); return true; })()`);
+            await guard.waitFor(`document.getElementById('modalResult').style.display !== 'none' && !!document.getElementById('marbeteLeido')`, 'el marbete leido', 30000);
+            return guard.evaluate(`(() => {
+                const c = document.getElementById('marbeteLeido');
+                const band = c.querySelector('.mbg-band');
+                const plate = c.querySelector('.mbg-plate');
+                const name = c.querySelector('.mbg-name');
+                return {
+                    cls: c.className, bg: getComputedStyle(band).backgroundColor,
+                    ratio: band.getBoundingClientRect().height / parseFloat(getComputedStyle(plate).fontSize),
+                    full: Math.abs(band.getBoundingClientRect().width - c.clientWidth) < 2 && band.getBoundingClientRect().top - c.getBoundingClientRect().top < 2,
+                    plate: plate.textContent, status: c.querySelector('.mbg-status').textContent, name: name.textContent,
+                    nameBold: Number(getComputedStyle(name).fontWeight) >= 700 && getComputedStyle(name).display === 'block'
+                };
+            })()`);
+        };
+        const gOk = await readMarbete('MARTEST1');
+        record('al dia: el marbete de Ana con una franja verde a todo el ancho arriba, de alto el doble de la letra de la placa', gOk.cls.includes('mbg-ok') && gOk.bg === 'rgb(22, 163, 74)' && Math.abs(gOk.ratio - 2) < 0.05 && gOk.full && gOk.plate === 'P-987XYZ' && gOk.status === 'Al día' && gOk.name === 'Ana García' && gOk.nameBold, JSON.stringify(gOk));
+        const gLate = await readMarbete('MARTEST3');
+        record('en mora: el de Maria con una franja roja a todo el ancho arriba, de alto el doble de la letra de la placa', gLate.cls.includes('mbg-late') && gLate.bg === 'rgb(220, 38, 38)' && Math.abs(gLate.ratio - 2) < 0.05 && gLate.full && gLate.plate === 'P-111MOR' && gLate.status === 'En mora' && gLate.name === 'María Rodríguez', JSON.stringify(gLate));
+        await guard.evaluate(`SISDEL.logout()`).catch(() => {});
+        await guard.close();
+        const restore = (v) => (v === undefined ? FieldValue.delete() : v);
+        await usersRef.doc('u-ana').update({ paymentStatus: restore(statusBefore.ana) });
+        await usersRef.doc('u-maria').update({ paymentStatus: restore(statusBefore.maria) });
 
         console.log('\nCerrar sesion');
         record('sin errores en la consola durante la prueba', page.errors.length === 0, JSON.stringify([...new Set(page.errors)].slice(0, 4)));

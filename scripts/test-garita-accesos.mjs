@@ -61,10 +61,10 @@ async function run() {
             [(await db.collection(`condominios/${CONDO}/salidas`).where('userId', '==', 'u-ana').get()).size >= 1, (await db.collection(`condominios/${CONDO}/camera_logs`).where('reason', '>=', 'Acceso QR: Ana').where('reason', '<', 'Acceso QR: Anb').get()).size >= 1], [true, true]);
 
         console.log('\nVehiculo por su marbete');
-        await verify('MARTEST1', 'Placa');
+        await verify('MARTEST1', 'Marbete vehicular');
         await click('btnConfirmEntry');
         await waitCount(3, 'el ingreso del vehiculo queda registrado');
-        await verify('MARTEST1', 'Placa');
+        await verify('MARTEST1', 'Marbete vehicular');
         await click('btnRegisterExit');
         await waitCount(4, 'la salida del vehiculo queda registrada');
         rows = await all();
@@ -72,6 +72,9 @@ async function run() {
             [rows[2], rows[3]].map((x) => [x.direction, x.kind, x.plate, x.vehicleId, x.userId, x.casa, x.name]), [['entrada', 'vehiculo', 'P-987XYZ', 'veh-ana-1', 'u-ana', 'Casa 12', 'Ana García'], ['salida', 'vehiculo', 'P-987XYZ', 'veh-ana-1', 'u-ana', 'Casa 12', 'Ana García']]);
 
         console.log('\nVehiculo de un vecino moroso');
+        // Maria es morosa en el seed, pero si antes corrio la prueba de OIKOS (npm run test:navegador) el servidor ya la recalculo
+        // con las cuotas de esa prueba: se fija aqui para no depender del orden
+        await db.doc(`condominios/${CONDO}/usuarios/u-maria`).update({ paymentStatus: 'moroso' });
         await verify('MARTEST3', 'MOROSO');
         await click('btnConfirmEntry');
         await waitCount(5, 'el ingreso del moroso queda registrado');

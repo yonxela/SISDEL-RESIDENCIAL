@@ -127,10 +127,10 @@ console.log('\nTarjetas, hojas y PDF');
     const page = Q.printHtml(cards, { paper: 'carta', size: 'chica', condoName: 'X', title: 'qr' });
     equal('la impresion: hoja carta sin margenes del navegador, una seccion por hoja (10 tarjetas = 2 hojas de 9)', [/@page \{ size: 215\.9mm 279\.4mm; margin: 0; \}/.test(page), (page.match(/<section class="pq-sheet">/g) || []).length, (page.match(/class="pq-card"/g) || []).length], [true, 2, 10]);
     // PDF con un jsPDF de mentira: hojas, figuras dentro de la hoja y textos en Latin-1
-    const ops = { pages: 1, rects: [], texts: [], bad: [] };
+    const ops = { pages: 1, rects: [], circles: [], texts: [], bad: [] };
     const doc = {
         setDrawColor() {}, setFillColor() {}, setTextColor() {}, setLineWidth() {}, setLineDashPattern() {}, setFont() {}, setFontSize() {},
-        roundedRect(x, y, w, h) { ops.rects.push([x, y, w, h]); }, rect(x, y, w, h) { ops.rects.push([x, y, w, h]); }, circle() {},
+        roundedRect(x, y, w, h) { ops.rects.push([x, y, w, h]); }, rect(x, y, w, h) { ops.rects.push([x, y, w, h]); }, circle(cx, cy, r) { ops.circles.push([cx, cy, r]); }, ellipse(cx, cy, rx, ry) { ops.circles.push([cx, cy, Math.max(rx, ry)]); },
         text(t) { (Array.isArray(t) ? t : [t]).forEach((line) => { ops.texts.push(line); if (/[^\x00-\xff]/.test(line)) ops.bad.push(line); }); },
         getTextWidth: (t) => String(t).length * 1.5, splitTextToSize: (t, w) => { const per = Math.max(1, Math.floor(w / 1.5)); const out = []; for (let i = 0; i < t.length; i += per) out.push(t.slice(i, i + per)); return out; },
         addPage() { ops.pages++; }
@@ -138,7 +138,19 @@ console.log('\nTarjetas, hojas y PDF');
     const pdfCards = Array.from({ length: 13 }, (_, i) => ({ id: `u${i}`, name: `Vecina ${i} con un nombre muy largo que no cabe en dos lineas de la tarjeta → sí`, unit: `Lote ${i}`, url: evil.url, matrix }));
     const L = Q.drawPdf(doc, pdfCards, { paper: 'oficio', size: 'chica', condoName: 'Residencial Ñandú' });
     equal('el PDF: 13 tarjetas chicas en oficio = 2 hojas', ops.pages, 2);
-    yes('todo lo que se dibuja queda dentro de la hoja', ops.rects.every(([x, y, w, h]) => x >= 0 && y >= 0 && x + w <= L.paper.w + 0.02 && y + h <= L.paper.h + 0.02));
+    yes('todo lo que se dibuja queda dentro de la hoja', ops.rects.every(([x, y, w, h]) => x >= 0 && y >= 0 && x + w <= L.paper.w + 0.02 && y + h <= L.paper.h + 0.02)
+        && ops.circles.every(([cx, cy, r]) => cx - r >= 0 && cy - r >= 0 && cx + r <= L.paper.w + 0.02 && cy + r <= L.paper.h + 0.02));
+    // El icono del boton de panico va GRANDE arriba de la tarjeta (pedido del usuario el 2026-11-20: "no solo una franja")
+    {
+        const big = ops.circles.filter(([, , r]) => Math.abs(r - 6.5) < 0.01);
+        equal('el PDF dibuja el icono del boton de panico (aro blanco de 13 mm) en cada una de las 13 tarjetas', big.length, 13);
+        const icon = Q.ICON_LAYERS;
+        yes('el icono es un boton de domo rojo sobre su base, con brillo y signo de admiracion', icon.length === 10 && icon[0].f === '#ffffff' && icon.some((l) => l.f === '#dc2626') && icon.some((l) => l.t === 'e') && icon.some((l) => l.t === 'r') && icon.filter((l) => l.f === '#ffffff').length === 3);
+        const svg = Q.panicIconSvg('13mm');
+        equal('el SVG de la vista previa dibuja las mismas capas que el PDF', [(svg.match(/<circle/g) || []).length, (svg.match(/<ellipse/g) || []).length, (svg.match(/<rect/g) || []).length], [8, 1, 1]);
+        equal('la parte de arriba mide 18.9 mm en la chica y 26.5 en la mediana (icono 13 mm + titulo)', [Q.headHeight(1).toFixed(1), Q.headHeight(1.4).toFixed(1)], ['18.9', '26.5']);
+        equal('en la vista previa el icono es de 13 mm (chica) y 18.2 mm (mediana) y va arriba, antes del QR', [/class="pq-head"><svg[^>]*width="13\.00mm"/.test(Q.cardHtml(evil, 'chica', '<svg></svg>', 'X')), /class="pq-head"><svg[^>]*width="18\.20mm"/.test(Q.cardHtml(evil, 'mediana', '<svg></svg>', 'X'))], [true, true]);
+    }
     yes('los textos del PDF van en Latin-1 (acentos y enie si; flechas y demas, "?"), y un nombre largo se corta con "..."', ops.bad.length === 0 && ops.texts.includes('Residencial Ñandú') && ops.texts.some((t) => t.endsWith('...')) && ops.texts.includes('BOTÓN DE PÁNICO'));
 }
 

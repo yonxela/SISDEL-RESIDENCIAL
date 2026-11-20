@@ -51,7 +51,7 @@
 <body>
     <main class="pq-page">
         <header class="pq-top">
-            <svg width="52" height="52" viewBox="0 0 24 24" aria-hidden="true" style="flex:none;"><circle cx="12" cy="12" r="11.5" fill="#fff"/><circle cx="12" cy="12" r="9.6" fill="#dc2626"/><circle cx="12" cy="12" r="7" fill="#b91c1c"/><rect x="10.85" y="6.6" width="2.3" height="7.2" rx="1.15" fill="#fff"/><circle cx="12" cy="16.6" r="1.35" fill="#fff"/></svg>
+            <span id="pqLogo" style="flex:none; display:flex;"></span>
             <div style="min-width:0;">
                 <h1>Botón de pánico</h1>
                 <p class="pq-who" id="pqWho">QR de pánico de un vecino</p>
@@ -103,11 +103,13 @@
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
-    <script src="panico-qr.js?v=20261120a"></script>
+    <script src="panico-qr.js?v=20261120b"></script>
     <script>
         (() => {
             const Q = SisdelPanicoQr;
             const $ = (id) => document.getElementById(id);
+            // El icono del boton de panico, el mismo de la tarjeta (un SVG fijo del propio sistema, sin datos de la base)
+            $('pqLogo').appendChild(new DOMParser().parseFromString(Q.panicIconSvg(56), 'image/svg+xml').documentElement);
             try { if (localStorage.getItem('sisdel_theme') === 'light') document.body.classList.add('light-mode'); } catch (e) { /* sin almacenamiento */ }
 
             const qs = Q.parsePanicQuery(location.search);

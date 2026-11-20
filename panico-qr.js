@@ -122,20 +122,39 @@
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="Código QR"><rect width="${n}" height="${n}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
     }
 
-    // Icono del boton de panico (un boton rojo redondo con el signo de admiracion): va junto al QR en la tarjeta
+    // Icono del boton de panico: un boton rojo de domo sobre su base, con el signo de admiracion. Va grande arriba de la tarjeta
+    // (pedido del usuario el 2026-11-20: "en la parte superior debe llevar un icono de boton de panico, no solo una franja").
+    // Son capas planas en un cuadro de 100 x 100: el SVG de la vista previa y el PDF dibujan las mismas, asi se ve igual
+    const ICON_LAYERS = [
+        { t: 'c', r: 50, f: '#ffffff' },      // aro blanco: lo separa de la franja roja
+        { t: 'c', r: 46.5, f: '#1f2937' },    // base
+        { t: 'c', r: 41, f: '#9ca3af' },      // aro metalico
+        { t: 'c', r: 37.5, f: '#374151' },    // ranura
+        { t: 'c', r: 34, f: '#991b1b' },      // borde del domo
+        { t: 'c', r: 29.5, f: '#dc2626' },    // domo
+        { t: 'c', r: 22, f: '#ef4444' },      // centro del domo
+        { t: 'e', x: 36, y: 33, rx: 8, ry: 4.5, f: '#fca5a5' }, // brillo
+        { t: 'r', x: 45.8, y: 36, w: 8.4, h: 17, rr: 4.2, f: '#ffffff' }, // signo de admiracion
+        { t: 'c', x: 50, y: 62, r: 4.7, f: '#ffffff' }
+    ];
+    const layerSvg = (l) => (l.t === 'c' ? `<circle cx="${l.x == null ? 50 : l.x}" cy="${l.y == null ? 50 : l.y}" r="${l.r}" fill="${l.f}"/>`
+        : l.t === 'e' ? `<ellipse cx="${l.x}" cy="${l.y}" rx="${l.rx}" ry="${l.ry}" fill="${l.f}"/>`
+            : `<rect x="${l.x}" y="${l.y}" width="${l.w}" height="${l.h}" rx="${l.rr}" fill="${l.f}"/>`);
     function panicIconSvg(size) {
-        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><circle cx="12" cy="12" r="11.5" fill="#fff"/><circle cx="12" cy="12" r="9.6" fill="#dc2626"/><circle cx="12" cy="12" r="7" fill="#b91c1c"/><rect x="10.85" y="6.6" width="2.3" height="7.2" rx="1.15" fill="#fff"/><circle cx="12" cy="16.6" r="1.35" fill="#fff"/></svg>`;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true">${ICON_LAYERS.map(layerSvg).join('')}</svg>`;
     }
 
     // ── Tarjetas y hojas (milimetros) ──
     const SIZES = {
-        chica: { label: 'Chica, para el carro (5.4 x 7.4 cm)', w: 54, h: 74, qr: 40, k: 1 },
-        mediana: { label: 'Mediana, para la puerta (8 x 10 cm)', w: 80, h: 100, qr: 56, k: 1.4 }
+        chica: { label: 'Chica, para el carro (5.4 x 7.5 cm)', w: 54, h: 75, qr: 36, k: 1 },
+        mediana: { label: 'Mediana, para la puerta (8 x 10.2 cm)', w: 80, h: 102, qr: 47, k: 1.4 }
     };
     const PAPERS = {
         carta: { label: 'Carta', w: 215.9, h: 279.4 },
         oficio: { label: 'Oficio', w: 215.9, h: 330.2 }
     };
+    // Parte de arriba de la tarjeta: el icono del boton (13 mm en la chica) con el titulo debajo, sobre la franja roja
+    const headHeight = (k) => 2.2 * k + 13 * k + 0.5 * k + 3.2 * k;
     const MARGIN = 8;
     const GAP = 4;
     // Cuantas tarjetas caben por hoja y donde empieza la primera (centradas)
@@ -154,7 +173,7 @@
     function cardHtml(card, sizeId, svg, condoName) {
         const s = SIZES[sizeId] || SIZES.chica;
         return `<div class="pq-card" style="--k:${s.k};width:${s.w}mm;height:${s.h}mm;">
-            <div class="pq-head">${panicIconSvg(`${(5.4 * s.k).toFixed(2)}mm`)}<span>BOTÓN DE PÁNICO</span></div>
+            <div class="pq-head">${panicIconSvg(`${(13 * s.k).toFixed(2)}mm`)}<span>BOTÓN DE PÁNICO</span></div>
             <div class="pq-qr" style="width:${s.qr}mm;height:${s.qr}mm;">${svg}</div>
             <div class="pq-scan">Escanee en una emergencia</div>
             ${card.unit ? `<div class="pq-unit">${esc(card.unit)}</div>` : ''}
@@ -167,8 +186,8 @@
         .pq-card { box-sizing:border-box; display:flex; flex-direction:column; align-items:center; background:#fff; color:#0f172a;
             border:0.3mm dashed #94a3b8; border-radius:3mm; overflow:hidden; font-family:Arial, Helvetica, sans-serif; text-align:center;
             -webkit-print-color-adjust:exact; print-color-adjust:exact; break-inside:avoid; page-break-inside:avoid; }
-        .pq-head { width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:center; gap:calc(1.6mm * var(--k));
-            background:#dc2626; color:#fff; font-weight:900; letter-spacing:0.04em; font-size:calc(3.3mm * var(--k)); padding:calc(1.3mm * var(--k)) 1mm; }
+        .pq-head { width:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:calc(0.5mm * var(--k));
+            background:#dc2626; color:#fff; font-weight:900; letter-spacing:0.04em; font-size:calc(3.2mm * var(--k)); line-height:1; padding:calc(1.1mm * var(--k)) 1mm; }
         .pq-head svg { flex:none; }
         .pq-qr { margin-top:calc(1.6mm * var(--k)); flex:none; }
         .pq-qr svg { width:100%; height:100%; display:block; }
@@ -199,13 +218,16 @@
     // ── PDF (jsPDF de finanzas/vendor, en milimetros) ──
     // latin1: las fuentes del PDF son Latin-1 (los acentos y la enie si estan; lo demas se cambia por "?")
     const latin1 = (text) => String(text == null ? '' : text).replace(/[^\x00-\xff]/g, '?');
-    function drawPanicIcon(doc, cx, cy, r) {
-        doc.setFillColor(255, 255, 255); doc.circle(cx, cy, r, 'F');
-        doc.setFillColor(220, 38, 38); doc.circle(cx, cy, r * 0.835, 'F');
-        doc.setFillColor(185, 28, 28); doc.circle(cx, cy, r * 0.61, 'F');
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(cx - r * 0.1, cy - r * 0.47, r * 0.2, r * 0.63, r * 0.1, r * 0.1, 'F');
-        doc.circle(cx, cy + r * 0.4, r * 0.118, 'F');
+    const hexRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    // Dibuja el icono (las mismas capas que el SVG) en un cuadro de `size` mm con su esquina superior izquierda en (x, y)
+    function drawPanicIcon(doc, x, y, size) {
+        const u = size / 100;
+        ICON_LAYERS.forEach((l) => {
+            doc.setFillColor(...hexRgb(l.f));
+            if (l.t === 'c') doc.circle(x + (l.x == null ? 50 : l.x) * u, y + (l.y == null ? 50 : l.y) * u, l.r * u, 'F');
+            else if (l.t === 'e') doc.ellipse(x + l.x * u, y + l.y * u, l.rx * u, l.ry * u, 'F');
+            else doc.roundedRect(x + l.x * u, y + l.y * u, l.w * u, l.h * u, l.rr * u, l.rr * u, 'F');
+        });
     }
     function fitLines(doc, text, maxW, maxLines) {
         const lines = doc.splitTextToSize(text, maxW);
@@ -225,19 +247,15 @@
         doc.setDrawColor(148, 163, 184); doc.setLineWidth(0.3); doc.setLineDashPattern([1.2, 1], 0);
         doc.roundedRect(x, y, s.w, s.h, 3, 3, 'S');
         doc.setLineDashPattern([], 0);
-        // Franja roja con el icono del boton de panico
-        const iconR = 2.7 * k;
-        const headH = iconR * 2 + 2.6 * k; // como en la vista previa: icono de 5.4 mm con 1.3 mm arriba y abajo
+        // Franja roja con el icono del boton de panico grande y el titulo debajo (como en la vista previa)
+        const iconD = 13 * k;
+        const headH = headHeight(k);
         doc.setFillColor(220, 38, 38);
         doc.roundedRect(x, y, s.w, headH, 3, 3, 'F');
         doc.rect(x, y + headH - 3, s.w, 3, 'F');
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(pt(3.3 * k)); doc.setTextColor(255, 255, 255);
-        const title = latin1('BOTÓN DE PÁNICO');
-        const gap = 1.6 * k;
-        const total = iconR * 2 + gap + doc.getTextWidth(title);
-        const startX = x + (s.w - total) / 2;
-        drawPanicIcon(doc, startX + iconR, y + headH / 2, iconR);
-        doc.text(title, startX + iconR * 2 + gap, y + headH / 2, { baseline: 'middle' });
+        drawPanicIcon(doc, x + (s.w - iconD) / 2, y + 1.1 * k, iconD);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(pt(3.2 * k)); doc.setTextColor(255, 255, 255);
+        doc.text(latin1('BOTÓN DE PÁNICO'), x + s.w / 2, y + 1.1 * k + iconD + 0.5 * k + 3.2 * k / 2, { align: 'center', baseline: 'middle' });
         // QR (con su margen blanco)
         const m = card.matrix;
         const quiet = 4;
@@ -282,7 +300,7 @@
     }
 
     return {
-        QR_LIB, PUBLIC_ORIGIN, SIZES, PAPERS, MARGIN, GAP, CARD_CSS,
+        QR_LIB, PUBLIC_ORIGIN, SIZES, PAPERS, MARGIN, GAP, CARD_CSS, ICON_LAYERS, headHeight,
         esc, publicOrigin, panicUrl, parsePanicQuery, functionUrl, callFunction, storageKey,
         unitLabel, neighbors, fases, select, cardsFor,
         qrMatrix, qrRuns, qrSvg, panicIconSvg, layout, pages, cardHtml, printHtml, latin1, drawCard, drawPdf

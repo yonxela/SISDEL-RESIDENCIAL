@@ -792,6 +792,32 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             && /customExpenseConcepts'\)\) needs\.push\(\['finanzas\.config_conceptos', 'finanzas\.egresos_registrar'\]\)/.test(read('finanzas-sync.js'))
             && /\(openNewExpCategory\|saveNewExpCategory\|closeNewExpCategory\)\\\(\/, \['egresos_registrar', 'config_conceptos'\]\]/.test(read('finanzas-bloqueo.js')));
     }
+    {
+        // Formulario del residente de OIKOS: la X fija y las placas al editar (pedido del usuario el 2026-11-20)
+        const oik = read('finanzas/index.html'), fin = read('finanzas.html'), blq = read('finanzas-bloqueo.js');
+        const resModal = oik.slice(oik.indexOf('<div id="modal-resident"'), oik.indexOf('<div id="modal-', oik.indexOf('<div id="modal-resident"') + 20));
+        yes('la X del formulario de residente va en un encabezado fijo (sticky, pegado al borde de arriba) y cierra la ventana',
+            /<div id="res-modal-head" class="sticky -top-8 z-30[^"]*-mx-8 -mt-8[^"]*bg-white dark:bg-slate-800/.test(resModal) && /id="res-modal-close" onclick="closeModal\('modal-resident'\)"[^>]*aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg">/.test(resModal)
+            && resModal.indexOf('id="res-modal-head"') < resModal.indexOf('id="res-nav"'));
+        yes('las placas: al crear el campo de siempre y al editar la lista con agregar (Enter) y quitar, fuera de la foto de cambios del formulario',
+            /<div id="res-plates-new">\s*<input type="text" id="res-plates"/.test(resModal) && /<div id="res-plates-edit" class="hidden">/.test(resModal) && /id="res-plates-list"/.test(resModal)
+            && /id="res-plate-add" data-nosnap="1"[^>]*onkeydown="resPlateKey\(event\)"/.test(resModal) && /onclick="resAddPlate\(\)"/.test(resModal)
+            && /el\.id && !el\.hasAttribute\('data-nosnap'\)/.test(oik));
+        yes('editResident muestra las placas (ya no las esconde) y un residente nuevo vuelve al campo de siempre',
+            /function editResident\(id\) \{[\s\S]{0,2500}renderResPlates\(r\.id\);/.test(oik) && !/res-plates-wrap'\); if \(platesWrap\) platesWrap\.classList\.add\('hidden'\)/.test(oik)
+            && /paintResPlatesMode\(false\);\s+\/\/ SISDEL: al crear/.test(oik));
+        yes('agregar y quitar: placa limpia en mayusculas, sin repetidas, minimo 3, varias con coma, confirmacion al quitar y el ultimo residente gana',
+            /split\(\/\[,;\]\/\)\.map\(normPlate\)/.test(oik) && /p\.length < 3/.test(oik) && /st\.list\.map\(\(v\) => normPlate\(v\.plate\)\)/.test(oik) && /confirm\(`¿Quitar la placa \$\{v\.plate\}/.test(oik)
+            && /if \(resPlatesState !== mine\) return;/.test(oik) && /if \(resPlatesState !== st\) return;/.test(oik) && /esc\(v\.plate\)/.test(oik) && /data-id="\$\{esc\(v\.id\)\}" onclick="resRemovePlate\(this\.dataset\.id\)"/.test(oik));
+        yes('el puente de placas de finanzas.html pide vehiculos.ver (y crear / eliminar para agregar y quitar) y usa las mismas llamadas que el panel de administracion',
+            /window\.sisdelPlates = null;\s+if \(SISDEL\.can\('vehiculos\.ver'\)\) \{[\s\S]{0,1400}canAdd: SISDEL\.can\('vehiculos\.crear'\)[\s\S]{0,200}canRemove: SISDEL\.can\('vehiculos\.eliminar'\)/.test(fin)
+            && /SISDEL\.getVehicles\(userId\)/.test(fin) && /SISDEL\.createVehicle\(userId, condoId, plate, '', '', ''\)/.test(fin) && /SISDEL\.deleteVehicle\(vehicleId\)/.test(fin)
+            && /if \(!SISDEL\.can\('vehiculos\.crear'\)\) return null;/.test(fin) && /if \(!SISDEL\.can\('vehiculos\.eliminar'\)\) return false;/.test(fin));
+        yes('las reglas de vehiculos exigen lo mismo que el puente (crear y eliminar por privilegio)',
+            /match \/vehiculos\/\{vehicleId\} \{[\s\S]{0,700}pVehiculosCrear\(condoId\)[\s\S]{0,500}pVehiculosEliminar\(condoId\)/.test(read('firestore.rules')));
+        yes('el bloqueo de pantalla pide residentes_editar para agregar y quitar placas y oculta el bloque sin el',
+            /\(resAddPlate\|resRemovePlate\)\\\(\/, \['residentes_editar'\]/.test(blq) && /'#res-plates-edit'\]\],/.test(blq));
+    }
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

@@ -113,8 +113,8 @@
     <script src="privilegios.js?v=20261120q"></script>
     <script src="sisdel-core.js?v=20261120q"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261120n"></script>
-    <script src="finanzas-bloqueo.js?v=20261120n"></script>
+    <script src="finanzas-sync.js?v=20261120o"></script>
+    <script src="finanzas-bloqueo.js?v=20261120o"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -381,6 +381,31 @@
                                 });
                         }
                         return () => { vehicleListeners.delete(callback); };
+                    }
+                };
+            }
+
+            // Placas del residente que se edita en OIKOS (pedido del usuario el 2026-11-20): ver, agregar y quitar las placas de sus
+            // vehiculos desde su formulario. Solo con "Ver vehiculos" (vehiculos.ver); agregar pide vehiculos.crear y quitar
+            // vehiculos.eliminar, que tambien exigen las reglas (la pantalla solo oculta los botones). Cada llamada es la misma que
+            // hace el panel de administracion (SISDEL.getVehicles / createVehicle / deleteVehicle).
+            window.sisdelPlates = null;
+            if (SISDEL.can('vehiculos.ver')) {
+                window.sisdelPlates = {
+                    canAdd: SISDEL.can('vehiculos.crear'),
+                    canRemove: SISDEL.can('vehiculos.eliminar'),
+                    async list(userId) {
+                        const vehicles = await SISDEL.getVehicles(userId);
+                        return (vehicles || []).map((v) => ({ id: String(v.id), plate: String(v.plate || '') }));
+                    },
+                    async add(userId, plate) {
+                        if (!SISDEL.can('vehiculos.crear')) return null;
+                        const vehicle = await SISDEL.createVehicle(userId, condoId, plate, '', '', '');
+                        return vehicle ? { id: String(vehicle.id), plate: String(vehicle.plate || plate) } : null;
+                    },
+                    async remove(vehicleId) {
+                        if (!SISDEL.can('vehiculos.eliminar')) return false;
+                        return !!(await SISDEL.deleteVehicle(vehicleId));
                     }
                 };
             }

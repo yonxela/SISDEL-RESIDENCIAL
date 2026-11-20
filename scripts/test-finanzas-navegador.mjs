@@ -1537,6 +1537,37 @@ async function run() {
         equal('se guarda en la nube', await idle(), 'ok');
         equal('la categoria queda en la configuracion del condominio (la ven todos los equipos)', ((await condoRef.collection('finanzas_config').doc('oikos_settings').get()).data().customExpenseConcepts || []).filter((c) => c === 'Fumigación de Áreas Verdes').length, 1);
 
+        console.log('\nResidente: la X de cerrar fija y las placas de sus vehiculos al editarlo');
+        // El puente de placas es el real (finanzas.html, con vehiculos.ver / crear / eliminar del administrador) y la base la del emulador
+        const dbPlates = async (uid) => (await condoRef.collection('vehiculos').where('userId', '==', uid).get()).docs.map((d) => d.get('plate')).sort();
+        await oikos(`(() => { window.confirm = () => true; navigate('residents'); editResident('u-ana'); return true; })()`);
+        await page.waitFor(`(() => { try { const d = document.querySelector('#frameBox iframe').contentWindow.document; return d.querySelectorAll('#res-plates-list [data-plate]').length > 0; } catch (e) { return false; } })()`, 'las placas de Ana en su formulario', 20000);
+        const plUi = () => oikos(`(() => { const d = (id) => document.getElementById(id); const vis = (id) => !!d(id) && !d(id).classList.contains('hidden');
+            return { edit: vis('res-plates-edit'), nuevo: vis('res-plates-new'), fila: vis('res-plates-add-row'), placas: [...document.querySelectorAll('#res-plates-list [data-plate]')].map((x) => x.dataset.plate).sort(), quitar: document.querySelectorAll('#res-plates-list .res-plate-del').length, msg: d('res-plates-msg').textContent }; })()`);
+        const anaPlates = await dbPlates('u-ana');
+        const pl0 = await plUi();
+        equal('editar a un vecino muestra sus placas de verdad (las de la base), con agregar y quitar', [pl0.edit, pl0.nuevo, pl0.fila, pl0.placas, pl0.quitar], [true, false, true, anaPlates, anaPlates.length]);
+        await oikos(`(() => { document.getElementById('res-plate-add').value = ' q-555 tst '; resAddPlate(); })()`);
+        const added = await waitFor('la placa nueva queda como vehiculo del vecino en la base', async () => (await condoRef.collection('vehiculos').where('userId', '==', 'u-ana').where('plate', '==', 'Q555TST').get()).docs[0] || null);
+        record('con su condominio, su marbete y la placa limpia en mayusculas', !!added && added.get('condominioId') === CONDO && /^MAR/.test(String(added.get('marbeteCode'))) && added.get('plateNorm') === 'Q555TST', JSON.stringify(added && added.data()));
+        const pl1 = await plUi();
+        equal('y se ve en la lista, con el aviso', [pl1.placas.includes('Q555TST'), pl1.msg], [true, 'Placa Q555TST agregada.']);
+        equal('el residente no cambio (agregar placas no lo marca como modificado ni lo guarda)', await oikos(`resIsDirty()`), false);
+        await oikos(`document.querySelector('#res-plates-list [data-plate="Q555TST"] .res-plate-del').click()`);
+        await waitFor('quitarla la borra de la base', async () => (await dbPlates('u-ana')).length === anaPlates.length && !(await dbPlates('u-ana')).includes('Q555TST'));
+        equal('y sale de la lista', (await plUi()).placas, anaPlates);
+        equal('un residente nuevo sigue viendo el campo de placas de siempre', await oikos(`(() => { closeModal('modal-resident'); openModal('modal-resident'); const d = (id) => document.getElementById(id); return [!d('res-plates-new').classList.contains('hidden'), d('res-plates-edit').classList.contains('hidden')]; })()`), [true, true]);
+        // La X fija: con el formulario desplazado hasta Guardar la X sigue arriba, a la vista
+        const xOut = await oikos(`(async () => {
+            closeModal('modal-resident'); await new Promise((r) => setTimeout(r, 400));
+            editResident('u-ana'); await new Promise((r) => setTimeout(r, 400));
+            const card = document.querySelector('#modal-resident > div'); card.scrollTop = card.scrollHeight; await new Promise((r) => setTimeout(r, 200));
+            const x = document.getElementById('res-modal-close').getBoundingClientRect(), c = card.getBoundingClientRect(), h = document.getElementById('res-modal-head').getBoundingClientRect();
+            return { scrolled: card.scrollTop > 50, flush: Math.abs(h.top - c.top) <= 1, inside: x.top >= c.top - 1 && x.bottom <= c.top + h.height + 1 && x.right <= c.right + 1, title: document.getElementById('title-modal-res').textContent };
+        })()`);
+        equal('al bajar hasta Guardar la X queda fija arriba a la derecha de la ventana', xOut, { scrolled: true, flush: true, inside: true, title: 'Editar Residente' });
+        await oikos(`closeModal('modal-resident')`);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

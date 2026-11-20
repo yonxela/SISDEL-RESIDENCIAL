@@ -63,6 +63,9 @@
         [/^openModal\('modal-resident'\)/, ['residentes_crear']],
         [/^editResident\(/, ['residentes_editar']],
         [/^(openBulkType|applyBulkType|openAssignFases|applyAssignFases)\(/, ['residentes_editar']],
+        // Placas del residente (al editarlo): agregar y quitar son de quien edita residentes; el puente de finanzas.html y las reglas
+        // piden ademas vehiculos.crear / vehiculos.eliminar
+        [/^(resAddPlate|resRemovePlate)\(/, ['residentes_editar']],
         [/^(openFiniquito|reactivateResident|handleFiniquitoSubmit)\(/, ['residentes_finiquitar']],
         [/^deleteResident\(/, ['residentes_eliminar']],
         [/^openEstadoCuenta\(/, ['residentes_estado']],
@@ -144,7 +147,7 @@
         ]],
         [['residentes_estado'], ['#residents-table-body .dropdown button[onclick^="openEstadoCuenta("]', '#modal-estado-cuenta', '#inc-balance-box', '#inc-tabs', '#inc-pane-detalle', '.ec-quick']],
         [['residentes_crear'], ['#view-residents button[onclick="openModal(\'modal-resident\')"]']],
-        [['residentes_editar'], ['#residents-table-body button[onclick^="editResident("]', '#res-nav', '#res-jump-wrap', '#res-bulk-type-btn', '#modal-bulk-type', '#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases', '#rem-rec-list button[onclick^="editResident("]']],
+        [['residentes_editar'], ['#residents-table-body button[onclick^="editResident("]', '#res-nav', '#res-jump-wrap', '#res-bulk-type-btn', '#modal-bulk-type', '#res-assign-fase-btn', '#rem-fase-assign', '#modal-assign-fases', '#rem-rec-list button[onclick^="editResident("]', '#res-plates-edit']],
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],
         [['residentes_finiquitar'], ['#residents-table-body .dropdown button[onclick^="openFiniquito("]', '#residents-table-body .dropdown button[onclick^="reactivateResident("]', '#modal-finiquito']],
         [['residentes_eliminar'], ['#residents-table-body .dropdown button[onclick^="deleteResident("]']],

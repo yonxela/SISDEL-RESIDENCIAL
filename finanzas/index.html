@@ -1354,9 +1354,11 @@
     </div>
     <div id="modal-resident" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[92vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-4 -mt-2 -mr-2">
+            <!-- SISDEL: el encabezado con la X queda fijo arriba al desplazar el formulario (pedido del usuario el 2026-11-20: al bajar a Guardar
+                 la X de cerrar se perdia de vista) -->
+            <div id="res-modal-head" class="sticky -top-8 z-30 flex items-center justify-between -mx-8 -mt-8 mb-4 px-8 pt-6 pb-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <h3 class="text-xl font-bold dark:text-white" id="title-modal-res">Residente</h3>
-                <button type="button" onclick="closeModal('modal-resident')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
+                <button type="button" id="res-modal-close" onclick="closeModal('modal-resident')" class="-mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
             <!-- SISDEL: pasar de un vecino a otro sin cerrar la ventana y buscar a cualquiera por nombre, lote o telefono
                  (ver resNavigate y resJumpSearch). Va fuera del formulario: no se guarda ni cuenta como cambio -->
@@ -1417,9 +1419,23 @@
                         <input type="email" id="res-email" maxlength="120" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none" placeholder="correo@ejemplo.com" autocomplete="off">
                     </div>
                     <div id="res-plates-wrap">
-                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Placas de vehículos (opcional)</label>
-                        <input type="text" id="res-plates" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none uppercase" placeholder="Ej. P123ABC, M456DEF" autocomplete="off">
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Separe varias placas con coma. Después se agregan o quitan en el panel de administración.</p>
+                        <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Placas de vehículos <span id="res-plates-opt">(opcional)</span></label>
+                        <div id="res-plates-new">
+                            <input type="text" id="res-plates" class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none uppercase" placeholder="Ej. P123ABC, M456DEF" autocomplete="off">
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Separe varias placas con coma. Después se agregan o quitan al editar al residente.</p>
+                        </div>
+                        <!-- SISDEL: al editar a un residente se ven sus placas y se agregan o quitan al momento (pedido del usuario el 2026-11-20).
+                             Se guardan solas, no con el boton Guardar; el puente window.parent.sisdelPlates (finanzas.html) pide
+                             vehiculos.ver / vehiculos.crear / vehiculos.eliminar, que las reglas tambien exigen -->
+                        <div id="res-plates-edit" class="hidden">
+                            <div id="res-plates-list" class="flex flex-wrap gap-2 mb-2" aria-live="polite"></div>
+                            <div id="res-plates-add-row" class="flex gap-2">
+                                <input type="text" id="res-plate-add" data-nosnap="1" maxlength="40" class="flex-1 min-w-0 px-4 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none uppercase" placeholder="Ej. P123ABC" autocomplete="off" spellcheck="false" onkeydown="resPlateKey(event)">
+                                <button type="button" id="res-plate-add-btn" onclick="resAddPlate()" class="shrink-0 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"><i class="fas fa-plus mr-1"></i>Agregar</button>
+                            </div>
+                            <p id="res-plates-msg" class="hidden mt-1 text-xs font-semibold" role="status"></p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Las placas se guardan al momento, sin pulsar Guardar. Para agregar varias, sepárelas con coma.</p>
+                        </div>
                     </div>
                 </div>
                 <div class="space-y-4 hidden" data-res-pane="owner">
@@ -4598,7 +4614,7 @@
         function resFormSnapshot() {
             const form = document.getElementById('form-resident');
             if (!form) return '';
-            const fields = [...form.elements].filter(el => el.id).map(el => [el.id, el.type === 'checkbox' ? el.checked : el.value]);
+            const fields = [...form.elements].filter(el => el.id && !el.hasAttribute('data-nosnap')).map(el => [el.id, el.type === 'checkbox' ? el.checked : el.value]);
             return JSON.stringify(fields) + '|' + [...resRetroSelected].sort().join(',');
         }
         function resMarkClean() { resCleanSnapshot = resFormSnapshot(); }
@@ -5203,6 +5219,115 @@
             if (action && stillOpen) action();
         }
 
+        // ─── SISDEL: placas de los vehiculos del residente, al editarlo (pedido del usuario el 2026-11-20) ───────────────
+        // Al crear un residente se escriben en un campo (finanzas-sync.js las registra con el vecino). Al editarlo se ve la lista de sus
+        // placas con una X para quitar cada una y un campo para agregar (varias con coma): se guardan al momento por el puente
+        // window.parent.sisdelPlates (finanzas.html), que solo existe con vehiculos.ver; agregar pide vehiculos.crear y quitar
+        // vehiculos.eliminar (las reglas tambien). Sin el puente (OIKOS fuera de SISDEL o sin privilegio) no se muestra nada.
+        var resPlatesState = { id: null, list: [], error: false, loading: false };
+        function platesBridge() {
+            try { return window.parent && window.parent !== window ? (window.parent.sisdelPlates || null) : null; } catch (e) { return null; }
+        }
+        function normPlate(v) { return String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+        function setResPlatesMsg(text, kind) {
+            const msg = document.getElementById('res-plates-msg');
+            if (!msg) return;
+            msg.textContent = text || '';
+            msg.classList.toggle('hidden', !text);
+            msg.classList.toggle('text-rose-600', kind === 'error');
+            msg.classList.toggle('dark:text-rose-400', kind === 'error');
+            msg.classList.toggle('text-emerald-700', kind === 'ok');
+            msg.classList.toggle('dark:text-emerald-400', kind === 'ok');
+        }
+        // editing = false: el campo de siempre (residente nuevo); true: la lista con agregar y quitar
+        function paintResPlatesMode(editing) {
+            const wrap = document.getElementById('res-plates-wrap'), fresh = document.getElementById('res-plates-new'), edit = document.getElementById('res-plates-edit');
+            const opt = document.getElementById('res-plates-opt');
+            if (!wrap || !fresh || !edit) return;
+            const bridge = platesBridge();
+            wrap.classList.toggle('hidden', !!editing && !bridge);
+            fresh.classList.toggle('hidden', !!editing);
+            edit.classList.toggle('hidden', !editing);
+            if (opt) opt.classList.toggle('hidden', !!editing);
+            setResPlatesMsg('');
+            const input = document.getElementById('res-plate-add'); if (input) input.value = '';
+        }
+        function paintResPlatesList() {
+            const box = document.getElementById('res-plates-list');
+            const bridge = platesBridge();
+            if (!box || !bridge) return;
+            const st = resPlatesState;
+            const addRow = document.getElementById('res-plates-add-row');
+            if (addRow) addRow.classList.toggle('hidden', !bridge.canAdd);
+            if (st.loading) { box.innerHTML = '<span class="text-xs text-slate-500 dark:text-slate-400">Cargando placas…</span>'; return; }
+            if (st.error) { box.innerHTML = '<span class="text-xs font-semibold text-rose-600 dark:text-rose-400">No se pudieron leer las placas. Cierre y vuelva a abrir al residente.</span>'; return; }
+            if (!st.list.length) { box.innerHTML = '<span class="text-xs text-slate-500 dark:text-slate-400">Sin vehículos registrados.</span>'; return; }
+            const esc = (v) => SisdelBusqueda.escapeHtml(v);
+            box.innerHTML = st.list.map((v) => `<span class="inline-flex items-center gap-1 pl-3 pr-1 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-sm font-mono font-semibold tracking-wider dark:text-white" data-plate="${esc(v.plate)}"><i class="fas fa-car text-slate-400 text-xs mr-1"></i>${esc(v.plate)}${bridge.canRemove ? `<button type="button" class="res-plate-del ml-1 w-6 h-6 rounded-md text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-base leading-none" data-id="${esc(v.id)}" onclick="resRemovePlate(this.dataset.id)" title="Quitar la placa ${esc(v.plate)}" aria-label="Quitar la placa ${esc(v.plate)}">&times;</button>` : ''}</span>`).join('');
+        }
+        function renderResPlates(residentId) {
+            const bridge = platesBridge();
+            resPlatesState = { id: String(residentId), list: [], error: false, loading: !!bridge };
+            paintResPlatesMode(true);
+            if (!bridge) return;
+            paintResPlatesList();
+            const mine = resPlatesState;
+            Promise.resolve().then(() => bridge.list(String(residentId))).then((list) => {
+                if (resPlatesState !== mine) return;   // se paso a otro residente mientras tanto
+                mine.list = (list || []).map((v) => ({ id: String(v.id), plate: String(v.plate || '') })).sort((a, b) => a.plate.localeCompare(b.plate));
+                mine.loading = false; paintResPlatesList();
+            }).catch((err) => {
+                if (resPlatesState !== mine) return;
+                console.warn('placas', err); mine.loading = false; mine.error = true; paintResPlatesList();
+            });
+        }
+        function resPlateKey(event) {
+            // Enter agrega la placa (no guarda el residente)
+            if (event.key === 'Enter') { event.preventDefault(); resAddPlate(); }
+        }
+        async function resAddPlate() {
+            const bridge = platesBridge(), st = resPlatesState, input = document.getElementById('res-plate-add');
+            if (!bridge || !bridge.canAdd || !st.id || !input) return;
+            const wanted = [...new Set(String(input.value || '').split(/[,;]/).map(normPlate).filter(Boolean))];
+            if (!wanted.length) { setResPlatesMsg('Escriba la placa (por ejemplo P123ABC).', 'error'); input.focus(); return; }
+            const short = wanted.find((p) => p.length < 3);
+            if (short) { setResPlatesMsg(`La placa «${short}» es demasiado corta.`, 'error'); input.focus(); return; }
+            const have = new Set(st.list.map((v) => normPlate(v.plate)));
+            const fresh = wanted.filter((p) => !have.has(p));
+            if (!fresh.length) { setResPlatesMsg(wanted.length === 1 ? `La placa ${wanted[0]} ya está registrada.` : 'Esas placas ya están registradas.', 'error'); input.focus(); return; }
+            const btn = document.getElementById('res-plate-add-btn');
+            if (btn) btn.disabled = true;
+            setResPlatesMsg('Guardando…', '');
+            const added = [], failed = [];
+            for (const plate of fresh) {
+                try { const v = await bridge.add(st.id, plate); if (v && v.id) added.push({ id: String(v.id), plate: String(v.plate || plate) }); else failed.push(plate); }
+                catch (err) { console.warn('placa', err); failed.push(plate); }
+            }
+            if (btn) btn.disabled = false;
+            if (resPlatesState !== st) return;   // se paso a otro residente mientras se guardaba
+            st.list = st.list.concat(added).sort((a, b) => a.plate.localeCompare(b.plate));
+            paintResPlatesList();
+            if (failed.length) { setResPlatesMsg(`No se pudo agregar: ${failed.join(', ')}. Revise su conexión o sus privilegios.`, 'error'); input.value = failed.join(', '); }
+            else { input.value = ''; setResPlatesMsg(added.length === 1 ? `Placa ${added[0].plate} agregada.` : `${added.length} placas agregadas.`, 'ok'); }
+            if (added.length) showToast(added.length === 1 ? `Placa ${added[0].plate} agregada` : `${added.length} placas agregadas`);
+            input.focus();
+        }
+        async function resRemovePlate(vehicleId) {
+            const bridge = platesBridge(), st = resPlatesState;
+            if (!bridge || !bridge.canRemove || !st.id) return;
+            const v = st.list.find((x) => String(x.id) === String(vehicleId));
+            if (!v) return;
+            if (!confirm(`¿Quitar la placa ${v.plate} de este residente?\n\nSe borra el vehículo y su marbete; no se puede deshacer.`)) return;
+            let ok = false;
+            try { ok = !!(await bridge.remove(String(vehicleId))); } catch (err) { console.warn('placa', err); }
+            if (resPlatesState !== st) return;
+            if (!ok) { setResPlatesMsg(`No se pudo quitar la placa ${v.plate}. Revise su conexión o sus privilegios.`, 'error'); return; }
+            st.list = st.list.filter((x) => String(x.id) !== String(vehicleId));
+            paintResPlatesList();
+            setResPlatesMsg(`Placa ${v.plate} quitada.`, 'ok');
+            showToast(`Placa ${v.plate} quitada`);
+        }
+
         function editResident(id) {
             openModal('modal-resident'); residentBeingEditedId = id;
             // En edición el selector de meses SÍ se muestra: permite cargar
@@ -5231,7 +5356,7 @@
             resOwnerMirror = !r.propietario; setVal('res-owner', r.propietario || r.name || '');
             setVal('res-water', String(SisdelCuotas.waterUnits(r)));
             paintResUnitType();   // la nota de "sin marcar" depende del agua
-            const platesWrap = document.getElementById('res-plates-wrap'); if (platesWrap) platesWrap.classList.add('hidden');
+            renderResPlates(r.id);   // SISDEL: las placas del residente, para agregar o quitar (antes se escondian y se cambiaban en el panel de administracion)
             resOwnerNote();
             const titleEl = document.getElementById('title-modal-res'); if (titleEl) titleEl.textContent = 'Editar Residente';
             let ct = (r.contact || '').trim();
@@ -10007,7 +10132,7 @@
                 // SISDEL: campos del formulario con pestanas (vacios para un residente nuevo; las placas solo al crear)
                 ['res-fase', 'res-email', 'res-plates', 'res-owner', 'res-nit', 'res-direccion'].forEach(fid => { const el = document.getElementById(fid); if (el) el.value = ''; });
                 const waterEl = document.getElementById('res-water'); if (waterEl) waterEl.value = '0';
-                const platesWrap = document.getElementById('res-plates-wrap'); if (platesWrap) platesWrap.classList.remove('hidden');
+                paintResPlatesMode(false);   // SISDEL: al crear, el campo de placas de siempre
                 resetResForm(); resOwnerNote();
                 // Reset del selector de meses: sin selección y en el año actual.
                 resetResRetro(); renderResRetroMonths();

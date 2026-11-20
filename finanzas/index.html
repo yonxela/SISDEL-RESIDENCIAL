@@ -959,8 +959,15 @@
                             </div>
                             <!-- SISDEL: filtros de la Impresion de marbetes por fase (pedido del usuario el 2026-11-20): buscador inteligente (tambien
                                  por placa, marca o color), fase, a quienes mostrar (con o sin vehiculo) y el orden dentro de cada fase. "Imprimir
-                                 marbetes" saca las calcomanias (una por vehiculo, con su codigo QR) de lo que se ve, una fase por hoja. -->
+                                 marbetes" ya no existe: la vista "Los marbetes" (la de siempre) los muestra como "Mi Marbete" del vecino y asi salen en Imprimir y PDF. -->
                             <div id="rep-marbetes-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div>
+                                    <label for="mb-view" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Ver</label>
+                                    <select id="mb-view" onchange="marbetesFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer font-semibold">
+                                        <option value="cards">Los marbetes (como los ve el vecino)</option>
+                                        <option value="list">Listado de control (tabla)</option>
+                                    </select>
+                                </div>
                                 <div class="min-w-[16rem] flex-1 max-w-md">
                                     <label for="mb-search" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Buscar</label>
                                     <div class="relative">
@@ -987,9 +994,6 @@
                                         <option value="name">Alfabético</option>
                                     </select>
                                 </div>
-                                <button type="button" id="rep-marbetes-print" onclick="printMarbeteCards()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition" title="Imprimir las calcomanías de los marbetes que se ven (una por vehículo, con su código QR), una fase por hoja. Para guardarlas en PDF, elija Guardar como PDF en la ventana de impresión.">
-                                    <i class="fas fa-id-card mr-1.5"></i>Imprimir marbetes
-                                </button>
                             </div>
                             <button onclick="renderCurrentReport()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition">
                                 <i class="fas fa-sync-alt mr-1.5"></i>Actualizar
@@ -1041,6 +1045,9 @@
                             <p id="rep-empty-text">No hay datos para mostrar con los filtros actuales.</p>
                         </div>
                     </div>
+
+                    <!-- SISDEL: los marbetes de la Impresion de marbetes por fase, como los ve el vecino (los pinta paintMarbetesView) -->
+                    <div id="rep-mb-cards" class="hidden space-y-6"></div>
 
                     <!-- Gráfica (oculta por defecto) -->
                     <div id="rep-chart-wrap" class="hidden bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
@@ -7204,6 +7211,7 @@
             else if (currentReportKey === 'marbetes') currentReportData = buildMarbetesReport();
             else if (currentReportKey === 'mora-discounts') currentReportData = buildMoraDiscountReport();
             paintReportTable();
+            paintMarbetesView();
             if (repChartVisible) paintReportChart();
         }
 
@@ -7285,11 +7293,12 @@
             const isPinned = function (i) { return pinFirst && (i === 0 || (pinTwo && i === 1)); };
             // SISDEL: emphasisCols (el nombre en el Listado de vecinos con morosidad): letra en negrita y un 20 % mas grande
             const emph = new Set(d.emphasisCols || []);
+            const emphScale = function (i) { return (d.emphasisScale && d.emphasisScale[i]) || 1.2; };
             const styleOf = function (i, withEmph) {
                 const parts = [];
                 if (pinTwo && i === 0) parts.push('min-width:6.5rem;width:6.5rem');
                 if (pinTwo && i === 1) parts.push('left:6.5rem;min-width:16rem;text-align:left');
-                if (withEmph && emph.has(i)) parts.push('font-weight:700;font-size:1.2em');
+                if (withEmph && emph.has(i)) parts.push('font-weight:700;font-size:' + emphScale(i) + 'em');
                 if (withEmph && (d.nowrapCols || []).indexOf(i) >= 0) parts.push('white-space:nowrap');
                 return parts.length ? ' style="' + parts.join(';') + '"' : '';
             };
@@ -7477,6 +7486,8 @@
         function printCurrentReport() {
             const d = currentReportData;
             if (!d) return;
+            // SISDEL: la Impresion de marbetes por fase en su vista de marbetes imprime los marbetes (como "Mi Marbete" del vecino)
+            if (currentReportKey === 'marbetes' && marbetesView === 'cards') return printMarbeteCards();
             const s = Store.get('settings') || {};
             const escText = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             const numericCols = new Set(d.numericCols || []);
@@ -7484,7 +7495,8 @@
             const meta = d.rowsMeta || [];
             // SISDEL: las columnas que el reporte pide sin partir (lote y nombre) y los encabezados de un mapa de meses no se parten en dos lineas
             const nowrap = new Set(d.nowrapCols || []);
-            const emph = new Set(d.emphasisCols || []);   // el nombre del vecino: negrita y un 20 % mas grande (12 px -> 14.4 px)
+            const emph = new Set(d.emphasisCols || []);   // el nombre del vecino: negrita y un 20 % mas grande (12 px -> 14.4 px; emphasisScale cambia el 20 %)
+            const emphPx = (i) => Math.round(12 * ((d.emphasisScale && d.emphasisScale[i]) || 1.2) * 10) / 10;
             // Un mapa de meses (muchas columnas) va mas compacto para que quepa en la hoja
             const tight = !!d.cellStatus;
             const headerCells = d.headers.map(stripCellHtml)
@@ -7496,7 +7508,7 @@
                     // SISDEL: celdas de color del mapa de pagos (se imprimen con su color)
                     const st = (status[r] || [])[i];
                     const colors = st ? SISDEL_STATUS_COLORS[st] : null;
-                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 4px` : `;text-align:${alignOf(i)}${nowrap.has(i) ? ';white-space:nowrap' : ''}${emph.has(i) ? ';font-weight:700;font-size:14.4px' : ''}`;
+                    const extra = colors ? `;background:${colors[0]};color:${colors[1]};text-align:center;border:1px solid #e2e8f0;font-size:10px;padding:4px 4px` : `;text-align:${alignOf(i)}${nowrap.has(i) ? ';white-space:nowrap' : ''}${emph.has(i) ? ';font-weight:700;font-size:' + emphPx(i) + 'px' : ''}`;
                     return `<td style="padding:${tight ? '6px 6px' : '6px 10px'};border-bottom:1px solid #e2e8f0;font-size:12px${extra}">${escText(stripCellHtml(cell))}</td>`;
                 }).join('') + '</tr>';
             }).join('');
@@ -7546,6 +7558,7 @@
         function downloadCurrentReportPDF() {
             const d = currentReportData;
             if (!d) return;
+            if (currentReportKey === 'marbetes' && marbetesView === 'cards') return downloadMarbeteCardsPDF();
             if (!window.jspdf || !window.jspdf.jsPDF) {
                 alert('La librería de PDF aún se está cargando. Probá en 2 segundos.');
                 return;
@@ -7636,7 +7649,7 @@
             (d.nowrapCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { cellWidth: 'wrap' }); });
             // El nombre del vecino: negrita y un 20 % mas grande que el resto de la tabla
             const pdfBodySize = d.headers.length > 12 ? 6 : (d.headers.length > 8 ? 8 : 9);
-            (d.emphasisCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { fontStyle: 'bold', fontSize: Math.round(pdfBodySize * 1.2 * 10) / 10 }); });
+            (d.emphasisCols || []).forEach(i => { columnStyles[i] = Object.assign({}, columnStyles[i], { fontStyle: 'bold', fontSize: Math.round(pdfBodySize * ((d.emphasisScale && d.emphasisScale[i]) || 1.2) * 10) / 10 }); });
             doc.autoTable({
                 startY,
                 head,
@@ -8644,6 +8657,8 @@
         var marbetesOrder = 'unit';
         var marbetesSearch = '';
         var marbetesSearchTimer = null;
+        // Vista: 'cards' = los marbetes como los ve el vecino (y asi salen en Imprimir y PDF), 'list' = el listado de control
+        var marbetesView = (() => { try { return localStorage.getItem('sisdel_marbetes_vista') === 'list' ? 'list' : 'cards'; } catch (e) { return 'cards'; } })();
         function marbetesBridge() {
             try { return window.parent && window.parent !== window ? window.parent.sisdelVehicles : null; } catch (e) { return null; }
         }
@@ -8683,6 +8698,8 @@
             if (show) show.value = marbetesShow;
             const order = document.getElementById('mb-order');
             if (order) order.value = marbetesOrder;
+            const view = document.getElementById('mb-view');
+            if (view) view.value = marbetesView;
             const select = document.getElementById('mb-fase');
             if (!select) return;
             const residents = (Store.get('residents') || []).filter(isResidentActive);
@@ -8701,6 +8718,8 @@
             marbetesFase = val('mb-fase');
             marbetesShow = val('mb-show') === 'with' || val('mb-show') === 'without' ? val('mb-show') : 'all';
             marbetesOrder = val('mb-order') === 'name' ? 'name' : 'unit';
+            marbetesView = val('mb-view') === 'list' ? 'list' : 'cards';
+            try { localStorage.setItem('sisdel_marbetes_vista', marbetesView); } catch (e) { /* solo se pierde la preferencia */ }
             renderCurrentReport();
         }
         function marbeteFaseText(f) { return f ? faseLabel(f) : 'Sin fase'; }
@@ -8751,11 +8770,11 @@
                         v ? show([v.brand, v.model].filter(Boolean).join(' ')) : '', v ? show(v.color) : '', v ? show(v.code) : '', ''
                     ]);
                     meta.push(null);
-                    items.push({ unit: String(r.unit || ''), name: String(r.name || ''), plate: v ? v.plate : '', brand: v ? v.brand : '', model: v ? v.model : '', color: v ? v.color : '', code: v ? v.code : '' });
+                    if (v) items.push({ fase: fase, unit: String(r.unit || ''), name: String(r.name || ''), plate: v.plate, brand: v.brand, model: v.model, color: v.color, code: v.code });
                 });
                 rows.push(['', esc(fase), 'Subtotal', plural(g.residents, 'residente', 'residentes') + (g.without ? ' (' + g.without + ' sin vehículo)' : ''), plural(g.vehicles, 'vehículo', 'vehículos'), '', '', g.withCode ? plural(g.withCode, 'con código', 'con código') : '', '']);
                 meta.push({ kind: 'subtotal' });
-                cards.push({ fase: fase, items: items });
+                cards.push({ fase: fase, items: items, without: g.without });
             });
 
             let notice = '';
@@ -8777,13 +8796,14 @@
                     { tone: 'none', value: String(t.groups), label: t.groups === 1 ? 'fase' : 'fases' }
                 ],
                 highlightsNote: list.groups.map(g => marbeteFaseText(g.fase) + ': ' + plural(g.vehicles, 'marbete', 'marbetes')).join(' · ') + (list.groups.length ? ' · ' : '') + filterText,
-                hint: 'Imprimir marbetes saca las calcomanías de lo que se ve (una por vehículo, con su código QR), una fase por hoja',
+                hint: marbetesView === 'cards' ? 'Imprimir y PDF sacan estos marbetes (9 por hoja de oficio, una fase por hoja); Excel saca el listado de control' : 'Imprimir, PDF y Excel sacan este listado, con la columna de la firma de recibido',
                 notice: notice,
                 emptyText: marbetesSearch || marbetesFase || marbetesShow !== 'all' || repTypeFilter ? 'Ningún residente coincide con los filtros.' : 'No hay residentes vigentes.',
                 headers: ['No.', 'Fase', 'Lote / Casa', 'Residente', 'Placa', 'Marca y modelo', 'Color', 'Código del marbete', 'Recibido (firma)'],
                 leftCols: [1, 2, 3, 4, 5, 6, 7, 8],
                 nowrapCols: [1, 2, 4, 7],
-                emphasisCols: [2, 4],
+                emphasisCols: [2, 3, 4],
+                emphasisScale: { 3: 1.25 },
                 printOnlyLast: true,
                 rows: rows,
                 rowsMeta: meta,
@@ -8796,7 +8816,7 @@
                     totals: ['TOTAL', '', plural(t.residents, 'residente', 'residentes'), plural(t.vehicles, 'vehículo', 'vehículos')],
                     numericCols: []
                 },
-                // Para "Imprimir marbetes" (los textos sin escapar: se escapan al armar la hoja)
+                // Los marbetes de cada fase (solo vehiculos; los textos sin escapar: se escapan al armar cada tarjeta)
                 cards: cards,
                 chartType: 'bar',
                 chartLabels: list.groups.map(g => marbeteFaseText(g.fase)),
@@ -8807,88 +8827,244 @@
             };
         }
 
-        // Las calcomanias de los marbetes que se ven en el reporte: una por vehiculo (o por residente sin vehiculo, con la placa
-        // en blanco para anotarla), con el condominio, el lote o casa, la fase, la placa, el vehiculo, el residente y el codigo
-        // QR del marbete (el que lee la garita). Una fase por hoja, 10 por hoja de oficio (8.5 x 13 pulgadas), con linea de corte.
-        // El QR lo dibuja qrcodejs (la misma libreria del portal del vecino); sin conexion sale solo el codigo escrito.
-        function marbeteCardsHtml(data) {
+        // ─── Los marbetes como los ve el vecino (pedido del usuario el 2026-11-20, con la captura de "Mi Marbete" de vecino.html:
+        // "en ese reporte se tienen que visualizar todos los marbetes tal como estan en la imagen dos, el nombre del residente en
+        // negrita y un 25 % mayor"). Cada marbete: la placa arriba, "MARBETE VEHICULAR", el lote o casa y la fase (para
+        // repartirlos), el QR en un recuadro blanco y "Vehiculo: ... Residente: NOMBRE" (el nombre en negrita y un 25 % mas grande),
+        // con los colores de esa ventana. Solo los vehiculos registrados tienen marbete. El QR lleva el codigo del marbete
+        // (marbeteCode: el mismo que muestra "Mi Marbete" y que lee la garita) y lo dibuja la libreria qrcode-generator de vendor/
+        // (la del QR de panico): en el navegador, sin internet y sin mandarlo a otro servicio. Sin la libreria sale el codigo escrito.
+        var MARBETE_QR_LIB = '../vendor/qrcode-generator-1.4.4.js';
+        var marbeteQrLoad = null;
+        function loadMarbeteQrLib() {
+            if (typeof window.qrcode === 'function') return Promise.resolve(window.qrcode);
+            if (!marbeteQrLoad) {
+                marbeteQrLoad = new Promise(function (resolve, reject) {
+                    const tag = document.createElement('script');
+                    tag.src = MARBETE_QR_LIB;
+                    tag.onload = function () { if (typeof window.qrcode === 'function') resolve(window.qrcode); else { marbeteQrLoad = null; reject(new Error('qrcode')); } };
+                    tag.onerror = function () { marbeteQrLoad = null; reject(new Error('No se pudo cargar el generador de QR')); };
+                    document.head.appendChild(tag);
+                });
+            }
+            return marbeteQrLoad;
+        }
+        // Los modulos del QR (correccion Q: una calcomania rayada o sucia se sigue leyendo) en tramos oscuros por fila [x, y, ancho]
+        function marbeteQrRuns(lib, text) {
+            const qr = lib(0, 'Q');
+            qr.addData(String(text), 'Byte');
+            qr.make();
+            const size = qr.getModuleCount();
+            const runs = [];
+            for (let r = 0; r < size; r++) {
+                let start = -1;
+                for (let c = 0; c <= size; c++) {
+                    const dark = c < size && qr.isDark(r, c);
+                    if (dark && start < 0) start = c;
+                    if (!dark && start >= 0) { runs.push([start, r, c - start]); start = -1; }
+                }
+            }
+            return { size: size, runs: runs };
+        }
+        // SVG del QR (solo numeros: nada de lo que escriben los usuarios entra al dibujo), con un margen blanco de 2 modulos
+        function marbeteQrSvg(lib, text) {
+            const m = marbeteQrRuns(lib, text);
+            const q = 2;
+            const n = m.size + q * 2;
+            return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + n + ' ' + n + '" shape-rendering="crispEdges" role="img" aria-label="Código QR del marbete"><rect width="' + n + '" height="' + n + '" fill="#fff"/><path fill="#000" d="'
+                + m.runs.map(function (t) { return 'M' + (t[0] + q) + ' ' + (t[1] + q) + 'h' + t[2] + 'v1h-' + t[2] + 'z'; }).join('') + '"/></svg>';
+        }
+        // "Toyota Corolla Blanco" (lo que se sepa del vehiculo; en "Mi Marbete" es marca y color)
+        function marbeteVehicleText(x) { return [x.brand, x.model, x.color].map(function (v) { return String(v || '').trim(); }).filter(Boolean).join(' '); }
+        // Una tarjeta (la misma en pantalla y en la impresion; cambia solo el tamano, con MARBETE_CARD_CSS y el de cada salida)
+        function marbeteCardHtml(x, qrHtml) {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const veh = marbeteVehicleText(x);
+            return '<div class="mbc">'
+                + '<div class="mbc-plate">' + esc(x.plate || 'Sin placa') + '</div>'
+                + '<div class="mbc-kind">Marbete vehicular</div>'
+                + '<div class="mbc-where">' + esc([x.unit, x.fase].filter(Boolean).join(' · ')) + '</div>'
+                + '<div class="mbc-qr">' + (qrHtml || '<span class="mbc-code">' + esc(x.code || 'Sin código') + '</span>') + '</div>'
+                + '<div class="mbc-detail">' + (veh ? 'Vehículo: ' + esc(veh) + '. ' : '') + 'Residente: <b class="mbc-name">' + esc(x.name) + '</b></div>'
+                + '</div>';
+        }
+        // Los colores de la ventana "Mi Marbete" (vecino.html en tema oscuro); el nombre en negrita y un 25 % mas grande
+        var MARBETE_CARD_CSS = '.mbc{background:#1e293b;border:1px solid #334155;color:#f8fafc;text-align:center;display:flex;flex-direction:column;align-items:center;box-sizing:border-box;font-family:Inter,Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+            + '.mbc-plate{font-weight:700;line-height:1.1;letter-spacing:.02em;word-break:break-all}'
+            + '.mbc-kind{color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}'
+            + '.mbc-where{color:#cbd5e1;font-weight:600}'
+            + '.mbc-qr{background:#fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box}'
+            + '.mbc-qr svg{display:block;width:100%;height:100%}'
+            + '.mbc-code{color:#0f172a;font-family:monospace;word-break:break-all}'
+            + '.mbc-detail{color:#cbd5e1;line-height:1.35;overflow-wrap:anywhere}'
+            + '.mbc-name{font-weight:700;font-size:1.25em;color:#f8fafc}';
+        function marbetesCount(d) { return ((d && d.cards) || []).reduce(function (a, g) { return a + g.items.length; }, 0); }
+
+        // En pantalla: una seccion por fase con sus marbetes (en lugar de la tabla). La libreria del QR se carga la primera vez
+        function marbetesScreenHtml(d, lib) {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const style = '<style>' + MARBETE_CARD_CSS
+                + '#rep-mb-cards .mb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}'
+                + '#rep-mb-cards .mbc{border-radius:16px;padding:20px 16px 18px}'
+                + '#rep-mb-cards .mbc-plate{font-size:1.7rem}'
+                + '#rep-mb-cards .mbc-kind{font-size:.72rem;margin-top:6px}'
+                + '#rep-mb-cards .mbc-where{font-size:.8rem;margin-top:6px}'
+                + '#rep-mb-cards .mbc-qr{width:180px;height:180px;padding:12px;border-radius:12px;margin:14px 0}'
+                + '#rep-mb-cards .mbc-code{font-size:.75rem}'
+                + '#rep-mb-cards .mbc-detail{font-size:.9rem}</style>';
+            const groups = (d.cards || []).filter(function (g) { return g.items.length || g.without; });
+            const total = marbetesCount(d);
+            if (!total) {
+                const without = (d.cards || []).reduce(function (a, g) { return a + (g.without || 0); }, 0);
+                return style + '<div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400"><i class="fas fa-id-card text-3xl opacity-40 mb-2"></i><p>'
+                    + esc(without ? 'No hay marbetes con estos filtros: ' + plural(without, 'residente no tiene', 'residentes no tienen') + ' vehículo registrado. Véalos en «Listado de control».' : 'No hay marbetes con estos filtros.') + '</p></div>';
+            }
+            return style + groups.map(function (g) {
+                return '<section><h4 class="text-base font-bold text-slate-900 dark:text-white mb-3">' + esc(g.fase)
+                    + ' <span class="font-normal text-sm text-slate-500 dark:text-slate-400">· ' + esc(plural(g.items.length, 'marbete', 'marbetes')) + (g.without ? ' · ' + esc(plural(g.without, 'residente sin vehículo registrado', 'residentes sin vehículo registrado')) : '') + '</span></h4>'
+                    + (g.items.length ? '<div class="mb-grid">' + g.items.map(function (x) { return marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : ''); }).join('') + '</div>' : '')
+                    + '</section>';
+            }).join('');
+        }
+        // Muestra los marbetes o la tabla, segun la vista (la tabla vuelve en los demas reportes)
+        function paintMarbetesView() {
+            const box = document.getElementById('rep-mb-cards');
+            const wrap = document.getElementById('rep-table-wrap');
+            const on = currentReportKey === 'marbetes' && marbetesView === 'cards' && !!(currentReportData && currentReportData.cards);
+            if (wrap) wrap.classList.toggle('hidden', on);
+            if (!box) return;
+            box.classList.toggle('hidden', !on);
+            if (!on) { box.innerHTML = ''; return; }
+            const lib = typeof window.qrcode === 'function' ? window.qrcode : null;
+            box.innerHTML = marbetesScreenHtml(currentReportData, lib);
+            if (!lib && currentReportData.cards.some(function (g) { return g.items.some(function (x) { return x.code; }); })) {
+                loadMarbeteQrLib().then(function () { if (currentReportKey === 'marbetes' && marbetesView === 'cards') paintMarbetesView(); }).catch(function () { /* queda el codigo escrito */ });
+            }
+        }
+
+        // La hoja para imprimir: oficio (8.5 x 13 pulgadas) vertical, 9 marbetes de 62 x 96 mm por hoja (3 x 3) y una fase por hoja
+        function marbeteCardsHtml(data, lib) {
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             const s = Store.get('settings') || {};
             const condo = s.name || 'Residencial';
             const groups = ((data && data.cards) || []).filter(g => g.items.length);
-            const card = (fase, x) => '<div class="card">'
-                + '<div class="top"><span class="condo">' + esc(condo) + '</span><span class="kind">Marbete vehicular</span></div>'
-                + '<div class="body"><div class="info">'
-                + '<div class="row"><div><div class="lbl">Lote / Casa</div><div class="unit">' + esc(x.unit || '—') + '</div></div><div class="fase">' + esc(fase) + '</div></div>'
-                + '<div class="lbl">Placa</div><div class="plate">' + (x.plate ? esc(x.plate) : '<span class="blank"></span>') + '</div>'
-                + '<div class="veh">' + esc([x.brand, x.model].filter(Boolean).join(' ') + (x.color ? ' · ' + x.color : '')) + '</div>'
-                + '<div class="name">' + esc(x.name) + '</div>'
-                + '</div><div class="qrbox">' + (x.code ? '<div class="qr" data-code="' + esc(x.code) + '"></div><div class="code">' + esc(x.code) + '</div>' : '<div class="noqr">' + (x.plate ? 'Sin código' : 'Sin vehículo registrado') + '</div>') + '</div></div>'
-                + '</div>';
             const pages = groups.map(g => '<section class="fase-page"><h2>' + esc(condo) + ' · ' + esc(g.fase) + ' <small>' + esc(plural(g.items.length, 'marbete', 'marbetes')) + '</small></h2><div class="grid">'
-                + g.items.map(x => card(g.fase, x)).join('') + '</div></section>').join('');
+                + g.items.map(x => marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : '')).join('') + '</div></section>').join('');
             return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Marbetes - ${esc(condo)}</title>
                 <style>
-                    /* Oficio (8.5 x 13 pulgadas) vertical: 2 columnas x 5 filas de 95 x 54 mm */
                     @page{size:8.5in 13in;margin:10mm}
                     *{box-sizing:border-box}
-                    body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+                    body{font-family:Inter,Arial,Helvetica,sans-serif;margin:0;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
                     .fase-page + .fase-page{break-before:page;page-break-before:always}
-                    h2{font-size:14px;margin:0 0 4mm;color:#334155}
+                    h2{font-size:13px;margin:0 0 3mm;color:#334155}
                     h2 small{font-weight:400;color:#64748b}
-                    .grid{display:grid;grid-template-columns:95mm 95mm;gap:4mm 5mm}
-                    .card{height:54mm;border:1px dashed #94a3b8;border-radius:3mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid;display:flex;flex-direction:column}
-                    .top{background:#1e3a8a;color:#fff;padding:1.6mm 3mm;display:flex;justify-content:space-between;align-items:center;gap:2mm}
-                    .condo{font-weight:700;font-size:10px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                    .kind{font-size:8px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;opacity:.9}
-                    .body{flex:1;display:flex;gap:2mm;padding:2mm 3mm}
-                    .info{flex:1;min-width:0;display:flex;flex-direction:column}
-                    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:2mm}
-                    .lbl{font-size:7px;text-transform:uppercase;color:#64748b;letter-spacing:.05em}
-                    .unit{font-size:22px;font-weight:800;line-height:1.05}
-                    .fase{font-size:10px;font-weight:700;background:#e0e7ff;color:#3730a3;border-radius:2mm;padding:.6mm 2mm;white-space:nowrap}
-                    .plate{font-family:'Courier New',monospace;font-size:17px;font-weight:700;letter-spacing:.04em;margin-bottom:.6mm}
-                    .plate .blank{display:inline-block;width:38mm;border-bottom:1px solid #0f172a;height:5mm}
-                    .veh{font-size:9px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                    .name{margin-top:auto;font-size:9px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                    .qrbox{width:30mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
-                    .qr{width:28mm;height:28mm}
-                    .qr img,.qr canvas{width:28mm !important;height:28mm !important}
-                    .code{font-family:'Courier New',monospace;font-size:7px;margin-top:1mm;word-break:break-all;text-align:center}
-                    .noqr{font-size:8px;color:#94a3b8;border:1px dashed #cbd5e1;border-radius:2mm;width:28mm;height:28mm;display:flex;align-items:center;justify-content:center;text-align:center}
-                    .qr-off .qr{display:none}
-                </style></head><body>${pages}
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" onerror="window.qrFailed=true"><\/script>
-                <script>
-                    // Dibuja los QR y abre la impresion; sin la libreria (sin conexion) imprime con el codigo escrito
-                    (function () {
-                        var printed = false;
-                        function go() { if (printed) return; printed = true; setTimeout(function () { try { window.print(); } catch (e) {} }, 400); }
-                        function draw() {
-                            if (typeof QRCode === 'undefined') { document.body.classList.add('qr-off'); go(); return; }
-                            var boxes = document.querySelectorAll('.qr[data-code]');
-                            for (var i = 0; i < boxes.length; i++) {
-                                try { new QRCode(boxes[i], { text: boxes[i].getAttribute('data-code'), width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
-                            }
-                            go();
-                        }
-                        if (document.readyState === 'complete') draw(); else window.addEventListener('load', draw);
-                        setTimeout(function () { if (!printed) { document.body.classList.add('qr-off'); go(); } }, 8000);
-                    })();
-                <\/script>
-            </body></html>`;
+                    .grid{display:grid;grid-template-columns:repeat(3,62mm);gap:4mm 4.5mm}
+                    ${MARBETE_CARD_CSS}
+                    .mbc{width:62mm;height:96mm;padding:5mm 3.5mm 4mm;border-radius:4mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+                    .mbc-plate{font-size:21pt}
+                    .mbc-kind{font-size:6.5pt;margin-top:1.2mm}
+                    .mbc-where{font-size:7.5pt;margin-top:1.2mm}
+                    .mbc-qr{width:42mm;height:42mm;padding:2mm;border-radius:3mm;margin:3mm 0}
+                    .mbc-code{font-size:7pt}
+                    .mbc-detail{font-size:8pt}
+                </style></head><body>${pages}</body></html>`;
         }
 
-        function printMarbeteCards() {
+        // Imprimir: la ventana se abre antes de cargar la libreria del QR (el navegador solo deja abrirla en respuesta al clic)
+        async function printMarbeteCards() {
             if (currentReportKey !== 'marbetes' || !currentReportData) return;
             const groups = (currentReportData.cards || []).filter(g => g.items.length);
-            if (!groups.length) { alert('No hay marbetes para imprimir con estos filtros.'); return; }
-            const count = groups.reduce((a, g) => a + g.items.length, 0);
+            if (!groups.length) { alert('No hay marbetes para imprimir con estos filtros: ningún residente de la lista tiene vehículo registrado.'); return; }
+            const count = marbetesCount(currentReportData);
             const w = window.open('', '_blank', 'width=900,height=700');
             if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
-            w.document.write(marbeteCardsHtml(currentReportData));
+            w.document.write('<p style="font-family:sans-serif;padding:20px">Preparando los marbetes...</p>');
+            let lib = null;
+            try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
+            w.document.open();
+            w.document.write(marbeteCardsHtml(currentReportData, lib));
             w.document.close();
+            setTimeout(() => { try { w.print(); } catch (e) { /* la ventana se cerro */ } }, 400);
             showToast(plural(count, 'marbete listo', 'marbetes listos') + ' para imprimir (' + plural(groups.length, 'fase', 'fases') + ', una por hoja).');
+        }
+
+        // PDF de los marbetes (jsPDF): lo mismo que la impresion, oficio vertical, 9 por hoja y una fase por hoja. El QR se dibuja
+        // con rectangulos (nitido a cualquier tamano). La fuente del PDF es Latin-1 (latin1 de reportes-export.js)
+        async function downloadMarbeteCardsPDF() {
+            if (currentReportKey !== 'marbetes' || !currentReportData) return;
+            const groups = (currentReportData.cards || []).filter(g => g.items.length);
+            if (!groups.length) { alert('No hay marbetes con estos filtros: ningún residente de la lista tiene vehículo registrado.'); return; }
+            if (!window.jspdf || !window.jspdf.jsPDF) { alert('La librería de PDF aún se está cargando. Probá en 2 segundos.'); return; }
+            let lib = null;
+            try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
+            const txt = (v) => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(String(v == null ? '' : v)) : String(v == null ? '' : v));
+            const s = Store.get('settings') || {};
+            const condo = s.name || 'Residencial';
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [215.9, 330.2] });
+            const pageW = doc.internal.pageSize.getWidth();
+            const W = 62, H = 96, GX = 4.5, GY = 4, X0 = (pageW - (W * 3 + GX * 2)) / 2, Y0 = 17;
+            const card = (x, left, top) => {
+                const cx = left + W / 2;
+                doc.setFillColor(30, 41, 59); doc.setDrawColor(51, 65, 85); doc.setLineWidth(0.3);
+                doc.roundedRect(left, top, W, H, 4, 4, 'FD');
+                // La placa (mas chica si no cabe)
+                doc.setFont('helvetica', 'bold'); doc.setTextColor(248, 250, 252);
+                let size = 21;
+                const plate = txt(x.plate || 'Sin placa');
+                doc.setFontSize(size);
+                while (size > 10 && doc.getTextWidth(plate) > W - 7) { size -= 1; doc.setFontSize(size); }
+                doc.text(plate, cx, top + 12, { align: 'center' });
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(148, 163, 184);
+                doc.text('MARBETE VEHICULAR', cx, top + 17, { align: 'center' });
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(203, 213, 225);
+                doc.text(txt([x.unit, x.fase].filter(Boolean).join(' · ')), cx, top + 21.5, { align: 'center' });
+                // El QR en su recuadro blanco
+                const box = 42, qx = cx - box / 2, qy = top + 25;
+                doc.setFillColor(255, 255, 255);
+                doc.roundedRect(qx, qy, box, box, 3, 3, 'F');
+                if (lib && x.code) {
+                    const m = marbeteQrRuns(lib, x.code);
+                    const inner = box - 4, mod = inner / (m.size + 2), ox = qx + 2 + mod, oy = qy + 2 + mod;
+                    doc.setFillColor(0, 0, 0);
+                    m.runs.forEach(t => doc.rect(ox + t[0] * mod, oy + t[1] * mod, t[2] * mod + 0.02, mod + 0.02, 'F'));
+                } else {
+                    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(15, 23, 42);
+                    doc.text(doc.splitTextToSize(txt(x.code || 'Sin código'), box - 6), cx, qy + box / 2, { align: 'center' });
+                }
+                // "Vehiculo: ... Residente:" y el nombre en negrita y un 25 % mas grande (8 pt -> 10 pt)
+                const veh = marbeteVehicleText(x);
+                let y = qy + box + 5.5;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(203, 213, 225);
+                doc.splitTextToSize(txt((veh ? 'Vehículo: ' + veh + '. ' : '') + 'Residente:'), W - 8).slice(0, 2).forEach(line => { doc.text(line, cx, y, { align: 'center' }); y += 3.6; });
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(248, 250, 252);
+                const maxLines = Math.max(1, Math.floor((top + H - 3 - y) / 4.2) + 1);
+                doc.splitTextToSize(txt(x.name), W - 8).slice(0, maxLines).forEach(line => { doc.text(line, cx, y + 0.6, { align: 'center' }); y += 4.2; });
+            };
+            let first = true;
+            groups.forEach(g => {
+                g.items.forEach((x, i) => {
+                    const k = i % 9;
+                    if (k === 0) {
+                        if (!first) doc.addPage();
+                        first = false;
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(51, 65, 85);
+                        doc.text(txt(condo + ' · ' + g.fase + ' · ' + plural(g.items.length, 'marbete', 'marbetes') + (i ? ' (continuación)' : '')), X0, 12);
+                    }
+                    card(x, X0 + (k % 3) * (W + GX), Y0 + Math.floor(k / 3) * (H + GY));
+                });
+            });
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let p = 1; p <= pageCount; p++) {
+                doc.setPage(p);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 116, 139);
+                doc.text(txt(condo + ' · Impresión de marbetes por fase'), X0, 326);
+                const label = 'Página ' + p + ' de ' + pageCount;
+                doc.text(txt(label), pageW - X0 - doc.getTextWidth(txt(label)), 326);
+            }
+            const day = localDayKey(new Date());
+            doc.save(SisdelReportesOikos.slug('Marbetes ' + condo + ' ' + day) + '.pdf');
+            showToast('PDF descargado: ' + plural(marbetesCount(currentReportData), 'marbete', 'marbetes') + '.');
         }
 
         // ========== REPORTS (mensual del dashboard, distinto al módulo nuevo) ==========

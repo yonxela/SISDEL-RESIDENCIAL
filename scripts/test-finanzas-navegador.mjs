@@ -1469,7 +1469,65 @@ async function run() {
         const mbName = await mbSet('mb-order', 'name');
         equal('en orden alfabetico dentro de cada fase', mbName.rows.filter((r) => r[1] === 'Fase A' && r[0]).map((r) => r[3]), ['María Rodríguez', 'Sin <b>Carro</b>']);
         await mbSet('mb-order', 'unit');
-        // Las salidas: Excel, imprimir, PDF y las calcomanias
+        // Vista "Los marbetes" (la de siempre): las tarjetas como "Mi Marbete" del vecino, solo de los vehiculos, con su QR
+        await mbSet('mb-view', 'cards');
+        await waitFor('la vista de marbetes dibuja el QR de cada vehiculo con la libreria de vendor/', async () => oikos(`document.querySelectorAll('#rep-mb-cards .mbc .mbc-qr svg').length === 3`));
+        const mbCards = await oikos(`(() => {
+            const box = document.getElementById('rep-mb-cards');
+            const cards = Array.from(box.querySelectorAll('.mbc'));
+            const first = cards[0];
+            const name = first.querySelector('.mbc-name');
+            const detail = first.querySelector('.mbc-detail');
+            const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '');
+            return {
+                shown: !box.classList.contains('hidden') && document.getElementById('rep-table-wrap').classList.contains('hidden'),
+                plates: cards.map((c) => c.querySelector('.mbc-plate').textContent),
+                kinds: cards.map((c) => c.querySelector('.mbc-kind').textContent.toUpperCase()),
+                where: cards.map((c) => c.querySelector('.mbc-where').textContent),
+                details: cards.map((c) => c.querySelector('.mbc-detail').textContent),
+                headers: Array.from(box.querySelectorAll('h4')).map((h) => h.textContent.replace(/\\s+/g, ' ').trim()),
+                nameWeight: getComputedStyle(name).fontWeight,
+                nameRatio: parseFloat(getComputedStyle(name).fontSize) / parseFloat(getComputedStyle(detail).fontSize),
+                bg: getComputedStyle(first).backgroundColor,
+                escaped: esc.includes('&lt;b&gt;Nombre') && !esc.includes('<b>Nombre') && esc.includes('&lt;i&gt;X') && !esc.includes('<s>')
+            };
+        })()`);
+        record('en pantalla se ven los marbetes (y no la tabla): uno por vehiculo, agrupados por fase', mbCards.shown && JSON.stringify(mbCards.plates) === JSON.stringify(['P-111MOR', 'P-222BBB', 'P-987XYZ']) && /^Fase A · 1 marbete · 1 residente sin vehículo registrado$/.test(mbCards.headers[0]) && /^Fase B · 2 marbetes$/.test(mbCards.headers[1]), JSON.stringify([mbCards.plates, mbCards.headers]));
+        record('cada marbete como el del vecino: placa, MARBETE VEHICULAR, lote y fase, y "Vehiculo: ... Residente: ..." en fondo oscuro', mbCards.kinds.every((k) => k === 'MARBETE VEHICULAR') && JSON.stringify(mbCards.where) === JSON.stringify(['Casa 23 · Fase A', 'Casa 12 · Fase B', 'Casa 12 · Fase B']) && mbCards.details[0] === 'Vehículo: Honda Fit Gris. Residente: María Rodríguez' && mbCards.bg === 'rgb(30, 41, 59)', JSON.stringify(mbCards));
+        record('el nombre del residente va en negrita y un 25 % mas grande', Number(mbCards.nameWeight) >= 700 && Math.abs(mbCards.nameRatio - 1.25) < 0.02, JSON.stringify([mbCards.nameWeight, mbCards.nameRatio]));
+        record('los textos del marbete se escapan', mbCards.escaped);
+        const mbCardOut = await oikos(`(async () => {
+            const out = {};
+            const savedOpen = window.open;
+            let html = '';
+            window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
+            await printCurrentReport();
+            window.open = savedOpen;
+            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)') };
+            const Orig = window.jspdf.jsPDF;
+            const texts = [];
+            const sizes = {};
+            let saved = '';
+            let rects = 0;
+            window.jspdf.jsPDF = function () { const d = new (Function.prototype.bind.apply(Orig, [null].concat(Array.from(arguments))))(); const t = d.text.bind(d); d.text = function (x) { const v = Array.isArray(x) ? x.join(' ') : String(x); texts.push(v); sizes[v] = d.getFontSize() + (d.getFont().fontStyle === 'bold' ? 'b' : ''); return t.apply(null, arguments); }; const r = d.rect.bind(d); d.rect = function () { rects++; return r.apply(null, arguments); }; d.save = function (n) { saved = n; }; return d; };
+            let pdfError = '';
+            try { await downloadCurrentReportPDF(); } catch (e) { pdfError = String(e && e.message || e); }
+            window.jspdf.jsPDF = Orig;
+            out.pdf = { error: pdfError, saved: saved, plates: ['P-111MOR', 'P-222BBB', 'P-987XYZ'].every((p) => texts.includes(p)), kind: texts.filter((x) => x === 'MARBETE VEHICULAR').length, name: sizes['Ana García'], label: Object.keys(sizes).filter((k) => /Residente:$/.test(k)).map((k) => sizes[k])[0], pages: texts.some((x) => /^Página 1 de 2$/.test(x)), qrRects: rects };
+            out.excelHeaders = currentReportModel(true).tables[0].headers;
+            return out;
+        })()`);
+        record('Imprimir con la vista de marbetes saca los marbetes (no la tabla): 3, con su QR, una fase por hoja de oficio, 3 x 3', mbCardOut.print.cards === 3 && mbCardOut.print.pages === 2 && mbCardOut.print.qr === 3 && mbCardOut.print.oficio && mbCardOut.print.grid && mbCardOut.print.name && mbCardOut.print.big && mbCardOut.print.noTable, JSON.stringify(mbCardOut.print));
+        record('PDF con la vista de marbetes: los 3 marbetes con su QR dibujado, el nombre en negrita de 10 pt (8 pt el texto: un 25 % mas) y "Pagina 1 de 2"', !mbCardOut.pdf.error && /^marbetes-villa-ferrer-/.test(mbCardOut.pdf.saved) && mbCardOut.pdf.plates && mbCardOut.pdf.kind === 3 && mbCardOut.pdf.name === '10b' && mbCardOut.pdf.label === '8' && mbCardOut.pdf.pages && mbCardOut.pdf.qrRects > 100, JSON.stringify(mbCardOut.pdf));
+        equal('Excel sigue siendo el listado de control', mbCardOut.excelHeaders, mb0.headers);
+        // Vista "Listado de control": la tabla, con el nombre en negrita y un 25 % mas grande, y sus salidas
+        await mbSet('mb-view', 'list');
+        const mbList = await oikos(`(() => {
+            const tds = document.querySelectorAll('#rep-tbody tr:nth-child(2) td');
+            return { tableShown: !document.getElementById('rep-table-wrap').classList.contains('hidden') && document.getElementById('rep-mb-cards').classList.contains('hidden'), weight: getComputedStyle(tds[3]).fontWeight, ratio: parseFloat(getComputedStyle(tds[3]).fontSize) / parseFloat(getComputedStyle(tds[0]).fontSize) };
+        })()`);
+        record('con el listado se ve la tabla y el nombre del residente va en negrita y un 25 % mas grande', mbList.tableShown && Number(mbList.weight) >= 700 && Math.abs(mbList.ratio - 1.25) < 0.02, JSON.stringify(mbList));
+        // Las salidas del listado: Excel, imprimir y PDF
         const mbOut = await oikos(`(() => {
             const out = {};
             const m = currentReportModel(true);
@@ -1477,7 +1535,7 @@ async function run() {
             const v = (c) => (c && typeof c === 'object' ? c.v : c);
             out.excelHeaders = m.tables[0].headers;
             out.excelNo = v(rows[0][0]);
-            out.excelPlateBold = rows[1][4] && typeof rows[1][4] === 'object' && rows[1][4].s === 1;
+            out.excelPlateBold = rows[1][4] && typeof rows[1][4] === 'object' && rows[1][4].s === 1 && rows[1][3] && typeof rows[1][3] === 'object' && rows[1][3].s === 1;
             out.excelSubtotalBold = rows[2].every((c) => c && typeof c === 'object' && c.s === 1);
             out.excelTotal = v(rows[rows.length - 1][0]);
             out.fileName = m.fileName;
@@ -1486,10 +1544,7 @@ async function run() {
             window.open = () => ({ document: { write: (h) => { html += h; }, close() {} }, print() {} });
             printCurrentReport();
             out.print = { title: html.includes('Impresión de marbetes por fase'), firma: html.includes('Recibido (firma)'), subtotal: html.includes('Subtotal'), escaped: html.includes('Sin &lt;b&gt;Carro') && !html.includes('<b>Carro'), oficio: html.includes('@page{size:13in 8.5in') };
-            html = '';
-            printMarbeteCards();
             window.open = savedOpen;
-            out.cards = { count: (html.match(/<div class="card">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, codes: ['MARTEST1', 'MARTEST2', 'MARTEST3'].every((c) => html.includes('data-code="' + c + '"')), escaped: html.includes('Sin &lt;b&gt;Carro') && !html.includes('<b>Carro'), qrLib: html.includes('qrcodejs/1.0.0/qrcode.min.js'), oficio: html.includes('@page{size:8.5in 13in'), plates: html.includes('P-987XYZ') && html.includes('P-111MOR'), blank: (html.match(/<span class="blank"><\\/span>/g) || []).length, condo: html.includes('Villa Ferrer') };
             const Orig = window.jspdf.jsPDF;
             const texts = [];
             let saved = '';
@@ -1502,12 +1557,12 @@ async function run() {
             out.waHeaders = w.tables[0].headers;
             return out;
         })()`);
-        record('Excel: las nueve columnas (con la firma), el No. como numero, la placa y los subtotales en negrita y la fila TOTAL', JSON.stringify(mbOut.excelHeaders) === JSON.stringify(mb0.headers) && mbOut.excelNo === 1 && mbOut.excelPlateBold && mbOut.excelSubtotalBold && mbOut.excelTotal === 'TOTAL' && /^impresion-de-marbetes-por-fase/.test(mbOut.fileName), JSON.stringify(mbOut));
+        record('Excel: las nueve columnas (con la firma), el No. como numero, el nombre, la placa y los subtotales en negrita y la fila TOTAL', JSON.stringify(mbOut.excelHeaders) === JSON.stringify(mb0.headers) && mbOut.excelNo === 1 && mbOut.excelPlateBold && mbOut.excelSubtotalBold && mbOut.excelTotal === 'TOTAL' && /^impresion-de-marbetes-por-fase/.test(mbOut.fileName), JSON.stringify(mbOut));
         record('Imprimir: oficio horizontal con el titulo, la columna de la firma, los subtotales y los nombres escapados', Object.values(mbOut.print).every(Boolean), JSON.stringify(mbOut.print));
         record('PDF: se genera sin errores, con el titulo y "Pagina 1 de N"', !mbOut.pdf.error && /^impresion-de-marbetes-por-fase/.test(mbOut.pdf.saved) && mbOut.pdf.title && mbOut.pdf.footer, JSON.stringify(mbOut.pdf));
-        record('Imprimir marbetes: una calcomania por fila (5), una hoja por fase (3), el QR de cada codigo, la placa en blanco para quien no tiene vehiculo y todo escapado', mbOut.cards.count === 5 && mbOut.cards.pages === 3 && mbOut.cards.codes && mbOut.cards.blank === 2 && mbOut.cards.escaped && mbOut.cards.qrLib && mbOut.cards.oficio && mbOut.cards.plates && mbOut.cards.condo, JSON.stringify(mbOut.cards));
         equal('WhatsApp: resumen con fase, lote, residente y placa (sin el codigo del marbete)', mbOut.waHeaders, ['Fase', 'Lote', 'Residente', 'Placa']);
         await oikos(`(() => { Store.get = window.__mbRealGet; renderCurrentReport(); })()`);
+        equal('en los demas reportes vuelve la tabla (los marbetes solo se ven en este)', await oikos(`(() => { selectReport('income'); return [document.getElementById('rep-table-wrap').classList.contains('hidden'), document.getElementById('rep-mb-cards').classList.contains('hidden')]; })()`), [false, true]);
 
         console.log('\nGasto: boton "Crear nueva categoria"');
         const catOut = await oikos(`(() => {

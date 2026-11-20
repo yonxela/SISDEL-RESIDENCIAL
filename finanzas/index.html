@@ -1359,6 +1359,18 @@
     </div>
         </div>
     </div>
+    <!-- SISDEL: Generar marbete (menu de cada residente): sus marbetes con Imprimir, Descargar PDF y Enviar por WhatsApp -->
+    <div id="modal-marbete" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[92vh] flex flex-col">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fas fa-id-card text-violet-600 dark:text-violet-300"></i></div><div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Generar marbete</h3><p class="text-sm text-slate-500 dark:text-slate-400 truncate" id="mbm-info">Residente</p></div><button type="button" onclick="closeModal('modal-marbete')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div id="mbm-body" class="overflow-y-auto flex-1 min-h-0"></div>
+            <div id="mbm-actions" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
+                <button type="button" id="mbm-print" onclick="printResidentMarbete()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-1.5"></i>Imprimir</button>
+                <button type="button" id="mbm-pdf" onclick="downloadResidentMarbetePDF()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-file-pdf mr-1.5"></i>Descargar PDF</button>
+                <button type="button" id="mbm-wa" onclick="sendResidentMarbeteWhatsApp()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition" title="En el celular se comparte el PDF y WhatsApp lo adjunta; en la computadora se descarga el PDF y se abre el chat del residente para adjuntarlo"><i class="fab fa-whatsapp mr-1.5"></i>Enviar por WhatsApp</button>
+            </div>
+        </div>
+    </div>
     <div id="modal-resident" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[92vh] overflow-y-auto">
             <!-- SISDEL: el encabezado con la X queda fijo arriba al desplazar el formulario (pedido del usuario el 2026-11-20: al bajar a Guardar
@@ -4438,6 +4450,7 @@
                             <button onclick="editResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fas fa-edit w-5"></i> Editar</button>
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
                             <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
+                            <button onclick="openMarbete(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-violet-700 dark:text-violet-300"><i class="fas fa-id-card w-5"></i> Generar marbete</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
                             <button onclick="contactMyWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-400"><i class="fas fa-mobile-screen-button w-5"></i> Enviar desde mi WhatsApp</button>
                             <button onclick="openResidentChat(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-400"><i class="fas fa-comments w-5"></i> Chat de WhatsApp</button>
@@ -8677,6 +8690,7 @@
                 timer = setTimeout(function () {
                     const pane = document.getElementById('rep-detail');
                     if (currentReportKey === 'marbetes' && pane && !pane.classList.contains('hidden')) renderCurrentReport();
+                    if (typeof marbeteModalOpen === 'function' && marbeteModalOpen()) paintMarbeteModal();
                 }, 120);
             });
         }
@@ -9014,19 +9028,22 @@
         // Imprimir: la ventana se abre antes de cargar la libreria del QR (el navegador solo deja abrirla en respuesta al clic)
         async function printMarbeteCards() {
             if (currentReportKey !== 'marbetes' || !currentReportData) return;
-            const groups = (currentReportData.cards || []).filter(g => g.items.length);
-            if (!groups.length) { alert('No hay marbetes para imprimir con estos filtros: ningún residente de la lista tiene vehículo registrado.'); return; }
-            const count = marbetesCount(currentReportData);
+            return printMarbetesData(currentReportData, 'No hay marbetes para imprimir con estos filtros: ningún residente de la lista tiene vehículo registrado.');
+        }
+        async function printMarbetesData(data, emptyText) {
+            const groups = ((data && data.cards) || []).filter(g => g.items.length);
+            if (!groups.length) { alert(emptyText); return; }
+            const count = marbetesCount(data);
             const w = window.open('', '_blank', 'width=900,height=700');
             if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
             w.document.write('<p style="font-family:sans-serif;padding:20px">Preparando los marbetes...</p>');
             let lib = null;
             try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
             w.document.open();
-            w.document.write(marbeteCardsHtml(currentReportData, lib));
+            w.document.write(marbeteCardsHtml(data, lib));
             w.document.close();
             setTimeout(() => { try { w.print(); } catch (e) { /* la ventana se cerro */ } }, 400);
-            showToast(plural(count, 'marbete listo', 'marbetes listos') + ' para imprimir (' + plural(groups.length, 'fase', 'fases') + ', una por hoja).');
+            showToast(plural(count, 'marbete listo', 'marbetes listos') + ' para imprimir' + (groups.length > 1 ? ' (' + plural(groups.length, 'fase', 'fases') + ', una por hoja).' : '.'));
         }
 
         // PDF de los marbetes (jsPDF): lo mismo que la impresion, oficio vertical, 9 por hoja y una fase por hoja. El QR se dibuja
@@ -9035,17 +9052,29 @@
             if (currentReportKey !== 'marbetes' || !currentReportData) return;
             const groups = (currentReportData.cards || []).filter(g => g.items.length);
             if (!groups.length) { alert('No hay marbetes con estos filtros: ningún residente de la lista tiene vehículo registrado.'); return; }
-            if (!window.jspdf || !window.jspdf.jsPDF) { alert('La librería de PDF aún se está cargando. Probá en 2 segundos.'); return; }
+            const doc = await marbetePdf(currentReportData, 'sheet');
+            if (!doc) return;
+            const s = Store.get('settings') || {};
+            doc.save(SisdelReportesOikos.slug('Marbetes ' + (s.name || 'Residencial') + ' ' + localDayKey(new Date())) + '.pdf');
+            showToast('PDF descargado: ' + plural(marbetesCount(currentReportData), 'marbete', 'marbetes') + '.');
+        }
+        // El PDF de los marbetes (jsPDF), o null si la libreria de PDF no esta lista. mode 'sheet': hojas de oficio con 9 por hoja y
+        // una fase por hoja (titulo, leyenda y "Pagina X de Y"); mode 'card': un marbete por pagina, del tamano del marbete
+        async function marbetePdf(data, mode) {
+            const groups = ((data && data.cards) || []).filter(g => g.items.length);
+            if (!window.jspdf || !window.jspdf.jsPDF) { alert('La librería de PDF aún se está cargando. Probá en 2 segundos.'); return null; }
             let lib = null;
             try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
             const txt = (v) => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(String(v == null ? '' : v)) : String(v == null ? '' : v));
             const s = Store.get('settings') || {};
             const condo = s.name || 'Residencial';
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [215.9, 330.2] });
+            const W = 62, H = 96, GX = 4.5, GY = 4;
+            const sheet = mode !== 'card';
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: sheet ? [215.9, 330.2] : [W + 10, H + 10] });
             const pageW = doc.internal.pageSize.getWidth();
-            const W = 62, H = 96, GX = 4.5, GY = 4, X0 = (pageW - (W * 3 + GX * 2)) / 2, Y0 = 17;
-            const asOf = currentReportData.cardsAsOf || '';
+            const X0 = sheet ? (pageW - (W * 3 + GX * 2)) / 2 : 5, Y0 = sheet ? 17 : 5;
+            const asOf = data.cardsAsOf || '';
             // La leyenda de colores, a la derecha del titulo de cada hoja
             const legend = () => {
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(71, 85, 105);
@@ -9103,6 +9132,10 @@
                 doc.splitTextToSize(txt(x.name), W - 8).slice(0, maxLines).forEach(line => { doc.text(line, cx, y + 0.6, { align: 'center' }); y += 4.2; });
             };
             let first = true;
+            if (!sheet) {
+                groups.forEach(g => g.items.forEach(x => { if (!first) doc.addPage(); first = false; card(x, X0, Y0); }));
+                return doc;
+            }
             groups.forEach(g => {
                 g.items.forEach((x, i) => {
                     const k = i % 9;
@@ -9124,9 +9157,149 @@
                 const label = 'Página ' + p + ' de ' + pageCount;
                 doc.text(txt(label), pageW - X0 - doc.getTextWidth(txt(label)), 326);
             }
-            const day = localDayKey(new Date());
-            doc.save(SisdelReportesOikos.slug('Marbetes ' + condo + ' ' + day) + '.pdf');
-            showToast('PDF descargado: ' + plural(marbetesCount(currentReportData), 'marbete', 'marbetes') + '.');
+            return doc;
+        }
+
+        // ─── SISDEL: "Generar marbete" del menu de cada residente (pedido del usuario el 2026-11-20: "en ese listado agregar opcion,
+        // generar marbete, con las opciones enviar por WhatsApp, imprimir y descargar como PDF") ───
+        // Una ventana con los marbetes de ESE residente (uno por vehiculo, el mismo diseno de la Impresion de marbetes por fase y de
+        // "Mi Marbete": la placa en su franja verde o roja, el estado con la fecha, el QR y el nombre). Imprimir saca la hoja de
+        // oficio; Descargar PDF, un marbete por pagina del tamano del marbete. WhatsApp no recibe archivos por un enlace (wa.me):
+        // en el celular se COMPARTE el PDF (navigator.share con el archivo: se elige WhatsApp y el chat y el PDF va adjunto); donde
+        // no se puede (la computadora), se descarga el PDF y se abre el chat del residente desde SU WhatsApp (openMyWhatsApp) con
+        // el texto listo, para adjuntarlo (el clip) y pulsar Enviar. Sin vehiculos: lo dice y ofrece agregar la placa en su ficha.
+        // Los vehiculos llegan por el mismo puente del reporte (window.parent.sisdelVehicles, con "Ver vehiculos").
+        var marbeteModalId = null;
+        function marbeteModalOpen() { const m = document.getElementById('modal-marbete'); return !!m && !m.classList.contains('hidden-section'); }
+        function marbeteResidentOf(id) { return (Store.get('residents') || []).find(x => String(x.id) === String(id)) || null; }
+        // Los marbetes de un residente con el formato de la Impresion de marbetes por fase ({ cards: [{ fase, items }], cardsAsOf })
+        function marbeteResidentData(r) {
+            const list = Array.isArray(window.sisdelVehicleList) ? window.sisdelVehicleList : [];
+            const fase = marbeteFaseText(String(r.fase || '').trim());
+            const late = marbeteLate(r);
+            const items = list.filter(v => String(v.userId || '') === String(r.id))
+                .map(v => ({ fase: fase, unit: String(r.unit || ''), name: String(r.name || ''), plate: String(v.plate || '').trim().toUpperCase(), brand: String(v.brand || '').trim(), model: String(v.model || '').trim(), color: String(v.color || '').trim(), code: String(v.marbeteCode || '').trim(), late: late }))
+                .sort((a, b) => a.plate.localeCompare(b.plate, 'es', { numeric: true, sensitivity: 'base' }));
+            return { cards: [{ fase: fase, items: items, without: items.length ? 0 : 1 }], cardsAsOf: marbeteAsOf(), resident: r };
+        }
+        function openMarbete(residentId) {
+            const r = marbeteResidentOf(residentId);
+            if (!r) return;
+            marbeteModalId = String(r.id);
+            startMarbeteVehicles();
+            // La libreria del QR se carga ya: asi Imprimir, PDF y WhatsApp salen sin esperar (el navegador solo deja abrir ventanas y
+            // compartir en respuesta al clic)
+            loadMarbeteQrLib().then(() => { if (marbeteModalOpen()) paintMarbeteModal(); }).catch(() => { /* queda el codigo escrito */ });
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
+            openModal('modal-marbete');
+            paintMarbeteModal();
+        }
+        function paintMarbeteModal() {
+            const r = marbeteResidentOf(marbeteModalId);
+            const body = document.getElementById('mbm-body');
+            const info = document.getElementById('mbm-info');
+            if (!body || !r) return;
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            if (info) info.textContent = [r.unit, r.name].filter(Boolean).join(' · ');
+            const data = marbeteResidentData(r);
+            const items = data.cards[0].items;
+            const bridge = marbetesBridge();
+            const loaded = Array.isArray(window.sisdelVehicleList);
+            const note = (icon, text, extra) => '<div class="px-4 py-8 text-center text-sm text-slate-600 dark:text-slate-300"><i class="fas ' + icon + ' text-3xl opacity-40 mb-3"></i><p>' + esc(text) + '</p>' + (extra || '') + '</div>';
+            let html = '';
+            if (!bridge) html = note('fa-lock', 'Su usuario no puede ver los vehículos de los vecinos: necesita el privilegio «Ver vehículos».');
+            else if (!loaded && window.sisdelVehicleError) html = note('fa-triangle-exclamation', 'No se pudieron leer los vehículos (' + window.sisdelVehicleError + '). Cierre la ventana e intente de nuevo.');
+            else if (!loaded) html = note('fa-spinner fa-spin', 'Cargando los vehículos del residente...');
+            else if (!items.length) html = note('fa-car', 'Este residente no tiene vehículos registrados: el marbete es de un vehículo y lleva su placa.',
+                '<button type="button" id="mbm-add-plate" onclick="marbeteEditPlates(this.dataset.id)" data-id="' + esc(r.id) + '" class="mt-4 px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition"><i class="fas fa-plus mr-1.5"></i>Agregar la placa en su ficha</button>');
+            else {
+                const lib = typeof window.qrcode === 'function' ? window.qrcode : null;
+                html = '<style>' + MARBETE_CARD_CSS
+                    + '#mbm-body .mbm-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:16px}'
+                    + '#mbm-body .mbc{width:250px;border-radius:16px;padding:20px 16px 18px}'
+                    + '#mbm-body .mbc-plate{font-size:1.7rem}'
+                    + '#mbm-body .mbc-kind{font-size:.72rem;margin-top:8px}'
+                    + '#mbm-body .mbc-status{font-size:.72rem;margin-top:4px}'
+                    + '#mbm-body .mbc-where{font-size:.8rem;margin-top:6px}'
+                    + '#mbm-body .mbc-qr{width:180px;height:180px;padding:12px;border-radius:12px;margin:14px 0}'
+                    + '#mbm-body .mbc-code{font-size:.75rem}'
+                    + '#mbm-body .mbc-detail{font-size:.9rem}</style>'
+                    + '<div class="mbm-grid">' + items.map(x => marbeteCardHtml(x, lib && x.code ? marbeteQrSvg(lib, x.code) : '', data.cardsAsOf)).join('') + '</div>'
+                    + '<p class="mt-3 text-center text-xs text-slate-500 dark:text-slate-400">Franja verde: al día · roja: en mora, al ' + esc(data.cardsAsOf) + '. ' + esc(plural(items.length, 'marbete', 'marbetes')) + '.</p>';
+            }
+            body.innerHTML = html;
+            const actions = document.getElementById('mbm-actions');
+            if (actions) actions.classList.toggle('hidden', !items.length);
+        }
+        // Sin vehiculo: la ficha del residente, donde se agregan sus placas
+        function marbeteEditPlates(residentId) {
+            closeModal('modal-marbete');
+            editResident(residentId);
+        }
+        function marbeteResidentReady() {
+            const r = marbeteResidentOf(marbeteModalId);
+            if (!r) return null;
+            const data = marbeteResidentData(r);
+            if (!data.cards[0].items.length) { alert('Este residente no tiene vehículos registrados.'); return null; }
+            return { r: r, data: data };
+        }
+        function marbeteFileName(r) { return SisdelReportesOikos.slug('Marbete ' + [r.unit, r.name].filter(Boolean).join(' ')) + '.pdf'; }
+        function printResidentMarbete() {
+            const x = marbeteResidentReady();
+            if (!x) return;
+            return printMarbetesData(x.data, 'Este residente no tiene vehículos registrados.');
+        }
+        async function downloadResidentMarbetePDF() {
+            const x = marbeteResidentReady();
+            if (!x) return;
+            const doc = await marbetePdf(x.data, 'card');
+            if (!doc) return;
+            doc.save(marbeteFileName(x.r));
+            showToast('PDF descargado: ' + plural(x.data.cards[0].items.length, 'marbete', 'marbetes') + '.');
+        }
+        // El texto que acompana al marbete por WhatsApp (sin el estado de pago: va al residente)
+        function marbeteWhatsAppText(r, data) {
+            const s = Store.get('settings') || {};
+            const lines = ['Hola ' + (r.name || '') + ',', 'le enviamos ' + (data.cards[0].items.length === 1 ? 'su marbete vehicular' : 'sus marbetes vehiculares') + (s.name ? ' de ' + s.name : '') + ':'];
+            data.cards[0].items.forEach(x => {
+                const veh = marbeteVehicleText(x);
+                lines.push('- Placa ' + (x.plate || 'sin placa') + (veh ? ' (' + veh + ')' : '') + (r.unit ? ', lote o casa ' + r.unit : '') + (x.code ? '. Código: ' + x.code : ''));
+            });
+            lines.push('En la garita muestre el código QR del marbete. También lo encuentra en garita.app, en «Mi Marbete».');
+            return lines.join('\n');
+        }
+        async function sendResidentMarbeteWhatsApp() {
+            const x = marbeteResidentReady();
+            if (!x) return;
+            const text = marbeteWhatsAppText(x.r, x.data);
+            const doc = await marbetePdf(x.data, 'card');
+            if (!doc) return;
+            const name = marbeteFileName(x.r);
+            const blob = doc.output('blob');
+            // 1) Celular: compartir el PDF; el telefono ofrece WhatsApp y lo adjunta al chat que se elija
+            let file = null;
+            try { file = new File([blob], name, { type: 'application/pdf' }); } catch (e) { file = null; }
+            if (file && navigator.canShare && navigator.share) {
+                let canShare = false;
+                try { canShare = navigator.canShare({ files: [file] }); } catch (e) { canShare = false; }
+                if (canShare) {
+                    try {
+                        await navigator.share({ files: [file], title: 'Marbete ' + (x.r.unit || x.r.name || ''), text: text });
+                        showToast('Marbete compartido. Si eligió WhatsApp, el PDF va adjunto.');
+                        return;
+                    } catch (e) {
+                        if (e && e.name === 'AbortError') return;   // la persona cerro el menu de compartir
+                    }
+                }
+            }
+            // 2) Computadora (o sin compartir archivos): se descarga el PDF y se abre el chat del residente con el texto
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+            if (openMyWhatsApp(x.r.contact, text)) showToast('Se descargó el PDF del marbete y se abrió WhatsApp con el mensaje para ' + (x.r.name || 'el residente') + ': adjunte el PDF (el clip) y pulse Enviar.');
+            else showToast('Se descargó el PDF del marbete (' + name + '): envíelo por WhatsApp.');
         }
 
         // ========== REPORTS (mensual del dashboard, distinto al módulo nuevo) ==========

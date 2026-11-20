@@ -107,6 +107,12 @@
         // Impresion de marbetes por fase: el reporte y sus filtros; las calcomanias se imprimen con Exportar e imprimir
         [/^selectReport\('marbetes'\)/, ['reportes_marbetes']],
         [/^printMarbeteCards\(/, ['reportes_exportar']],
+        // "Generar marbete" del menu de cada residente: la ventana pide el reporte de marbetes; imprimir y PDF, exportar; WhatsApp,
+        // exportar o contactar residentes (como el estado de cuenta); "Agregar la placa en su ficha", editar residentes
+        [/^openMarbete\(/, ['reportes_marbetes']],
+        [/^(printResidentMarbete|downloadResidentMarbetePDF)\(/, ['reportes_exportar']],
+        [/^sendResidentMarbeteWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
+        [/^marbeteEditPlates\(/, ['residentes_editar']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
@@ -173,7 +179,10 @@
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement', '#acc-moves-note button[onclick="openMovementsReport()"]']],
         [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
-        [['reportes_marbetes'], ['#rep-tab-marbetes']],
+        [['reportes_marbetes'], ['#rep-tab-marbetes', 'button[onclick^="openMarbete("]', '#modal-marbete']],
+        [['reportes_exportar'], ['#mbm-print', '#mbm-pdf']],
+        [['reportes_exportar', 'residentes_contactar'], ['#mbm-wa']],
+        [['residentes_editar'], ['#mbm-add-plate']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],
         [['reportes_exportar'], [

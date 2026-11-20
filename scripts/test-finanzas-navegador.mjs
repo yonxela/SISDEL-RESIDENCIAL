@@ -1573,6 +1573,78 @@ async function run() {
         await oikos(`(() => { Store.get = window.__mbRealGet; renderCurrentReport(); })()`);
         equal('en los demas reportes vuelve la tabla (los marbetes solo se ven en este)', await oikos(`(() => { selectReport('income'); return [document.getElementById('rep-table-wrap').classList.contains('hidden'), document.getElementById('rep-mb-cards').classList.contains('hidden')]; })()`), [false, true]);
 
+        console.log('\nGenerar marbete (menu de cada residente)');
+        // Ana tiene dos vehiculos en el seed (llegan por el puente de verdad); se prueban la ventana, Imprimir, el PDF y WhatsApp
+        // (en la computadora: descarga y chat del residente; en el celular: compartir el PDF), y un residente sin vehiculo
+        await oikos(`navigate('residents')`);
+        record('el menu de cada residente trae "Generar marbete"', await oikos(`document.querySelectorAll('#residents-table-body button[onclick="openMarbete(this.dataset.id)"]').length > 0 && !!document.querySelector('#residents-table-body button[onclick="openMarbete(this.dataset.id)"][data-id="u-ana"]')`));
+        await oikos(`openMarbete('u-ana')`);
+        await waitFor('la ventana muestra los dos marbetes de Ana, cada uno con su QR', async () => oikos(`document.querySelectorAll('#mbm-body .mbc .mbc-qr svg').length === 2`));
+        const mbm = await oikos(`(() => ({
+            open: marbeteModalOpen(),
+            info: document.getElementById('mbm-info').textContent,
+            plates: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).map((p) => p.textContent),
+            names: Array.from(document.querySelectorAll('#mbm-body .mbc-name')).map((n) => n.textContent),
+            bands: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).every((p) => /mbc-band-(ok|late)/.test(p.className)),
+            actions: !document.getElementById('mbm-actions').classList.contains('hidden') && ['mbm-print', 'mbm-pdf', 'mbm-wa'].every((id) => !!document.getElementById(id))
+        }))()`);
+        record('con su placa en su franja, su nombre y los tres botones (Imprimir, Descargar PDF y Enviar por WhatsApp)', mbm.open && /Ana García/.test(mbm.info) && JSON.stringify(mbm.plates) === JSON.stringify(['P-222BBB', 'P-987XYZ']) && mbm.names.every((n) => n === 'Ana García') && mbm.bands && mbm.actions, JSON.stringify(mbm));
+        const mbmOut = await oikos(`(async () => {
+            const out = {};
+            const savedOpen = window.open;
+            let html = '';
+            window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
+            await printResidentMarbete();
+            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in') };
+            // PDF: un marbete por pagina, del tamano del marbete
+            const Orig = window.jspdf.jsPDF;
+            const pdf = { saved: '', pages: 0, size: null, texts: [] };
+            window.jspdf.jsPDF = function () { const d = new (Function.prototype.bind.apply(Orig, [null].concat(Array.from(arguments))))(); const t = d.text.bind(d); d.text = function (x) { pdf.texts.push(Array.isArray(x) ? x.join(' ') : String(x)); return t.apply(null, arguments); }; d.save = function (n) { pdf.saved = n; pdf.pages = d.internal.getNumberOfPages(); pdf.size = [Math.round(d.internal.pageSize.getWidth()), Math.round(d.internal.pageSize.getHeight())]; }; return d; };
+            await downloadResidentMarbetePDF();
+            window.jspdf.jsPDF = Orig;
+            out.pdf = { saved: pdf.saved, pages: pdf.pages, size: pdf.size, plates: ['P-222BBB', 'P-987XYZ'].every((p) => pdf.texts.includes(p)) };
+            // WhatsApp en la computadora (no se pueden compartir archivos): se descarga el PDF y se abre el chat de Ana con el texto
+            const savedCan = Object.getOwnPropertyDescriptor(navigator, 'canShare');
+            const savedShare = Object.getOwnPropertyDescriptor(navigator, 'share');
+            Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });
+            const savedClick = HTMLAnchorElement.prototype.click;
+            const downloads = [];
+            HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
+            let url = '';
+            window.open = (u) => { url = String(u); return {}; };
+            await sendResidentMarbeteWhatsApp();
+            out.desk = { downloads: downloads.slice(), url: url, text: decodeURIComponent((url.split('text=')[1] || '').replace(/\\+/g, ' ')) };
+            // WhatsApp en el celular: se comparte el PDF (el telefono lo adjunta en WhatsApp)
+            let shared = null;
+            Object.defineProperty(navigator, 'canShare', { value: (d) => !!(d && d.files && d.files.length), configurable: true });
+            Object.defineProperty(navigator, 'share', { value: async (d) => { shared = d; }, configurable: true });
+            url = '';
+            downloads.length = 0;
+            await sendResidentMarbeteWhatsApp();
+            out.phone = shared ? { name: shared.files[0].name, type: shared.files[0].type, size: shared.files[0].size, text: shared.text, opened: url, downloads: downloads.length } : null;
+            HTMLAnchorElement.prototype.click = savedClick;
+            window.open = savedOpen;
+            if (savedCan) Object.defineProperty(navigator, 'canShare', savedCan); else delete navigator.canShare;
+            if (savedShare) Object.defineProperty(navigator, 'share', savedShare); else delete navigator.share;
+            return out;
+        })()`);
+        record('Imprimir saca los dos marbetes con su QR en la hoja de oficio', mbmOut.print.cards === 2 && mbmOut.print.qr === 2 && mbmOut.print.oficio, JSON.stringify(mbmOut.print));
+        record('Descargar PDF: un marbete por pagina, del tamano del marbete (72 x 106 mm), con el nombre del residente en el archivo', /^marbete-casa-12-ana-garcia\.pdf$/.test(mbmOut.pdf.saved) && mbmOut.pdf.pages === 2 && JSON.stringify(mbmOut.pdf.size) === JSON.stringify([72, 106]) && mbmOut.pdf.plates, JSON.stringify(mbmOut.pdf));
+        record('WhatsApp en la computadora: descarga el PDF y abre el chat de Ana con sus placas y el codigo de cada marbete', mbmOut.desk.downloads.length === 1 && /\.pdf$/.test(mbmOut.desk.downloads[0]) && /50255555678/.test(mbmOut.desk.url) && /Hola Ana García/.test(mbmOut.desk.text) && /P-222BBB/.test(mbmOut.desk.text) && /MARTEST2/.test(mbmOut.desk.text) && /MARTEST1/.test(mbmOut.desk.text), JSON.stringify(mbmOut.desk).slice(0, 300));
+        record('WhatsApp en el celular: comparte el PDF (WhatsApp lo adjunta) con el texto, sin descargar ni abrir otra ventana', !!mbmOut.phone && /\.pdf$/.test(mbmOut.phone.name) && mbmOut.phone.type === 'application/pdf' && mbmOut.phone.size > 2000 && /P-987XYZ/.test(mbmOut.phone.text) && mbmOut.phone.opened === '' && mbmOut.phone.downloads === 0, JSON.stringify(mbmOut.phone));
+        // Un residente sin vehiculo: lo dice y ofrece agregar la placa en su ficha
+        const mbmNone = await oikos(`(() => {
+            closeModal('modal-marbete');
+            const realGet = Store.get;
+            Store.get = function (k) { return k === 'residents' ? realGet.call(Store, k).concat([{ id: 'mb-sin-vehiculo', name: 'Sin <b>Vehiculo</b>', unit: 'Casa 99', status: 'active', balance: 0 }]) : realGet.call(Store, k); };
+            openMarbete('mb-sin-vehiculo');
+            const out = { text: document.getElementById('mbm-body').textContent, add: !!document.getElementById('mbm-add-plate'), actionsHidden: document.getElementById('mbm-actions').classList.contains('hidden'), info: document.getElementById('mbm-info').innerHTML };
+            closeModal('modal-marbete');
+            Store.get = realGet;
+            return out;
+        })()`);
+        record('sin vehiculo: lo dice, ofrece agregar la placa en su ficha, no muestra los botones y el nombre se escapa', /no tiene vehículos registrados/.test(mbmNone.text) && mbmNone.add && mbmNone.actionsHidden && mbmNone.info.includes('&lt;b&gt;Vehiculo') && !mbmNone.info.includes('<b>'), JSON.stringify(mbmNone));
+
         console.log('\nGasto: boton "Crear nueva categoria"');
         const catOut = await oikos(`(() => {
             navigate('accounting'); openModal('modal-expense');

@@ -43,6 +43,7 @@ const txs = [
 ];
 const auto = B.automaticByAccount([A, C], history, txs);
 equal('solo lo registrado despues de abrir; sin anulados ni cuotas', [(auto.get('A') || []).map((t) => t.id), (auto.get('C') || []).map((t) => t.id)], [['p1', 'g1'], ['p3']]);
+equal('el saldo a favor inicial de una carga de saldos no es dinero: no entra al banco', (B.automaticByAccount([A], [], [pay('sf', '2026-11-11T10:00:00.000Z', 600, { openingCredit: true }), pay('py', '2026-11-11T11:00:00.000Z', 50)]).get('A') || []).map((t) => t.id), ['py']);
 equal('un pago registrado hoy con fecha de antes de abrir la cuenta tambien entra (cuenta la fecha de registro)', B.automaticByAccount([A], [], [pay('px', '2026-11-11T10:00:00.000Z', 50, { date: '2026-11-01T10:00:00.000Z' })]).get('A').map((t) => t.id), ['px']);
 
 console.log('\nLibro de una cuenta');

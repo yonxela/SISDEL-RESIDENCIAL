@@ -298,6 +298,36 @@ equal('la vista previa de lo que se paga es exactamente lo que despues muestra e
 })(), true);
 equal('los conceptos que acepta un pago dirigido', [D.PART_KEYS, D.ALLOC_KEYS], [['maintenance', 'water', 'garbage', 'electricity', 'other'], ['maintenance', 'water', 'garbage', 'electricity', 'other', 'fee', 'extra', 'mora']]);
 
+// Mora al corte (La Perla, 2026-11-20): una carga de saldos trae la mora de cada cuota a una fecha, calculada por el otro
+// sistema; desde ahi sigue la regla de aqui (3 % el dia 6). moraExempt: mora exonerada, nunca lleva.
+console.log('\nMora al corte (carga de saldos de otro sistema)');
+{
+    const cut = (id, period, amount, opening, more = {}) => fee(id, period, amount, `${period}-28`, 'r1');
+    const withCut = (id, period, amount, opening, more = {}) => ({ ...cut(id, period, amount), moraOpening: opening, moraOpeningAt: '2026-11-09', ...more });
+    const sep25 = withCut('s25', '2025-09', 200, 81);
+    equal('el dia del corte la mora es la que trae', state([sep25], '2026-11-09').mora, 81);
+    equal('hasta el siguiente dia de cargo no cambia', state([sep25], '2026-11-20').mora, 81);
+    equal('el 6 de diciembre suma el 3 % de lo que falta', state([sep25], '2026-12-06').mora, 87);
+    equal('y el 6 de enero otro 3 %', state([sep25], '2027-01-06').mora, 93);
+    equal('sin la mora al corte la regla de aqui la calcula desde que vencio', state([cut('s25', '2025-09', 200)], '2026-11-09').mora, 84);
+    equal('sin fecha valida la mora al corte no cuenta', state([{ ...cut('s25', '2025-09', 200), moraOpening: 81 }], '2026-11-09').mora, 84);
+    equal('con fecha y mora cero: nada hasta el siguiente dia de cargo', [state([withCut('o', '2026-10', 300, 0)], '2026-11-20').mora, state([withCut('o', '2026-10', 300, 0)], '2026-12-06').mora], [0, 9]);
+    const oct = withCut('o26', '2026-10', 300, 2.7);
+    equal('una cuota de octubre con Q2.70 al 9/11: Q11.70 el 6 de diciembre', [state([oct], '2026-11-20').mora, state([oct], '2026-12-06').mora], [2.7, 11.7]);
+    equal('la mora al corte es mora calculada (no esta en el libro): moraDaily la incluye', state([sep25, oct], '2026-11-20').moraDaily, 83.7);
+    equal('el saldo dice capital mas mora al corte', state([sep25, oct], '2026-11-20').balance, -583.7);
+    equal('pagar el capital deja la mora al corte y ya no crece', brief([sep25, pay('p', '2026-11-20', 200)], '2027-01-06'), { capital: 0, overdue: 0, mora: 81, balance: -81 });
+    equal('un pago que no alcanza va primero a la cuota: la mora al corte sigue y crece sobre lo que falta', brief([sep25, pay('p', '2026-11-20', 100)], '2026-12-06'), { capital: 100, overdue: 100, mora: 84, balance: -184 });
+    equal('pagar todo (cuota y mora al corte) la deja en cero', brief([sep25, pay('p', '2026-11-20', 281)], '2027-01-06'), { capital: 0, overdue: 0, mora: 0, balance: 0 });
+    const exempt = { ...cut('x', '2026-08', 300), moraExempt: true, moraOpening: 0, moraOpeningAt: '2026-11-09' };
+    equal('mora exonerada: nunca lleva mora, aunque siga sin pagarse', [state([exempt], '2026-11-09').mora, state([exempt], '2027-06-30').mora], [0, 0]);
+    equal('mora exonerada: la cuota sigue vencida (la garita la mira igual)', state([exempt], '2027-06-30').overdueCapital, 300);
+    const disc = { id: 'd', type: 'mora_discount', amount: 50, resiId: 'r1', date: at('2026-11-20'), moraItems: [{ id: 's25', amount: 50 }] };
+    equal('la mora al corte se puede descontar', state([sep25, disc], '2026-11-20').mora, 31);
+    equal('el plan de descuento la ve como mora de la cuota', D.discountPlan(state([sep25, oct], '2026-11-20'), { ids: ['s25'] }).total, 81);
+    equal('el servidor decide moroso solo por el capital vencido (la mora al corte no bloquea)', M.moraOf('r1', [sep25], S, new Date('2026-11-20T18:00:00Z')).paymentStatus === M.moraOf('r1', [cut('s25', '2025-09', 200)], S, new Date('2026-11-20T18:00:00Z')).paymentStatus, true);
+}
+
 console.log('\nCopia del servidor y navegador');
 yes('el servidor usa una copia IDENTICA del modulo', read('finanzas/sisdel-mora.js') === read('functions/src/finanzas/mora-diaria.js'));
 const sandbox = { self: {} };
@@ -319,6 +349,8 @@ yes('el PDF y la impresion del estado de cuenta llevan la mora', (oikos.match(/s
 yes('sin reglas de mora no se calcula nada (OIKOS como siempre)', /if \(typeof SisdelMora === 'undefined' \|\| !SisdelMora\.enabled\(s\)\) return null;/.test(oikos));
 yes('el servidor lee la fecha de cada cargo y si es mora fija', /const TX_FIELDS = \[[^\]]*'date'[^\]]*'moraFixed'/.test(recalc));
 yes('el servidor tambien lee los conceptos de cada cuota (breakdown) y a que conceptos se aplico cada pago (alloc)', /'moraFixed', 'breakdown', 'alloc'/.test(recalc));
+yes('el servidor lee la mora al corte y la exonerada de una carga de saldos', /'moraOpening', 'moraOpeningAt', 'moraExempt'/.test(recalc));
+yes('las reglas no dejan que el navegador cree movimientos con la mora al corte, la exonerada ni un saldo a favor inicial', /keys\(\)\.hasAny\(\['moraOpening', 'moraOpeningAt', 'moraExempt', 'openingCredit'\]\)/.test(read('firestore.rules')));
 yes('el servidor pasa la ficha del lote al decidir quien es moroso', /moraOf\(r\.id, txs, settings, now, r\)/.test(recalc) && /moraOf\(String\(residentId\), txSnap\.docs\.map\(txOf\), settings, now, extraSnap\.exists \? extraSnap\.data\(\) : null\)/.test(recalc));
 yes('cambiar el desglose, el agua o la mora recalcula el condominio', /const FEE_SETTINGS = \[[^\]]*'feeBreakdown', 'waterUnitPrice', 'waterHalfPrice', 'moraRules'\]/.test(read('functions/src/finanzas/index.js')));
 

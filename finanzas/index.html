@@ -18,12 +18,12 @@
     <script src="./vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="./sisdel-cuotas.js?v=20261119a"></script>
     <!-- SISDEL: mora de cada cuota vencida, cargada una vez al mes (el dia 6 con 5 dias de plazo; settings.moraRules); la misma que usa el servidor -->
-    <script src="./sisdel-mora.js?v=20261119a"></script>
+    <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261119a"></script>
+    <script src="./sisdel-reportes.js?v=20261120a"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
-    <script src="./sisdel-bancos.js?v=20261116a"></script>
+    <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
@@ -822,6 +822,29 @@
                                 <select id="rep-type" onchange="repTypeChanged(this.value)" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
                                     <option value="">Todos</option><option value="lote">Solo lote</option><option value="casa">Casa con lote</option><option value="none">Sin marcar</option>
                                 </select>
+                            </div>
+                            <!-- SISDEL: filtros de la Tabla general (una linea por vecino; pedido del usuario el 2026-11-20): la fase, el orden
+                                 (por deuda, por lote como una hoja o por nombre) y si cada mes muestra la cuota o la cuota con su mora -->
+                            <div id="rep-paymap-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div>
+                                    <label for="pm-fase" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fase</label>
+                                    <select id="pm-fase" onchange="payMapFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer"></select>
+                                </div>
+                                <div>
+                                    <label for="pm-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Orden</label>
+                                    <select id="pm-order" onchange="payMapFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="debt">De mayor a menor deuda</option>
+                                        <option value="unit">Por lote o casa (como la hoja)</option>
+                                        <option value="name">Alfabético</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="pm-view" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Cada mes muestra</label>
+                                    <select id="pm-view" onchange="payMapFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="fee">Lo que debe de la cuota</option>
+                                        <option value="total">La cuota con su mora</option>
+                                    </select>
+                                </div>
                             </div>
                             <!-- SISDEL: filtros del Listado general de propietarios (se ven solo en ese reporte). Por defecto muestra todo:
                                  el periodo (meses) y la fase vacios; el orden es alfabetico o de mayor a menor deuda. -->
@@ -3596,7 +3619,11 @@
         }
         // SISDEL: un movimiento de dinero (pago o egreso). Las cuotas y cargos no lo son, y un descuento de mora tampoco: las
         // listas de caja (Contabilidad, ingresos del mes, exportar) solo muestran estos
-        function isCashTx(t) { return !!t && (t.type === 'income' || t.type === 'expense'); }
+        // SISDEL: dinero que entro o salio (Contabilidad, caja, tablero, reportes de dinero, exportar). El saldo a favor inicial
+        // de una carga de saldos de otro sistema (openingCredit: La Perla, 2026-11-20) es un pago del residente (baja lo que
+        // debe y queda en su estado de cuenta) pero se pago antes y fuera de OIKOS: no es dinero de la caja.
+        function isOpeningCredit(t) { return !!t && t.type === 'income' && t.openingCredit === true; }
+        function isCashTx(t) { return !!t && (t.type === 'income' || t.type === 'expense') && !isOpeningCredit(t); }
         // El saldo del libro de un residente (todos sus movimientos vivos, como r.balance)
         function sisdelLedgerBalance(residentId) {
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
@@ -3638,7 +3665,7 @@
             const txs = Store.get('transactions');
             const s = Store.get('settings');
             let inc = 0, exp = 0;
-            txs.forEach(t => { if (t.type === 'income') inc += parseFloat(t.amount) || 0; else if (t.type === 'expense') exp += parseFloat(t.amount) || 0; });
+            txs.forEach(t => { if (!isCashTx(t)) return; if (t.type === 'income') inc += parseFloat(t.amount) || 0; else if (t.type === 'expense') exp += parseFloat(t.amount) || 0; });
             document.getElementById('dash-balance').innerText = formatMoney(inc - exp);
             document.getElementById('dash-income').innerText = formatMoney(inc);
             document.getElementById('dash-expenses').innerText = formatMoney(exp);
@@ -6004,7 +6031,7 @@
             const s = Store.get('settings');
             const fee = parseFloat(s.fee) || 0;
             // Get all income transactions for this resident
-            const payments = txs.filter(t => t.type === 'income' && t.resiId === resident.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+            const payments = txs.filter(t => t.type === 'income' && !isOpeningCredit(t) && t.resiId === resident.id).sort((a, b) => new Date(b.date) - new Date(a.date));
             // Get last 3 months with payments
             const monthSet = new Map();
             const fmt = new Intl.DateTimeFormat('es-ES', { month: 'short', year: 'numeric' });
@@ -6548,6 +6575,9 @@
             const ownersWrap = document.getElementById('rep-owners-filters');
             if (ownersWrap) ownersWrap.style.display = key === 'owners' ? '' : 'none';
             if (key === 'owners') ownersPrepareFilters();
+            const payMapWrap = document.getElementById('rep-paymap-filters');
+            if (payMapWrap) payMapWrap.style.display = key === 'pay-map' ? '' : 'none';
+            if (key === 'pay-map') payMapPrepareFilters();
             // SISDEL: lote o casa: el filtro va en los reportes por residente
             const typeWrap = document.getElementById('rep-type-wrap');
             const byResident = key === 'morosos' || key === 'pay-map' || key === 'owners';
@@ -7001,7 +7031,7 @@
             const from = document.getElementById('rep-from')?.value || '';
             const to = document.getElementById('rep-to')?.value || '';
             const txs = Store.get('transactions').filter(function (t) {
-                if (t.type !== 'income') return false;
+                if (t.type !== 'income' || isOpeningCredit(t)) return false;
                 if (!t.date) return false;
                 const d = localDayKey(t.date);
                 if (from && d < from) return false;
@@ -7272,7 +7302,7 @@
             const to = document.getElementById('rep-to')?.value || '';
             const txs = (Store.get('transactions') || []).filter(function (t) {
                 if (!t.date) return false;
-                if (t.type !== 'income' && t.type !== 'expense') return false;
+                if (!isCashTx(t)) return false;
                 const d = localDayKey(t.date);
                 if (from && d < from) return false;
                 if (to && d > to) return false;
@@ -7285,7 +7315,7 @@
             if (from) {
                 (Store.get('transactions') || []).forEach(function (t) {
                     if (!t.date) return;
-                    if (t.type !== 'income' && t.type !== 'expense') return;
+                    if (!isCashTx(t)) return;
                     if (localDayKey(t.date) < from) {
                         const amt = parseFloat(t.amount) || 0;
                         openingBalance += t.type === 'income' ? amt : -amt;
@@ -7495,9 +7525,13 @@
         // a hoy (sisdelOwedOf): lo usan la Tabla general y Morosos, asi las dos dicen lo mismo que Residentes.
         // Cada fila trae ademas `owed` ({ pending, mora, total }), `late` (cuotas y cargos ya vencidos) y `upcoming` (por
         // vencer): late + upcoming = owed.pending y owed.pending + owed.mora = owed.total, siempre.
-        function sisdelPayMap() {
+        function sisdelPayMap(opts) {
+            const extra = opts || {};
             const today = localDayKey(new Date());
-            const residents = reportResidents();   // SISDEL: todos, o solo lotes / solo casas segun el filtro del reporte
+            let residents = reportResidents();   // SISDEL: todos, o solo lotes / solo casas segun el filtro del reporte
+            // La Tabla general se puede ver de una fase (Morosos no pasa la fase: trae a todos)
+            if (extra.fase === SisdelReportesOikos.NO_FASE) residents = residents.filter(r => !String(r.fase || '').trim());
+            else if (extra.fase) residents = residents.filter(r => String(r.fase || '').trim() === extra.fase);
             // Residentes de la carga inicial (dados de alta hasta un dia despues de la carga): sus meses anteriores a
             // "cobrar desde" sin cuota cuentan como pagados. Uno que entro despues no: antes de entrar no debia nada.
             const loadAt = sisdelInitialLoadAt();
@@ -7510,7 +7544,11 @@
                 // Total que debe: el mismo saldo con mora de Residentes; la mora a hoy, la que falta pagar
                 totalOf: (r) => owedOf(r).total,
                 moraOf: (r) => owedOf(r).mora,
-                paidBefore: (r) => (fromLoad(r) ? r.feeFrom : null)
+                paidBefore: (r) => (fromLoad(r) ? r.feeFrom : null),
+                // Una linea por vecino: los meses que ya cubre su saldo a favor (verde "Adelantado") y la mora de cada mes
+                coverageOf: extra.coverage ? (r) => { const ms = sisdelMoraOf(r.id, r.balance); const bal = ms ? ms.total : (parseFloat(r.balance) || 0); return bal > 0.004 ? creditCoverageOf(r, bal) : null; } : null,
+                moraByPeriodOf: extra.mora ? (r) => sisdelMoraByPeriod(r.id) : null,
+                order: extra.order || 'debt'
             });
             map.rows.forEach(function (x) {
                 const owed = owedOf(x.resident);
@@ -7532,28 +7570,87 @@
             ];
         }
 
+        // SISDEL: Tabla general, una linea por vecino (pedido del usuario el 2026-11-20). La fase, el orden y lo que muestra cada
+        // mes se recuerdan en el equipo. `var` y funciones: el reporte puede pintarse antes de que corra una variable de aqui
+        var payMapOrder = (() => { try { const v = localStorage.getItem('sisdel_tabla_orden'); return v === 'unit' || v === 'name' ? v : 'debt'; } catch (e) { return 'debt'; } })();
+        var payMapView = (() => { try { return localStorage.getItem('sisdel_tabla_ver') === 'total' ? 'total' : 'fee'; } catch (e) { return 'fee'; } })();
+        var payMapFase = '';
+        function payMapPrepareFilters() {
+            const order = document.getElementById('pm-order');
+            if (order) order.value = payMapOrder;
+            const view = document.getElementById('pm-view');
+            if (view) view.value = payMapView;
+            const select = document.getElementById('pm-fase');
+            if (!select) return;
+            const residents = Store.get('residents') || [];
+            const fases = faseValues(residents);
+            const withoutFase = residents.some(r => !String(r.fase || '').trim());
+            const opts = ['<option value="">Todas las fases</option>'].concat(fases.map(f => '<option value="' + SisdelBusqueda.escapeHtml(f) + '">' + SisdelBusqueda.escapeHtml(faseLabel(f)) + '</option>'));
+            if (fases.length && withoutFase) opts.push('<option value="' + SisdelReportesOikos.NO_FASE + '">Sin fase</option>');
+            select.innerHTML = opts.join('');
+            select.value = Array.from(select.options).some(o => o.value === payMapFase) ? payMapFase : '';
+            payMapFase = select.value;
+            select.disabled = !fases.length;
+            select.title = fases.length ? '' : 'Todavía no hay fases anotadas: se escriben en el formulario de cada residente';
+        }
+        function payMapFiltersChanged() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+            payMapFase = val('pm-fase');
+            payMapOrder = ['unit', 'name'].includes(val('pm-order')) ? val('pm-order') : 'debt';
+            payMapView = val('pm-view') === 'total' ? 'total' : 'fee';
+            try { localStorage.setItem('sisdel_tabla_orden', payMapOrder); localStorage.setItem('sisdel_tabla_ver', payMapView); } catch (e) { /* solo se pierde la preferencia */ }
+            renderCurrentReport();
+        }
+        function payMapOrderText() { return payMapOrder === 'unit' ? 'por lote o casa' : payMapOrder === 'name' ? 'en orden alfabético' : 'de mayor a menor total que debe'; }
+        // La mora que se debe hoy de cada cuota de un residente, por su mes: Map('AAAA-MM' -> mora). null sin regla de mora
+        function sisdelMoraByPeriod(residentId) {
+            const states = sisdelMoraStates();
+            if (!states) return null;
+            const st = states[String(residentId)];
+            const out = new Map();
+            ((st && st.items) || []).forEach(it => { if (it.period && it.mora > 0.004) out.set(it.period, Math.round(((out.get(it.period) || 0) + it.mora) * 100) / 100); });
+            return out;
+        }
+
         function buildPayMapReport() {
             const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            const { map, today } = sisdelPayMap();
+            const withMora = payMapView === 'total';
+            const { map, today } = sisdelPayMap({ fase: payMapFase, order: payMapOrder, coverage: true, mora: withMora });
             const nameOf = function (r) { return esc((r.unit ? r.unit + ' · ' : '') + (r.name || '') + (isResidentActive(r) ? '' : ' (finiquitado)')); };
-            const cellText = function (c) {
-                if (c.status === 'owed') return formatMoney(c.owed);
-                if (c.status === 'pending') return '';   // en su plazo: en blanco
-                return c.status === 'paid' ? 'Pagado' : '—';
+            const faseOf = function (r) { const f = String(r.fase || '').trim(); return f ? esc(f) : '—'; };
+            const typeOf = function (r) { return unitTypeOf(r) === 'casa' ? 'Casa' : 'Lote'; };
+            // Lo que dice cada mes: lo que debe (rojo), "Pagado" o "Adelantado" (verde), en blanco si esta en su plazo. Con
+            // "la cuota con su mora", lo que debe de la cuota mas su mora, y un mes con la cuota pagada pero mora pendiente
+            // tambien sale en rojo
+            const cellOf = function (c, col) {
+                if (col.kind === 'ahead' || col.kind === 'aheadYear') {
+                    if (!c.advance) return { text: '', status: null };
+                    if (c.status === 'paid') return { text: col.kind === 'aheadYear' ? (c.advanceMonths === 1 ? '1 mes adelantado' : c.advanceMonths + ' meses adelantados') : 'Adelantado', status: 'paid' };
+                    return { text: formatMoney(c.advanceAmount) + ' a cuenta', status: 'pending' };
+                }
+                const mora = withMora ? (c.mora || 0) : 0;
+                if (c.status === 'owed') return { text: formatMoney(c.owed + mora), status: 'owed' };
+                if (mora > 0.004) return { text: (c.status === 'pending' && c.owed > 0 ? formatMoney(c.owed) + ' + ' : 'Mora ') + formatMoney(mora), status: 'owed' };
+                if (c.status === 'pending') return { text: '', status: 'pending' };   // en su plazo: en blanco
+                if (c.status === 'paid') return { text: c.advance ? 'Adelantado' : 'Pagado', status: 'paid' };
+                return { text: '—', status: 'none' };
             };
             const money = (x) => (x > 0 ? formatMoney(x) : '—');
-            const rows = map.rows.map(function (x) {
-                return [nameOf(x.resident)].concat(map.columns.map(function (col) { return cellText(x.cells[col.key]); }),
-                    [String(x.lateMonths), x.sinceLabel || '—', money(x.late), money(x.upcoming), money(x.owed.mora), formatMoney(x.owed.total)]);
+            const cells = map.rows.map(function (x) { return map.columns.map(function (col) { return cellOf(x.cells[col.key], col); }); });
+            const rows = map.rows.map(function (x, i) {
+                return [nameOf(x.resident), faseOf(x.resident), typeOf(x.resident)].concat(cells[i].map(function (c) { return c.text; }),
+                    [String(x.lateMonths), x.sinceLabel || '—', money(x.late), money(x.upcoming), money(x.owed.mora), formatMoney(x.owed.total), money(x.credit), x.paidUntil || '—']);
             });
+            const lead = 3;   // residente, fase y tipo
             const n = map.columns.length;
+            const totalCredit = map.rows.reduce(function (acc, x) { return acc + Math.round((x.credit || 0) * 100); }, 0) / 100;
             // Sumas en centavos (asi el total cuadra con la suma de sus partes)
             const sum = (get) => map.rows.reduce(function (acc, x) { return acc + Math.round(get(x) * 100); }, 0) / 100;
             const totalLateMonths = map.rows.reduce(function (acc, x) { return acc + x.lateMonths; }, 0);
             const debt = { pending: sum(x => x.owed.pending), mora: sum(x => x.owed.mora), total: sum(x => x.owed.total) };
             return {
                 title: 'Tabla general',
-                summary: map.late + ' en mora · ' + map.pending + ' con cuota en su plazo · ' + map.upToDate + ' al día · al ' + today + ' · de mayor a menor total que debe' + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
+                summary: map.late + ' en mora · ' + map.pending + ' con cuota en su plazo · ' + map.upToDate + ' al día · al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + (withMora ? ' · cada mes con su mora' : '') + (repTypeFilter ? ' · ' + unitTypeFilterText(repTypeFilter) : ''),
                 hideSummary: true,
                 kpisFromTotals: false,
                 // SISDEL: en pantalla, cifras grandes y leyenda de colores arriba de la tabla (repHighlightsHtml); tambien
@@ -7562,23 +7659,24 @@
                     { tone: 'owed', value: String(map.late), label: map.late === 1 ? 'residente en mora' : 'residentes en mora' },
                     { tone: 'blank', value: String(map.pending), label: 'con cuota en su plazo' },
                     { tone: 'paid', value: String(map.upToDate), label: 'al día en cuotas' }
-                ].concat(sisdelDebtHighlights(debt)),
-                highlightsNote: 'Al ' + today + ' · ordenado de mayor a menor total que debe · total = cuotas y cargos pendientes + mora a hoy',
+                ].concat(sisdelDebtHighlights(debt), totalCredit > 0 ? [{ tone: 'paid', value: formatMoney(totalCredit), label: 'saldo a favor (pagos adelantados)' }] : []),
+                highlightsNote: 'Al ' + today + ' · ' + payMapOrderText() + (payMapFase ? ' · ' + (payMapFase === SisdelReportesOikos.NO_FASE ? 'sin fase' : faseLabel(payMapFase)) : '') + ' · total = cuotas y cargos pendientes + mora a hoy' + (withMora ? ' · cada mes con su mora' : ''),
                 legend: [
-                    { tone: 'owed', text: 'Rojo: debe (ya venció)' },
-                    { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') },
+                    { tone: 'owed', text: withMora ? 'Rojo: debe (ya venció), con la mora de esa cuota' : 'Rojo: debe (ya venció)' },
+                    { tone: 'paid', text: 'Verde: pagado' + (map.assumedPaid ? ' (antes de la carga inicial, según la cartera)' : '') + (map.advancePaid ? '; "Adelantado": cubierto con su saldo a favor' : '') },
                     { tone: 'blank', text: 'En blanco: la cuota del mes, en su plazo (hasta el día 5 del mes siguiente; no es mora)' },
                     { tone: 'none', text: 'Gris: sin cuota' }
                 ],
                 hint: 'Toque un residente para ver su estado de cuenta',
                 emptyText: 'No hay residentes.',
-                headers: ['Residente'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total que debe']),
+                headers: ['Residente', 'Fase', 'Tipo'].concat(map.columns.map(function (c) { return c.label; }), ['Meses en mora', 'En mora desde', 'Cuotas vencidas', 'Por vencer', 'Mora a hoy', 'Total que debe', 'Saldo a favor', 'Pagado hasta']),
+                leftCols: [1, 2],
                 rows: rows,
                 rowsMeta: map.rows.map(function (x) { return { kind: 'resident', residentId: x.resident.id }; }),
-                cellStatus: map.rows.map(function (x) { return [null].concat(map.columns.map(function (col) { return x.cells[col.key].status; })); }),
-                totals: ['TOTAL'].concat(map.columns.map(function (col) { return map.totals[col.key] ? formatMoney(map.totals[col.key]) : ''; }),
-                    [String(totalLateMonths), '', formatMoney(sum(x => x.late)), formatMoney(sum(x => x.upcoming)), formatMoney(debt.mora), formatMoney(debt.total)]),
-                numericCols: [n + 1, n + 3, n + 4, n + 5, n + 6],
+                cellStatus: cells.map(function (list) { return [null, null, null].concat(list.map(function (c) { return c.status; })); }),
+                totals: ['TOTAL', '', ''].concat(map.columns.map(function (col) { const v = (map.totals[col.key] || 0) + (withMora ? (map.moraTotals[col.key] || 0) : 0); return v ? formatMoney(v) : ''; }),
+                    [String(totalLateMonths), '', formatMoney(sum(x => x.late)), formatMoney(sum(x => x.upcoming)), formatMoney(debt.mora), formatMoney(debt.total), totalCredit > 0 ? formatMoney(totalCredit) : '', '']),
+                numericCols: [lead + n, lead + n + 2, lead + n + 3, lead + n + 4, lead + n + 5, lead + n + 6],
                 // WhatsApp: residente, cuotas pendientes, mora y total (las columnas de meses no caben en un mensaje)
                 compact: {
                     headers: ['Residente', 'Cuotas pendientes', 'Mora a hoy', 'Total que debe'],
@@ -7785,7 +7883,7 @@
             if (typeof SisdelReportesOikos !== 'undefined') p = SisdelReportesOikos.periodSummary(txs, sisdelReportOptions(from, to));
             else {
                 p = { income: 0, expense: 0, charges: 0, receivable: null };
-                txs.forEach(t => { const td = localDayKey(t.date); if (td >= from && td <= to) { if (t.type === 'income') p.income += parseFloat(t.amount) || 0; else if (t.type === 'expense') p.expense += parseFloat(t.amount) || 0; else if (t.type === 'charge') p.charges += parseFloat(t.amount) || 0; } });
+                txs.forEach(t => { const td = localDayKey(t.date); if (td >= from && td <= to && isCashTx(t)) { if (t.type === 'income') p.income += parseFloat(t.amount) || 0; else if (t.type === 'expense') p.expense += parseFloat(t.amount) || 0; else if (t.type === 'charge') p.charges += parseFloat(t.amount) || 0; } });
                 p.balance = p.income - p.expense;
             }
             let notice = '';
@@ -8413,7 +8511,7 @@
         // Un pago al que se le cambio la fecha al registrarlo (mas de 10 minutos de diferencia con su registro)
         function txDateChanged(tx) {
             const date = Date.parse((tx && tx.date) || ''), created = Date.parse((tx && tx.created_at) || '');
-            return tx && tx.type === 'income' && Number.isFinite(date) && Number.isFinite(created) && Math.abs(date - created) >= 10 * 60 * 1000;
+            return tx && tx.type === 'income' && !isOpeningCredit(tx) && Number.isFinite(date) && Number.isFinite(created) && Math.abs(date - created) >= 10 * 60 * 1000;
         }
         function findRecentSamePayment(resId, amount) {
             const mem = sisdelMem();
@@ -9369,7 +9467,7 @@
             const resById = new Map(residents.map(r => [r.id, r]));
             // Filtrar ingresos del mes
             const monthTxs = allTxs.filter(t => {
-                if (t.type !== 'income') return false;
+                if (t.type !== 'income' || isOpeningCredit(t)) return false;
                 if (!t.date) return false;
                 const dt = new Date(t.date);
                 const key = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
@@ -9477,7 +9575,7 @@
             const isInc = tx.type === 'income';
             const isExp = tx.type === 'expense';
             const isCharge = tx.type === 'charge';
-            const tipoLabel = isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type === 'mora_discount' ? 'Descuento de mora' : tx.type;
+            const tipoLabel = isOpeningCredit(tx) ? 'Saldo a favor inicial' : isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type === 'mora_discount' ? 'Descuento de mora' : tx.type;
             const tipoBadge = isInc
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
                 : isCharge
@@ -9512,6 +9610,7 @@
                     ${isCharge && tx.breakdown ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>${esc(SisdelCuotas.listParts(tx.breakdown, (Store.get('settings') || {}).currency))}</p>` : ''}
                     ${tx.type === 'income' && tx.alloc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5"><i class="fas fa-layer-group mr-1"></i>Aplicado a: ${esc(allocLinesOf(tx.alloc).map(([label, value]) => label + ' ' + value).join(' · '))}</p>` : ''}
                     ${txDateChanged(tx) ? `<p class="text-[11px] font-semibold text-amber-700 dark:text-amber-300 mt-0.5"><i class="fas fa-calendar-day mr-1"></i>Fecha del pago cambiada al registrarlo: se registró el ${esc(new Date(tx.created_at).toLocaleString('es-MX'))}</p>` : ''}
+                    ${isOpeningCredit(tx) ? `<p class="tx-opening-note text-[11px] font-semibold text-sky-700 dark:text-sky-300 mt-0.5"><i class="fas fa-circle-info mr-1"></i>Saldo a favor que traía de antes (carga de saldos${tx.importedFrom ? ': ' + esc(tx.importedFrom) : ''}). Cuenta como pago del residente, pero no es dinero que entró a la caja: no sale en Contabilidad, el tablero ni los reportes de ingresos.</p>` : ''}
                     ${tx.type === 'income' && parseFloat(tx.creditAfter) > 0.004 ? `<p class="tx-credit-note text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5"><i class="fas fa-piggy-bank mr-1"></i>Dejó un saldo a favor de ${esc(formatMoney(tx.creditAfter))}${tx.creditNote ? '. ' + esc(tx.creditNote) : ''}</p>` : ''}
                     ${tx.type === 'mora_discount' ? `<div class="tx-disc-detail mt-1 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
                         <p><i class="fas fa-calendar-alt mr-1"></i>Meses: ${esc(discMonthsText(tx, true))}</p>

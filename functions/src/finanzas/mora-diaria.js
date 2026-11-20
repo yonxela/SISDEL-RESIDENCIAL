@@ -38,6 +38,12 @@
    Un cargo con moraFixed: true es mora que ya venia calculada de otro sistema (la carga inicial de un
    condominio): no crece, y a la hora de repartir un pago cuenta como mora y no como cuota.
 
+   Mora al corte (carga de saldos de otro sistema, La Perla el 2026-11-20: "que en el sistema quede igual que la hoja"):
+   una cuota con moraOpening (Q) y moraOpeningAt ('AAAA-MM-DD') ya trae la mora que llevaba ese dia, calculada por el
+   otro sistema; desde ahi sigue la regla de aqui (solo los dias de cargo POSTERIORES a moraOpeningAt). Sin una fecha
+   valida, moraOpening no cuenta. Una cuota con moraExempt: true no lleva mora nunca (mora exonerada). Los tres campos
+   solo los escribe una carga por script: las reglas de Firestore no dejan que el navegador los ponga.
+
    Lo que se debe, por concepto (pedido del dueno el 2026-11-17): cada cuota lleva sus conceptos (mantenimiento, agua,
    basura, electricidad y otros: movimiento.breakdown; sin desglose cuenta como "fee", y un cargo extra como "extra") y
    el estado dice cuanto falta de cada uno (`parts`, aparte de la mora). Un pago normal reparte lo que falta de cada
@@ -181,7 +187,7 @@
     // Suma a la cuota la mora de los dias de cargo que pasaron hasta `day` (los de (accruedTo, day]). Solo carga mientras
     // quede capital y despues de vencida; cada cargo es el porcentaje de la regla vigente ese dia sobre lo que falta pagar.
     function accrue(item, day, rules) {
-        if (item.kind !== 'fee' || item.capital <= EPS || day <= item.base + item.grace || day <= item.accruedTo) return;
+        if (item.kind !== 'fee' || item.exempt || item.capital <= EPS || day <= item.base + item.grace || day <= item.accruedTo) return;
         const from = new Date((item.accruedTo + 1) * DAY_MS);
         let y = from.getUTCFullYear();
         let m = from.getUTCMonth();
@@ -360,6 +366,14 @@
             item.grace = rule ? rule.graceDays : 0;
             item.accruedTo = item.base;
             item.sortDay = days.first;
+            // Mora al corte: la que traia de otro sistema ese dia; la regla de aqui solo carga los dias posteriores
+            const openingAt = dayOfKey(t.moraOpeningAt);
+            const opening = round2(parseFloat(t.moraOpening));
+            if (openingAt !== null) {
+                if (opening > 0) item.moraRaw = opening;
+                item.accruedTo = Math.max(item.accruedTo, openingAt);
+            }
+            if (t.moraExempt === true) item.exempt = true;
         }
         return item;
     }

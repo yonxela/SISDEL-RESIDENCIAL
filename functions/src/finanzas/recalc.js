@@ -17,8 +17,9 @@ const BATCH_SIZE = 400;
 // `date` y `moraFixed` los pide la mora (mora-diaria.js): sin ellos toda cuota pareceria del dia de hoy.
 // `breakdown` (los conceptos de una cuota) y `alloc` (a que conceptos se aplico un pago) tambien: con alloc, el servidor
 // reparte cada pago igual que la ventana del ingreso, y por eso decide lo mismo sobre quien es moroso. `moraItems` son las
-// cuotas de un descuento de mora (type 'mora_discount'): bajan la mora, nunca el capital que mira la garita.
-const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', 'date', 'moraFixed', 'breakdown', 'alloc', 'moraItems', SERVER_STAMP];
+// cuotas de un descuento de mora (type 'mora_discount'): bajan la mora, nunca el capital que mira la garita. `moraOpening`,
+// `moraOpeningAt` y `moraExempt`: la mora al corte de una carga de saldos (ver finanzas/sisdel-mora.js).
+const TX_FIELDS = ['id', 'type', 'kind', 'amount', 'resiId', 'deleted', 'period', 'concept', 'date', 'moraFixed', 'breakdown', 'alloc', 'moraItems', 'moraOpening', 'moraOpeningAt', 'moraExempt', SERVER_STAMP];
 
 const docIdOf = (id) => String(id).replace(/\//g, '_');
 

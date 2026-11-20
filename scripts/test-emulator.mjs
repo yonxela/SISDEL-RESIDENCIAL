@@ -1225,6 +1225,15 @@ async function run() {
     const adm12 = await loginAs('PA120');
     await denied('mora: un administrador al que se le quito no descuenta', () => setDoc(mref(adm12, 'md-adm12'), md(adm12, 'md-adm12')));
     await allowed('mora: pero sigue registrando pagos', () => setDoc(mref(adm12, 'adm12-in'), mv('adm12-in', { type: 'income' })));
+    // Carga de saldos de otro sistema (La Perla, 2026-11-20): la mora al corte, la mora exonerada y el saldo a favor inicial
+    // (que no sale en caja) solo los pone una carga por script; desde el navegador nadie, ni el administrador
+    const cutFee = (id, extra) => mv(id, { type: 'charge', kind: 'fee', period: '2026-10', manual: true, ...extra });
+    await denied('carga de saldos: el administrador no crea una cuota con mora al corte', () => setDoc(mref(admin, 'cut-1'), cutFee('cut-1', { moraOpening: 50, moraOpeningAt: '2026-11-09' })));
+    await denied('carga de saldos: ni con solo la fecha del corte', () => setDoc(mref(admin, 'cut-2'), cutFee('cut-2', { moraOpeningAt: '2026-11-09' })));
+    await denied('carga de saldos: ni una cuota con la mora exonerada', () => setDoc(mref(admin, 'cut-3'), cutFee('cut-3', { moraExempt: true })));
+    await denied('carga de saldos: ni un pago marcado como saldo a favor inicial (no saldria en caja)', () => setDoc(mref(admin, 'cut-4'), mv('cut-4', { type: 'income', openingCredit: true })));
+    await allowed('carga de saldos: la misma cuota sin esas marcas si', () => setDoc(mref(admin, 'cut-5'), cutFee('cut-5')));
+    await denied('carga de saldos: y no se le agregan despues', () => updateDoc(mref(admin, 'cut-5'), { moraOpening: 50, moraOpeningAt: '2026-11-09', updated_at: ts() }));
     const resCr = await opWith('u-rcr', 'PRCR1', 'Registra residentes', ['finanzas.residentes_crear']);
     await allowed('residentes: crear registra los datos financieros de uno nuevo', () => setDoc(xref(resCr, 'res-t5'), { id: 'res-t5', dpi: '555', notes: '', feeFrom: '2026-11', updated_at: ts() }));
     await denied('residentes: crear no edita a uno existente', () => updateDoc(xref(resCr, 'res-t4'), { dpi: '9', updated_at: ts() }));

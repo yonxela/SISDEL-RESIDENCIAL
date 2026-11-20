@@ -22,6 +22,8 @@ function equal(name, actual, expected) {
     else { failures.push(name); console.log(`  FALLA ${name} -> esperado ${JSON.stringify(expected)}, recibido ${JSON.stringify(actual)}`); }
 }
 
+const yes = (name, value) => equal(name, !!value, true);
+
 // Dia local de Guatemala (UTC-6), como localDayKey de OIKOS en un equipo de alla
 const gtDay = (iso) => new Date(new Date(iso).getTime() - 6 * 3600000).toISOString().slice(0, 10);
 const tx = (id, type, date, amount, extra) => ({ id, type, date, amount, ...(extra || {}) });
@@ -96,6 +98,24 @@ equal('por cobrar cuenta tambien lo que venia de antes del rango', [beforeRange.
 equal('con los vecinos vigentes, lo de un vecino que ya no esta no cuenta (como en Morosos)', R.monthBalance(onlyCharges, { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay, residents: ['a'] }).months[0].receivable, 600);
 equal('un pago sin vecino (otro ingreso) entra en la caja pero no baja lo que se debe', (() => { const m = R.monthBalance([...onlyCharges, tx('o', 'income', '2026-09-20T15:00:00.000Z', 50)], { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay }).months[0]; return [m.income, m.receivable]; })(), [50, 1085.5]);
 equal('lo anulado no cuenta ni en cargos ni en por cobrar', R.monthBalance([...onlyCharges, { ...fee('x', 'a', '2026-09-02T15:00:00.000Z', 999), deleted: true }], { from: '2026-09-01', to: '2026-09-30', dayKey: gtDay }).months[0].receivable, 1085.5);
+
+// Saldo a favor inicial de una carga de saldos (La Perla, 2026-11-20): es un pago del residente pero no entro a la caja
+console.log('\nSaldo a favor inicial (no es dinero de la caja)');
+{
+    const opening = tx('sf', 'income', '2026-11-09T18:00:00.000Z', 600, { resiId: 'a', openingCredit: true });
+    const withOpening = [...onlyCharges, opening, pay('p9', 'b', '2026-11-10T15:00:00.000Z', 100)];
+    const mb = R.monthBalance(withOpening, { from: '2026-11-01', to: '2026-11-30', dayKey: gtDay });
+    equal('no entra en los ingresos del mes (solo el pago de verdad)', [mb.months[0].income, mb.total.balance], [100, 100]);
+    equal('pero si baja lo que se debe (por cobrar)', mb.months[0].receivable, 1085.5 - 600 - 100);
+    const cm = R.cashMonths([opening], { end: '2026-11', count: 3, dayKey: gtDay });
+    equal('el tablero no lo cuenta ni lo toma como mes con dinero', [cm.total.income, cm.first, cm.hasCash], [0, null, false]);
+    equal('la ventana del reporte financiero tampoco', R.periodSummary([opening], { from: '2026-11-01', to: '2026-11-30', dayKey: gtDay }).income, 0);
+    yes('el modulo dice que es un saldo a favor inicial', R.isOpeningCredit(opening) && !R.isOpeningCredit(pay('p', 'a', '2026-11-09T18:00:00.000Z', 1)) && !R.isOpeningCredit({ type: 'charge', openingCredit: true }));
+    const oikos = read('finanzas/index.html');
+    yes('OIKOS no lo cuenta como dinero (Contabilidad, caja, tablero, exportar y reportes de dinero usan isCashTx)', /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\) && !isOpeningCredit\(t\); \}/.test(oikos) && /if \(!isCashTx\(t\)\) return; if \(t\.type === 'income'\) inc \+=/.test(oikos) && /if \(t\.type !== 'income' \|\| isOpeningCredit\(t\)\) return false;/.test(oikos));
+    // En el estado de cuenta es un Pago (suma, con su concepto "Saldo a favor al ..."): el signo de cada fila depende de tipo 'Pago'
+    yes('el detalle lo llama "Saldo a favor inicial" y no dice que se le cambio la fecha', /const tipoLabel = isOpeningCredit\(tx\) \? 'Saldo a favor inicial'/.test(oikos) && oikos.includes('tx-opening-note') && /return tx && tx\.type === 'income' && !isOpeningCredit\(tx\)/.test(oikos) && /if \(t\.type === 'income'\) \{ tipo = 'Pago'; monto = amt;/.test(oikos));
+}
 
 console.log('\nUn periodo (ventana del reporte financiero)');
 equal('septiembre solo con cargos: caja en cero, cargos emitidos y por cobrar al cierre', R.periodSummary(onlyCharges, { from: '2026-09-01', to: '2026-09-31', dayKey: gtDay }), { income: 0, expense: 0, balance: 0, charges: 785.5, receivable: 1085.5 });
@@ -206,6 +226,31 @@ equal('desde "cobrar desde" sin cuota, gris', rowL('p').cells['2026-11'].status,
 equal('lo que si debe sigue en rojo; antes y entre las deudas, verde', ['2024', '2026-05', '2026-06', '2026-07'].map((k) => rowL('q').cells[k].status), ['paid', 'paid', 'owed', 'owed']);
 equal('se marca que el verde salio de la cartera (no de un pago registrado)', [rowL('p').cells['2026-10'].assumed, rowL('q').cells['2024'].assumed, pmLoad.assumedPaid], [true, false, true]);
 equal('un residente que entro despues: antes de entrar, gris (no se da por pagado)', ['2025', '2026-10'].map((k) => rowL('n').cells[k].status), ['none', 'none']);
+
+// Una linea por vecino (La Perla, 2026-11-20): meses adelantados con el saldo a favor, la mora de cada mes y el orden por lote
+console.log('\nTabla general: una linea por vecino');
+{
+    const vecinos = [{ id: 'f', unit: 'BA001', name: 'Adelantado' }, { id: 'g', unit: 'B053', name: 'Con mora' }, { id: 'h', unit: 'A010', name: 'Sin nada' }];
+    const movs = [mfee('f1', 'f', '2026-11', 300), mpay('fp', 'f', '2026-11-09T18:00:00.000Z', 1250), mfee('g1', 'g', '2025-09', 200), mfee('g2', 'g', '2026-10', 300)];
+    const cov = { f: R.creditCoverage(950, 300, '2026-12') };
+    const moraBy = { g: new Map([['2025-09', 81], ['2026-10', 2.7]]) };
+    const map = R.paymentMap(vecinos, movs, { today: '2026-11-20', dayKey: gtDay, dueOf: due, coverageOf: (r) => cov[r.id] || null, moraByPeriodOf: (r) => moraBy[r.id] || null });
+    const keys = map.columns.map((c) => c.label);
+    equal('despues de hoy solo salen los meses que alguien adelanto: diciembre y el ano siguiente junto', keys.slice(-3), ['Nov 2026', 'Dic 2026', 'Año 2027']);
+    const f = map.rows.find((r) => r.resident.id === 'f');
+    equal('noviembre pagado con el saldo a favor; diciembre "adelantado" en verde', [f.cells['2026-11'].status, f.cells['2026-12'].status, f.cells['2026-12'].advance], ['paid', 'paid', true]);
+    equal('en el ano siguiente dice cuantos meses enteros cubre y cuanto en total', [f.cells['ahead-2027'].status, f.cells['ahead-2027'].advanceMonths, f.cells['ahead-2027'].advanceAmount], ['paid', 2, 650]);
+    equal('la fila trae el saldo a favor y hasta cuando cubre', [f.credit, f.paidUntil], [950, 'hasta Feb 2027']);
+    const g = map.rows.find((r) => r.resident.id === 'g');
+    equal('cada celda trae la mora de las cuotas de ese periodo', [g.cells['2025'].mora, g.cells['2026-10'].mora, g.cells['2026-11'].mora], [81, 2.7, 0]);
+    equal('y la columna suma la mora de todos', [map.moraTotals['2025'], map.moraTotals['2026-10']], [81, 2.7]);
+    equal('quien no adelanto nada: en blanco despues de hoy', map.rows.find((r) => r.resident.id === 'h').cells['2026-12'].status, 'none');
+    equal('sin saldos a favor no hay columnas despues de hoy', R.paymentMap(vecinos, movs.slice(2), { today: '2026-11-20', dayKey: gtDay, dueOf: due }).columns.slice(-1)[0].label, 'Nov 2026');
+    equal('orden por lote, como la hoja (B antes que BA)', R.paymentMap(vecinos, movs, { today: '2026-11-20', dayKey: gtDay, dueOf: due, order: 'unit' }).rows.map((r) => r.resident.unit), ['A010', 'B053', 'BA001']);
+    equal('orden por nombre', R.paymentMap(vecinos, movs, { today: '2026-11-20', dayKey: gtDay, dueOf: due, order: 'name' }).rows.map((r) => r.resident.name), ['Adelantado', 'Con mora', 'Sin nada']);
+    const nov = R.paymentMap([{ id: 'k', unit: 'C1' }], [mpay('kp', 'k', '2026-11-09T18:00:00.000Z', 600)], { today: '2026-11-20', dayKey: gtDay, dueOf: due, coverageOf: () => R.creditCoverage(600, 300, '2026-11') });
+    equal('un mes ya llegado sin cuota que el saldo a favor cubre sale pagado', [nov.rows[0].cells['2026-11'].status, nov.rows[0].cells['2026-11'].advance, nov.rows[0].cells['2026-12'].status], ['paid', true, 'paid']);
+}
 
 console.log('\nTabla general en Excel y WhatsApp');
 const mapReport = {

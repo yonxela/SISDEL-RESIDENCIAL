@@ -81,7 +81,8 @@
         const out = new Map();
         if (!timeline.length) return out;
         (txs || []).forEach((t) => {
-            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.created_at) return;
+            // El saldo a favor inicial de una carga de saldos (openingCredit) no es dinero que entro: no va al banco
+            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.created_at || t.openingCredit === true) return;
             const when = iso(t.created_at);
             let accountId = null;
             for (let i = 0; i < timeline.length && iso(timeline[i].from) <= when; i++) accountId = timeline[i].accountId;

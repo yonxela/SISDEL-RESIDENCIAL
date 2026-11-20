@@ -6,7 +6,9 @@
 
    - monthBalance: ingresos, egresos y saldo de cada mes, con el total de cada ano y el total general.
      Ingresos = pagos (type 'income'); egresos = gastos (type 'expense'). Los cargos y cuotas ('charge') no
-     son dinero que entro: son lo que se cobra. Saldo = ingresos menos egresos del mes.
+     son dinero que entro: son lo que se cobra. Saldo = ingresos menos egresos del mes. El saldo a favor inicial de una
+     carga de saldos (un pago con openingCredit: true, La Perla 2026-11-20) tampoco: se pago antes, fuera de OIKOS; si
+     cuenta como pago del residente (lo que debe y por cobrar).
      Aparte (sin mezclarlo con la caja): cuotas y cargos emitidos en el mes y lo que queda por cobrar al cierre.
    - cashMonths: ingresos, gastos y saldo de unos meses seguidos (las tres graficas del tablero de OIKOS), con los
      mismos criterios de monthBalance, mas el primer y el ultimo mes con pagos o gastos (para navegar).
@@ -35,6 +37,10 @@
         const month = Number(key.slice(5, 7));
         return month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
     }
+
+    // Saldo a favor inicial de una carga de saldos de otro sistema: es un pago del residente (baja lo que debe) pero no es
+    // dinero que entro a la caja de OIKOS (lo pago antes, fuera del sistema). Solo lo pone una carga por script (reglas).
+    const isOpeningCredit = (t) => !!t && t.type === 'income' && t.openingCredit === true;
 
     const dayKeyOf = (options) => (typeof options.dayKey === 'function' ? options.dayKey : (iso) => String(iso || '').slice(0, 10));
     const zeroSums = () => ({ income: 0, expense: 0, charge: 0 });
@@ -80,7 +86,7 @@
         const to = options.to || '';
         const sums = new Map();
         (txs || []).forEach((t) => {
-            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense' && t.type !== 'charge') || !t.date) return;
+            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense' && t.type !== 'charge') || !t.date || isOpeningCredit(t)) return;
             const day = dayKey(t.date);
             if (from && day < from) return;
             if (to && day > to) return;
@@ -163,7 +169,7 @@
         let first = null;
         let last = null;
         (txs || []).forEach((t) => {
-            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.date) return;
+            if (!t || t.deleted || (t.type !== 'income' && t.type !== 'expense') || !t.date || isOpeningCredit(t)) return;
             const key = monthOf(dayKey(t.date));
             if (!validMonth(key)) return;
             if (!first || key < first) first = key;
@@ -203,9 +209,19 @@
     // para pagar sin estar en mora, maxYears (columnas de anos; los anteriores se juntan en "Antes de ..."),
     // totalOf(r) -> lo que debe en total (con la mora a hoy: el saldo de Residentes), moraOf(r) -> la mora a hoy,
     // paidBefore(r) -> 'AAAA-MM' o null: los meses anteriores sin cuota cuentan como pagados (un condominio cargado
-    // desde una cartera que solo traia lo que se debe: lo que no aparece, estaba pagado) }.
-    // Orden: de mayor a menor total que debe (con totalOf, el saldo con mora; si no, lo vencido mas lo por vencer); a
-    // igual, mas meses en mora; al final los que estan al dia, en su orden.
+    // desde una cartera que solo traia lo que se debe: lo que no aparece, estaba pagado),
+    // coverageOf(r) -> creditCoverage del residente o null (su saldo a favor y a que meses llega),
+    // moraByPeriodOf(r) -> Map('AAAA-MM' -> mora que debe hoy de la cuota de ese mes) o null,
+    // order: 'debt' (por defecto), 'unit' (por lote o casa, como una hoja: A001, A002... B053, BA001) o 'name' }.
+    // Orden por defecto: de mayor a menor total que debe (con totalOf, el saldo con mora; si no, lo vencido mas lo por
+    // vencer); a igual, mas meses en mora; al final los que estan al dia, en su orden.
+    // Una linea por vecino (pedido del usuario el 2026-11-20, La Perla: "que una linea muestre todo lo del vecino"):
+    //   - Meses ADELANTADOS: con coverageOf, el saldo a favor se aplica solo a las cuotas que vienen; esos meses salen en
+    //     verde ("Adelantado"): los que quedan del ano en curso, cada uno en su columna, y los de los anos siguientes juntos
+    //     en "Año 2027" (cuantos meses). Solo hay columnas despues de hoy si alguien las adelanto. Un mes ya llegado sin
+    //     cuota que el saldo a favor cubre tambien sale pagado. Cada fila trae credit (saldo a favor) y paidUntil.
+    //   - Mora POR MES: con moraByPeriodOf, cada celda trae `mora` (la de las cuotas de ese periodo) y moraTotals la suma
+    //     por columna (para ver cuota + mora de cada mes en la misma linea).
     const MONTHS_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const periodLabel = (period) => `${MONTHS_SHORT[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
 
@@ -275,7 +291,15 @@
                     if (!since || period < since) since = period;
                 } else if (status === 'pending') pendingTotal += p.owed;
             });
-            return { resident: r, index, periods, lateMonths, lateTotal, pendingTotal, since };
+            // Meses que cubre el saldo a favor (cuotas que todavia no se cargan): { 'AAAA-MM': { full, amount } }
+            const cov = typeof options.coverageOf === 'function' ? options.coverageOf(r) : null;
+            const advance = new Map();
+            ((cov && cov.months) || []).forEach((m) => { if (m && validMonth(String(m.period || ''))) advance.set(m.period, { full: !!m.full, amount: cents(m.amount) }); });
+            const moraRaw = typeof options.moraByPeriodOf === 'function' ? options.moraByPeriodOf(r) : null;
+            const moraBy = new Map();
+            if (moraRaw && typeof moraRaw.forEach === 'function') moraRaw.forEach((v, k) => { if (validMonth(String(k)) && cents(v) > 0) moraBy.set(String(k), cents(v)); });
+            moraBy.forEach((v, k) => { if (k <= curMonth) firstYear = Math.min(firstYear, Number(k.slice(0, 4))); });
+            return { resident: r, index, periods, lateMonths, lateTotal, pendingTotal, since, cov, advance, moraBy };
         });
 
         // Columnas: los anos anteriores (los mas viejos juntos) y los meses del ano en curso hasta hoy
@@ -285,10 +309,19 @@
         if (firstYear < fromYear) columns.push({ key: 'older', kind: 'years', label: `Antes de ${fromYear}`, years: [firstYear, fromYear - 1] });
         for (let y = fromYear; y <= lastYear; y++) columns.push({ key: String(y), kind: 'years', label: `Año ${y}`, years: [y, y] });
         for (let key = `${curYear}-01`; key <= curMonth; key = nextMonth(key)) columns.push({ key, kind: 'month', label: periodLabel(key) });
+        // Despues de hoy, solo lo que alguien adelanto: los meses que quedan del ano, uno por uno; los anos siguientes, juntos
+        const ahead = new Set();
+        computed.forEach((x) => x.advance.forEach((v, period) => { if (period > curMonth) ahead.add(period); }));
+        const aheadMonths = [...ahead].filter((p) => Number(p.slice(0, 4)) === curYear).sort();
+        const aheadYears = [...new Set([...ahead].filter((p) => Number(p.slice(0, 4)) > curYear).map((p) => Number(p.slice(0, 4))))].sort();
+        if (aheadMonths.length) for (let key = nextMonth(curMonth); key <= aheadMonths[aheadMonths.length - 1]; key = nextMonth(key)) columns.push({ key, kind: 'ahead', label: periodLabel(key) });
+        aheadYears.forEach((y) => columns.push({ key: `ahead-${y}`, kind: 'aheadYear', label: `Año ${y}`, years: [y, y] }));
 
         const totals = {};
-        columns.forEach((c) => { totals[c.key] = 0; });
+        const moraTotals = {};
+        columns.forEach((c) => { totals[c.key] = 0; moraTotals[c.key] = 0; });
         let anyAssumed = false;
+        let anyAdvance = false;
         computed.forEach((x) => {
             const raw = typeof options.paidBefore === 'function' ? String(options.paidBefore(x.resident) || '').slice(0, 7) : '';
             x.paidBefore = validMonth(raw) ? raw : null;
@@ -296,6 +329,16 @@
         const rows = computed.map((x) => {
             const cells = {};
             columns.forEach((c) => {
+                // Despues de hoy: solo los meses que el saldo a favor ya cubre (verde "Adelantado"; una parte, en blanco)
+                if (c.kind === 'ahead' || c.kind === 'aheadYear') {
+                    const inCol = [...x.advance.entries()].filter(([p]) => (c.kind === 'ahead' ? p === c.key : Number(p.slice(0, 4)) === c.years[0]));
+                    const full = inCol.filter(([, v]) => v.full).length;
+                    const amount = inCol.reduce((a, [, v]) => a + v.amount, 0);
+                    const status = full > 0 ? 'paid' : amount > 0 ? 'pending' : 'none';
+                    cells[c.key] = { status, owed: 0, late: 0, assumed: false, advance: amount > 0, advanceMonths: full, advanceAmount: fromCents(amount), mora: 0 };
+                    if (amount > 0) anyAdvance = true;
+                    return;
+                }
                 let charged = 0;
                 let late = 0;
                 let pending = 0;
@@ -317,10 +360,21 @@
                         if (!x.periods.has(key)) assumed++;
                     }
                 }
-                const status = late > 0 ? 'owed' : pending > 0 ? 'pending' : (charged > 0 || assumed > 0) ? 'paid' : 'none';
-                cells[c.key] = { status, owed: fromCents(late + pending), late: fromCents(late), assumed: status === 'paid' && charged === 0 };
+                // La mora que se debe hoy de las cuotas de este periodo
+                let mora = 0;
+                x.moraBy.forEach((v, period) => {
+                    if (period > curMonth) return;
+                    const y = Number(period.slice(0, 4));
+                    if (c.kind === 'month' ? period === c.key : (y >= c.years[0] && y <= c.years[1])) mora += v;
+                });
+                // Un mes ya llegado sin cuota que el saldo a favor cubre (la cuota del mes aun no se carga): pagado por adelantado
+                const advanced = c.kind === 'month' && charged === 0 && assumed === 0 && x.advance.has(c.key) && x.advance.get(c.key).full;
+                const status = late > 0 ? 'owed' : pending > 0 ? 'pending' : (charged > 0 || assumed > 0 || advanced) ? 'paid' : 'none';
+                cells[c.key] = { status, owed: fromCents(late + pending), late: fromCents(late), assumed: status === 'paid' && charged === 0 && !advanced, mora: fromCents(mora) };
+                if (advanced) { cells[c.key].advance = true; cells[c.key].advanceMonths = 1; anyAdvance = true; }
                 if (assumed > 0) anyAssumed = true;
                 totals[c.key] += late;
+                moraTotals[c.key] += mora;
             });
             const fallback = fromCents(x.lateTotal + x.pendingTotal);
             const total = typeof options.totalOf === 'function' ? Number(options.totalOf(x.resident)) : fallback;
@@ -328,17 +382,23 @@
             return {
                 resident: x.resident, cells, lateMonths: x.lateMonths, lateTotal: fromCents(x.lateTotal),
                 pendingTotal: fromCents(x.pendingTotal), since: x.since, sinceLabel: x.since ? periodLabel(x.since) : '', index: x.index,
+                credit: x.cov && x.cov.credit > 0 ? fromCents(cents(x.cov.credit)) : 0, paidUntil: (x.cov && x.cov.until) || '',
                 mora: Number.isFinite(mora) && mora > 0 ? fromCents(cents(mora)) : 0,
                 totalOwed: Number.isFinite(total) && total > 0 ? fromCents(cents(total)) : 0
             };
         });
         // De mayor a menor lo que debe en total; a igual, mas meses en mora y mas vencido; despues, en su orden
-        rows.sort((a, b) => (b.totalOwed - a.totalOwed) || (b.lateMonths - a.lateMonths) || (b.lateTotal - a.lateTotal) || (a.index - b.index));
-        Object.keys(totals).forEach((k) => { totals[k] = fromCents(totals[k]); });
+        const natural = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { sensitivity: 'base', numeric: true });
+        if (options.order === 'unit') rows.sort((a, b) => natural(a.resident.unit, b.resident.unit) || natural(a.resident.name, b.resident.name) || (a.index - b.index));
+        else if (options.order === 'name') rows.sort((a, b) => natural(a.resident.name, b.resident.name) || natural(a.resident.unit, b.resident.unit) || (a.index - b.index));
+        else rows.sort((a, b) => (b.totalOwed - a.totalOwed) || (b.lateMonths - a.lateMonths) || (b.lateTotal - a.lateTotal) || (a.index - b.index));
+        Object.keys(totals).forEach((k) => { totals[k] = fromCents(totals[k]); moraTotals[k] = fromCents(moraTotals[k]); });
         return {
             columns,
             rows,
             totals,
+            moraTotals,
+            advancePaid: anyAdvance,
             assumedPaid: anyAssumed,
             late: rows.filter((r) => r.lateMonths > 0).length,
             pending: rows.filter((r) => r.lateMonths === 0 && r.pendingTotal > 0).length,
@@ -627,5 +687,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, ownersList, periodLabel, accountDebt, pendingRows, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
 });

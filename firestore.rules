@@ -529,6 +529,9 @@ service cloud.firestore {
         return request.resource.data.get('amount', 0) is number && request.resource.data.amount > 0
           && !('server_at' in request.resource.data)
           && request.resource.data.get('serverGenerated', false) != true
+          // ni con las marcas de una carga de saldos de otro sistema (finanzas/sisdel-mora.js): la mora al corte y la
+          // exonerada, y el saldo a favor inicial (un pago que no sale en caja). Solo las pone una carga por script
+          && !request.resource.data.keys().hasAny(['moraOpening', 'moraOpeningAt', 'moraExempt', 'openingCredit'])
           && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId) && incomeDateOk())
           || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,

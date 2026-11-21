@@ -537,7 +537,8 @@ function accessCodeText({ name, code, condoName }) {
         '',
         `Para entrar abra ${ACCESS_URL} y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.`,
         '',
-        'No comparta esta clave: con ella cualquiera entra como usted y puede dar acceso al residencial.'
+        // Texto del cierre pedido por el usuario el 2026-11-21 (el mismo en accessCodeMessage de OIKOS)
+        'Favor guarde y no comparta su clave. ESTA APLICACIÓN SERÁ DE GRAN UTILIDAD PARA EL TEMA DE SEGURIDAD, YA QUE AL PRESIONAR EL BOTÓN DE PÁNICO EL MENSAJE LLEGARÁ A GARITA, A PNC Y A 5 FAMILIARES PREVIAMENTE CONFIGURADOS.'
     ].join('\n');
 }
 async function sendAccessCode({ db, whatsapp, condominioId, caller, data, verify = {}, now = () => new Date() }) {

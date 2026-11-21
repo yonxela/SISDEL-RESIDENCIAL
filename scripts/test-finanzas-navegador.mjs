@@ -1736,7 +1736,7 @@ async function run() {
         })()`);
         equal('con el privilegio de ver claves, el menu de mensajes trae "Enviar clave de acceso" y la ventana muestra SU clave y su telefono',
             [ck.item, !!anaAccessCode && ck.code === anaAccessCode, /^\+502\d{8}$/.test(ck.phone)], [true, true, true]);
-        equal('el mensaje lleva la clave, el enlace de garita.app y el aviso; los dos envios encendidos', [ck.text.includes(anaAccessCode), ck.text.includes('https://garita.app/'), /No comparta esta clave/.test(ck.text), ck.server, ck.mine, ck.hidden], [true, true, true, false, false, false]);
+        equal('el mensaje lleva la clave, el enlace de garita.app y el aviso; los dos envios encendidos', [ck.text.includes(anaAccessCode), ck.text.includes('https://garita.app/'), /Favor guarde y no comparta su clave\. .*BOTÓN DE PÁNICO .*A 5 FAMILIARES PREVIAMENTE CONFIGURADOS\.$/.test(ck.text), ck.server, ck.mine, ck.hidden], [true, true, true, false, false, false]);
         const codeWaUrl = new URL(ck.wa[0] || 'http://x');
         equal('"Enviar desde mi WhatsApp" abre su WhatsApp en el chat del vecino con el mensaje (y cierra la ventana)', [/whatsapp\.com|wa\.me/.test(codeWaUrl.hostname), decodeURIComponent(ck.wa[0] || '').includes(anaAccessCode), ck.closedMine], [true, true, true]);
         const clavesLog = (await condoRef.collection('recordatorios_individuales').where('mode', '==', 'clave').get()).docs.map((x) => x.data());

@@ -876,9 +876,12 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             /if \(templatesOn\(whatsapp, config\)\) \{\s*throw fail\('failed-precondition', 'Con el WhatsApp oficial \(Meta\)/.test(core) && /if \(remMetaMode\(\)\) return 'Con el WhatsApp oficial \(Meta\)/.test(oik));
         const server = R.accessCodeText({ name: 'Ana García', code: 'VA101', condoName: 'Villa Ferrer' });
         const client = oik.slice(oik.indexOf('function accessCodeMessage(r, code)'), oik.indexOf("].join('\\n');", oik.indexOf('function accessCodeMessage(r, code)')));
-        yes('el mensaje de Mi WhatsApp es el mismo del servidor: saludo, la clave, el enlace https://garita.app/ y no compartirla',
-            ['su clave de acceso a garita.app', 'Para entrar abra https://garita.app/ y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.', 'No comparta esta clave: con ella cualquiera entra como usted y puede dar acceso al residencial.'].every((t) => server.includes(t) && client.includes(t))
-            && /^Hola Ana García,\nsu clave de acceso a garita\.app \(Villa Ferrer\) es: VA101\n\n/.test(server));
+        // El cierre lo pidio el usuario el 2026-11-21 (antes: "No comparta esta clave: con ella cualquiera entra como usted...")
+        const codeClosing = 'Favor guarde y no comparta su clave. ESTA APLICACIÓN SERÁ DE GRAN UTILIDAD PARA EL TEMA DE SEGURIDAD, YA QUE AL PRESIONAR EL BOTÓN DE PÁNICO EL MENSAJE LLEGARÁ A GARITA, A PNC Y A 5 FAMILIARES PREVIAMENTE CONFIGURADOS.';
+        yes('el mensaje de Mi WhatsApp es el mismo del servidor: saludo, la clave, el enlace https://garita.app/ y al final guardar la clave y el boton de panico',
+            ['su clave de acceso a garita.app', 'Para entrar abra https://garita.app/ y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.', codeClosing].every((t) => server.includes(t) && client.includes(t))
+            && /^Hola Ana García,\nsu clave de acceso a garita\.app \(Villa Ferrer\) es: VA101\n\n/.test(server) && server.endsWith('\n\n' + codeClosing)
+            && !/No comparta esta clave/.test(server + client));
         yes('el bloqueo pide contactar residentes y oculta la opcion y la ventana sin el', /\(openSendCode\|sendCodeMine\|sendCodeServer\|copyCodeMessage\)\\\(\/, \['residentes_contactar'\]/.test(blq) && /button\[onclick\^="openSendCode\("\]', '#modal-clave'/.test(blq));
         yes('la funcion se exporta en functions/index.js', /sendReminderOne, sendAccessCode, checkWhatsAppConnection/.test(read('functions/index.js')));
     }

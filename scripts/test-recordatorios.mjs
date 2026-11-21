@@ -725,7 +725,7 @@ console.log('\nEnviar la clave de acceso a un vecino (el servidor la lee y arma 
     equal('sale al telefono de su ficha con SU clave y el enlace de garita.app (lo que mande el navegador se ignora)',
         [r1.sent, r1.channel, r1.phoneTail, sentLog.map((x) => x.to), sentLog[0].message === expected, sentLog[0].message.includes('RCL001'), sentLog[0].message.includes('https://garita.app/'), /INVENTADA|texto del cliente/.test(sentLog[0].message)],
         [true, 'SIMULADO', '1111', ['50255551111'], true, true, true, false]);
-    equal('el mensaje saluda por su nombre, dice el condominio y pide no compartir la clave', [/^Hola Vecino v1,/.test(expected), /\(Condominio de pruebas de recordatorios\)/.test(expected), /No comparta esta clave/.test(expected)], [true, true, true]);
+    equal('el mensaje saluda por su nombre, dice el condominio y pide guardar y no compartir la clave', [/^Hola Vecino v1,/.test(expected), /\(Condominio de pruebas de recordatorios\)/.test(expected), /\n\nFavor guarde y no comparta su clave\. ESTA APLICACIÓN .* A GARITA, A PNC Y A 5 FAMILIARES PREVIAMENTE CONFIGURADOS\.$/.test(expected)], [true, true, true]);
     const logs = (await condoRef.collection('recordatorios_individuales').get()).docs.map((d) => d.data());
     equal('queda anotado quien la mando y a quien, pero NO la clave (ese registro lo leen todos los de recordatorios)', [logs.length, logs[0].mode, logs[0].residentId, logs[0].by.id, logs[0].status, JSON.stringify(logs[0]).includes('RCL001')], [1, 'clave', 'v1', 'adm', 'sent', false]);
     failTo.add('50255551111');

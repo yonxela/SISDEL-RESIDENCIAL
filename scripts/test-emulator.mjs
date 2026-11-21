@@ -1921,6 +1921,22 @@ async function run() {
     await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'finanzas.residentes_contactar': false } });
     await denied('sin el privilegio de recordatorios tampoco envia a un residente', () => remOne(admin, { residentId: remVecinoId, text: 'hola' }));
     await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
+    // La clave de acceso de un vecino (Enviar clave de acceso de OIKOS): el servidor la lee y arma el mensaje; pide ademas ver las claves
+    const remCode = (c, data) => httpsCallable(c.functions, 'sendAccessCode')(data);
+    const codeSent = await remCode(admin, { residentId: remVecinoId, code: 'INVENTADA' });
+    equal('el administrador manda la clave de acceso de un vecino a su telefono (WhatsApp simulado)', [codeSent.data.sent, codeSent.data.channel, codeSent.data.phoneTail], [true, 'SIMULADO', '5678']);
+    const codeLog = (await getDocs(collection(admin.db, `condominios/${A}/recordatorios_individuales`))).docs.map((d) => d.data()).filter((x) => x.mode === 'clave');
+    const vecinoCodes = (await getDocs(query(collection(admin.db, 'codigos'), where('condominioId', '==', A), where('role', '==', 'vecino')))).docs.filter((d) => d.data().userId === remVecinoId).map((d) => d.id);
+    equal('queda anotado que se mando la clave, sin la clave', [codeLog.length, vecinoCodes.length > 0, vecinoCodes.some((c) => JSON.stringify(codeLog).includes(c))], [1, true, false]);
+    await denied('un vecino no manda claves', () => remCode(ana, { residentId: remVecinoId }));
+    await denied('el auditor tampoco', () => remCode(auditor, { residentId: remVecinoId }));
+    await denied('sin sesion tampoco', () => remCode(nobody, { residentId: remVecinoId }));
+    await rejectedWith('la clave de un administrador no se manda por aqui', () => remCode(admin, { residentId: adminIdA }), 'failed-precondition');
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'usuarios.codigos': false } });
+    await denied('sin "Ver y cambiar codigos de acceso" no la manda, aunque tenga recordatorios', () => remCode(admin, { residentId: remVecinoId }));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'finanzas.residentes_contactar': false } });
+    await denied('ni sin el privilegio de recordatorios, aunque vea las claves', () => remCode(admin, { residentId: remVecinoId }));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
 
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');

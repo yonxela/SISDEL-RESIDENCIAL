@@ -89,6 +89,12 @@ equal('Generar codigo boton de panico (menu del residente): todo pide contactar 
     B.cssFor(only('residentes_ver')).includes('openPanicQr(') && B.cssFor(only('residentes_ver')).includes('#modal-panico-qr'), B.cssFor(only('residentes_contactar')).includes('openPanicQr(')
 ], [false, false, false, false, false, false, false, true, true, true, false]);
 
+equal('Enviar clave de acceso (menu del residente): pide contactar residentes y se oculta sin ese privilegio', [
+    ...['openSendCode(this.dataset.id)', 'sendCodeMine()', 'sendCodeServer()', 'copyCodeMessage()'].map((a) => blocked(a, only('residentes_contactar'))),
+    blocked('openSendCode(this.dataset.id)', only('residentes_ver')),
+    B.cssFor(only('residentes_ver')).includes('openSendCode(') && B.cssFor(only('residentes_ver')).includes('#modal-clave'), B.cssFor(only('residentes_contactar')).includes('#modal-clave')
+], [false, false, false, false, true, true, false]);
+
 console.log('\nPantallas');
 equal('con todo, la primera pantalla es el tablero', B.firstView(all), 'dashboard');
 equal('sin tablero se lleva a la primera permitida', [B.firstView(only('residentes_ver', 'contabilidad_ver')), B.firstView(only('config_ver')), B.firstView(only('reportes_gastos'))], ['residents', 'settings', 'reports']);

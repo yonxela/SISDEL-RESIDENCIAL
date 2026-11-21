@@ -522,6 +522,72 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     };
 }
 
+// ───────── 3c. Enviar al vecino SU clave de acceso a garita.app (pedido del usuario el 2026-11-20) ─────────
+// "Enviar clave de acceso" del menu de cada residente de OIKOS, desde el numero del condominio. El texto lo arma el SERVIDOR con la
+// clave que el mismo lee de `codigos`: el navegador no la manda ni la recibe, y en recordatorios_individuales (que lee todo el que
+// tiene el privilegio de recordatorios, vea o no las claves) queda anotado QUE se envio la clave, nunca la clave. Solo a vecinos
+// (la clave de un guardia o un administrador no se manda por aqui). El telefono sale de su ficha. Con el WhatsApp oficial de Meta
+// no sale: Meta solo deja mandar texto libre hasta 24 horas despues de que el vecino escribio (para eso esta Mi WhatsApp).
+const ACCESS_URL = 'https://garita.app/';
+// El mismo texto que arma OIKOS para "Enviar desde mi WhatsApp" (accessCodeMessage de finanzas/index.html)
+function accessCodeText({ name, code, condoName }) {
+    return [
+        `Hola ${String(name || '').trim()},`,
+        `su clave de acceso a garita.app${condoName ? ` (${condoName})` : ''} es: ${code}`,
+        '',
+        `Para entrar abra ${ACCESS_URL} y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.`,
+        '',
+        'No comparta esta clave: con ella cualquiera entra como usted y puede dar acceso al residencial.'
+    ].join('\n');
+}
+async function sendAccessCode({ db, whatsapp, condominioId, caller, data, verify = {}, now = () => new Date() }) {
+    const config = await whatsapp.loadConfig();
+    if (!whatsapp.hasProvider(config)) throw fail('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
+    if (templatesOn(whatsapp, config)) {
+        throw fail('failed-precondition', 'Con el WhatsApp oficial (Meta) solo salen mensajes con plantilla aprobada: envíe la clave con «Enviar desde mi WhatsApp».');
+    }
+    await requireConnected(whatsapp, config);
+    await requireConfirming(whatsapp, config);
+    const residentId = String((data && data.residentId) || '').trim();
+    if (!residentId || residentId.includes('/')) throw fail('invalid-argument', 'Residente inválido.');
+    const condoRef = db.collection('condominios').doc(condominioId);
+    const [condoSnap, userSnap, fichaSnap, codesSnap] = await Promise.all([
+        condoRef.get(),
+        condoRef.collection('usuarios').doc(residentId).get(),
+        condoRef.collection('finanzas_residentes').doc(residentId).get(),
+        db.collection('codigos').where('userId', '==', residentId).get()
+    ]);
+    const user = userSnap.exists ? userSnap.data() : null;
+    const phone = user ? normalizePhone(user.phone) : '';
+    const reason = skipReason(user, fichaSnap.exists ? fichaSnap.data() : null, phone);
+    if (reason) throw fail('failed-precondition', `No se le puede enviar: ${reason}.`);
+    const codes = codesSnap.docs.filter((d) => d.data().condominioId === condominioId)
+        .sort((a, b) => String(b.data().createdAt || '').localeCompare(String(a.data().createdAt || '')));
+    const code = codes.length ? codes[0].id : '';
+    if (!code) throw fail('failed-precondition', 'Este vecino no tiene clave de acceso. Créela en su ficha antes de enviarla.');
+    const condoName = condoSnap.exists ? String(condoSnap.data().name || '') : '';
+    const text = accessCodeText({ name: user.name, code, condoName });
+    let channel = null;
+    let error = null;
+    const startedMs = now().getTime();
+    const sendErrors = [];
+    try { channel = await whatsapp.send(config, phone, text, { errors: sendErrors }); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
+    // Lo que queda anotado: quien, cuando, a quien y que fue la clave de acceso; la clave NO
+    await condoRef.collection('recordatorios_individuales').doc().set({
+        at: now().toISOString(), by: { id: caller.id, name: String(caller.name || '') }, residentId,
+        name: String(user.name || ''), casa: String(user.casa || ''), phoneTail: phone.slice(-4),
+        text: 'Clave de acceso a garita.app (la clave no se guarda)', mode: 'clave', status: channel ? 'sent' : 'failed', channel: channel || null,
+        delivery: delivery ? delivery.state : null, ...(delivery && delivery.reason ? { deliveryReason: delivery.reason } : {}),
+        ...(channel ? {} : { error: error || sendErrors.join('; ') || 'No salió por ningún proveedor de WhatsApp' })
+    });
+    return {
+        sent: !!channel, channel: channel || null, phoneTail: phone.slice(-4), name: String(user.name || ''), casa: String(user.casa || ''),
+        ...(channel ? {} : { error: error || sendErrors.join('; ') || '' }),
+        delivery: delivery ? delivery.state : null, deliveryReason: delivery ? delivery.reason : '', deliveryText: delivery && delivery.state === 'rechazado' ? reasonText(whatsapp, delivery.reason) : ''
+    };
+}
+
 // ───────── 4. Mensaje de prueba ─────────
 async function sendTest({ whatsapp, data, verify = {} }) {
     const config = await whatsapp.loadConfig();
@@ -666,5 +732,5 @@ module.exports = {
     CONN_CHECK_EVERY, connectionInfo, verifyDelivery, reconcileCampaign, resendCampaign,
     MAX_RECIPIENTS, MAX_TEXT, PAUSE_MIN_MS, PAUSE_MAX_MS, AVG_PAUSE_SECONDS, RUN_BUDGET_MS, LOCK_MS, FAIL_STREAK,
     SEND_HOURS, DAILY_LIMIT, SCHEDULE, DAY_COL, gtDay, waitFor, nextOpening,
-    fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest
+    fail, recount, createCampaign, processQueue, processCampaign, controlCampaign, sendOne, sendTest, sendAccessCode, accessCodeText, ACCESS_URL
 };

@@ -113,8 +113,8 @@
     <script src="privilegios.js?v=20261121a"></script>
     <script src="sisdel-core.js?v=20261121a"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261121a"></script>
-    <script src="finanzas-bloqueo.js?v=20261121a"></script>
+    <script src="finanzas-sync.js?v=20261121b"></script>
+    <script src="finanzas-bloqueo.js?v=20261121b"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -157,6 +157,8 @@
                 start: callServer('startReminderCampaign'),
                 test: callServer('sendReminderTest'),
                 one: callServer('sendReminderOne'),
+                // La clave de acceso de un vecino: el servidor la lee y arma el mensaje (el navegador no la manda); pide usuarios.codigos
+                sendCode: callServer('sendAccessCode'),
                 control: callServer('controlReminderCampaign'),
                 // Si WhatsApp esta conectado y cuantos mensajes hay en la cola de UltraMsg
                 status: callServer('checkWhatsAppConnection'),

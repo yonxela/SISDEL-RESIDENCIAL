@@ -1726,11 +1726,42 @@ async function run() {
             return shape;
         })()`);
         equal('cada residente trae tres puntos, el lapiz y tres puntos', pmOut.botones, ['Estado de cuenta y mensajes', 'Editar', 'Más opciones']);
-        equal('izquierda: estado de cuenta y mensajes; derecha: lo demas, con Generar codigo boton de panico', [pmOut.izq, pmOut.der],
-            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
+        equal('izquierda: estado de cuenta y mensajes (con Enviar clave de acceso: el administrador ve las claves); derecha: lo demas, con Generar codigo boton de panico', [pmOut.izq, pmOut.der],
+            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Enviar clave de acceso', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
         equal('el boton de la izquierda abre solo su menu', pmOut.soloIzq, [true, false]);
         equal('el codigo del boton de panico: la tarjeta del vecino con su QR y el enlace con su condominio y su id (sin codigo de acceso)',
             [pmOut.modal.abierta, pmOut.modal.url, pmOut.modal.qr, /BOTÓN DE PÁNICO/.test(pmOut.modal.tarjeta), /Ana García/.test(pmOut.modal.tarjeta), pmOut.modal.botones], [true, `${BASE}/panico.html?c=${CONDO}&v=u-ana`, 1, true, true, [false, false, false, false]]);
+
+        console.log('\nResidentes: enviar la clave de acceso del vecino y el enlace de garita.app');
+        const anaAccessCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs.map((d) => d.id).find(Boolean);
+        const ck = await oikos(`(async () => {
+            for (let i = 0; i < 60 && !residentCodeOf('u-ana'); i++) await new Promise((r) => setTimeout(r, 150));
+            navigate('residents'); renderResidents();
+            const item = !!document.querySelector('#menu-fav-u-ana button[onclick^="openSendCode("]');
+            const realOpen = window.open, realConfirm = window.confirm, realAlert = window.alert;
+            window.__opened = []; window.open = (u) => { window.__opened.push(String(u)); return {}; };
+            window.confirm = () => true; window.__alerts = []; window.alert = (m) => { window.__alerts.push(String(m)); };
+            openSendCode('u-ana');
+            const d = (id) => document.getElementById(id);
+            const out = { item, code: d('clv-code').textContent, phone: d('clv-phone').textContent, text: d('clv-text').value, server: d('clv-server').disabled, mine: d('clv-mine').disabled, hidden: d('clv-server').classList.contains('hidden') };
+            sendCodeMine();
+            out.wa = window.__opened.slice();
+            await new Promise((r) => setTimeout(r, 450));   // la ventana se cierra con su animacion (0.3 s)
+            out.closedMine = d('modal-clave').classList.contains('hidden-section');
+            openSendCode('u-ana');
+            await sendCodeServer();
+            out.alerts = window.__alerts.slice();
+            window.open = realOpen; window.confirm = realConfirm; window.alert = realAlert;
+            closeModal('modal-clave');
+            return out;
+        })()`);
+        equal('con el privilegio de ver claves, el menu de mensajes trae "Enviar clave de acceso" y la ventana muestra SU clave y su telefono',
+            [ck.item, !!anaAccessCode && ck.code === anaAccessCode, /^\+502\d{8}$/.test(ck.phone)], [true, true, true]);
+        equal('el mensaje lleva la clave, el enlace de garita.app y el aviso; los dos envios encendidos', [ck.text.includes(anaAccessCode), ck.text.includes('https://garita.app/'), /No comparta esta clave/.test(ck.text), ck.server, ck.mine, ck.hidden], [true, true, true, false, false, false]);
+        const codeWaUrl = new URL(ck.wa[0] || 'http://x');
+        equal('"Enviar desde mi WhatsApp" abre su WhatsApp en el chat del vecino con el mensaje (y cierra la ventana)', [/whatsapp\.com|wa\.me/.test(codeWaUrl.hostname), decodeURIComponent(ck.wa[0] || '').includes(anaAccessCode), ck.closedMine], [true, true, true]);
+        const clavesLog = (await condoRef.collection('recordatorios_individuales').where('mode', '==', 'clave').get()).docs.map((x) => x.data());
+        equal('"Desde el WhatsApp del condominio": lo manda el servidor (simulado) y queda anotado sin la clave', [clavesLog.length >= 1, clavesLog.some((x) => x.residentId === 'u-ana' && x.status === 'sent'), JSON.stringify(clavesLog).includes(anaAccessCode), ck.alerts.filter((a) => /no tiene|no puede|inválid/i.test(a))], [true, true, false, []]);
 
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta

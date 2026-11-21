@@ -115,6 +115,9 @@
         // Generar codigo boton de panico (menu de cada residente): la tarjeta del QR, su enlace y mandarselo por WhatsApp (el privilegio de
         // contactar residentes)
         [/^(openPanicQr|panicQrSetSize|panicQrSetPaper|panicQrCopyLink|printPanicQr|downloadPanicQrPDF|sendPanicQrWhatsApp)\(/, ['residentes_contactar']],
+        // Enviar clave de acceso (menu de cada residente): mandar un mensaje al residente; la opcion solo sale si el usuario ve las claves
+        // (el puente de claves pide usuarios.codigos) y el servidor lo vuelve a pedir al mandarla desde el numero del condominio
+        [/^(openSendCode|sendCodeMine|sendCodeServer|copyCodeMessage)\(/, ['residentes_contactar']],
         [/^marbeteEditPlates\(/, ['residentes_editar']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
@@ -160,7 +163,7 @@
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],
         [['residentes_finiquitar'], ['#residents-table-body .dropdown button[onclick^="openFiniquito("]', '#residents-table-body .dropdown button[onclick^="reactivateResident("]', '#modal-finiquito']],
         [['residentes_eliminar'], ['#residents-table-body .dropdown button[onclick^="deleteResident("]']],
-        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#residents-table-body .dropdown button[onclick^="openPanicQr("]', '#modal-panico-qr', '#modal-reminders', '#modal-contact']],
+        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#residents-table-body .dropdown button[onclick^="openPanicQr("]', '#modal-panico-qr', '#residents-table-body .dropdown button[onclick^="openSendCode("]', '#modal-clave', '#modal-reminders', '#modal-contact']],
         [['cuotas_mes'], ['#view-residents button[onclick="openFeeRun()"]', '#modal-fee-run']],
         [['cuotas_corregir'], ['.dup-fee-banner button[onclick="fixDuplicateFees()"]']],
         [['cargos_crear'], ['#view-accounting button[onclick="openModal(\'modal-bulk-charge\')"]', '#modal-bulk-charge']],

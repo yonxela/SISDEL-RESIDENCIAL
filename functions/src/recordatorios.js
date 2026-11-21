@@ -15,6 +15,7 @@ const KEY = 'finanzas.residentes_contactar';
 const CREATE_LIMIT = { max: 6, windowMs: 60 * 60 * 1000 };
 const TEST_LIMIT = { max: 8, windowMs: 10 * 60 * 1000 };
 const ONE_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
+const CODE_LIMIT = { max: 20, windowMs: 10 * 60 * 1000 };
 const STATUS_LIMIT = { max: 60, windowMs: 10 * 60 * 1000 };
 const RECONCILE_LIMIT = { max: 30, windowMs: 10 * 60 * 1000 };
 
@@ -27,7 +28,7 @@ async function authorize(request) {
     const me = await db.doc(`condominios/${condominioId}/usuarios/${uid}`).get();
     const allowed = me.exists && me.data().active !== false && privilegios.has(me.data().role, me.data().privilegios, KEY);
     if (!allowed) throw new HttpsError('permission-denied', 'Su usuario no tiene permiso para enviar recordatorios por WhatsApp.');
-    return { uid, condominioId, caller: { id: uid, name: me.data().name || '' } };
+    return { uid, condominioId, caller: { id: uid, name: me.data().name || '' }, me: me.data() };
 }
 
 // Los errores de la logica traen su codigo y un texto en español; cualquier otro se registra y no se muestra
@@ -83,6 +84,23 @@ const sendReminderOne = wrap('sendReminderOne', async (request) => {
     return result;
 });
 
+// La clave de acceso a garita.app de UN vecino, desde el numero del condominio (Enviar clave de acceso de OIKOS). Pide ademas
+// "Ver y cambiar codigos de acceso" (usuarios.codigos): el mismo privilegio que las reglas piden para leer las claves
+const sendAccessCode = wrap('sendAccessCode', async (request) => {
+    const { uid, condominioId, caller, me } = await authorize(request);
+    if (!privilegios.has(me.role, me.privilegios, 'usuarios.codigos')) {
+        throw new HttpsError('permission-denied', 'Su usuario no puede ver ni enviar las claves de acceso (privilegio "Ver y cambiar códigos de acceso").');
+    }
+    if (await rateLimit.isBlocked('clave-acceso', uid, CODE_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiadas claves enviadas seguidas. Espere unos minutos.');
+    }
+    await rateLimit.hit('clave-acceso', uid, CODE_LIMIT);
+    const result = await core.sendAccessCode({ db, whatsapp, condominioId, caller, data: request.data || {} });
+    // En el registro del servidor: a quien y si salio; nunca la clave
+    logger.warn('recordatorios: clave de acceso enviada', { condominioId, residentId: (request.data || {}).residentId, enviado: result.sent, por: uid });
+    return result;
+});
+
 // Que paso de verdad con los mensajes de un envio (UltraMsg: entregado, en cola, rechazado...) y reenviar solo a los que no recibieron
 const reconcileReminderCampaign = wrap('reconcileReminderCampaign', async (request) => {
     const { uid, condominioId } = await authorize(request);
@@ -120,4 +138,4 @@ const processReminderQueue = onSchedule({ schedule: 'every 1 minutes', timeoutSe
     if (worked.length) logger.info('recordatorios: corrida', { envios: worked });
 });
 
-module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, checkWhatsAppConnection, reconcileReminderCampaign, resendReminderCampaign, processReminderQueue };
+module.exports = { startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, sendAccessCode, checkWhatsAppConnection, reconcileReminderCampaign, resendReminderCampaign, processReminderQueue };

@@ -712,6 +712,48 @@ console.log('\nEnviar a UN residente (boton Enviar de la fila y Contactar)');
     provider = true;
 }
 
+// ───────── La clave de acceso de un vecino (pedido del usuario el 2026-11-20) ─────────
+console.log('\nEnviar la clave de acceso a un vecino (el servidor la lee y arma el mensaje; la clave no queda guardada)');
+{
+    reset();
+    for (const doc of (await condoRef.collection('recordatorios_individuales').get()).docs) await doc.ref.delete();
+    const codeDocs = { RCL001: { condominioId: CONDO, userId: 'v1', role: 'vecino', createdAt: now }, RCLOTRO: { condominioId: 'otro-condominio', userId: 'v2', role: 'vecino', createdAt: now }, RCLADM: { condominioId: CONDO, userId: 'adm', role: 'admin', createdAt: now } };
+    for (const [id, data] of Object.entries(codeDocs)) await db.doc(`codigos/${id}`).set(data);
+    const send = (data, extra = {}) => R.sendAccessCode({ db, whatsapp, condominioId: CONDO, caller, data, ...extra });
+    const expected = R.accessCodeText({ name: 'Vecino v1', code: 'RCL001', condoName: 'Condominio de pruebas de recordatorios' });
+    const r1 = await send({ residentId: 'v1', text: 'texto del cliente', code: 'INVENTADA', phone: '50299999999' });
+    equal('sale al telefono de su ficha con SU clave y el enlace de garita.app (lo que mande el navegador se ignora)',
+        [r1.sent, r1.channel, r1.phoneTail, sentLog.map((x) => x.to), sentLog[0].message === expected, sentLog[0].message.includes('RCL001'), sentLog[0].message.includes('https://garita.app/'), /INVENTADA|texto del cliente/.test(sentLog[0].message)],
+        [true, 'SIMULADO', '1111', ['50255551111'], true, true, true, false]);
+    equal('el mensaje saluda por su nombre, dice el condominio y pide no compartir la clave', [/^Hola Vecino v1,/.test(expected), /\(Condominio de pruebas de recordatorios\)/.test(expected), /No comparta esta clave/.test(expected)], [true, true, true]);
+    const logs = (await condoRef.collection('recordatorios_individuales').get()).docs.map((d) => d.data());
+    equal('queda anotado quien la mando y a quien, pero NO la clave (ese registro lo leen todos los de recordatorios)', [logs.length, logs[0].mode, logs[0].residentId, logs[0].by.id, logs[0].status, JSON.stringify(logs[0]).includes('RCL001')], [1, 'clave', 'v1', 'adm', 'sent', false]);
+    failTo.add('50255551111');
+    const failed = await send({ residentId: 'v1' });
+    const failedLog = (await condoRef.collection('recordatorios_individuales').where('status', '==', 'failed').get()).docs.map((d) => d.data());
+    equal('si WhatsApp no la entrega lo dice, y el fallido tampoco guarda la clave', [failed.sent, failedLog.length, JSON.stringify(failedLog).includes('RCL001')], [false, 1, false]);
+    failTo.clear();
+    sentLog.length = 0;
+    await rejects('un vecino sin clave en este condominio no la recibe (la de otro condominio no cuenta)', () => send({ residentId: 'v2' }), 'failed-precondition');
+    await rejects('la clave del personal no se manda por aqui', () => send({ residentId: 'adm' }), 'failed-precondition');
+    await rejects('ni a un vecino sin telefono', () => send({ residentId: 'v4' }), 'failed-precondition');
+    await rejects('ni a un vecino inactivo', () => send({ residentId: 'v5' }), 'failed-precondition');
+    await rejects('un id con barra se rechaza', () => send({ residentId: 'a/b' }), 'invalid-argument');
+    cfg = { channel: 'meta', metaToken: 't', metaPhoneId: 'p' };
+    let metaMsg = '';
+    try { await send({ residentId: 'v1' }); } catch (e) { metaMsg = e.message; }
+    ok('con el WhatsApp oficial de Meta no sale (solo plantillas) y dice que se use Mi WhatsApp', /Meta/.test(metaMsg) && /mi WhatsApp/i.test(metaMsg), metaMsg);
+    cfg = SIMULADO;
+    connState = { connected: false, state: 'standby', provider: 'ultramsg' };
+    await rejects('con WhatsApp desconectado no sale', () => send({ residentId: 'v1' }), 'failed-precondition');
+    connState = CONNECTED;
+    provider = false;
+    await rejects('sin WhatsApp conectado al condominio no sale', () => send({ residentId: 'v1' }), 'failed-precondition');
+    provider = true;
+    equal('los rechazados no mandaron nada', sentLog.length, 0);
+    for (const id of Object.keys(codeDocs)) await db.doc(`codigos/${id}`).delete();
+}
+
 // ───────── Envio cuidadoso (pedido del usuario el 2026-11-17, tras el bloqueo temporal de WhatsApp) ─────────
 console.log('\nEnvio cuidadoso: pausas largas, solo en horario y con tope por dia');
 {

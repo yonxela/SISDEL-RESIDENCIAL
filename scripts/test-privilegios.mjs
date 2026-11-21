@@ -873,6 +873,31 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         yes('el servidor reemplaza al telefono mas viejo sin uso en vez de negarle el boton a quien tiene su codigo',
             /oldest = live\.sort\(/.test(fn) && /revokedBy: 'reemplazado'/.test(fn) && !/ya tiene \$\{MAX_DEVICES\} teléfonos vinculados/.test(fn));
     }
+    {
+        // Enviar la clave de acceso del vecino y el enlace de garita.app (pedido del usuario el 2026-11-20)
+        const oik = read('finanzas/index.html'), core = read('functions/src/recordatorios-core.js'), fns = read('functions/src/recordatorios.js'), fin = read('finanzas.html'), blq = read('finanzas-bloqueo.js');
+        const R = require('../functions/src/recordatorios-core.js');
+        yes('la opcion "Enviar clave de acceso" va en el menu de mensajes y SOLO si este usuario ve la clave del residente (el puente de claves pide usuarios.codigos)',
+            /\$\{codeNow \? `<button onclick="openSendCode\(this\.dataset\.id\)" data-id="\$\{esc\(r\.id\)\}"[^`]*Enviar clave de acceso<\/button>` : ''\}/.test(oik)
+            && oik.indexOf('openSendCode(this.dataset.id)') > oik.indexOf('id="menu-fav-') && oik.indexOf('openSendCode(this.dataset.id)') < oik.indexOf('id="menu-${r.id}"'));
+        yes('la ventana: una X, la clave, el telefono al que va, el mensaje, el aviso de revisar el telefono y los tres botones',
+            /<div id="modal-clave"/.test(oik) && /onclick="closeModal\('modal-clave'\)"[^>]*><i class="fas fa-times sisdel-x-lg">/.test(oik) && /id="clv-code"/.test(oik) && /id="clv-phone"/.test(oik) && /id="clv-text" rows="9" readonly/.test(oik)
+            && /Revise que el teléfono sea del vecino/.test(oik) && /id="clv-copy" onclick="copyCodeMessage\(\)"/.test(oik) && /id="clv-server" onclick="sendCodeServer\(\)"/.test(oik) && /id="clv-mine" onclick="sendCodeMine\(\)"/.test(oik));
+        yes('desde el numero del condominio el navegador solo manda el id: la clave la lee y la escribe el servidor',
+            /bridge\.sendCode\(\{ residentId: String\(r\.id\) \}\)/.test(oik) && /sendCode: callServer\('sendAccessCode'\)/.test(fin) && /db\.collection\('codigos'\)\.where\('userId', '==', residentId\)/.test(core));
+        yes('el servidor pide recordatorios Y ver las claves (usuarios.codigos), solo manda la de un vecino y no anota la clave',
+            /const sendAccessCode = wrap\('sendAccessCode'[\s\S]{0,400}privilegios\.has\(me\.role, me\.privilegios, 'usuarios\.codigos'\)/.test(fns) && /skipReason\(user, fichaSnap/.test(core.slice(core.indexOf('async function sendAccessCode')))
+            && /text: 'Clave de acceso a garita\.app \(la clave no se guarda\)', mode: 'clave'/.test(core) && !/logger\.[a-z]+\([^)]*code[^)]*\)/.test(fns.slice(fns.indexOf('const sendAccessCode'), fns.indexOf('// Que paso de verdad'))));
+        yes('con el WhatsApp oficial de Meta el servidor no la manda (solo plantillas) y la pantalla lo dice antes',
+            /if \(templatesOn\(whatsapp, config\)\) \{\s*throw fail\('failed-precondition', 'Con el WhatsApp oficial \(Meta\)/.test(core) && /if \(remMetaMode\(\)\) return 'Con el WhatsApp oficial \(Meta\)/.test(oik));
+        const server = R.accessCodeText({ name: 'Ana García', code: 'VA101', condoName: 'Villa Ferrer' });
+        const client = oik.slice(oik.indexOf('function accessCodeMessage(r, code)'), oik.indexOf("].join('\\n');", oik.indexOf('function accessCodeMessage(r, code)')));
+        yes('el mensaje de Mi WhatsApp es el mismo del servidor: saludo, la clave, el enlace https://garita.app/ y no compartirla',
+            ['su clave de acceso a garita.app', 'Para entrar abra https://garita.app/ y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.', 'No comparta esta clave: con ella cualquiera entra como usted y puede dar acceso al residencial.'].every((t) => server.includes(t) && client.includes(t))
+            && /^Hola Ana García,\nsu clave de acceso a garita\.app \(Villa Ferrer\) es: VA101\n\n/.test(server));
+        yes('el bloqueo pide contactar residentes y oculta la opcion y la ventana sin el', /\(openSendCode\|sendCodeMine\|sendCodeServer\|copyCodeMessage\)\\\(\/, \['residentes_contactar'\]/.test(blq) && /button\[onclick\^="openSendCode\("\]', '#modal-clave'/.test(blq));
+        yes('la funcion se exporta en functions/index.js', /sendReminderOne, sendAccessCode, checkWhatsAppConnection/.test(read('functions/index.js')));
+    }
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

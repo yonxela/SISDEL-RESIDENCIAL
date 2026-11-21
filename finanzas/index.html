@@ -1389,6 +1389,26 @@
             </div>
         </div>
     </div>
+    <!-- SISDEL: Enviar clave de acceso (menu de cada residente): la clave del vecino y el enlace de garita.app, desde su WhatsApp o el del condominio -->
+    <div id="modal-clave" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[92vh] overflow-y-auto">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fas fa-key text-amber-600 dark:text-amber-300"></i></div><div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Enviar clave de acceso</h3><p id="clv-info" class="text-sm text-slate-500 dark:text-slate-400 truncate"></p></div><button type="button" onclick="closeModal('modal-clave')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div class="grid grid-cols-2 gap-3 mb-3 text-sm">
+                <div class="rounded-lg bg-slate-50 dark:bg-slate-700/60 px-3 py-2"><span class="block text-[11px] font-bold uppercase text-slate-400">Clave</span><span id="clv-code" class="font-mono font-bold tracking-wider text-sky-600 dark:text-sky-300 select-all"></span></div>
+                <div class="rounded-lg bg-slate-50 dark:bg-slate-700/60 px-3 py-2"><span class="block text-[11px] font-bold uppercase text-slate-400">Va al teléfono</span><span id="clv-phone" class="font-mono font-bold dark:text-white"></span></div>
+            </div>
+            <p id="clv-nocode" class="hidden mb-3 text-sm font-semibold text-rose-600">Este residente no tiene clave de acceso.</p>
+            <label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="clv-text">Mensaje</label>
+            <textarea id="clv-text" rows="9" readonly class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm"></textarea>
+            <p class="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300"><i class="fas fa-triangle-exclamation mr-1"></i>Revise que el teléfono sea del vecino: con la clave cualquiera entra como él y puede crear pases de visita que abren la garita.</p>
+            <p id="clv-server-why" class="hidden mt-2 text-xs text-slate-500 dark:text-slate-400"></p>
+            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
+                <button type="button" id="clv-copy" onclick="copyCodeMessage()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-copy mr-1.5"></i>Copiar mensaje</button>
+                <button type="button" id="clv-server" onclick="sendCodeServer()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fab fa-whatsapp mr-1.5"></i>Desde el WhatsApp del condominio</button>
+                <button type="button" id="clv-mine" onclick="sendCodeMine()" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-mobile-screen-button mr-1.5"></i>Enviar desde mi WhatsApp</button>
+            </div>
+        </div>
+    </div>
     <div id="modal-resident" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md p-8 max-h-[92vh] overflow-y-auto">
             <!-- SISDEL: el encabezado con la X queda fijo arriba al desplazar el formulario (pedido del usuario el 2026-11-20: al bajar a Guardar
@@ -4473,6 +4493,7 @@
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
                             <button onclick="contactMyWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-400"><i class="fas fa-mobile-screen-button w-5"></i> Enviar desde mi WhatsApp</button>
+                            ${codeNow ? `<button onclick="openSendCode(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-400"><i class="fas fa-key w-5"></i> Enviar clave de acceso</button>` : ''}
                             <button onclick="openResidentChat(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-400"><i class="fas fa-comments w-5"></i> Chat de WhatsApp</button>
                         </div>
                         <div id="menu-${r.id}" class="dropdown absolute right-10 top-10 bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-slate-700 rounded-lg w-60 z-10 text-left overflow-hidden whitespace-normal">
@@ -9162,6 +9183,112 @@
                 doc.text(txt(label), pageW - X0 - doc.getTextWidth(txt(label)), 326);
             }
             return doc;
+        }
+
+        // ─── SISDEL: "Enviar clave de acceso" del menu de cada residente (pedido del usuario el 2026-11-20: "agregar opcion para enviar por
+        // WhatsApp o por mi WhatsApp la clave del vecino de acceso al sistema y enlace de https://garita.app/") ───
+        // Solo sale si este usuario puede ver las claves (el puente de claves de finanzas.html: usuarios.codigos, que tambien piden las
+        // reglas) y la del residente ya llego. "Desde mi WhatsApp" abre SU WhatsApp con el mensaje escrito (la clave va en el texto, en su
+        // telefono). "Desde el WhatsApp del condominio" lo manda el SERVIDOR (sendAccessCode): el navegador solo manda el id del
+        // residente; el servidor lee la clave y arma el MISMO texto, y en el registro de envios queda que se mando la clave, nunca la
+        // clave. Con la clave cualquiera entra como el vecino (y puede crear pases que abren la garita): la ventana muestra el telefono
+        // al que va y pide revisarlo.
+        var sendCodeId = null;
+        function sendCodeResident() { return (Store.get('residents') || []).find(x => String(x.id) === String(sendCodeId)) || null; }
+        function accessCodeMessage(r, code) {
+            const s = Store.get('settings') || {};
+            const condo = String(s.name || '').trim();
+            return ['Hola ' + String((r && r.name) || '').trim() + ',',
+                'su clave de acceso a garita.app' + (condo ? ' (' + condo + ')' : '') + ' es: ' + code,
+                '',
+                'Para entrar abra https://garita.app/ y escriba su clave. Ahí registra sus visitas, ve su marbete y tiene su botón de pánico.',
+                '',
+                'No comparta esta clave: con ella cualquiera entra como usted y puede dar acceso al residencial.'].join('\n');
+        }
+        // Por que no se puede mandar desde el numero del condominio ('' si se puede)
+        function sendCodeServerReason() {
+            const bridge = remBridge();
+            if (!bridge || typeof bridge.sendCode !== 'function') return 'Sin conexión con el servidor de WhatsApp.';
+            if (remMetaMode()) return 'Con el WhatsApp oficial (Meta) solo salen mensajes con plantilla: use «Enviar desde mi WhatsApp».';
+            const known = remKnownBlock();
+            if (known === 'restringido') return 'WhatsApp no está dejando salir los mensajes del número del condominio: use «Enviar desde mi WhatsApp».';
+            if (known) return 'El WhatsApp del condominio está desconectado: use «Enviar desde mi WhatsApp».';
+            return '';
+        }
+        function openSendCode(residentId) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(residentId));
+            if (!r) return;
+            sendCodeId = String(r.id);
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
+            openModal('modal-clave');
+            paintSendCode();
+        }
+        function paintSendCode() {
+            const r = sendCodeResident();
+            if (!r) return;
+            const code = residentCodeOf(r.id);
+            const phone = remWaPhone(r.contact);
+            const d = (id) => document.getElementById(id);
+            d('clv-info').textContent = [r.unit, r.name].filter(Boolean).join(' · ');
+            d('clv-code').textContent = code || 'sin clave';
+            d('clv-phone').textContent = phone ? '+' + phone : (r.contact ? r.contact + ' (no sirve para WhatsApp)' : 'sin teléfono');
+            d('clv-phone').classList.toggle('text-rose-600', !phone);
+            d('clv-text').value = code ? accessCodeMessage(r, code) : '';
+            d('clv-nocode').classList.toggle('hidden', !!code);
+            const reason = sendCodeServerReason();
+            const server = d('clv-server');
+            server.classList.toggle('hidden', !remBridge());
+            server.disabled = !code || !phone || !!reason;
+            server.title = reason || (phone ? '' : 'El residente no tiene un teléfono que sirva para WhatsApp.');
+            // El porque solo se dice si el boton del condominio existe (sin el puente del servidor no se ofrece)
+            const whyShown = !!remBridge() && !!code && !!phone && !!reason;
+            d('clv-server-why').textContent = whyShown ? reason : '';
+            d('clv-server-why').classList.toggle('hidden', !whyShown);
+            d('clv-mine').disabled = !code || !phone;
+            d('clv-copy').disabled = !code;
+        }
+        function sendCodeMine() {
+            const r = sendCodeResident();
+            const code = r ? residentCodeOf(r.id) : '';
+            if (!r || !code) return;
+            if (openMyWhatsApp(r.contact, accessCodeMessage(r, code))) { myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || '')); closeModal('modal-clave'); }
+        }
+        async function sendCodeServer() {
+            const r = sendCodeResident();
+            const bridge = remBridge();
+            if (!r || !bridge || typeof bridge.sendCode !== 'function' || !residentCodeOf(r.id)) return;
+            const label = (r.unit ? r.unit + ' · ' : '') + (r.name || '');
+            const reason = sendCodeServerReason();
+            if (reason) { alert(reason); return; }
+            if (!confirm(`¿Enviar la clave de acceso de ${label} por WhatsApp desde el número del condominio?\n\nVa al teléfono +${remWaPhone(r.contact)}: revise que sea el del vecino. Con la clave cualquiera entra como él.`)) return;
+            const btn = document.getElementById('clv-server');
+            btn.disabled = true;
+            try {
+                const result = await bridge.sendCode({ residentId: String(r.id) });
+                if (!result.ok) {
+                    const restricted = /no está dejando salir/i.test(result.error);
+                    if (restricted || /no está conectado/i.test(result.error)) {
+                        remNoteBlock(restricted ? 'restringido' : 'desconectado', result.error);
+                        if (confirm(remMineAsk(restricted ? 'restringido' : 'desconectado', label))) sendCodeMine();
+                        return;
+                    }
+                    alert(result.error);
+                    return;
+                }
+                const outcome = remOutcome(result);
+                if (outcome === 'ok') { showToast(`Clave de acceso enviada a ${label}: WhatsApp la recibió${result.delivery === 'entregado' ? ' y llegó al teléfono' : ''}.`); closeModal('modal-clave'); return; }
+                if (outcome === 'rejected') { if (confirm(`La clave de ${label} NO llegó: ${result.deliveryText}\n\n¿Enviarla desde su WhatsApp?`)) sendCodeMine(); return; }
+                if (outcome === 'unconfirmed') { alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).`); return; }
+                alert(`WhatsApp no entregó la clave a ${label}. Revise que la instancia esté conectada en UltraMsg o use «Enviar desde mi WhatsApp».`);
+            } finally { paintSendCode(); }
+        }
+        function copyCodeMessage() {
+            const text = document.getElementById('clv-text').value;
+            if (!text) return;
+            const done = () => showToast('Mensaje con la clave copiado.');
+            const fallback = () => { const t = document.getElementById('clv-text'); t.focus(); t.select(); try { if (document.execCommand('copy')) done(); else alert('Seleccione el mensaje y cópielo con Ctrl+C.'); } catch (e) { alert('Seleccione el mensaje y cópielo con Ctrl+C.'); } };
+            try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, fallback); return; } } catch (e) { /* se prueba el otro camino */ }
+            fallback();
         }
 
         // ─── SISDEL: "Generar código botón de pánico" del menu de cada residente (pedido del usuario el 2026-11-20: "agregar opcion

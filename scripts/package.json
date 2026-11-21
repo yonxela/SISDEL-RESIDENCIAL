@@ -11,7 +11,7 @@
     "camera-key": "node set-camera-key.mjs",
     "test:finanzas": "node test-busqueda.mjs && node test-finanzas-sync.mjs && node test-finanzas-datos.mjs && node test-finanzas-carreras.mjs && node test-finanzas-bloqueo.mjs && node test-finanzas-reportes.mjs && node test-finanzas-bancos.mjs && node test-finanzas-cuotas.mjs && node test-finanzas-mora.mjs && node test-finanzas-mora-diaria.mjs && node test-lib-xlsx.mjs && node test-carga-perla.mjs && node test-saldos-reales.mjs",
     "test:finanzas-nube": "node test-finanzas-nube.mjs",
-    "test:navegador": "node test-finanzas-navegador.mjs && node test-garita-accesos.mjs",
+    "test:navegador": "node test-finanzas-navegador.mjs && node test-garita-accesos.mjs && node test-panico-guardado.mjs",
     "seed:grande": "node seed-carga-grande.mjs",
     "medir": "node medir-carga-grande.mjs",
     "bitacora": "node ver-bitacora.mjs",

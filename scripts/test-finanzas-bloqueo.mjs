@@ -83,6 +83,12 @@ equal('placas del residente: agregar y quitar piden editar residentes y el bloqu
     B.cssFor(only('residentes_ver')).includes('#res-plates-edit'), B.cssFor(only('residentes_editar')).includes('#res-plates-edit')
 ], [false, false, true, true, true, false]);
 
+equal('Generar codigo boton de panico (menu del residente): todo pide contactar residentes y se oculta sin ese privilegio', [
+    ...['openPanicQr(this.dataset.id)', "panicQrSetSize(this.value)", 'panicQrSetPaper(this.value)', 'panicQrCopyLink()', 'printPanicQr()', 'downloadPanicQrPDF()', 'sendPanicQrWhatsApp()'].map((a) => blocked(a, only('residentes_contactar'))),
+    blocked('openPanicQr(this.dataset.id)', only('residentes_ver')), blocked('printPanicQr()', only('reportes_exportar')),
+    B.cssFor(only('residentes_ver')).includes('openPanicQr(') && B.cssFor(only('residentes_ver')).includes('#modal-panico-qr'), B.cssFor(only('residentes_contactar')).includes('openPanicQr(')
+], [false, false, false, false, false, false, false, true, true, true, false]);
+
 console.log('\nPantallas');
 equal('con todo, la primera pantalla es el tablero', B.firstView(all), 'dashboard');
 equal('sin tablero se lleva a la primera permitida', [B.firstView(only('residentes_ver', 'contabilidad_ver')), B.firstView(only('config_ver')), B.firstView(only('reportes_gastos'))], ['residents', 'settings', 'reports']);

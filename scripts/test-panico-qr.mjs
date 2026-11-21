@@ -154,6 +154,100 @@ console.log('\nTarjetas, hojas y PDF');
     yes('los textos del PDF van en Latin-1 (acentos y enie si; flechas y demas, "?"), y un nombre largo se corta con "..."', ops.bad.length === 0 && ops.texts.includes('Residencial Ñandú') && ops.texts.some((t) => t.endsWith('...')) && ops.texts.includes('BOTÓN DE PÁNICO'));
 }
 
+console.log('\nLo que el telefono recuerda: la clave en dos copias (localStorage e IndexedDB)');
+{
+    // Un localStorage y un IndexedDB de mentira (el IndexedDB responde como el de verdad: despues, con eventos)
+    const fakeStorage = (opts = {}) => {
+        const data = new Map();
+        return { data, getItem: (k) => { if (opts.throws) throw new Error('bloqueado'); return data.has(k) ? data.get(k) : null; }, setItem: (k, v) => { if (opts.throws) throw new Error('bloqueado'); data.set(k, String(v)); }, removeItem: (k) => { data.delete(k); } };
+    };
+    const fakeIdb = (opts = {}) => {
+        const dbs = new Map();
+        return {
+            dbs,
+            open(name) {
+                if (opts.throws) throw new Error('sin IndexedDB');
+                const request = {};
+                setTimeout(() => {
+                    if (opts.hang) return;
+                    const fresh = !dbs.has(name);
+                    if (fresh) dbs.set(name, new Map());
+                    const stores = dbs.get(name);
+                    const db = {
+                        createObjectStore: (n) => { if (!stores.has(n)) stores.set(n, new Map()); },
+                        close() {},
+                        transaction(n) {
+                            const tx = {};
+                            const run = (fn) => { const r = {}; setTimeout(() => { r.result = fn(); if (r.onsuccess) r.onsuccess(); setTimeout(() => tx.oncomplete && tx.oncomplete(), 0); }, 0); return r; };
+                            tx.objectStore = () => ({ get: (k) => run(() => stores.get(n).get(k)), put: (v, k) => run(() => { stores.get(n).set(k, v); return k; }), delete: (k) => run(() => { stores.get(n).delete(k); }) });
+                            return tx;
+                        }
+                    };
+                    request.result = db;
+                    if (fresh && request.onupgradeneeded) request.onupgradeneeded();
+                    if (request.onsuccess) request.onsuccess();
+                }, 0);
+                return request;
+            }
+        };
+    };
+    const SECRET = 'A'.repeat(43);
+    const LINK = { secret: SECRET, name: 'Ana García', casa: 'Casa 12', condoName: 'Villa Uno', canCancel: true, at: '2026-11-20T12:00:00.000Z' };
+    const KEY = Q.storageKey('c1', 'u-ana');
+    const make = (ls, idb, nav) => Q.createKeeper({ localStorage: ls, indexedDB: idb, navigator: nav }, KEY);
+    const nav = (persisted = false, grant = true) => ({ storage: { persisted: async () => persisted, persist: async () => grant } });
+    const idbHas = (idb) => { const st = idb.dbs.get('sisdel-panico'); return !!(st && st.get('vinculos') && st.get('vinculos').has(KEY)); };
+
+    let ls = fakeStorage(), idb = fakeIdb();
+    let k = make(ls, idb, nav());
+    equal('sin nada guardado no hay vinculo', await k.load(), { link: null, from: null, repaired: false });
+    const saved = await k.save(LINK);
+    equal('guardar deja las DOS copias y pide que el navegador no las borre', [saved.local, saved.idb, saved.persistent, ls.data.has(KEY), idbHas(idb)], [true, true, true, true, true]);
+    equal('lo guardado es lo mismo en las dos y nunca incluye un codigo de acceso', [JSON.parse(ls.data.get(KEY)).secret, JSON.parse(idb.dbs.get('sisdel-panico').get('vinculos').get(KEY)).secret, JSON.stringify(LINK).includes('code')], [SECRET, SECRET, false]);
+    equal('al abrir lo lee de localStorage al instante (sin esperar a IndexedDB)', k.readLocal(), LINK);
+    equal('con las dos copias no repara nada', [(await k.load()).from, (await k.load()).repaired], ['local', false]);
+
+    ls.data.clear();
+    equal('si el telefono pierde localStorage, el vinculo sigue ahi (IndexedDB) y se repone', [await k.load(), ls.data.has(KEY)], [{ link: LINK, from: 'idb', repaired: true }, true]);
+    idb.dbs.clear();
+    equal('si pierde IndexedDB, localStorage lo repone', [await k.load(), idbHas(idb)], [{ link: LINK, from: 'local', repaired: true }, true]);
+    ls.data.clear(); idb.dbs.clear();
+    equal('si pierde las dos (borrar los datos del sitio, o Safari tras 7 dias sin uso) hay que vincular de nuevo', await k.load(), { link: null, from: null, repaired: false });
+
+    // Datos danados o ajenos no sirven
+    ls = fakeStorage(); idb = fakeIdb(); k = make(ls, idb, nav());
+    ls.data.set(KEY, '{no es json');
+    equal('un localStorage danado se ignora', await k.load(), { link: null, from: null, repaired: false });
+    ls.data.set(KEY, JSON.stringify({ secret: 'corta' }));
+    equal('una clave que no tiene la forma de las del servidor se ignora', await k.load(), { link: null, from: null, repaired: false });
+    equal('validLink: pide una clave de 40 a 64 letras, numeros, guion o guion bajo', [Q.validLink(LINK), Q.validLink({ secret: 'x'.repeat(40) }), Q.validLink({ secret: 'x'.repeat(39) }), Q.validLink({ secret: 'a b'.repeat(20) }), Q.validLink(null)], [true, true, false, false, false]);
+
+    // Navegadores que no dejan guardar
+    ls = fakeStorage({ throws: true }); idb = fakeIdb(); k = make(ls, idb, nav());
+    equal('sin localStorage (modo privado) queda la copia de IndexedDB', [await k.save(LINK), (await k.load()).from], [{ local: false, idb: true, persistent: true }, 'idb']);
+    ls = fakeStorage(); k = make(ls, null, nav());
+    equal('sin IndexedDB queda la de localStorage y avisa que una sola copia', [await k.save(LINK), (await k.load()).from], [{ local: true, idb: false, persistent: true }, 'local']);
+    ls = fakeStorage({ throws: true }); k = make(ls, fakeIdb({ throws: true }), nav());
+    equal('sin ninguno de los dos no se puede guardar y lo dice (el telefono tendra que vincularse cada vez)', await k.save(LINK), { local: false, idb: false, persistent: true });
+    ls = fakeStorage(); k = make(ls, fakeIdb(), null);
+    equal('sin la API de almacenamiento persistente no se rompe: guarda y dice que no lo sabe', (await k.save(LINK)).persistent, null);
+    ls = fakeStorage(); k = make(ls, fakeIdb(), nav(false, false));
+    equal('si el navegador niega la persistencia, igual guarda las dos copias', await k.save(LINK), { local: true, idb: true, persistent: false });
+    ls = fakeStorage(); k = make(ls, fakeIdb(), nav(true));
+    equal('si ya era persistente no lo vuelve a pedir', (await k.save(LINK)).persistent, true);
+
+    // IndexedDB que no responde no atrasa el boton
+    ls = fakeStorage(); k = make(ls, fakeIdb({ hang: true }), nav());
+    const t0 = Date.now();
+    const slow = await k.save(LINK);
+    equal('un IndexedDB que no responde no cuelga la pagina (espera poco y sigue con localStorage)', [slow.local, slow.idb, Date.now() - t0 < 6000], [true, false, true]);
+
+    ls = fakeStorage(); idb = fakeIdb(); k = make(ls, idb, nav());
+    await k.save(LINK);
+    await k.drop();
+    equal('desvincular borra las dos copias', [ls.data.has(KEY), idbHas(idb), (await k.load()).link], [false, false, null]);
+}
+
 console.log('\nServidor: vincular el telefono y enviar la alerta (base simulada)');
 const store = new Map();
 let autoId = 0;
@@ -188,6 +282,7 @@ const fakeDb = {
         update: (ref, data) => store.set(ref.path, { ...store.get(ref.path), ...data })
     })
 };
+const devicePathOf = (condo, secret) => `condominios/${condo}/panico_dispositivos/${sha256(secret)}`;
 const firebasePath = require.resolve('../functions/src/firebase.js');
 require.cache[firebasePath] = { id: firebasePath, filename: firebasePath, loaded: true, exports: { db: fakeDb, auth: {} } };
 const { linkPanicDevice, panicDevice } = require('../functions/src/panico-qr.js');
@@ -320,9 +415,20 @@ seed();
 seed();
 {
     // Tope de telefonos por vecino (con el codigo vigente)
-    for (let i = 0; i < 20; i++) await link('c1', 'u-maria', 'VM102');
+    const phones = [];
+    for (let i = 0; i < 20; i++) { phones.push((await link('c1', 'u-maria', 'VM102')).secret); store.get(devicePathOf('c1', phones[i])).createdAt = `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`; }
+    const liveCount = () => [...store.entries()].filter(([k, v]) => k.startsWith('condominios/c1/panico_dispositivos/') && v.userId === 'u-maria' && !v.revokedAt).length;
+    equal('un vecino tiene hasta 20 telefonos vinculados a la vez', liveCount(), 20);
+    // Quien tiene su codigo nunca se queda sin poder vincular: el telefono que lleva mas tiempo sin usarse se reemplaza (un telefono que
+    // olvida su clave se vincula de nuevo y deja el vinculo viejo huerfano)
     const extra = await link('c1', 'u-maria', 'VM102');
-    equal('un vecino puede tener hasta 20 telefonos vinculados', [extra.ok, /20 teléfonos/.test(extra.error)], [false, true]);
+    equal('el telefono 21 se vincula y reemplaza al mas viejo sin uso: siguen 20', [extra.ok, liveCount()], [true, 20]);
+    equal('el reemplazado deja de servir (hay que vincularlo de nuevo) y queda anotado', [(await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[0] })).relink, store.get(devicePathOf('c1', phones[0])).revokedBy], [true, 'reemplazado']);
+    equal('los demas siguen sirviendo', [(await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[1] })).ok, (await device({ action: 'check', c: 'c1', v: 'u-maria', secret: extra.secret })).ok], [true, true]);
+    // Uno que se uso hace poco no se reemplaza aunque sea de los primeros en vincularse
+    store.get(devicePathOf('c1', phones[1])).lastUsedAt = '2026-11-19T00:00:00.000Z';
+    const again = await link('c1', 'u-maria', 'VM102');
+    equal('al siguiente se reemplaza el mas viejo SIN USO (el que se uso hace poco se queda)', [again.ok, !!store.get(devicePathOf('c1', phones[1])).revokedAt, !!store.get(devicePathOf('c1', phones[2])).revokedAt, liveCount()], [true, false, true, 20]);
 }
 
 console.log('\nReglas y paginas');

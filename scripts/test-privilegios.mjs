@@ -836,6 +836,43 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         yes('el bloqueo de pantalla pide residentes_editar para agregar y quitar placas y oculta el bloque sin el',
             /\(resAddPlate\|resRemovePlate\)\\\(\/, \['residentes_editar'\]/.test(blq) && /'#res-plates-edit'\]\],/.test(blq));
     }
+    {
+        // Dos menus por residente y "Generar codigo boton de panico" en OIKOS; la clave del QR de panico guardada en el telefono (pedidos del usuario el 2026-11-20)
+        const oik = read('finanzas/index.html'), pan = read('panico.html'), qrmod = read('panico-qr.js'), blq = read('finanzas-bloqueo.js'), fn = read('functions/src/panico-qr.js');
+        const row = oik.slice(oik.indexOf('<td class="py-4 px-6 text-center relative whitespace-nowrap">'), oik.indexOf('</tr>`;', oik.indexOf('<td class="py-4 px-6 text-center relative whitespace-nowrap">')));
+        const order = (text, names) => names.map((n) => text.indexOf(n));
+        const increasing = (xs) => xs.every((x, i) => x > 0 && (i === 0 || x > xs[i - 1]));
+        yes('la celda de acciones: tres puntos a la izquierda, el lapiz y tres puntos a la derecha',
+            increasing(order(row, ["toggleMenu('menu-fav-${r.id}')", "editResident('${r.id}')\" title=\"Editar\"", "toggleMenu('menu-${r.id}')"])) && (row.match(/class="drop-btn /g) || []).length === 2);
+        const fav = row.slice(row.indexOf('id="menu-fav-'), row.indexOf('id="menu-${r.id}"'));
+        const more = row.slice(row.indexOf('id="menu-${r.id}"'));
+        yes('el menu de la izquierda (uso diario): Estado de Cuenta, Contactar, Enviar desde mi WhatsApp y Chat, en ese orden',
+            increasing(order(fav, ['openEstadoCuenta(', 'contactWhatsApp(', 'contactMyWhatsApp(', 'openResidentChat('])) && !/editResident|deleteResident|openFiniquito|openMarbete|openPanicQr/.test(fav));
+        yes('el de la derecha: Cargar cuotas, Generar marbete, Generar codigo boton de panico, Finiquitar o Reactivar y Eliminar al final',
+            increasing(order(more, ['openResidentFeeMonths(', 'openMarbete(', 'openPanicQr(', 'reactivateResident(', 'deleteResident('])) && /Generar código botón de pánico/.test(more) && !/openEstadoCuenta|contactWhatsApp|openResidentChat/.test(more));
+        yes('los dos menus son .dropdown (se cierran al abrir el otro y con un clic fuera)', /id="menu-fav-\$\{r\.id\}" class="dropdown /.test(row) && /id="menu-\$\{r\.id\}" class="dropdown /.test(row));
+        yes('la ventana del codigo del boton de panico: una X, tarjeta, tamano, hoja, enlace y los cuatro botones',
+            /<div id="modal-panico-qr"/.test(oik) && /onclick="closeModal\('modal-panico-qr'\)"[^>]*><i class="fas fa-times sisdel-x-lg">/.test(oik) && /id="pqm-copy" onclick="panicQrCopyLink\(\)"/.test(oik) && /id="pqm-print" onclick="printPanicQr\(\)"/.test(oik)
+            && /id="pqm-pdf" onclick="downloadPanicQrPDF\(\)"/.test(oik) && /id="pqm-wa" onclick="sendPanicQrWhatsApp\(\)"/.test(oik) && /id="pqm-size"/.test(oik) && /id="pqm-url" type="text" readonly/.test(oik));
+        yes('usa el modulo del QR de panico (el mismo de admin.html y panico.html, con la misma version) y la libreria del QR de vendor/',
+            /<script src="\.\.\/panico-qr\.js\?v=(\w+)"><\/script>/.test(oik) && oik.match(/\.\.\/panico-qr\.js\?v=(\w+)/)[1] === read('panico.html').match(/panico-qr\.js\?v=(\w+)/)[1] && oik.match(/\.\.\/panico-qr\.js\?v=(\w+)/)[1] === read('admin.html').match(/panico-qr\.js\?v=(\w+)/)[1]
+            && /MARBETE_QR_LIB = '\.\.\/vendor\/qrcode-generator-1\.4\.4\.js'/.test(oik));
+        yes('el enlace del QR es el del modulo (condominio y vecino, sin codigo) y el WhatsApp solo manda ese enlace con los pasos',
+            /Q\.cardsFor\(list, Q\.publicOrigin\(location\), panicQrCondoId\(\)\)/.test(oik) && /function panicQrWhatsAppText\(r, card\)[\s\S]{0,700}card\.url/.test(oik) && !/codes?\b[\s\S]{0,40}residentCodeOf[\s\S]{0,200}panicQrWhatsAppText/.test(oik)
+            && /openMyWhatsApp\(r\.contact, panicQrWhatsAppText\(r, card\)\)/.test(oik));
+        yes('el bloqueo pide contactar residentes para todo lo del QR de panico y oculta la opcion y la ventana sin ese privilegio',
+            /\(openPanicQr\|panicQrSetSize\|panicQrSetPaper\|panicQrCopyLink\|printPanicQr\|downloadPanicQrPDF\|sendPanicQrWhatsApp\)\\\(\/, \['residentes_contactar'\]/.test(blq) && /button\[onclick\^="openPanicQr\("\]', '#modal-panico-qr'/.test(blq));
+        // La clave guardada en el telefono
+        yes('panico-qr.js guarda la clave en localStorage e IndexedDB, repone la copia que falte y pide que el navegador no la borre',
+            /function createKeeper\(env, key\)/.test(qrmod) && /indexedDB\.open\|idbFactory\.open\(IDB_NAME, 1\)|idbFactory\.open\(IDB_NAME, 1\)/.test(qrmod) && /nav\.storage\.persist/.test(qrmod) && /if \(!local && writeLocal\(link\)\) repaired = true;/.test(qrmod) && /if \(!fromIdb && await writeIdb\(link\)\) repaired = true;/.test(qrmod));
+        yes('panico.html usa las dos copias, repone la de IndexedDB antes de pedir el codigo y ofrece guardarlo en la pantalla de inicio (con su icono)',
+            /Q\.createKeeper\(\{ localStorage: safeStorage, indexedDB: window\.indexedDB, navigator \}, KEY\)/.test(pan) && /keeper\.load\(\)\.then\(\(r\) => \{\s*if \(r && r\.link && !link\)/.test(pan) && /let restoreDone = !!link;/.test(pan) && /if \(!gpsDone \|\| !restoreDone \|\| blocked\) return;/.test(pan)
+            && /id="pqStepSave"/.test(pan) && /apple-mobile-web-app-capable/.test(pan) && /<link rel="apple-touch-icon" href="icono-panico\.png">/.test(pan) && fs.existsSync(root('icono-panico.png')));
+        yes('panico.html no guarda el codigo de acceso: solo la clave del vinculo',
+            /input\.value = '';\s*\/\/ el codigo no se queda en la pagina/.test(pan) && !/keeper\.save\([^)]*code/.test(pan) && !/setItem\([^)]*code/.test(pan));
+        yes('el servidor reemplaza al telefono mas viejo sin uso en vez de negarle el boton a quien tiene su codigo',
+            /oldest = live\.sort\(/.test(fn) && /revokedBy: 'reemplazado'/.test(fn) && !/ya tiene \$\{MAX_DEVICES\} teléfonos vinculados/.test(fn));
+    }
     yes('privilegios-ui.js sube de version junto con su X (admin.html y master.html por igual)', (() => {
         const a = read('admin.html').match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

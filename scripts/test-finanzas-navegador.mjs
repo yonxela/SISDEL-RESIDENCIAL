@@ -1708,6 +1708,30 @@ async function run() {
         equal('al bajar hasta Guardar la X queda fija arriba a la derecha de la ventana', xOut, { scrolled: true, flush: true, inside: true, title: 'Editar Residente' });
         await oikos(`closeModal('modal-resident')`);
 
+        console.log('\nResidentes: dos menus por residente y el codigo del boton de panico');
+        const pmOut = await oikos(`(async () => {
+            navigate('residents'); renderResidents();
+            const tr = [...document.querySelectorAll('#residents-table-body tr')].find((r) => r.innerHTML.includes("menu-fav-u-ana"));
+            const cell = tr.lastElementChild;
+            const items = (id) => [...document.getElementById(id).querySelectorAll('button')].map((b) => b.textContent.trim().replace(/\\s+/g, ' '));
+            const shape = { botones: [...cell.querySelectorAll(':scope > button')].map((b) => b.title), izq: items('menu-fav-u-ana'), der: items('menu-u-ana') };
+            cell.querySelector('.drop-btn').click();
+            shape.soloIzq = [getComputedStyle(document.getElementById('menu-fav-u-ana')).display !== 'none', getComputedStyle(document.getElementById('menu-u-ana')).display !== 'none'];
+            document.body.click();
+            openPanicQr('u-ana');
+            for (let i = 0; i < 40 && !document.querySelector('#pqm-card .pq-qr svg'); i++) await new Promise((r) => setTimeout(r, 150));
+            const d = (id) => document.getElementById(id);
+            shape.modal = { abierta: !d('modal-panico-qr').classList.contains('hidden-section'), url: d('pqm-url').value, tarjeta: d('pqm-card').innerText.replace(/\\s+/g, ' ').trim(), qr: d('pqm-card').querySelectorAll('.pq-qr svg').length, botones: ['pqm-copy', 'pqm-print', 'pqm-pdf', 'pqm-wa'].map((i) => d(i).disabled) };
+            closeModal('modal-panico-qr');
+            return shape;
+        })()`);
+        equal('cada residente trae tres puntos, el lapiz y tres puntos', pmOut.botones, ['Estado de cuenta y mensajes', 'Editar', 'Más opciones']);
+        equal('izquierda: estado de cuenta y mensajes; derecha: lo demas, con Generar codigo boton de panico', [pmOut.izq, pmOut.der],
+            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
+        equal('el boton de la izquierda abre solo su menu', pmOut.soloIzq, [true, false]);
+        equal('el codigo del boton de panico: la tarjeta del vecino con su QR y el enlace con su condominio y su id (sin codigo de acceso)',
+            [pmOut.modal.abierta, pmOut.modal.url, pmOut.modal.qr, /BOTÓN DE PÁNICO/.test(pmOut.modal.tarjeta), /Ana García/.test(pmOut.modal.tarjeta), pmOut.modal.botones], [true, `${BASE}/panico.html?c=${CONDO}&v=u-ana`, 1, true, true, [false, false, false, false]]);
+
         console.log('\nPrivilegios de gerente: sin cambiar nombres ni fechas (bloqueo de pantalla)');
         // Se vuelve a instalar el bloqueo como un usuario sin "cambiar el nombre" ni "cambiar la fecha"; Actualizar (abajo) monta
         // OIKOS de nuevo con los privilegios reales del administrador

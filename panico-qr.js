@@ -65,6 +65,95 @@
     // Lo que el telefono recuerda de cada QR que vinculo: { secret, name, casa, condoName, at }
     const storageKey = (c, v) => `sisdel_panico_qr_${c}_${v}`;
 
+    // ── Lo que el telefono recuerda: la clave del vinculo, guardada en DOS lugares ──
+    // Por ser un boton de panico, la clave NO se puede perder: el telefono se vincula una sola vez y despues escanear basta.
+    // Se guarda en localStorage y tambien en IndexedDB: muchas cosas que pasan en un telefono (el navegador que libera espacio,
+    // una "limpieza", un error) tocan uno y dejan el otro; al abrir, la copia que falte se repone con la que quedo. Ademas se pide
+    // al navegador que no borre los datos de este sitio por su cuenta (navigator.storage.persist). LIMITE: Safari del iPhone
+    // borra TODO lo que guarda una pagina que no se usa en una semana (y "borrar datos del sitio" tambien borra las dos copias):
+    // contra eso solo sirve agregar el boton a la pantalla de inicio (panico.html lo explica) o volver a vincular.
+    const SECRET_RE = /^[A-Za-z0-9_-]{40,64}$/;
+    const IDB_NAME = 'sisdel-panico';
+    const IDB_STORE = 'vinculos';
+    const IDB_WAIT_MS = 1500; // IndexedDB que no responde (modo privado, navegador raro) no atrasa el boton
+
+    const validLink = (l) => !!l && typeof l === 'object' && typeof l.secret === 'string' && SECRET_RE.test(l.secret);
+    const parseLink = (text) => { try { const l = JSON.parse(text); return validLink(l) ? l : null; } catch (e) { return null; } };
+    // Corta la espera de una promesa: si no responde a tiempo, resuelve con `fallback`
+    const within = (promise, ms, fallback) => new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(fallback), ms);
+        Promise.resolve(promise).then((v) => { clearTimeout(timer); resolve(v); }, () => { clearTimeout(timer); resolve(fallback); });
+    });
+
+    // env: { localStorage, indexedDB, navigator } (los del navegador, o unos de mentira en las pruebas)
+    function createKeeper(env, key) {
+        const ls = env && env.localStorage;
+        const idbFactory = env && env.indexedDB;
+        const nav = env && env.navigator;
+        const readLocal = () => { try { return ls ? parseLink(ls.getItem(key)) : null; } catch (e) { return null; } };
+        const writeLocal = (link) => { try { if (!ls) return false; ls.setItem(key, JSON.stringify(link)); return true; } catch (e) { return false; } };
+        const dropLocal = () => { try { if (ls) ls.removeItem(key); } catch (e) { /* nada que borrar */ } };
+
+        // Una operacion sobre el almacen de IndexedDB (abre la base y la cierra al terminar)
+        function idb(mode, run) {
+            if (!idbFactory) return Promise.resolve(undefined);
+            return new Promise((resolve) => {
+                let request;
+                try { request = idbFactory.open(IDB_NAME, 1); } catch (e) { resolve(undefined); return; }
+                request.onupgradeneeded = () => { try { request.result.createObjectStore(IDB_STORE); } catch (e) { /* ya existe */ } };
+                request.onerror = () => resolve(undefined);
+                request.onblocked = () => resolve(undefined);
+                request.onsuccess = () => {
+                    const db = request.result;
+                    try {
+                        const tx = db.transaction(IDB_STORE, mode);
+                        const op = run(tx.objectStore(IDB_STORE));
+                        let value;
+                        op.onsuccess = () => { value = op.result === undefined ? null : op.result; };
+                        op.onerror = () => { value = undefined; };
+                        tx.oncomplete = () => { try { db.close(); } catch (e) { /* ya cerrada */ } resolve(value === undefined ? (mode === 'readonly' ? null : true) : value); };
+                        tx.onerror = tx.onabort = () => { try { db.close(); } catch (e) { /* ya cerrada */ } resolve(undefined); };
+                    } catch (e) { try { db.close(); } catch (e2) { /* ya cerrada */ } resolve(undefined); }
+                };
+            });
+        }
+        const readIdb = async () => parseLink(await within(idb('readonly', (store) => store.get(key)).then((v) => (typeof v === 'string' ? v : v === null || v === undefined ? null : JSON.stringify(v))), IDB_WAIT_MS, null));
+        const writeIdb = async (link) => (await within(idb('readwrite', (store) => store.put(JSON.stringify(link), key)), IDB_WAIT_MS, undefined)) !== undefined;
+        const dropIdb = () => within(idb('readwrite', (store) => store.delete(key)), IDB_WAIT_MS, undefined);
+
+        async function requestPersistence() {
+            try {
+                if (!nav || !nav.storage || typeof nav.storage.persist !== 'function') return null;
+                if (typeof nav.storage.persisted === 'function' && await nav.storage.persisted()) return true;
+                return !!(await within(nav.storage.persist(), IDB_WAIT_MS, false));
+            } catch (e) { return null; }
+        }
+
+        return {
+            // Lo guardado, de cualquiera de las dos copias; si falta una, la repone con la otra. { link, from, repaired }
+            async load() {
+                const local = readLocal();
+                const fromIdb = await readIdb();
+                const link = local || fromIdb;
+                if (!link) return { link: null, from: null, repaired: false };
+                let repaired = false;
+                if (!local && writeLocal(link)) repaired = true;
+                if (!fromIdb && await writeIdb(link)) repaired = true;
+                return { link, from: local ? 'local' : 'idb', repaired };
+            },
+            // Lo que ya esta en localStorage, al instante (para no atrasar la pagina mientras se revisa IndexedDB)
+            readLocal,
+            // Guarda en las dos y pide que el navegador no lo borre. { local, idb, persistent }
+            async save(link) {
+                const local = writeLocal(link);
+                const inIdb = await writeIdb(link);
+                const persistent = await requestPersistence();
+                return { local, idb: inIdb, persistent };
+            },
+            async drop() { dropLocal(); await dropIdb(); }
+        };
+    }
+
     // ── Lista de vecinos ──
     // "Lote 12" (el usuario lo pidio asi); si la casa ya dice "Casa 12" o "Lote 45", se deja como esta
     function unitLabel(casa) {
@@ -301,7 +390,7 @@
 
     return {
         QR_LIB, PUBLIC_ORIGIN, SIZES, PAPERS, MARGIN, GAP, CARD_CSS, ICON_LAYERS, headHeight,
-        esc, publicOrigin, panicUrl, parsePanicQuery, functionUrl, callFunction, storageKey,
+        esc, publicOrigin, panicUrl, parsePanicQuery, functionUrl, callFunction, storageKey, createKeeper, validLink,
         unitLabel, neighbors, fases, select, cardsFor,
         qrMatrix, qrRuns, qrSvg, panicIconSvg, layout, pages, cardHtml, printHtml, latin1, drawCard, drawPdf
     };

@@ -9,6 +9,13 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <meta name="theme-color" content="#dc2626">
+    <!-- Agregar a la pantalla de inicio: el icono se abre sin barras del navegador y, en el iPhone, sus datos ya no se borran a los 7 dias
+         sin usarse (la clave del vinculo del boton de panico no se pierde) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Pánico">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="icono-panico.png">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
     <style>
@@ -34,6 +41,9 @@
         .panic-status { width: 100%; box-sizing: border-box; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.92rem; }
         .panic-status.calm { background: var(--bg-surface); border: 1px solid var(--border-strong); }
         .pq-error { padding: 0.9rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; margin: 0; }
+        #pqStepSave ol { margin: 0 0 0.75rem; padding-left: 1.25rem; font-size: 0.88rem; line-height: 1.5; color: var(--text-secondary); }
+        #pqStepSave li { margin-bottom: 0.35rem; }
+        #pqStepSave .pq-why { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem; }
         .pq-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
         .pq-foot a { color: var(--text-muted); }
         [hidden] { display: none !important; }
@@ -63,7 +73,7 @@
         <!-- Paso 2, solo la primera vez en este telefono: vincularlo con el codigo del vecino (el QR solo no deja enviar alertas) -->
         <section class="pq-step" id="pqStepLink" hidden>
             <h2><span class="pq-num">2</span> Vincule este teléfono</h2>
-            <p>Es la primera vez que se usa este QR en este teléfono. Escriba el código de acceso del vecino del QR (el mismo con que ingresa a garita.app). Se pide una sola vez: después basta con escanear el QR.</p>
+            <p>Este teléfono todavía no está vinculado a este QR. Escriba el código de acceso del vecino del QR (el mismo con que ingresa a garita.app). Se pide una sola vez: después basta con escanear el QR. Si ya lo había vinculado y el teléfono lo olvidó, vuelva a escribirlo.</p>
             <form id="pqLinkForm" autocomplete="off">
                 <input class="form-input" id="pqCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="64" placeholder="Código de acceso" aria-label="Código de acceso del vecino">
                 <button class="btn btn-primary" id="pqLinkBtn" type="submit" style="justify-content:center;">Vincular este teléfono</button>
@@ -80,6 +90,15 @@
             <div class="panic-status" id="panicStatus" hidden></div>
         </section>
 
+        <!-- Guardarlo en la pantalla de inicio: asi el telefono no olvida la clave del vinculo ni hay que buscar el QR -->
+        <section class="pq-step" id="pqStepSave" hidden>
+            <h2><span class="pq-num">&#10003;</span> Guárdelo en su teléfono</h2>
+            <p>Para que este teléfono no olvide el botón y lo abra con un toque, agréguelo a la pantalla de inicio:</p>
+            <ol id="pqSaveSteps"></ol>
+            <p class="pq-why" id="pqSaveWhy"></p>
+            <button class="btn btn-ghost btn-sm" id="pqSaveOk" type="button" style="border:1px solid var(--border-strong);">Ya lo agregué / Ahora no</button>
+        </section>
+
         <footer class="pq-foot">
             <button class="btn btn-ghost btn-sm" id="pqUnlink" type="button" style="border:1px solid var(--border-strong);" hidden>Desvincular este teléfono</button>
             <a href="index.html">Ir a garita.app</a>
@@ -90,7 +109,7 @@
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
-    <script src="panico-qr.js?v=20261120b"></script>
+    <script src="panico-qr.js?v=20261121a"></script>
     <script>
         (() => {
             const Q = SisdelPanicoQr;
@@ -111,12 +130,16 @@
             try { forceProd = localStorage.getItem('sisdel_backend') === 'prod'; } catch (e) { /* sin almacenamiento */ }
             const api = (name, data) => Q.callFunction(Q.functionUrl(location, name, forceProd), { c: qs.c, v: qs.v, ...data });
 
-            // Lo que este telefono recuerda del QR (la clave del vinculo, nunca el codigo de acceso)
+            // Lo que este telefono recuerda del QR (la clave del vinculo, nunca el codigo de acceso). Se guarda en DOS lugares
+            // (localStorage e IndexedDB) y se repone sola si falta una; ademas se pide que el navegador no la borre (panico-qr.js)
             const KEY = Q.storageKey(qs.c, qs.v);
-            const readLink = () => { try { const l = JSON.parse(localStorage.getItem(KEY)); return l && l.secret ? l : null; } catch (e) { return null; } };
-            const saveLink = (l) => { try { localStorage.setItem(KEY, JSON.stringify(l)); return true; } catch (e) { return false; } };
-            const dropLink = () => { try { localStorage.removeItem(KEY); } catch (e) { /* nada que borrar */ } };
-            let link = readLink();
+            let safeStorage = null;
+            try { safeStorage = window.localStorage; } catch (e) { safeStorage = null; }
+            const keeper = Q.createKeeper({ localStorage: safeStorage, indexedDB: window.indexedDB, navigator }, KEY);
+            const saveLink = (l) => keeper.save(l);
+            const dropLink = () => keeper.drop().catch(() => {});
+            let link = keeper.readLocal();
+            let restoreDone = !!link; // sin la copia de localStorage se revisa la de IndexedDB antes de pedir el codigo
             let gpsDone = false;
             let blocked = false; // el servidor dijo que este vecino no puede usar el boton
 
@@ -124,10 +147,37 @@
                 $('pqWho').textContent = link ? [Q.unitLabel(link.casa), link.name].filter(Boolean).join(' · ') || 'Vecino' : 'QR de pánico de un vecino';
                 $('pqCondo').textContent = link ? link.condoName || '' : '';
                 $('pqUnlink').hidden = !link;
+                paintSaveCard();
             }
+            // ── Guardarlo en la pantalla de inicio ──
+            // Solo si el telefono esta vinculado, el boton no se abrio ya desde la pantalla de inicio y no se dijo "ya lo agregue"
+            const SAVED_FLAG = `sisdel_pq_guardado_${qs.c}_${qs.v}`;
+            const standalone = () => { try { return navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; } };
+            const ua = navigator.userAgent || '';
+            const isIos = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const isAndroid = /Android/i.test(ua);
+            const saveDismissed = () => { try { return safeStorage && safeStorage.getItem(SAVED_FLAG) === '1'; } catch (e) { return false; } };
+            function paintSaveCard() {
+                const box = $('pqStepSave');
+                if (!box) return;
+                const show = !!link && !blocked && !standalone() && !saveDismissed();
+                box.hidden = !show;
+                if (!show) return;
+                const steps = isIos
+                    ? ['Toque el botón Compartir de Safari (el cuadro con una flecha hacia arriba).', 'Elija «Agregar a inicio» y toque «Agregar».', 'Abra el icono «Pánico» desde su pantalla de inicio. Si le pide el código otra vez, escríbalo: desde ahí queda guardado.']
+                    : isAndroid
+                        ? ['Toque el menú ⋮ del navegador (arriba a la derecha).', 'Elija «Agregar a la pantalla de inicio» o «Instalar aplicación».', 'Abra el icono desde su pantalla de inicio. Si le pide el código otra vez, escríbalo: desde ahí queda guardado.']
+                        : ['En el menú de su navegador elija «Agregar a la pantalla de inicio» (o «Instalar»).', 'Abra el icono desde su pantalla de inicio. Si le pide el código otra vez, escríbalo: desde ahí queda guardado.'];
+                $('pqSaveSteps').textContent = '';
+                steps.forEach((t) => { const li = document.createElement('li'); li.textContent = t; $('pqSaveSteps').appendChild(li); });
+                $('pqSaveWhy').textContent = isIos
+                    ? 'Por qué: el iPhone borra lo que guardan las páginas que no se usan en una semana, y con ello la clave de este botón. El icono en la pantalla de inicio no se borra.'
+                    : 'Por qué: así el teléfono no depende de que el navegador conserve lo que guardó, y el botón queda a un toque.';
+            }
+            $('pqSaveOk').addEventListener('click', () => { try { if (safeStorage) safeStorage.setItem(SAVED_FLAG, '1'); } catch (e) { /* sin almacenamiento */ } paintSaveCard(); });
             // Despues de la ubicacion: el boton si el telefono esta vinculado; si no, vincularlo
             function showNext() {
-                if (!gpsDone || blocked) return;
+                if (!gpsDone || !restoreDone || blocked) return;
                 $('pqStepLink').hidden = !!link;
                 $('pqStepPanic').hidden = !link;
                 if (!link) setTimeout(() => $('pqCode').focus(), 50);
@@ -182,7 +232,7 @@
             $('panicGpsText').textContent = 'Esperando su permiso...';
             const asking = SisdelRondas.gps.ask(25000);
             // Mientras tanto se comprueba el vinculo (sin esperar: con poca senal el boton no se atrasa)
-            if (link) {
+            function verifyLink() {
                 api('panicDevice', { action: 'check', secret: link.secret }).then((res) => {
                     if (res.ok) {
                         link = { ...link, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel };
@@ -190,8 +240,17 @@
                         paintWho();
                         if (res.alert) follow(res.alert, true);
                     } else if (res.relink) needRelink(res.error);
-                    else { blocked = true; fail(res.error); $('pqStepPanic').hidden = true; $('pqStepLink').hidden = true; }
+                    else { blocked = true; fail(res.error); $('pqStepPanic').hidden = true; $('pqStepLink').hidden = true; paintSaveCard(); }
                 }).catch((e) => console.warn('qr panico: sin conexion al comprobar', e));
+            }
+            if (link) {
+                verifyLink();
+                keeper.load().catch(() => {}); // repone la copia de IndexedDB si falta
+            } else {
+                // Sin la copia de localStorage: se mira la de IndexedDB antes de pedir el codigo (se repone sola)
+                keeper.load().then((r) => {
+                    if (r && r.link && !link) { link = r.link; paintWho(); verifyLink(); }
+                }).catch(() => {}).then(() => { restoreDone = true; showNext(); });
             }
             asking.then(afterGps, () => afterGps('timeout'));
             // Al volver de los Ajustes del telefono la ubicacion se comprueba sola; oculta, descansa (bateria)
@@ -215,7 +274,8 @@
                     input.value = ''; // el codigo no se queda en la pagina
                     if (!res.ok) { linkMessage(res.error, true); return; }
                     link = { secret: res.secret, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel, at: new Date().toISOString() };
-                    const kept = saveLink(link);
+                    const saved = await saveLink(link);
+                    const kept = !!(saved && (saved.local || saved.idb));
                     linkMessage(kept ? '' : 'Vinculado solo por ahora: este navegador no deja guardar datos (¿modo privado?) y tendrá que vincularlo cada vez.', !kept);
                     paintWho();
                     showNext();

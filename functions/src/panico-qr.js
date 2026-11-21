@@ -133,10 +133,15 @@ const linkPanicDevice = onCall(async (request) => {
 
     const codeHash = sha256(code);
     const devices = await db.collection(`condominios/${condoId}/panico_dispositivos`).where('userId', '==', userId).get();
-    const live = devices.docs.filter((d) => !d.data().revokedAt && d.data().codeHash === codeHash).length;
-    if (live >= MAX_DEVICES) {
-        log('too_many');
-        return { ok: false, error: `Este vecino ya tiene ${MAX_DEVICES} teléfonos vinculados. Pida a la administración que le cambie el código de acceso y vuelva a vincular los que use.` };
+    const live = devices.docs.filter((d) => !d.data().revokedAt && d.data().codeHash === codeHash);
+    if (live.length >= MAX_DEVICES) {
+        // A quien tiene su codigo NUNCA se le niega el boton: se reemplaza el telefono que lleva mas tiempo sin usarse. Un telefono que
+        // olvida su clave (el iPhone borra lo que guarda una pagina sin uso en una semana) se vincula de nuevo y deja el vinculo viejo
+        // huerfano: con un tope que negara, esos huerfanos acabarian dejando al vecino sin poder vincular su telefono
+        const lastUse = (d) => String(d.data().lastUsedAt || d.data().createdAt || '');
+        const oldest = live.sort((x, y) => lastUse(x).localeCompare(lastUse(y))).slice(0, live.length - MAX_DEVICES + 1);
+        await Promise.all(oldest.map((d) => d.ref.update({ revokedAt: nowIso(), revokedBy: 'reemplazado' })));
+        log('replaced', { count: oldest.length });
     }
 
     const secret = crypto.randomBytes(32).toString('base64url');

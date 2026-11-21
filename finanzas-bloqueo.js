@@ -112,6 +112,9 @@
         [/^openMarbete\(/, ['reportes_marbetes']],
         [/^(printResidentMarbete|downloadResidentMarbetePDF)\(/, ['reportes_exportar']],
         [/^sendResidentMarbeteWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
+        // Generar codigo boton de panico (menu de cada residente): la tarjeta del QR, su enlace y mandarselo por WhatsApp (el privilegio de
+        // contactar residentes)
+        [/^(openPanicQr|panicQrSetSize|panicQrSetPaper|panicQrCopyLink|printPanicQr|downloadPanicQrPDF|sendPanicQrWhatsApp)\(/, ['residentes_contactar']],
         [/^marbeteEditPlates\(/, ['residentes_editar']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
@@ -157,7 +160,7 @@
         [['cuotas_meses'], ['#res-retro-wrap', '#residents-table-body .dropdown button[onclick^="openResidentFeeMonths("]']],
         [['residentes_finiquitar'], ['#residents-table-body .dropdown button[onclick^="openFiniquito("]', '#residents-table-body .dropdown button[onclick^="reactivateResident("]', '#modal-finiquito']],
         [['residentes_eliminar'], ['#residents-table-body .dropdown button[onclick^="deleteResident("]']],
-        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#modal-reminders', '#modal-contact']],
+        [['residentes_contactar'], ['#view-residents button[onclick="openReminders()"]', '#residents-table-body .dropdown button[onclick^="contactWhatsApp("]', '#residents-table-body .dropdown button[onclick^="contactMyWhatsApp("]', '#residents-table-body .dropdown button[onclick^="openPanicQr("]', '#modal-panico-qr', '#modal-reminders', '#modal-contact']],
         [['cuotas_mes'], ['#view-residents button[onclick="openFeeRun()"]', '#modal-fee-run']],
         [['cuotas_corregir'], ['.dup-fee-banner button[onclick="fixDuplicateFees()"]']],
         [['cargos_crear'], ['#view-accounting button[onclick="openModal(\'modal-bulk-charge\')"]', '#modal-bulk-charge']],

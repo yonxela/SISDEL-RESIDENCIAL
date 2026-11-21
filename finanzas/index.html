@@ -25,6 +25,8 @@
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
+    <!-- SISDEL: el QR del boton de panico de cada vecino (el mismo modulo de Reportes > QR de panico y de panico.html) -->
+    <script src="../panico-qr.js?v=20261121a"></script>
     <!-- Inter font: dejamos Google Fonts porque el browser lo cachea fuerte
          y NO es crítico para funcionalidad (si falla, cae a sans-serif). -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -263,6 +265,9 @@
             #view-residents table tr > th:nth-child(4), #view-residents table tr > td:nth-child(4),
             #view-residents table tr > th:nth-child(5), #view-residents table tr > td:nth-child(5) { display: none; }
             #view-residents table th, #view-residents table td { padding-left: 0.6rem; padding-right: 0.6rem; }
+            /* Los tres botones de acciones (tres puntos, lapiz, tres puntos) ocupan lo mismo que antes ocupaban dos */
+            #residents-table-body td:last-child { padding-left: 0.2rem; padding-right: 0.2rem; }
+            #residents-table-body td:last-child > button { padding-left: 0.22rem; padding-right: 0.22rem; font-size: 0.85rem; }
         }
     </style>
 </head>
@@ -1368,6 +1373,19 @@
                 <button type="button" id="mbm-print" onclick="printResidentMarbete()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-1.5"></i>Imprimir</button>
                 <button type="button" id="mbm-pdf" onclick="downloadResidentMarbetePDF()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-file-pdf mr-1.5"></i>Descargar PDF</button>
                 <button type="button" id="mbm-wa" onclick="sendResidentMarbeteWhatsApp()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition" title="En el celular se comparte el PDF y WhatsApp lo adjunta; en la computadora se descarga el PDF y se abre el chat del residente para adjuntarlo"><i class="fab fa-whatsapp mr-1.5"></i>Enviar por WhatsApp</button>
+            </div>
+        </div>
+    </div>
+    <!-- SISDEL: Generar codigo boton de panico (menu de cada residente): la tarjeta con su QR, con Imprimir, Descargar PDF, Copiar enlace y Enviar por WhatsApp -->
+    <div id="modal-panico-qr" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-6 max-h-[92vh] flex flex-col">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fas fa-triangle-exclamation text-rose-600 dark:text-rose-300"></i></div><div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Código del botón de pánico</h3><p id="pqm-info" class="text-sm text-slate-500 dark:text-slate-400 truncate"></p></div><button type="button" onclick="closeModal('modal-panico-qr')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div id="pqm-body" class="overflow-y-auto flex-1 min-h-0"></div>
+            <div id="pqm-actions" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
+                <button type="button" id="pqm-copy" onclick="panicQrCopyLink()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-link mr-1.5"></i>Copiar enlace</button>
+                <button type="button" id="pqm-print" onclick="printPanicQr()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-print mr-1.5"></i>Imprimir</button>
+                <button type="button" id="pqm-pdf" onclick="downloadPanicQrPDF()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-file-pdf mr-1.5"></i>Descargar PDF</button>
+                <button type="button" id="pqm-wa" onclick="sendPanicQrWhatsApp()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition disabled:opacity-50" title="Abre su WhatsApp en el chat del residente con el enlace y los pasos, listo para enviar"><i class="fab fa-whatsapp mr-1.5"></i>Enviar enlace por WhatsApp</button>
             </div>
         </div>
     </div>
@@ -4443,17 +4461,25 @@
                     <td class="py-4 px-6 text-right font-bold font-mono text-sm ${balCls}">
                         <button onclick="openEstadoCuenta('${r.id}')" class="hover:underline" title="Ver estado de cuenta">${formatMoney(shownBalance)}</button>${moraLine}${creditLine}
                     </td>
-                    <td class="py-4 px-6 text-center relative">
+                    <td class="py-4 px-6 text-center relative whitespace-nowrap">
+                        <!-- SISDEL: DOS menus de tres puntos a cada lado del lapiz (pedido del usuario el 2026-11-20: "para no poner muchas opciones
+                             poner otros tres puntos del lado izquierdo del boton de editar"): a la izquierda lo de uso diario (estado de cuenta y
+                             mensajes) y a la derecha lo demas, de mas a menos usado, con lo que borra al final -->
+                        <button class="drop-btn text-slate-400 hover:text-blue-600 px-2" onclick="toggleMenu('menu-fav-${r.id}')" title="Estado de cuenta y mensajes" aria-label="Estado de cuenta y mensajes"><i class="fas fa-ellipsis-v"></i></button>
                         <button onclick="editResident('${r.id}')" title="Editar" class="text-slate-400 hover:text-blue-600 px-2"><i class="fas fa-edit"></i></button>
-                        <button class="drop-btn text-slate-400 hover:text-blue-600 px-2" onclick="toggleMenu('menu-${r.id}')"><i class="fas fa-ellipsis-v"></i></button>
-                        <div id="menu-${r.id}" class="dropdown absolute right-10 top-10 bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-slate-700 rounded-lg w-56 z-10 text-left overflow-hidden">
-                            <button onclick="editResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fas fa-edit w-5"></i> Editar</button>
+                        <button class="drop-btn text-slate-400 hover:text-blue-600 px-2" onclick="toggleMenu('menu-${r.id}')" title="Más opciones" aria-label="Más opciones"><i class="fas fa-ellipsis-v"></i></button>
+                        <div id="menu-fav-${r.id}" class="dropdown absolute right-[4.75rem] top-10 bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-slate-700 rounded-lg w-60 z-10 text-left overflow-hidden whitespace-normal">
+                            <div class="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Estado de cuenta y mensajes</div>
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
-                            <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
-                            <button onclick="openMarbete(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-violet-700 dark:text-violet-300"><i class="fas fa-id-card w-5"></i> Generar marbete</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
                             <button onclick="contactMyWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-400"><i class="fas fa-mobile-screen-button w-5"></i> Enviar desde mi WhatsApp</button>
                             <button onclick="openResidentChat(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-400"><i class="fas fa-comments w-5"></i> Chat de WhatsApp</button>
+                        </div>
+                        <div id="menu-${r.id}" class="dropdown absolute right-10 top-10 bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-slate-700 rounded-lg w-60 z-10 text-left overflow-hidden whitespace-normal">
+                            <div class="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Más opciones</div>
+                            <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
+                            <button onclick="openMarbete(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-violet-700 dark:text-violet-300"><i class="fas fa-id-card w-5"></i> Generar marbete</button>
+                            <button onclick="openPanicQr(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-rose-50 dark:hover:bg-slate-700 text-rose-600 dark:text-rose-400"><i class="fas fa-triangle-exclamation w-5"></i> Generar código botón de pánico</button>
                             ${closed
                                 ? `<button onclick="reactivateResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-600"><i class="fas fa-user-check w-5"></i> Reactivar residente</button>`
                                 : `<button onclick="openFiniquito('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-400"><i class="fas fa-handshake w-5"></i> Finiquitar relación</button>`}
@@ -9131,6 +9157,144 @@
                 doc.text(txt(label), pageW - X0 - doc.getTextWidth(txt(label)), 326);
             }
             return doc;
+        }
+
+        // ─── SISDEL: "Generar código botón de pánico" del menu de cada residente (pedido del usuario el 2026-11-20: "agregar opcion
+        // generar codigo boton de panico") ───
+        // La tarjeta con el QR del boton de panico de ESE residente (la misma de Reportes > QR de panico por vecino: panico-qr.js),
+        // para imprimirla, bajarla en PDF, copiar su enlace o mandarselo por WhatsApp. El QR solo lleva el condominio y el vecino
+        // (https://garita.app/panico.html?c=&v=), nunca su codigo de acceso: la primera vez en cada telefono el vecino escribe su
+        // codigo para vincularlo y despues basta con escanear (panico.html). Para que el telefono no olvide la vinculacion, la pagina le
+        // pide guardar el boton en la pantalla de inicio. Privilegio: finanzas.residentes_contactar.
+        var panicQrModalId = null, panicQrSize = 'chica', panicQrPaper = 'carta';
+        function panicQrLib() { return typeof window.SisdelPanicoQr !== 'undefined' ? window.SisdelPanicoQr : null; }
+        function panicQrResidentOf(id) { return (Store.get('residents') || []).find(x => String(x.id) === String(id)) || null; }
+        function panicQrModalOpen() { const m = document.getElementById('modal-panico-qr'); return !!m && !m.classList.contains('hidden-section'); }
+        function panicQrCondoId() { try { return new URLSearchParams(location.search).get('msid') || ''; } catch (e) { return ''; } }
+        function panicQrCondoName() { const s = Store.get('settings') || {}; return s.name || 'Residencial'; }
+        // La tarjeta de ese residente ({ id, name, unit, fase, url }) o null si su id o el condominio no sirven para un QR
+        function panicQrCard(r) {
+            const Q = panicQrLib();
+            if (!Q || !r) return null;
+            const list = Q.neighbors([{ id: String(r.id), name: r.name, casa: r.unit, fase: r.fase, role: 'vecino', active: true }]);
+            if (!list.length || !panicQrCondoId()) return null;
+            return Q.cardsFor(list, Q.publicOrigin(location), panicQrCondoId())[0] || null;
+        }
+        function panicQrWithQr(card) {
+            const Q = panicQrLib();
+            if (!Q || !card || typeof window.qrcode !== 'function') return null;
+            const matrix = Q.qrMatrix(window.qrcode, card.url);
+            return { ...card, matrix, svg: Q.qrSvg(matrix) };
+        }
+        function openPanicQr(residentId) {
+            const r = panicQrResidentOf(residentId);
+            if (!r) return;
+            panicQrModalId = String(r.id);
+            // La libreria del QR se carga ya: asi Imprimir, PDF y WhatsApp salen sin esperar (el navegador solo deja abrir ventanas
+            // en respuesta al clic)
+            loadMarbeteQrLib().then(() => { if (panicQrModalOpen()) paintPanicQrModal(); }).catch(() => { /* queda el aviso */ });
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
+            openModal('modal-panico-qr');
+            paintPanicQrModal();
+        }
+        function panicQrSetSize(v) { panicQrSize = v === 'mediana' ? 'mediana' : 'chica'; paintPanicQrModal(); }
+        function panicQrSetPaper(v) { panicQrPaper = v === 'oficio' ? 'oficio' : 'carta'; }
+        function paintPanicQrModal() {
+            const r = panicQrResidentOf(panicQrModalId);
+            const body = document.getElementById('pqm-body');
+            const info = document.getElementById('pqm-info');
+            if (!body || !r) return;
+            const Q = panicQrLib();
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            if (info) info.textContent = [r.unit, r.name].filter(Boolean).join(' · ');
+            const note = (icon, text) => '<div class="px-4 py-8 text-center text-sm text-slate-600 dark:text-slate-300"><i class="fas ' + icon + ' text-3xl opacity-40 mb-3"></i><p>' + esc(text) + '</p></div>';
+            const card = panicQrCard(r);
+            const withQr = panicQrWithQr(card);
+            let ready = false, html;
+            if (!Q) html = note('fa-triangle-exclamation', 'Falta el módulo del QR de pánico (panico-qr.js): recargue la página.');
+            else if (!card) html = note('fa-triangle-exclamation', 'No se puede generar el QR de este residente: su registro no tiene un identificador válido o OIKOS se abrió fuera de SISDEL.');
+            else if (!withQr) html = note('fa-spinner fa-spin', 'Preparando el generador de QR...');
+            else {
+                ready = true;
+                html = '<style>' + Q.CARD_CSS + '</style>'
+                    + '<div class="grid gap-5 md:grid-cols-[auto,1fr] items-start">'
+                    + '<div class="flex justify-center" id="pqm-card">' + Q.cardHtml(withQr, panicQrSize, withQr.svg, panicQrCondoName()) + '</div>'
+                    + '<div class="text-sm text-slate-600 dark:text-slate-300 space-y-3 min-w-0">'
+                    + '<div class="grid grid-cols-2 gap-3">'
+                    + '<label class="block"><span class="block text-xs font-bold text-slate-400 uppercase mb-1">Tamaño</span><select id="pqm-size" onchange="panicQrSetSize(this.value)" class="w-full px-2 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm">'
+                    + '<option value="chica"' + (panicQrSize === 'chica' ? ' selected' : '') + '>Chica, para el carro</option><option value="mediana"' + (panicQrSize === 'mediana' ? ' selected' : '') + '>Mediana, para la puerta</option></select></label>'
+                    + '<label class="block"><span class="block text-xs font-bold text-slate-400 uppercase mb-1">Hoja</span><select id="pqm-paper" onchange="panicQrSetPaper(this.value)" class="w-full px-2 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm">'
+                    + '<option value="carta"' + (panicQrPaper === 'carta' ? ' selected' : '') + '>Carta</option><option value="oficio"' + (panicQrPaper === 'oficio' ? ' selected' : '') + '>Oficio</option></select></label>'
+                    + '</div>'
+                    + '<div><span class="block text-xs font-bold text-slate-400 uppercase mb-1">Enlace del QR</span><input id="pqm-url" type="text" readonly value="' + esc(card.url) + '" onfocus="this.select()" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-mono"></div>'
+                    + '<ol class="list-decimal pl-5 space-y-1 text-[13px]">'
+                    + '<li>El vecino escanea el QR (o abre el enlace) y permite la ubicación.</li>'
+                    + '<li>La <b>primera vez</b> en cada teléfono escribe su código de acceso, el mismo con que ingresa a garita.app, para vincular ese teléfono.</li>'
+                    + '<li>Después basta con escanear: aparece el botón. La página le pide guardarlo en la pantalla de inicio para que el teléfono no lo olvide.</li></ol>'
+                    + '<p class="text-xs text-slate-500 dark:text-slate-400">El QR no lleva el código del vecino: quien lo escanee sin el código no puede enviar alertas. El botón solo funciona si el botón de pánico de vecinos está activado en Rondas.</p>'
+                    + '</div></div>';
+            }
+            body.innerHTML = html;
+            ['pqm-print', 'pqm-pdf', 'pqm-wa', 'pqm-copy'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !ready; });
+        }
+        // Todo lo que hace falta para imprimir, bajar el PDF o mandar el enlace (o null, avisando por que no)
+        function panicQrReady() {
+            const r = panicQrResidentOf(panicQrModalId);
+            const Q = panicQrLib();
+            const card = r ? panicQrWithQr(panicQrCard(r)) : null;
+            if (!r || !Q || !card) { alert('El generador de QR todavía no está listo. Espere un momento e intente de nuevo.'); return null; }
+            return { r: r, Q: Q, card: card };
+        }
+        function panicQrFileName(r) { return SisdelReportesOikos.slug('QR panico ' + [r.unit, r.name].filter(Boolean).join(' ')); }
+        function printPanicQr() {
+            const x = panicQrReady();
+            if (!x) return;
+            const w = window.open('', '_blank');
+            if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
+            w.document.open();
+            w.document.write(x.Q.printHtml([x.card], { paper: panicQrPaper, size: panicQrSize, condoName: panicQrCondoName(), title: panicQrFileName(x.r) }));
+            w.document.close();
+            w.focus();
+            setTimeout(() => { try { w.print(); } catch (e) { /* la ventana se cerro */ } }, 400);
+            showToast('Tarjeta lista para imprimir.');
+        }
+        function downloadPanicQrPDF() {
+            const x = panicQrReady();
+            if (!x) return;
+            if (!window.jspdf || !window.jspdf.jsPDF) { alert('La librería de PDF aún se está cargando. Pruebe en 2 segundos.'); return; }
+            const L = x.Q.layout(panicQrPaper, panicQrSize);
+            const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: [L.paper.w, L.paper.h], compress: true });
+            x.Q.drawPdf(doc, [x.card], { paper: panicQrPaper, size: panicQrSize, condoName: panicQrCondoName() });
+            doc.save(panicQrFileName(x.r) + '.pdf');
+            showToast('PDF descargado: tarjeta del botón de pánico.');
+        }
+        function panicQrCopyLink() {
+            const r = panicQrResidentOf(panicQrModalId);
+            const card = r ? panicQrCard(r) : null;
+            if (!card) return;
+            const done = () => showToast('Enlace copiado: es el mismo que lleva el QR.');
+            const fallback = () => {
+                const input = document.getElementById('pqm-url');
+                if (!input) return;
+                input.focus(); input.select();
+                try { if (document.execCommand('copy')) done(); else alert('Seleccione el enlace y cópielo con Ctrl+C.'); } catch (e) { alert('Seleccione el enlace y cópielo con Ctrl+C.'); }
+            };
+            try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(card.url).then(done, fallback); return; } } catch (e) { /* se prueba el otro camino */ }
+            fallback();
+        }
+        // El texto con el enlace para el residente (el enlace no es secreto: es lo que lleva el QR; el codigo de acceso nunca se manda)
+        function panicQrWhatsAppText(r, card) {
+            return ['Hola ' + (r.name || '') + ',', 'este es el enlace del botón de pánico de ' + panicQrCondoName() + ' para su teléfono:', card.url, '',
+                '1) Ábralo en su teléfono y permita la ubicación cuando se lo pida.',
+                '2) La primera vez escriba su código de acceso (el mismo con que ingresa a garita.app) para vincular el teléfono.',
+                '3) Guárdelo en la pantalla de inicio: en iPhone, Compartir > Agregar a inicio; en Android, menú ⋮ > Agregar a la pantalla de inicio.',
+                'En una emergencia mantenga presionado el botón rojo.'].join('\n');
+        }
+        function sendPanicQrWhatsApp() {
+            const r = panicQrResidentOf(panicQrModalId);
+            const card = r ? panicQrCard(r) : null;
+            if (!r || !card) return;
+            if (openMyWhatsApp(r.contact, panicQrWhatsAppText(r, card))) myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || ''));
         }
 
         // ─── SISDEL: "Generar marbete" del menu de cada residente (pedido del usuario el 2026-11-20: "en ese listado agregar opcion,

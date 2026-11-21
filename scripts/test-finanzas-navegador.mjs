@@ -1481,7 +1481,7 @@ async function run() {
             const name = first.querySelector('.mbc-name');
             const detail = first.querySelector('.mbc-detail');
             const esc = marbeteCardHtml({ plate: '<i>X</i>', name: '<b>Nombre</b>', unit: 'A1', fase: 'Fase A', code: 'C1', brand: '<s>', model: '', color: '' }, '');
-            const bands = cards.map((c) => { const b = c.querySelector('.mbc-plate'); const r = document.createRange(); r.selectNodeContents(b); return { cls: b.className, bg: getComputedStyle(b).backgroundColor, ratio: b.getBoundingClientRect().width / r.getBoundingClientRect().width, inCard: b.getBoundingClientRect().width < c.getBoundingClientRect().width }; });
+            const bands = cards.map((c) => { const b = c.querySelector('.mbc-band'); const p = c.querySelector('.mbc-plate'); const cr = c.getBoundingClientRect(); const br = b.getBoundingClientRect(); return { bg: getComputedStyle(b).backgroundColor, full: Math.abs(br.width - c.clientWidth) < 1.5 && Math.abs(br.left - cr.left) < 1.5 && Math.abs(br.top - cr.top) < 1.5, ratio: br.height / parseFloat(getComputedStyle(p).fontSize), plate: p.textContent }; });
             return {
                 shown: !box.classList.contains('hidden') && document.getElementById('rep-table-wrap').classList.contains('hidden'),
                 plates: cards.map((c) => c.querySelector('.mbc-plate').textContent),
@@ -1503,7 +1503,7 @@ async function run() {
         record('en pantalla se ven los marbetes (y no la tabla): uno por vehiculo, agrupados por fase', mbCards.shown && JSON.stringify(mbCards.plates) === JSON.stringify(['P-111MOR', 'P-222BBB', 'P-987XYZ']) && /^Fase A · 1 marbete · 1 residente sin vehículo registrado$/.test(mbCards.headers[0]) && /^Fase B · 2 marbetes$/.test(mbCards.headers[1]), JSON.stringify([mbCards.plates, mbCards.headers]));
         record('cada marbete como el del vecino: placa, MARBETE VEHICULAR, lote y fase, y "Vehiculo: ... Residente: ..." en fondo oscuro', mbCards.kinds.every((k) => k === 'MARBETE VEHICULAR') && JSON.stringify(mbCards.where) === JSON.stringify(['Casa 23 · Fase A', 'Casa 12 · Fase B', 'Casa 12 · Fase B']) && mbCards.details[0] === 'Vehículo: Honda Fit Gris. Residente: María Rodríguez' && mbCards.bg === 'rgb(30, 41, 59)', JSON.stringify(mbCards));
         record('el nombre del residente va en negrita y un 25 % mas grande, en su propia linea y centrado', Number(mbCards.nameWeight) >= 700 && Math.abs(mbCards.nameRatio - 1.25) < 0.02 && mbCards.nameBlock, JSON.stringify([mbCards.nameWeight, mbCards.nameRatio, mbCards.nameBlock]));
-        record('la placa va en una franja celeste (tambien la de quien esta en mora), un poco mas ancha que las letras', mbCards.bands.every((b) => b.cls === 'mbc-plate mbc-band' && b.bg === 'rgb(56, 189, 248)' && b.ratio > 1.05 && b.ratio < 1.6 && b.inCard), JSON.stringify(mbCards.bands));
+        record('la placa va en una franja celeste (tambien la de quien esta en mora) que cubre TODO el ancho del marbete arriba y mide el doble de la letra de la placa', mbCards.bands.every((b) => b.bg === 'rgb(56, 189, 248)' && b.full && Math.abs(b.ratio - 2) < 0.05), JSON.stringify(mbCards.bands));
         record('el marbete no dice si el vecino esta en mora (lo muestra la garita al leer el QR) y la nota de arriba lo explica', mbCards.status.every((x) => x === false) && /lo muestra la garita al leer su código QR/.test(mbCards.legend), JSON.stringify([mbCards.status, mbCards.legend]));
         record('los textos del marbete se escapan', mbCards.escaped);
         const mbCardOut = await oikos(`(async () => {
@@ -1513,7 +1513,7 @@ async function run() {
             window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
             await printCurrentReport();
             window.open = savedOpen;
-            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)'), celeste: (html.match(/class="mbc-plate mbc-band"/g) || []).length === 3 && html.includes('.mbc-band{background:#38bdf8'), noState: !/mbc-band-late|mbc-band-ok|En mora al|Al día al/.test(html) };
+            out.print = { cards: (html.match(/<div class="mbc">/g) || []).length, pages: (html.match(/<section class="fase-page">/g) || []).length, qr: (html.match(/aria-label="Código QR del marbete"/g) || []).length, oficio: html.includes('@page{size:8.5in 13in'), grid: html.includes('repeat(3,62mm)'), name: html.includes('Residente: <b class="mbc-name">Ana García</b>'), big: html.includes('.mbc-name{font-weight:700;font-size:1.25em'), noTable: !html.includes('Recibido (firma)'), celeste: (html.match(/<div class="mbc-band">/g) || []).length === 3 && html.includes('.mbc-band{background:#38bdf8;color:#0f172a;width:100%;height:2em;'), noState: !/mbc-band-late|mbc-band-ok|En mora al|Al día al/.test(html) };
             const Orig = window.jspdf.jsPDF;
             const texts = [];
             const sizes = {};
@@ -1586,7 +1586,7 @@ async function run() {
             info: document.getElementById('mbm-info').textContent,
             plates: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).map((p) => p.textContent),
             names: Array.from(document.querySelectorAll('#mbm-body .mbc-name')).map((n) => n.textContent),
-            bands: Array.from(document.querySelectorAll('#mbm-body .mbc-plate')).every((p) => p.className === 'mbc-plate mbc-band'),
+            bands: Array.from(document.querySelectorAll('#mbm-body .mbc')).every((c) => { const b = c.querySelector('.mbc-band'); return !!b && getComputedStyle(b).backgroundColor === 'rgb(56, 189, 248)' && Math.abs(b.getBoundingClientRect().width - c.clientWidth) < 1.5; }),
             actions: !document.getElementById('mbm-actions').classList.contains('hidden') && ['mbm-print', 'mbm-pdf', 'mbm-wa'].every((id) => !!document.getElementById(id))
         }))()`);
         record('con su placa en su franja, su nombre y los tres botones (Imprimir, Descargar PDF y Enviar por WhatsApp)', mbm.open && /Ana García/.test(mbm.info) && JSON.stringify(mbm.plates) === JSON.stringify(['P-222BBB', 'P-987XYZ']) && mbm.names.every((n) => n === 'Ana García') && mbm.bands && mbm.actions, JSON.stringify(mbm));

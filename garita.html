@@ -9,11 +9,11 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
     <style>
-        /* El marbete leido (pedido del usuario el 2026-11-20): como "Mi Marbete" del vecino, con una FRANJA a todo el ancho arriba,
-           VERDE si el vecino esta al dia y ROJA si esta en mora, de alto el doble de la letra de la placa (la placa va dentro).
-           El marbete impreso no lo dice (su franja es celeste): el estado lo da la garita al leerlo */
-        .mbg { background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; color: #f8fafc; text-align: center; margin-bottom: 1.25rem; }
-        .mbg-band { font-size: 2.2rem; height: 2em; display: flex; align-items: center; justify-content: center; padding: 0 .5em; }
+        /* El marbete leido (pedido del usuario el 2026-11-20): el mismo del impreso (franja celeste a todo el ancho arriba, de alto
+           el doble de la letra de la placa), pero con la franja VERDE si el vecino esta al dia y ROJA si esta en mora. El marbete
+           impreso no lo dice: el estado lo da la garita al leerlo */
+        .mbg { background: #1e293b; border-radius: 16px; overflow: hidden; color: #f8fafc; text-align: center; margin-bottom: 1.25rem; }
+        .mbg-band { font-size: 2.2rem; height: 2em; width: 100%; display: flex; align-items: center; justify-content: center; padding: 0 .5em; box-sizing: border-box; }
         .mbg-ok .mbg-band { background: #16a34a; }
         .mbg-late .mbg-band { background: #dc2626; }
         .mbg-plate { font-size: 1em; font-weight: 800; color: #fff; letter-spacing: .03em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

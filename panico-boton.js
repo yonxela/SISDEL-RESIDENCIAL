@@ -12,13 +12,18 @@
      error     NO SE ENVIO             no se pudo: se puede volver a intentar
 
    Soltar antes de llenar el circulo NO envia nada y lo dice. Mientras la alerta esta enviada o atendida el boton queda
-   bloqueado (no se mandan alertas repetidas por tocar dos veces); vuelve a "ready" cuando la alerta se cancela o se resuelve.
+   bloqueado 30 SEGUNDOS (no se mandan alertas repetidas por tocar dos veces; pedido del usuario el 2026-11-20: "30 segundos
+   despues del aviso ALERTA ENVIADA el boton estara de nuevo listo para mandar otra alerta") y el aviso cuenta los segundos;
+   pasado ese tiempo vuelve a "ready" aunque la alerta siga abierta (se puede mandar otra), y vuelve antes si la alerta se
+   cancela o se resuelve. Una alerta que ya libero el boton no lo vuelve a bloquear cuando llega una novedad de ella (por
+   ejemplo, que la atendieron).
    El boton solo avisa (onFire): quien lo usa busca la ubicacion, crea la alerta y llama a setState. Todo el texto es fijo
    del sistema (nunca datos de la base).
    ═══════════════════════════════════════════════════════════════ */
 
 const SisdelPanicoBoton = (() => {
     const HOLD_MS = 2000;
+    const REARM_MS = 30000; // tiempo que el boton queda en "alerta enviada" antes de poder mandar otra
     const RING_LENGTH = 292.2; // perimetro del aro (radio 46.5 en un cuadro de 100)
 
     const STATES = {
@@ -31,6 +36,8 @@ const SisdelPanicoBoton = (() => {
     };
     const LOCKED = ['sending', 'sent', 'attended']; // en estos estados el boton no recibe pulsaciones
     const EARLY_RELEASE_HINT = 'No se envió: mantenga presionado hasta llenar el círculo.';
+    const REARMED_HINT = 'Ya puede enviar otra alerta si la necesita.';
+    const isConfirmed = (state) => state === 'sent' || state === 'attended';
 
     // Que estado le toca al boton segun el estado de la alerta del vecino (ACTIVE, ATTENDED, RESOLVED, CANCELLED...)
     function stateForAlert(status) {
@@ -95,8 +102,8 @@ const SisdelPanicoBoton = (() => {
         .pb-wrap[data-state="sent"] .pb-fill, .pb-wrap[data-state="attended"] .pb-fill { height: 0; transition: none; }
         @media (prefers-reduced-motion: reduce) { .pb-spin { animation-duration: 2.4s; } }`;
 
-    // Monta el boton dentro de `host`. opts: { size: '12rem' (cualquier medida CSS), holdMs, onHoldStart(), onFire() }
-    // Devuelve { setState(estado), state(), flashHint(texto) }
+    // Monta el boton dentro de `host`. opts: { size: '12rem' (cualquier medida CSS), holdMs, rearmMs (30000; 0 = nunca vuelve solo),
+    // onHoldStart(), onFire() }. Devuelve { setState(estado, alerta, desde), state(), flashHint(texto) }
     function mount(host, opts = {}) {
         if (!document.getElementById('pbStyles')) {
             const style = document.createElement('style');
@@ -105,6 +112,7 @@ const SisdelPanicoBoton = (() => {
             document.head.appendChild(style);
         }
         const holdMs = opts.holdMs || HOLD_MS;
+        const rearmMs = opts.rearmMs === undefined ? REARM_MS : opts.rearmMs;
         host.classList.add('pb-host');
         host.innerHTML = `
             <div class="pb-wrap" data-state="ready">
@@ -126,9 +134,50 @@ const SisdelPanicoBoton = (() => {
         let state = 'ready';
         let holdTimer = null;
         let hintTimer = null;
+        let rearmTimer = null;  // repinta la cuenta de segundos de "alerta enviada"
+        let rearmEndTimer = null; // y libera el boton justo cuando se cumple el tiempo
+        let rearmEnd = 0;
+        let rearmKey = null;    // la alerta (su id) que tiene bloqueado el boton
+        const released = new Set(); // alertas que ya liberaron el boton: una novedad suya no lo vuelve a bloquear
 
-        function setState(next) {
+        const secondsLeft = () => Math.max(0, Math.ceil((rearmEnd - Date.now()) / 1000));
+        // El texto bajo el boton; con la alerta enviada o atendida dice cuantos segundos faltan para poder mandar otra
+        function paintHint() {
+            const s = STATES[state];
+            hint.classList.toggle('warn', state === 'error');
+            hint.textContent = rearmTimer ? `${s.hint} Otra alerta en ${secondsLeft()} s.` : s.hint;
+        }
+        function stopRearm() { clearInterval(rearmTimer); clearTimeout(rearmEndTimer); rearmTimer = null; rearmEndTimer = null; }
+        function startRearm(key, remaining) {
+            stopRearm();
+            rearmKey = key;
+            rearmEnd = Date.now() + remaining;
+            rearmTimer = setInterval(paintHint, 250);
+            rearmEndTimer = setTimeout(release, remaining);
+        }
+        // Pasaron los 30 segundos: el boton vuelve a estar listo aunque la alerta siga abierta
+        function release() {
+            stopRearm();
+            if (rearmKey != null) released.add(rearmKey);
+            rearmKey = null;
+            setState('ready');
+            flashHint(REARMED_HINT, 4000, false);
+        }
+
+        // alerta: el id de la alerta a la que corresponde el estado (para no bloquear dos veces por la misma);
+        // desde: cuando se creo la alerta (ms), solo al volver a abrir la pagina con una alerta de hace rato: descuenta el tiempo ya pasado
+        function setState(next, alerta, desde) {
             if (!STATES[next]) return;
+            const wasConfirmed = isConfirmed(state);
+            if (isConfirmed(next)) {
+                if (alerta != null && released.has(alerta)) return; // esa alerta ya libero el boton
+                if (!wasConfirmed && rearmMs > 0) {
+                    let remaining = rearmMs;
+                    if (desde) remaining = Math.min(rearmMs, rearmMs - (Date.now() - desde));
+                    if (remaining <= 0) { if (alerta != null) released.add(alerta); return; } // una alerta de hace rato: el boton queda listo
+                    startRearm(alerta == null ? null : alerta, remaining);
+                } else if (alerta != null && rearmKey == null) rearmKey = alerta;
+            } else stopRearm();
             state = next;
             const s = STATES[next];
             wrap.dataset.state = next;
@@ -136,15 +185,14 @@ const SisdelPanicoBoton = (() => {
             label.textContent = s.label;
             btn.setAttribute('aria-label', next === 'ready' || next === 'holding' ? 'Botón de pánico: mantener presionado 2 segundos' : `${s.label}. ${s.hint}`);
             clearTimeout(hintTimer);
-            hint.classList.toggle('warn', next === 'error');
-            hint.textContent = s.hint;
+            paintHint();
         }
         // Un aviso corto bajo el boton (por ejemplo, al soltar antes de tiempo); despues vuelve el texto del estado
-        function flashHint(text, ms = 3500) {
+        function flashHint(text, ms = 3500, warn = true) {
             clearTimeout(hintTimer);
-            hint.classList.add('warn');
+            hint.classList.toggle('warn', warn);
             hint.textContent = text;
-            hintTimer = setTimeout(() => setState(state), ms);
+            hintTimer = setTimeout(paintHint, ms);
         }
 
         function fire() {
@@ -181,7 +229,7 @@ const SisdelPanicoBoton = (() => {
         return { setState, state: () => state, flashHint };
     }
 
-    return { HOLD_MS, STATES, LOCKED, EARLY_RELEASE_HINT, stateForAlert, withTimeout, mount };
+    return { HOLD_MS, REARM_MS, STATES, LOCKED, EARLY_RELEASE_HINT, REARMED_HINT, stateForAlert, withTimeout, mount };
 })();
 
 if (typeof module === 'object' && module.exports) module.exports = SisdelPanicoBoton;

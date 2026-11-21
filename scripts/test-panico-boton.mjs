@@ -34,7 +34,7 @@ function setup({ confirmAnswer = true } = {}) {
     const head = { children: [], appendChild(n) { this.children.push(n); } };
     const context = {
         document: { getElementById: () => null, createElement: () => fakeNode(), head },
-        confirm: () => confirmAnswer, console: { error() {}, log() {} }, setTimeout, clearTimeout, Promise, JSON, navigator: {}
+        confirm: () => confirmAnswer, console: { error() {}, log() {} }, setTimeout, clearTimeout, setInterval, clearInterval, Date, Promise, JSON, navigator: {}
     };
     vm.createContext(context);
     vm.runInContext(read('panico-boton.js'), context);
@@ -46,7 +46,7 @@ const view = (nodes) => ({ state: nodes['.pb-wrap'].dataset.state, label: nodes[
 console.log('\nEstados y textos');
 {
     const { B } = setup();
-    equal('mantener presionado son 2 segundos', B.HOLD_MS, 2000);
+    equal('mantener presionado son 2 segundos y 30 segundos despues de ALERTA ENVIADA el boton queda listo otra vez', [B.HOLD_MS, B.REARM_MS], [2000, 30000]);
     equal('el texto al terminar es ALERTA ENVIADA (y ENVIANDO... mientras se manda)', [B.STATES.sent.label, B.STATES.sending.label, B.STATES.attended.label, B.STATES.error.label], ['ALERTA ENVIADA', 'ENVIANDO...', 'ALERTA ATENDIDA', 'NO SE ENVIÓ']);
     equal('que estado le toca segun la alerta: enviada, atendida; sin alerta, cancelada o resuelta, disponible otra vez', ['ACTIVE', 'ATTENDED', 'RESOLVED', 'CANCELLED', undefined, null].map((s) => B.stateForAlert(s)), ['sent', 'attended', 'ready', 'ready', 'ready', 'ready']);
     equal('enviando, enviada y atendida bloquean el boton (no se mandan alertas repetidas)', B.LOCKED, ['sending', 'sent', 'attended']);
@@ -70,14 +70,14 @@ console.log('\nEl circulo se llena y avisa');
     nodes['.pb-btn'].fire('pointerdown');
     await sleep(60);
     equal('mientras se envia, presionar otra vez no manda otra alerta', fires, 1);
-    api.setState('sent');
-    equal('al guardarse la alerta el circulo dice ALERTA ENVIADA', view(nodes), { state: 'sent', label: 'ALERTA ENVIADA', hint: 'La garita y la administración ya fueron avisadas.' });
+    api.setState('sent', 'a1');
+    equal('al guardarse la alerta el circulo dice ALERTA ENVIADA y cuenta cuantos segundos faltan para otra', [view(nodes).state, view(nodes).label, /^La garita y la administración ya fueron avisadas\. Otra alerta en (29|30) s\.$/.test(view(nodes).hint)], ['sent', 'ALERTA ENVIADA', true]);
     nodes['.pb-btn'].fire('pointerdown');
     await sleep(60);
     equal('con la alerta enviada tampoco se manda otra por tocar dos veces', [fires, holdStarts], [1, 1]);
-    api.setState(B.stateForAlert('ATTENDED'));
+    api.setState(B.stateForAlert('ATTENDED'), 'a1');
     equal('al atenderla dice ALERTA ATENDIDA', view(nodes).label, 'ALERTA ATENDIDA');
-    api.setState(B.stateForAlert('CANCELLED'));
+    api.setState(B.stateForAlert('CANCELLED'), 'a1');
     nodes['.pb-btn'].fire('pointerdown');
     await sleep(80);
     equal('cuando la alerta se cancela o se resuelve el boton vuelve a servir', [fires, view(nodes).state], [2, 'sending']);
@@ -130,6 +130,55 @@ console.log('\nEl circulo se llena y avisa');
     equal('con teclado y sin confirmar, no manda nada', [fires, view(s.nodes).state], [1, 'ready']);
 }
 
+console.log('\nA los 30 segundos el boton queda listo para otra alerta');
+{
+    const { B, nodes, host } = setup();
+    let fires = 0;
+    const api = B.mount(host, { holdMs: 20, rearmMs: 400, onFire: () => { fires++; } });
+    nodes['.pb-btn'].fire('pointerdown');
+    await sleep(60);
+    api.setState('sent', 'a1');
+    equal('enviada: ALERTA ENVIADA con la cuenta de segundos (el tiempo de la prueba es 0.4 s)', [view(nodes).label, /Otra alerta en 1 s\.$/.test(view(nodes).hint)], ['ALERTA ENVIADA', true]);
+    await sleep(120);
+    api.setState('attended', 'a1');
+    nodes['.pb-btn'].fire('pointerdown');
+    await sleep(60);
+    equal('antes de tiempo no manda otra alerta; que la atiendan no reinicia la cuenta', [fires, view(nodes).state], [1, 'attended']);
+    await sleep(300);
+    equal('pasado el tiempo el boton vuelve a PANICO, listo, aunque la alerta siga abierta, y lo avisa', [view(nodes).state, view(nodes).label, view(nodes).hint], ['ready', 'PÁNICO', B.REARMED_HINT]);
+    api.setState('sent', 'a1');
+    api.setState('attended', 'a1');
+    equal('una novedad de la MISMA alerta (ya liberada) no lo vuelve a bloquear', view(nodes).state, 'ready');
+    nodes['.pb-btn'].fire('pointerdown');
+    await sleep(80);
+    equal('y se puede mandar otra alerta', [fires, view(nodes).state], [2, 'sending']);
+    api.setState('sent', 'a2');
+    equal('la alerta nueva si lo bloquea otra vez, con su propia cuenta', [view(nodes).state, /Otra alerta en 1 s\.$/.test(view(nodes).hint)], ['sent', true]);
+    await sleep(450);
+    equal('y tambien se libera a su tiempo', view(nodes).state, 'ready');
+}
+{
+    const { B, nodes, host } = setup();
+    const api = B.mount(host, { rearmMs: 300, onFire: () => {} });
+    api.setState('sent', 'v1', Date.now() - 60000);
+    equal('al volver a abrir la pagina con una alerta de hace rato el boton ya esta listo', view(nodes).state, 'ready');
+    api.setState('sent', 'v2', Date.now() - 100);
+    equal('con una alerta de hace un momento solo queda bloqueado lo que falta de los 30 segundos', view(nodes).state, 'sent');
+    await sleep(320);
+    equal('y se libera cuando se cumple', view(nodes).state, 'ready');
+    api.setState('sent', 'c1');
+    api.setState(B.stateForAlert('CANCELLED'), 'c1');
+    await sleep(350);
+    equal('si la alerta se cancela, el boton vuelve al instante y no queda una cuenta atras andando', [view(nodes).state, view(nodes).hint], ['ready', 'Mantenga presionado 2 segundos']);
+}
+{
+    const { B, nodes, host } = setup();
+    const api = B.mount(host, { rearmMs: 0, onFire: () => {} });
+    api.setState('sent', 'x1');
+    await sleep(120);
+    equal('con rearmMs en 0 el boton se queda en ALERTA ENVIADA hasta que la alerta se cancele o se resuelva', [view(nodes).state, view(nodes).hint], ['sent', 'La garita y la administración ya fueron avisadas.']);
+}
+
 console.log('\nEspera con limite');
 {
     const { B } = setup();
@@ -146,9 +195,10 @@ console.log('\nPantallas que lo usan');
     const lib = read('panico-boton.js');
     for (const [name, html] of [['vecino.html', vecino], ['panico.html', qr]]) {
         yes(`${name} usa el mismo boton (panico-boton.js) y ya no tiene el suyo`, /<script src="panico-boton\.js\?v=\w+"><\/script>/.test(html) && /SisdelPanicoBoton\.mount\(/.test(html) && !/btnPanicHold|panicFill|holdStartFn/.test(html));
-        yes(`${name}: la alerta enviada dice ALERTA ENVIADA y el boton pasa a "enviada"`, /ACTIVE: 'ALERTA ENVIADA'/.test(html) && /panicButton\.setState\('sent'\)/.test(html) && /SisdelPanicoBoton\.stateForAlert\(/.test(html));
+        yes(`${name}: la alerta enviada dice ALERTA ENVIADA y el boton pasa a "enviada"`, /ACTIVE: 'ALERTA ENVIADA'/.test(html) && /panicButton\.setState\('sent', /.test(html) && /SisdelPanicoBoton\.stateForAlert\(/.test(html));
         yes(`${name}: sin respuesta en 20 segundos avisa que no se pudo confirmar (el boton no se queda en ENVIANDO...)`, /SisdelPanicoBoton\.withTimeout\([\s\S]{0,260}20000/.test(html) && /panicButton\.setState\('error'\)/.test(html));
         yes(`${name}: aunque la respuesta tarde, el boton pasa solo a enviada cuando llega`, /sending\.then\(/.test(html));
+        yes(`${name}: pasa el id de la alerta al boton (30 segundos despues de ALERTA ENVIADA queda listo para otra, y esa alerta no lo bloquea de nuevo)`, /setState\(SisdelPanicoBoton\.stateForAlert\((alert|a)\.status\), (alert|a)\.id,/.test(html) && /setState\('sent', (saved|res\.alert)\.id\)/.test(html));
     }
     yes('en el portal el circulo sigue arriba a la derecha de la bienvenida', /\.panic-top \{ display: none; flex-direction: column; align-items: flex-end;/.test(vecino) && /size: '11rem'/.test(vecino));
     yes('panico-boton.js lleva la misma version en el portal y en el QR', (() => { const v = (h) => (h.match(/panico-boton\.js\?v=(\w+)/) || [])[1]; return v(vecino) && v(vecino) === v(qr); })());

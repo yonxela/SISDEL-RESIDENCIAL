@@ -89,7 +89,7 @@
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
-    <script src="panico-boton.js?v=20261120a"></script>
+    <script src="panico-boton.js?v=20261120b"></script>
     <script src="panico-qr.js?v=20261120b"></script>
     <script>
         (() => {
@@ -188,7 +188,7 @@
                         link = { ...link, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel };
                         saveLink(link);
                         paintWho();
-                        if (res.alert) follow(res.alert);
+                        if (res.alert) follow(res.alert, true);
                     } else if (res.relink) needRelink(res.error);
                     else { blocked = true; fail(res.error); $('pqStepPanic').hidden = true; $('pqStepLink').hidden = true; }
                 }).catch((e) => console.warn('qr panico: sin conexion al comprobar', e));
@@ -255,9 +255,12 @@
                 panicStatus.className = 'panic-status' + (calm ? ' calm' : '');
                 panicStatus.textContent = text || '';
             }
-            function showAlert(a) {
+            // recuperada: la alerta ya existia al abrir la pagina (se descuenta lo que lleva de creada; su hora es la del servidor, por eso
+            // solo aqui: con el telefono adelantado un aviso recien enviado quedaria liberado de inmediato)
+            function showAlert(a, recuperada) {
                 current = a;
-                panicButton.setState(SisdelPanicoBoton.stateForAlert(a.status)); // enviada y atendida bloquean el boton; cancelada o resuelta lo liberan
+                // Enviada y atendida bloquean el boton 30 segundos; cancelada o resuelta lo liberan
+                panicButton.setState(SisdelPanicoBoton.stateForAlert(a.status), a.id, recuperada ? Date.parse(a.createdAt) : undefined);
                 panicStatus.hidden = false;
                 panicStatus.className = 'panic-status' + (['RESOLVED', 'CANCELLED'].includes(a.status) ? ' calm' : '');
                 panicStatus.textContent = '';
@@ -290,8 +293,8 @@
                 }
             }
             // Sigue la alerta (atendida, resuelta...) cada 15 s mientras la pagina esta a la vista
-            function follow(a) {
-                showAlert(a);
+            function follow(a, recuperada) {
+                showAlert(a, recuperada);
                 clearTimeout(pollTimer);
                 if (!['ACTIVE', 'ATTENDED'].includes(a.status)) return;
                 pollTimer = setTimeout(async function tick() {
@@ -318,7 +321,7 @@
                     const res = await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
                     if (res.ok) {
                         if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
-                        panicButton.setState('sent'); // ya esta guardada en el servidor
+                        panicButton.setState('sent', res.alert.id); // ya esta guardada en el servidor; 30 segundos despues el boton queda listo para otra alerta
                     } else if (res.relink) { panicButton.setState('ready'); needRelink(res.error); }
                     else { panicButton.setState('error'); status(res.error); }
                 } catch (e) {

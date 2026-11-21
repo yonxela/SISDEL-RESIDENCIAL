@@ -312,7 +312,7 @@
     <script src="sisdel-core.js?v=20261121a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
-    <script src="panico-boton.js?v=20261120a"></script>
+    <script src="panico-boton.js?v=20261120b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
@@ -504,7 +504,8 @@
             };
             function showPanic(alert) {
                 if (!alert) { panicStatus.style.display = 'none'; panicButton.setState('ready'); return; }
-                panicButton.setState(SisdelPanicoBoton.stateForAlert(alert.status)); // enviada y atendida bloquean el boton; cancelada o resuelta lo liberan
+                // Enviada y atendida bloquean el boton 30 segundos (contados desde que se creo la alerta); cancelada o resuelta lo liberan
+                panicButton.setState(SisdelPanicoBoton.stateForAlert(alert.status), alert.id, Date.parse(alert.createdAt));
                 panicStatus.style.display = 'block';
                 const who = alert.status === 'ATTENDED' && alert.attendedByName ? ` Atendida por ${escHtml(alert.attendedByName)}.` : '';
                 panicStatus.innerHTML = `<strong style="font-size:1.05rem;letter-spacing:0.04em;">${escHtml(PANIC_HEAD[alert.status] || alert.status)}</strong>
@@ -532,9 +533,9 @@
                     // pasa solo a ALERTA ENVIADA cuando por fin queda guardada
                     sending.then((saved) => followPanic(saved.id), () => {});
                     // Sin respuesta en 20 segundos se avisa que no se pudo confirmar, para no dejar el boton en ENVIANDO...
-                    await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
+                    const saved = await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
                     if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
-                    panicButton.setState('sent'); // ya esta guardada en el servidor
+                    panicButton.setState('sent', saved.id); // ya esta guardada en el servidor; 30 segundos despues el boton queda listo para otra alerta
                 } catch (e) {
                     console.error(e);
                     panicButton.setState('error');

@@ -191,16 +191,16 @@ async function run() {
             foot: [...document.querySelectorAll('#ec-due-foot td')].map(td => td.textContent), clickable: !!document.querySelector('#ec-due-body tr[data-tx][onclick="openTxDetail(this.dataset.tx)"]'),
             ledgerHidden: document.getElementById('ec-pane-movs').classList.contains('hidden') }))()`);
         equal('con mora: las cifras son las de siempre (pendiente + mora = total)', [money(dueScreen.capital), money(dueScreen.mora), money(dueScreen.total), dueScreen.label, dueScreen.moraShown], [pending, mora, due, '= Total que debe', true]);
-        equal('con mora: la tabla trae Cuota, Vence, Pendiente, Mora y Total y una fila por cuota, con el mes completo', [dueScreen.head, dueScreen.rows.length, dueScreen.rows[0], dueScreen.rows[226]], [['Cuota', 'Vence', 'Pendiente', 'Mora', 'Total'], 227, 'Enero 2008', 'Noviembre 2026']);
-        equal('con mora: el total de la tabla es el total que debe y no se ve el libro de movimientos', [dueScreen.foot[1], money(dueScreen.foot[2]), money(dueScreen.foot[3]), money(dueScreen.foot[4]), dueScreen.ledgerHidden, dueScreen.clickable], ['227 cuotas por pagar', pending, mora, due, true, true]);
+        equal('con mora: la tabla trae Cuota, Pendiente, Mora y Total (sin Vence) y una fila por cuota que dice el mes que debe', [dueScreen.head, dueScreen.rows.length, dueScreen.rows[0], dueScreen.rows[226]], [['Cuota', 'Pendiente', 'Mora', 'Total'], 227, 'Pendiente pago mes de enero de 2008', 'Pendiente pago mes de noviembre de 2026']);
+        equal('con mora: el total de la tabla es el total que debe y no se ve el libro de movimientos', [dueScreen.foot[0], money(dueScreen.foot[1]), money(dueScreen.foot[2]), money(dueScreen.foot[3]), dueScreen.ledgerHidden, dueScreen.clickable], ['Total (227 cuotas por pagar)', pending, mora, due, true, true]);
         const duePrinted = await oikos(`(() => { let html = ''; window.open = () => ({ document: { write(h) { html = h; }, close() {} }, print() {} }); printEstadoCuenta(); return html; })()`);
-        record('impresion: solo las cuotas pendientes con su mora y el total (sin pagos, cargos ni movimientos)', duePrinted.includes('Cuotas pendientes de pago al') && /= Total que debe/.test(duePrinted) && !/Movimientos del per/.test(duePrinted) && !/>PAGOS</.test(duePrinted) && !/Saldo anterior/.test(duePrinted) && (duePrinted.match(/<tbody>/g) || []).length === 1 && (duePrinted.match(/<tr/g) || []).length === 227 + 2, duePrinted.slice(0, 120));
+        record('impresion: solo las cuotas pendientes con su mora y el total (sin pagos, cargos ni movimientos), con el mes que debe y sin Vence', duePrinted.includes('Pendiente pago mes de enero de 2008') && !/>Vence</.test(duePrinted) && duePrinted.includes('Cuotas pendientes de pago al') && /= Total que debe/.test(duePrinted) && !/Movimientos del per/.test(duePrinted) && !/>PAGOS</.test(duePrinted) && !/Saldo anterior/.test(duePrinted) && (duePrinted.match(/<tbody>/g) || []).length === 1 && (duePrinted.match(/<tr/g) || []).length === 227 + 2, duePrinted.slice(0, 120));
         equal('impresion: ningun monto puede partirse en dos lineas', (duePrinted.match(/<td style="[^"]*text-align:right[^"]*"/g) || []).filter((cell) => !cell.includes('white-space:nowrap')).length, 0);
         const dueWa = decodeURIComponent(String(await oikos(`(() => { let url = ''; window.open = (u) => { url = u; return null; }; shareEstadoCuentaWhatsApp(); return url; })()`)).split('text=')[1] || '');
         record('WhatsApp: el total que debe, la mora y las cuotas juntas por ano en a lo mas 12 lineas (sin movimientos)', /TOTAL QUE DEBE: \*Q[\d,.]+\*/.test(dueWa) && /Mora a hoy: \*Q[\d,.]+\*/.test(dueWa) && /Cuotas pendientes por año/.test(dueWa) && /Cuotas de 2008 a 2016 \(108\)/.test(dueWa) && !/movimientos/i.test(dueWa) && !/fila\(s\) más/.test(dueWa) && dueWa.length <= 3400, dueWa.slice(0, 300));
         const dueModel = await oikos(`ecDueModel(false)`);
         const dueLast = dueModel.tables[0].rows[dueModel.tables[0].rows.length - 1];
-        equal('Excel: una sola hoja con las cuotas pendientes y su total, con numeros', [dueModel.tables.length, dueModel.tables[0].title, dueModel.tables[0].rows.length, dueLast[0], dueLast[2], dueLast[3], dueLast[4]], [1, 'Cuotas pendientes de pago', 228, 'TOTAL', pending, mora, due]);
+        equal('Excel: una sola hoja con las cuotas pendientes (sin Vence) y su total, con numeros', [dueModel.tables.length, dueModel.tables[0].title, dueModel.tables[0].headers, dueModel.tables[0].rows.length, dueModel.tables[0].rows[0][0], dueLast[0], dueLast[1], dueLast[2], dueLast[3]], [1, 'Cuotas pendientes de pago', ['Cuota', 'Pendiente', 'Mora', 'Total'], 228, 'Pendiente pago mes de enero de 2008', 'TOTAL (227 cuotas por pagar)', pending, mora, due]);
         const duePdf = await oikos(`(() => { const api = window.jspdf.jsPDF.API; let out = { pages: 0, name: '' }; api.save = function (n) { out = { pages: this.getNumberOfPages(), name: n }; return this; }; downloadEstadoCuentaPDF(); return out; })()`);
         record('PDF: se genera sin errores, con las 227 cuotas', duePdf.pages >= 4 && /^Estado_Cuenta_/.test(duePdf.name), JSON.stringify(duePdf));
         // Un pago que cubre la cuota pero no la mora (primero la cuota, como en La Perla): esa cuota ya vencio y solo debe la mora
@@ -211,10 +211,10 @@ async function run() {
             ecMora = () => Object.assign({}, state, { total: Math.round((-300 - state.moraDaily) * 100) / 100 });
             renderEstadoCuenta();
             const rows = [...document.querySelectorAll('#ec-due-body tr')].map(tr => [...tr.children].map(td => td.textContent.trim()));
-            return { foot: document.querySelectorAll('#ec-due-foot td')[1].textContent, rows };
+            return { foot: document.querySelectorAll('#ec-due-foot td')[0].textContent, rows };
         })()`);
-        equal('una cuota pagada a la que solo le queda la mora dice eso, ya vencio y no cuenta como cuota por pagar', [moraOnly.foot, moraOnly.rows.length, moraOnly.rows[0][0], /aún no vence/.test(moraOnly.rows[0][1]), moraOnly.rows[0][2], moraOnly.rows[2][0]],
-            ['1 cuota por pagar · 2 solo con mora', 3, 'Enero 2026cuota pagada: solo debe la mora', false, 'Q0.00', 'Marzo 2026']);
+        equal('una cuota pagada a la que solo le queda la mora dice eso y no cuenta como cuota por pagar', [moraOnly.foot, moraOnly.rows.length, moraOnly.rows[0][0], moraOnly.rows[0][1], moraOnly.rows[2][0]],
+            ['Total (1 cuota por pagar · 2 solo con mora)', 3, 'Pendiente pago mes de enero de 2026cuota pagada: solo debe la mora', 'Q0.00', 'Pendiente pago mes de marzo de 2026']);
         // Devuelve todo como estaba
         await oikos(`(() => { ecMora = __real.ecMora; sisdelMoraRuleText = __real.sisdelMoraRuleText; window.open = __real.open; if (__real.jsPdfSave) window.jspdf.jsPDF.API.save = __real.jsPdfSave; closeModal('modal-estado-cuenta'); })()`);
 
@@ -225,11 +225,11 @@ async function run() {
             const rows = [...document.querySelectorAll('#ec-due-body tr')];
             return { noRule: !SisdelMora.enabled(Store.get('settings')), owed: sisdelOwedOf(r).total, total: document.getElementById('ec-due-total').textContent,
                 moraShown: !document.getElementById('ec-due-mora-card').classList.contains('hidden'), head: [...document.querySelectorAll('#ec-due-head th')].map(th => th.textContent),
-                last: rows.length ? rows[rows.length - 1].children[1].textContent : '', sum: Math.round(rows.reduce((s, tr) => s + Number(tr.children[2].textContent.replace(/[^0-9.-]/g, '')), 0) * 100) / 100,
-                period: feePeriodLongLabel(currentFeePeriod()), labels: rows.map(tr => tr.children[0].textContent) };
+                lastInPlazo: rows.length ? rows[rows.length - 1].className.includes('bg-amber-50') : false, sum: Math.round(rows.reduce((s, tr) => s + Number(tr.children[1].textContent.replace(/[^0-9.-]/g, '')), 0) * 100) / 100,
+                period: ecMonthOwedLabel(currentFeePeriod()), labels: rows.map(tr => tr.children[0].textContent) };
         })()`);
-        equal('sin regla de mora: el total es lo que debe en Residentes y la tabla no trae mora', [plainDue.noRule, money(plainDue.total), plainDue.sum, plainDue.moraShown, plainDue.head], [true, plainDue.owed, plainDue.owed, false, ['Cuota', 'Vence', 'Pendiente']]);
-        record('sin regla de mora: la cuota del mes sale pendiente y aun en su plazo (vence el dia 5 del mes siguiente)', plainDue.labels.includes(plainDue.period) && /^5\/\d{1,2}\/\d{4} \(aún no vence\)$/.test(plainDue.last), JSON.stringify(plainDue));
+        equal('sin regla de mora: el total es lo que debe en Residentes y la tabla no trae mora', [plainDue.noRule, money(plainDue.total), plainDue.sum, plainDue.moraShown, plainDue.head], [true, plainDue.owed, plainDue.owed, false, ['Cuota', 'Pendiente']]);
+        record('sin regla de mora: la cuota del mes sale "Pendiente pago mes de ..." y aun en su plazo (fondo ambar: vence el dia 5 del mes siguiente)', plainDue.labels.includes(plainDue.period) && plainDue.lastInPlazo, JSON.stringify(plainDue));
         await oikos(`closeModal('modal-estado-cuenta')`);
 
         console.log('\nRecordatorios: elegir a quienes se envia (por ejemplo 20 para una prueba)');

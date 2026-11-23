@@ -11375,7 +11375,7 @@
             };
             const short = (text) => { const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim(); return s.length > 48 ? s.slice(0, 47) + '...' : s; };
             const label = (item) => {
-                if (item.kind === 'fee' && item.period) return longLabel ? feePeriodLongLabel(item.period) : SisdelReportesOikos.periodLabel(item.period);
+                if (item.kind === 'fee' && item.period) return longLabel ? ecMonthOwedLabel(item.period) : SisdelReportesOikos.periodLabel(item.period);
                 return (item.kind === 'mora' ? 'Mora: ' : 'Cargo: ') + (short(conceptOf(item.id)) || 'sin concepto');
             };
             const list = SisdelReportesOikos.pendingRows(ms, { label, total: debt.total, adjustLabel: 'Movimientos con fecha posterior a hoy' });
@@ -11402,6 +11402,11 @@
             const { debt, list } = ecRowsOf(ms, true);
             return { r, ms, debt, list, withMora, showMora: withMora || list.mora > 0, today };
         }
+        // La fila de una cuota en "Cuotas pendientes": "Pendiente pago mes de noviembre de 2026" (pedido del usuario el 2026-11-23:
+        // que el residente vea claro que meses debe; la columna Vence se quito). ecRowMonth da "Noviembre 2026" para los textos
+        // que nombran el mes solo (desde cuando debe)
+        function ecMonthOwedLabel(period) { const { y, m } = feePeriodParts(period); return `Pendiente pago mes de ${String(FEE_MONTHS_ES[m] || '?').toLowerCase()} de ${y}`; }
+        function ecRowMonth(row) { return row && row.kind === 'fee' && row.period ? feePeriodLongLabel(row.period) : (row ? row.label : ''); }
         // "abonado Q100.00 de Q350.00" si ya se pago una parte de la cuota; '' si no
         // (una cuota ya pagada a la que solo le queda la mora dice eso)
         function ecPaidPart(row) {
@@ -11424,11 +11429,12 @@
             const money = (n) => (numbers ? Math.round((Number(n) || 0) * 100) / 100 : formatMoney(n));
             const withNote = (r) => { const p = ecPaidPart(r); return r.label + (p ? ' (' + p + ')' : ''); };
             const m = dd.showMora;
+            const totalLabel = 'TOTAL (' + ecDueCount(dd.list) + ')';
             return {
-                headers: m ? ['Cuota', 'Vence', 'Pendiente', 'Mora', 'Total'] : ['Cuota', 'Vence', 'Pendiente'],
-                rows: dd.list.rows.map(r => m ? [withNote(r), ecDueText(r), money(r.capital), money(r.mora), money(r.total)] : [withNote(r), ecDueText(r), money(r.capital)]),
-                total: m ? ['TOTAL', ecDueCount(dd.list), money(dd.list.capital), money(dd.list.mora), money(dd.list.total)] : ['TOTAL', ecDueCount(dd.list), money(dd.list.capital)],
-                numeric: m ? [2, 3, 4] : [2]
+                headers: m ? ['Cuota', 'Pendiente', 'Mora', 'Total'] : ['Cuota', 'Pendiente'],
+                rows: dd.list.rows.map(r => m ? [withNote(r), money(r.capital), money(r.mora), money(r.total)] : [withNote(r), money(r.capital)]),
+                total: m ? [totalLabel, money(dd.list.capital), money(dd.list.mora), money(dd.list.total)] : [totalLabel, money(dd.list.capital)],
+                numeric: m ? [1, 2, 3] : [1]
             };
         }
         // Abajo de la tabla (pantalla, impresion y PDF): el pedido de pagar a tiempo, con las palabras del usuario (2026-11-23,
@@ -11465,21 +11471,20 @@
             document.getElementById('ec-due-empty').classList.toggle('hidden', !empty);
             if (empty) return;
             const th = (text, right) => `<th class="py-2 px-4${right ? ' text-right' : ''}">${text}</th>`;
-            document.getElementById('ec-due-head').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 text-xs text-slate-500 uppercase">${th('Cuota')}${th('Vence')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr>`;
+            document.getElementById('ec-due-head').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 text-xs text-slate-500 uppercase">${th('Cuota')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr>`;
             const num = 'py-2 px-4 text-right font-mono whitespace-nowrap';
             // Cada cuota abre el detalle de su movimiento (desde ahi se anula, con su privilegio); el ajuste no es un movimiento
             document.getElementById('ec-due-body').innerHTML = list.rows.map(r => {
                 const paid = ecPaidPart(r);
                 const open = r.id ? ` data-tx="${ecEsc(r.id)}" onclick="openTxDetail(this.dataset.tx)" title="Ver el movimiento"` : '';
                 return `<tr class="${r.id ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 ' : ''}${ecLate(r) || r.kind === 'ajuste' ? '' : 'bg-amber-50/60 dark:bg-amber-900/10'}"${open}>
-                <td class="py-2 px-4 font-medium min-w-[13rem]"><span class="whitespace-nowrap">${ecEsc(r.label)}</span>${paid ? `<span class="block text-[11px] font-normal text-slate-500 dark:text-slate-400">${ecEsc(paid)}</span>` : ''}</td>
-                <td class="py-2 px-4 text-xs whitespace-nowrap ${ecLate(r) ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}">${ecEsc(ecDueText(r))}</td>
+                <td class="py-2 px-4 font-medium min-w-[13rem]"><span>${ecEsc(r.label)}</span>${paid ? `<span class="block text-[11px] font-normal text-slate-500 dark:text-slate-400">${ecEsc(paid)}</span>` : ''}</td>
                 <td class="${num}${showMora ? '' : ' font-bold'}">${formatMoney(r.capital)}</td>${showMora ? `
                 <td class="${num} ${r.mora > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}">${formatMoney(r.mora)}</td>
                 <td class="${num} font-bold">${formatMoney(r.total)}</td>` : ''}</tr>`;
             }).join('');
             document.getElementById('ec-due-foot').innerHTML = `<tr class="bg-slate-100 dark:bg-slate-700 font-bold text-slate-700 dark:text-slate-100">
-                <td class="py-2 px-4 uppercase text-xs">Total</td><td class="py-2 px-4 text-xs font-semibold text-slate-500 dark:text-slate-300">${ecDueCount(list)}</td>
+                <td class="py-2 px-4 text-xs"><span class="uppercase">Total</span> <span class="font-semibold text-slate-500 dark:text-slate-300">(${ecDueCount(list)})</span></td>
                 <td class="${num}${showMora ? '' : ' text-rose-700 dark:text-rose-300'}">${formatMoney(list.capital)}</td>${showMora ? `
                 <td class="${num}">${formatMoney(list.mora)}</td>
                 <td class="${num} text-rose-700 dark:text-rose-300">${formatMoney(list.total)}</td>` : ''}</tr>`;
@@ -11493,7 +11498,7 @@
             const s = Store.get('settings') || {};
             const money = (n) => forText ? formatMoney(n) : Math.round((Number(n) || 0) * 100) / 100;
             const real = list.rows.filter(x => x.kind !== 'ajuste');
-            const kpis = [{ label: 'Cuotas pendientes', value: real.length ? `${ecDueCount(list)} (desde ${real[0].label})` : 'ninguna' }, { label: 'Monto de las cuotas', value: money(debt.pending) }];
+            const kpis = [{ label: 'Cuotas pendientes', value: real.length ? `${ecDueCount(list)} (desde ${ecRowMonth(real[0])})` : 'ninguna' }, { label: 'Monto de las cuotas', value: money(debt.pending) }];
             if (debt.upcoming > 0) kpis.push({ label: 'De ellas, aún no vencen', value: money(debt.upcoming) });
             if (showMora) kpis.push({ label: 'Mora a hoy', value: money(debt.mora) });
             kpis.push({ label: debt.total > 0.004 ? 'TOTAL QUE DEBE' : 'AL DÍA: TOTAL QUE DEBE', value: money(debt.total) });
@@ -11542,11 +11547,11 @@
             const money = (n, extra) => `<td style="${cell};text-align:right;font-family:monospace${extra || ''}">${formatMoney(n)}</td>`;
             const body = list.rows.map(x => {
                 const paid = ecPaidPart(x);
-                return `<tr style="${ecLate(x) || x.kind === 'ajuste' ? '' : 'background:#fffbeb;'}"><td style="${cell};white-space:normal;font-weight:600">${ecEsc(x.label)}${paid ? `<span style="display:block;font-size:10px;font-weight:400;color:#64748b">${ecEsc(paid)}</span>` : ''}</td><td style="${cell};font-size:11px;color:${ecLate(x) ? '#be123c' : '#64748b'}">${ecEsc(ecDueText(x))}</td>${money(x.capital, showMora ? '' : ';font-weight:700')}${showMora ? money(x.mora, x.mora > 0 ? ';color:#be123c' : ';color:#94a3b8') + money(x.total, ';font-weight:700') : ''}</tr>`;
+                return `<tr style="${ecLate(x) || x.kind === 'ajuste' ? '' : 'background:#fffbeb;'}"><td style="${cell};white-space:normal;font-weight:600">${ecEsc(x.label)}${paid ? `<span style="display:block;font-size:10px;font-weight:400;color:#64748b">${ecEsc(paid)}</span>` : ''}</td>${money(x.capital, showMora ? '' : ';font-weight:700')}${showMora ? money(x.mora, x.mora > 0 ? ';color:#be123c' : ';color:#94a3b8') + money(x.total, ';font-weight:700') : ''}</tr>`;
             }).join('');
             const tableHtml = list.rows.length
-                ? `<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><thead><tr style="background:#f1f5f9">${th('Cuota')}${th('Vence')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr></thead><tbody>${body}</tbody>
-                <tfoot><tr style="background:#e2e8f0;font-weight:700"><td style="${cell}">TOTAL</td><td style="${cell};font-size:11px;color:#475569">${ecEsc(ecDueCount(list))}</td>${money(list.capital, showMora ? '' : ';color:#9f1239')}${showMora ? money(list.mora) + money(list.total, ';color:#9f1239') : ''}</tr></tfoot></table>`
+                ? `<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><thead><tr style="background:#f1f5f9">${th('Cuota')}${th('Pendiente', true)}${showMora ? th('Mora', true) + th('Total', true) : ''}</tr></thead><tbody>${body}</tbody>
+                <tfoot><tr style="background:#e2e8f0;font-weight:700"><td style="${cell}">TOTAL <span style="font-size:11px;color:#475569">(${ecEsc(ecDueCount(list))})</span></td>${money(list.capital, showMora ? '' : ';color:#9f1239')}${showMora ? money(list.mora) + money(list.total, ';color:#9f1239') : ''}</tr></tfoot></table>`
                 : `<p style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;padding:16px;border-radius:10px;text-align:center;font-weight:700">No tiene cuotas pendientes de pago.</p>`;
             const html = `<!DOCTYPE html><html><head><title>Estado de Cuenta - ${ecEsc(r.name)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');body{font-family:'Inter',sans-serif;margin:0;padding:30px;color:#1e293b}thead{display:table-header-group}tfoot{display:table-row-group}tr{page-break-inside:avoid}@media print{body{padding:16px}}</style></head><body>
                 <div style="background:#4f46e5;color:white;padding:16px 20px;border-radius:12px;margin-bottom:20px"><h1 style="margin:0;font-size:20px">ESTADO DE CUENTA</h1><p style="margin:4px 0 0;font-size:13px;opacity:.8">${ecEsc(s.name || 'OIKOS')}</p></div>
@@ -11620,8 +11625,8 @@
             }
             if (list.rows.length) {
                 const t = ecDueTable(dd, false);
-                const amountCols = showMora ? [2, 3, 4] : [2];
-                const columnStyles = { 1: { cellWidth: 'wrap' } };
+                const amountCols = showMora ? [1, 2, 3] : [1];
+                const columnStyles = {};
                 amountCols.forEach(i => { columnStyles[i] = { halign: 'right', cellWidth: 'wrap' }; });
                 columnStyles[amountCols[amountCols.length - 1]].fontStyle = 'bold';
                 doc.autoTable({
@@ -11633,7 +11638,6 @@
                     didParseCell: (data) => {
                         if ((data.section === 'head' || data.section === 'foot') && amountCols.includes(data.column.index)) data.cell.styles.halign = 'right';
                         const row = data.section === 'body' ? list.rows[data.row.index] : null;
-                        if (row && data.column.index === 1 && ecLate(row)) data.cell.styles.textColor = [190, 18, 60];
                         if (row && !ecLate(row) && row.kind !== 'ajuste') data.cell.styles.fillColor = [255, 251, 235];
                     }
                 });

@@ -209,7 +209,8 @@ const onMessagePush = onDocumentCreated({ document: 'condominios/{condoId}/mensa
     if (!snap) return;
     const { condoId } = event.params;
     const msg = { id: snap.id, ...snap.data() };
-    if (msg.push === false) return;
+    // Sin aviso: la casilla desmarcada, y los mensajes personales de Finanzas y su resumen (residentMessages ya avisa a cada uno)
+    if (msg.push === false || msg.toRole === 'usuario' || msg.toRole === 'varios') return;
     const condoRef = db.collection('condominios').doc(condoId);
     const condoSnap = await condoRef.get();
     const condo = condoSnap.exists ? condoSnap.data() : null;
@@ -250,4 +251,105 @@ const onMessagePush = onDocumentCreated({ document: 'condominios/{condoId}/mensa
     logger.info('avisos: mensaje', { condominioId: condoId, mensaje: snap.id, toRole: msg.toRole || 'all', ...sum, users: reached.size });
 });
 
-module.exports = { pushDevice, onMessagePush, _test: { loadKeys, sendTo } };
+// ── Mensajes de Finanzas por garita.app (pedido del usuario el 2026-11-23: OIKOS > Mensajes > "Enviar por garita.app") ──
+// OIKOS arma el texto de cada residente (el aviso de mora con su saldo, o el aviso general) y lo manda aqui. Cada vecino recibe
+// SU mensaje en condominios/{c}/mensajes con toRole 'usuario' y toUserId (las reglas solo dejan leerlo a el y a quien ve todos los
+// mensajes); la administracion ve un resumen del envio (toRole 'varios': a cuantos y el texto). A quien tiene los avisos
+// activados le salta en el celular. Pide "Mensajes a los residentes" (finanzas.residentes_contactar), el privilegio con que ya se
+// escribe a los residentes por WhatsApp, o el Master. Acciones: summary (cuantos vecinos tienen los avisos) y send.
+const SEND_LIMIT = { max: 10, windowMs: 60 * 60 * 1000 };
+const MSG_CONTACT = 'finanzas.residentes_contactar';
+const residentMessages = onCall({ timeoutSeconds: 300 }, async (request) => {
+    if (!request.auth) fail('unauthenticated', 'Sesión requerida');
+    const data = request.data || {};
+    const action = String(data.action || 'send');
+    if (!['summary', 'send'].includes(action)) fail('invalid-argument', 'Acción no válida.');
+    const { uid, token = {} } = request.auth;
+    let condoId = '';
+    let caller = null;
+    if (token.role === 'master') {
+        condoId = core.validId(data.condoId) ? String(data.condoId) : '';
+        caller = { id: 'master', name: 'Administración' };
+    } else {
+        condoId = core.validId(token.condominioId) ? String(token.condominioId) : '';
+        const me = condoId ? await db.doc(`condominios/${condoId}/usuarios/${uid}`).get() : null;
+        const ok = !!me && me.exists && me.data().active !== false && privilegios.has(me.data().role, me.data().privilegios, MSG_CONTACT);
+        if (!ok) fail('permission-denied', 'Su usuario no puede enviar mensajes a los residentes (privilegio "Mensajes a los residentes").');
+        caller = { id: uid, name: String(me.data().name || '') || 'Administración' };
+    }
+    if (!condoId) fail('invalid-argument', 'Condominio inválido.');
+    const condoRef = db.collection('condominios').doc(condoId);
+    const condoSnap = await condoRef.get();
+    const condo = condoSnap.exists ? condoSnap.data() : null;
+    if (!condo || condo.active === false || condo.purging === true) fail('failed-precondition', 'El condominio no está activo.');
+    const col = condoRef.collection('push_dispositivos');
+    const canReceive = (u) => !!u && u.active !== false && u.deleted !== true && privilegios.has(u.role, u.privilegios, 'mensajes.recibir');
+
+    if (action === 'summary') {
+        const snap = await col.where('active', '==', true).get();
+        const users = await getUsers(condoRef, [...new Set(snap.docs.map((d) => d.data().userId).filter(Boolean))]);
+        const vecinos = new Set(snap.docs.map((d) => d.data().userId).filter((id) => users[id] && users[id].role === 'vecino' && canReceive(users[id])));
+        return { users: vecinos.size };
+    }
+
+    const clean = core.cleanMessageItems(data.items);
+    if (clean.error) fail('invalid-argument', clean.error);
+    const limitKey = uid === 'master' ? 'master:' + condoId : uid;
+    if (await rateLimit.isBlocked('mensajes-garita', limitKey, SEND_LIMIT)) fail('resource-exhausted', 'Ya hizo varios envíos en esta hora. Espere un rato.');
+    await rateLimit.hit('mensajes-garita', limitKey, SEND_LIMIT);
+    const mode = data.mode === 'varios' ? 'varios' : 'mora';
+    const subject = core.messageSubject(mode);
+    const users = await getUsers(condoRef, clean.items.map((i) => i.residentId));
+    const skipped = { noExiste: 0, inactivo: 0, sinPermiso: 0, invalidos: clean.invalid };
+    const recipients = [];
+    for (const it of clean.items) {
+        const u = users[it.residentId];
+        if (!u) skipped.noExiste += 1;
+        else if (u.active === false || u.deleted === true) skipped.inactivo += 1;
+        else if (!canReceive(u)) skipped.sinPermiso += 1;
+        else recipients.push(it);
+    }
+    if (!recipients.length) fail('failed-precondition', 'Ninguno de esos residentes puede recibir mensajes en garita.app (no existen, están inactivos o no reciben mensajes).');
+
+    // Nada se borra: un resumen para la administracion y el mensaje de cada vecino, todos sin el aviso automatico de onMessagePush
+    // (push: false): el aviso al celular sale aqui, con el texto de cada uno
+    const at = nowIso();
+    const msgCol = condoRef.collection('mensajes');
+    const summaryRef = msgCol.doc();
+    const template = typeof data.template === 'string' && data.template.trim() ? data.template.trim().slice(0, 2000) : recipients[0].text;
+    const docs = [[summaryRef, {
+        id: summaryRef.id, condominioId: condoId, fromName: caller.name, byId: caller.id, toRole: 'varios', recipients: recipients.length,
+        subject, body: template, read: false, createdAt: at, push: false, source: 'finanzas', mode, pushResult: { status: 'enviando', at }
+    }]];
+    const personal = {};
+    for (const it of recipients) {
+        const ref = msgCol.doc();
+        personal[it.residentId] = { id: ref.id, subject, body: it.text };
+        docs.push([ref, {
+            id: ref.id, condominioId: condoId, fromName: caller.name, byId: caller.id, toRole: 'usuario', toUserId: it.residentId,
+            subject, body: it.text, read: false, createdAt: at, push: false, source: 'finanzas', mode, campaignId: summaryRef.id
+        }]);
+    }
+    for (let i = 0; i < docs.length; i += 400) {
+        const batch = db.batch();
+        docs.slice(i, i + 400).forEach(([ref, doc]) => batch.set(ref, doc));
+        await batch.commit();
+    }
+
+    const devSnap = await col.where('active', '==', true).get();
+    const targets = devSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => personal[d.userId] && d.endpoint);
+    let sum = { devices: 0, sent: 0, failed: 0, gone: 0 };
+    let reached = new Set();
+    if (targets.length) {
+        const keys = await loadKeys();
+        const results = await core.sendAll(targets, (d) => sendTo(d, core.messagePayload(personal[d.userId], condo.name), keys));
+        await recordResults(col, results).catch((e) => logger.warn('avisos: no se pudo anotar cada telefono', { condominioId: condoId, error: e.message }));
+        sum = core.summarize(results);
+        reached = new Set(targets.filter((d, i) => results[i] && results[i].ok).map((d) => d.userId));
+    }
+    await summaryRef.update({ pushResult: { status: 'listo', at: nowIso(), ...sum, users: reached.size } }).catch(() => {});
+    logger.info('avisos: mensajes de Finanzas', { condominioId: condoId, por: caller.id, mensajes: recipients.length, ...sum, users: reached.size });
+    return { ok: true, sent: recipients.length, skipped, push: { ...sum, users: reached.size }, campaignId: summaryRef.id };
+});
+
+module.exports = { pushDevice, onMessagePush, residentMessages, _test: { loadKeys, sendTo } };

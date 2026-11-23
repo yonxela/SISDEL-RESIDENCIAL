@@ -43,6 +43,7 @@
         .av-phone ol { margin: 0.35rem 0 0.5rem; padding-left: 1.35rem; color: var(--text-secondary); }
         .av-phone ol li { margin-bottom: 0.35rem; }
         .av-phone .av-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+        .av-btns .btn { max-width: 100%; white-space: normal; text-align: center; line-height: 1.3; }
         .av-phone .av-msg { margin-top: 0.6rem; font-weight: 600; }
         .av-phone .av-msg.err { color: var(--danger); }
         .av-sub { margin: 0 0 0.75rem; font-size: 1.05rem; }
@@ -111,9 +112,15 @@
         }
     }
 
+    // sisdel-core.js declara SISDEL con const: es global pero NO es window.SISDEL (por eso vecino.html lo pasa en opts)
+    function coreApi(o) {
+        if (o.SISDEL) return o.SISDEL;
+        try { return SISDEL; } catch (e) { return root.SISDEL; }
+    }
+
     function mount(opts) {
         const o = opts || {};
-        const SISDEL = o.SISDEL || root.SISDEL;
+        const SISDEL = coreApi(o);
         const session = o.session;
         const avisos = o.avisos;
         if (!SISDEL || !session || !avisos) return null;
@@ -178,7 +185,7 @@
             const all = await SISDEL.getMessages(session.condominioId);
             const since = Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000;
             messages = (all || [])
-                .filter((m) => m && (m.toRole === 'all' || m.toRole === session.role))
+                .filter((m) => m && (m.toRole === 'all' || m.toRole === session.role || (m.toRole === 'usuario' && m.toUserId === session.userId)))
                 .filter((m) => { const t = Date.parse(m.createdAt || ''); return !isNaN(t) && t >= since; })
                 .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
                 .slice(0, MAX_LIST);
@@ -338,15 +345,22 @@
             });
         }
 
+        // Si al entrar ya hay otra ventana abierta (la de "Confirme sus datos" del primer ingreso), los mensajes esperan a que se cierre
+        const otherModalOpen = () => [...doc.querySelectorAll('.modal-overlay')].some((m) => m !== overlay && m.style.display && m.style.display !== 'none');
+        function openWhenFree(tries) {
+            if (overlayOpen()) return;
+            if (otherModalOpen() && tries < 600) { setTimeout(() => openWhenFree(tries + 1), 1000); return; }
+            open();
+        }
         const fromNotice = root.location && root.location.hash === '#mensajes';
         avisos.sync(session.userId);
         refreshState();
         loadMessages().then(() => {
-            if (fromNotice || newCount() > 0) open();
-        }).catch(() => { if (fromNotice) open(); });
+            if (fromNotice || newCount() > 0) openWhenFree(0);
+        }).catch(() => { if (fromNotice) openWhenFree(0); });
 
         return { open, close, refresh: refreshState, reload: loadMessages, get state() { return state; } };
     }
 
-    root.SisdelAvisosUI = { mount, phoneView };
+    root.SisdelAvisosUI = { mount, phoneView, coreApi };
 }(typeof window !== 'undefined' ? window : this));

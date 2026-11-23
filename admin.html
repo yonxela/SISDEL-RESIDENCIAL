@@ -380,9 +380,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123b"></script>
+    <script src="privilegios.js?v=20261123c"></script>
     <script src="accesos.js?v=20261121a"></script>
-    <script src="sisdel-core.js?v=20261123b"></script>
+    <script src="sisdel-core.js?v=20261123c"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="privilegios-ui.js?v=20261122a"></script>
     <script src="reportes-export.js?v=20261115a"></script>
@@ -987,8 +987,10 @@
                     return;
                 }
                 list.innerHTML = msgs.map(m => {
-                    const targetLabel = m.toRole === 'all' ? '📢 Todos' : m.toRole === 'vecino' ? '🏠 Vecinos' : '👮 Guardias';
-                    const readBadge = m.read ? '<span class="badge" style="background:var(--success);font-size:0.55rem;">LEÍDO</span>' : '<span class="badge badge-info" style="font-size:0.55rem;">NO LEÍDO</span>';
+                    // toRole 'varios': el resumen de un envio de Finanzas por garita.app (cada vecino recibio SU mensaje, con su saldo)
+                    const targetLabel = m.toRole === 'all' ? '📢 Todos' : m.toRole === 'vecino' ? '🏠 Vecinos' : m.toRole === 'varios' ? `${Number(m.recipients) || 0} vecinos, cada uno con su mensaje (enviado desde Finanzas)` : '👮 Guardias';
+                    const readBadge = m.toRole === 'varios' ? '<span class="badge badge-info" style="font-size:0.55rem;">DESDE FINANZAS</span>'
+                        : m.read ? '<span class="badge" style="background:var(--success);font-size:0.55rem;">LEÍDO</span>' : '<span class="badge badge-info" style="font-size:0.55rem;">NO LEÍDO</span>';
                     return `
                     <div class="list-item" style="flex-direction:column; align-items:flex-start; gap:0.5rem;">
                         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
@@ -1018,7 +1020,8 @@
             function pushLine(m) {
                 const r = m.pushResult;
                 let text = '';
-                if (m.push === false) text = 'Sin aviso al celular (no se marcó).';
+                // El resumen de un envio de Finanzas (toRole 'varios') lleva push: false pero su propio resultado
+                if (!r && m.push === false) text = 'Sin aviso al celular (no se marcó).';
                 else if (!r) return '';
                 else if (r.status === 'enviando') text = 'Enviando el aviso a los celulares...';
                 else if (r.skipped === 'tope') text = 'Sin aviso al celular: se llegó al tope de 30 mensajes con aviso por hora.';

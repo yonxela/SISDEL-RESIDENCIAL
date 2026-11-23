@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, collection } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, collection, query, where } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
 import { PROJECT_ID, EMULATOR } from './lib.mjs';
 import { connect } from './admin.mjs';
@@ -154,6 +154,37 @@ async function run() {
     const m5 = await sendMessage(admin, 'vecino');
     const r5 = await waitFor('sin telefonos activados, el mensaje dice que nadie de ese grupo los tiene', async () => { const r = await result(m5); return r && r.status === 'listo' ? r : null; });
     equal('a los vecinos: ningun telefono', r5 && [r5.devices, r5.sent], [0, 0]);
+
+    console.log('\nMensajes de Finanzas por garita.app (OIKOS > Mensajes > Enviar por garita.app)');
+    await adb.recursiveDelete(adb.collection('_push_simulados'));
+    await push(ana, { action: 'register', subscription: subAna });
+    const fin = (c, data) => httpsCallable(c.functions, 'residentMessages')(data).then((r) => r.data);
+    equal('un vecino o la garita no envian mensajes desde Finanzas', [await errOf(fin(ana, { action: 'send', mode: 'mora', items: [{ residentId: 'u-maria', text: 'x' }] })), await errOf(fin(guard, { action: 'summary' }))], ['permission-denied', 'permission-denied']);
+    equal('la administracion sabe cuantos vecinos tienen los avisos activados (Ana)', await fin(admin, { action: 'summary' }), { users: 1 });
+    equal('sin mensajes, o todos vacios, no envia', [await errOf(fin(admin, { action: 'send', items: [] })), await errOf(fin(admin, { action: 'send', items: [{ residentId: 'u-ana', text: '  ' }] }))], ['invalid-argument', 'invalid-argument']);
+    const sent = await fin(admin, { action: 'send', mode: 'mora', template: 'Hola {nombre}, debe {saldo}', items: [
+        { residentId: 'u-ana', text: 'Hola Ana García, debe Q 300.00' }, { residentId: 'u-maria', text: 'Hola María Rodríguez, debe Q 900.00' }, { residentId: 'u-no-existe', text: 'x' }
+    ] });
+    equal('envia a Ana y Maria (el que no existe se cuenta aparte) y le salta en el celular a Ana', [sent.ok, sent.sent, sent.skipped.noExiste, sent.push.users, sent.push.sent], [true, 2, 1, 1, 1]);
+    const simsFin = await simulated();
+    equal('el aviso del celular de Ana trae SU texto y el asunto del mensaje de mora', simsFin.map((s) => [s.userId, s.payload.title, /Hola Ana García, debe Q 300\.00/.test(s.payload.body), /María/.test(s.payload.body)]), [['u-ana', 'Aviso de saldo pendiente', true, false]]);
+    const anaMine = await getDocs(query(collection(ana.db, `condominios/${A}/mensajes`), where('toRole', '==', 'usuario'), where('toUserId', '==', 'u-ana')));
+    equal('Ana ve en garita.app su mensaje, de la administracion y con su texto', anaMine.docs.map((d) => [d.data().subject, d.data().body, d.data().fromName, d.data().campaignId === sent.campaignId]), [['Aviso de saldo pendiente', 'Hola Ana García, debe Q 300.00', 'Fernando López', true]]);
+    const mariaMsg = (await adb.collection(`condominios/${A}/mensajes`).where('campaignId', '==', sent.campaignId).where('toUserId', '==', 'u-maria').get()).docs[0];
+    await denied('Ana no lee el mensaje de Maria (trae su saldo)', () => getDoc(doc(ana.db, `condominios/${A}/mensajes/${mariaMsg.id}`)));
+    await denied('ni pidiendo los de Maria', () => getDocs(query(collection(ana.db, `condominios/${A}/mensajes`), where('toRole', '==', 'usuario'), where('toUserId', '==', 'u-maria'))));
+    await denied('la garita tampoco lo lee', () => getDoc(doc(guard.db, `condominios/${A}/mensajes/${mariaMsg.id}`)));
+    const anaRef = doc(ana.db, `condominios/${A}/mensajes/${anaMine.docs[0].id}`);
+    await denied('Ana no cambia el texto de su mensaje', () => updateDoc(anaRef, { body: 'otro' }));
+    try { await updateDoc(anaRef, { read: true }); record('Ana marca su mensaje como leido', true); } catch (e) { record('Ana marca su mensaje como leido', false, e.code || e.message); }
+    const summaryDoc = (await adb.doc(`condominios/${A}/mensajes/${sent.campaignId}`).get()).data() || {};
+    equal('la administracion ve el resumen del envio: a cuantos, el texto con los datos de cada uno y a cuantos les salto', [summaryDoc.toRole, summaryDoc.recipients, summaryDoc.body, summaryDoc.pushResult && summaryDoc.pushResult.status, summaryDoc.pushResult && summaryDoc.pushResult.users], ['varios', 2, 'Hola {nombre}, debe {saldo}', 'listo', 1]);
+    const adminList = await getDocs(query(collection(admin.db, `condominios/${A}/mensajes`), where('toRole', '!=', 'usuario')));
+    equal('la lista de la administracion trae el resumen y no los mensajes de cada vecino', [adminList.docs.some((d) => d.id === sent.campaignId), adminList.docs.some((d) => d.data().toRole === 'usuario')], [true, false]);
+    await new Promise((r) => setTimeout(r, 2500));
+    equal('el aviso automatico no vuelve a avisar esos mensajes (ya salio con el texto de cada uno)', [((await adb.doc(`condominios/${A}/mensajes/${anaMine.docs[0].id}`).get()).data() || {}).pushResult || null, (await simulated()).length], [null, 1]);
+    const finMsgs = await adb.collection(`condominios/${A}/mensajes`).where('source', '==', 'finanzas').get();
+    finMsgs.docs.forEach((d) => createdMessages.push(d.id));
 
     console.log('\nQuien puede activarlos');
     await adb.doc(`condominios/${A}/usuarios/u-ana`).update({ privilegios: { 'mensajes.recibir': false } });

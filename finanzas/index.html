@@ -568,7 +568,7 @@
                             <button onclick="openFeeRun()" class="bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 px-4 py-2.5 rounded-xl text-sm font-semibold transition" title="Aplicar la cuota de un mes a todos los residentes activos (sin duplicar)"><i class="fas fa-calendar-check mr-2"></i>Cuota del mes</button>
                             <button onclick="openResidentStatusReport('aldia')" class="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 px-4 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fas fa-check-circle mr-2"></i>Al Día</button>
                             <button onclick="openResidentStatusReport('morosos')" class="bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/40 dark:text-rose-400 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 px-4 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fas fa-exclamation-triangle mr-2"></i>Morosos</button>
-                            <button onclick="openReminders()" class="bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-400 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 px-4 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fab fa-whatsapp mr-2"></i><span id="lbl-btn-rem">Recordatorios</span></button>
+                            <button onclick="openReminders()" class="bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-400 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800 px-4 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fas fa-comment-dots mr-2"></i><span id="lbl-btn-rem">Mensajes</span></button>
                             <button onclick="openModal('modal-resident')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"><i class="fas fa-plus mr-2"></i><span id="lbl-new-res">Nuevo Residente</span></button>
                         </div>
                     </div>
@@ -1142,7 +1142,7 @@
     <div id="modal-reminders" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <!-- SISDEL: 55rem (30 % mas ancha, 2026-11-16) y se desplaza entera (overflow-y-auto): lo de abajo no se alcanzaba -->
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-[55rem] p-8 flex flex-col max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-start mb-2"><h3 class="text-xl font-bold dark:text-white" id="title-modal-rem">Envío de Recordatorios</h3><button type="button" onclick="closeModal('modal-reminders')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div class="flex justify-between items-start mb-2"><h3 class="text-xl font-bold dark:text-white" id="title-modal-rem">Mensajes a los residentes</h3><button type="button" onclick="closeModal('modal-reminders')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-4" id="subtitle-modal-rem">Elija el mensaje: el que esté seleccionado es el que se envía.</p>
             <!-- SISDEL: que mensaje se envia: por morosidad (solo a los morosos) o un aviso general (mensajes varios) -->
             <div class="grid grid-cols-2 gap-2 mb-3" role="radiogroup" aria-label="Mensaje que se envía">
@@ -1171,6 +1171,18 @@
                  vinculado a WhatsApp Web, o la app en el celular), no del numero del condominio. Se abre el chat de cada residente con el
                  texto ya escrito y la persona pulsa Enviar: uno por uno, siempre con su clic. Va ARRIBA del envio del servidor (pedido del
                  usuario el 2026-11-18: no lo veia, y con el numero del condominio restringido es lo que se usa) -->
+            <!-- SISDEL: Enviar por garita.app (pedido del usuario el 2026-11-23, con el WhatsApp del condominio desconectado): cada residente
+                 de la lista recibe SU mensaje (el mismo texto de la ventana, con su nombre y su saldo) en la campana de Mensajes de
+                 garita.app y, si activo los avisos en su celular, le salta en el telefono. No usa WhatsApp, no tiene costo ni pide telefono.
+                 Lo hace el servidor (functions/src/avisos-push.js, residentMessages) por el puente window.sisdelGaritaMensajes -->
+            <div id="rem-garita" class="hidden mb-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-900/10 p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" id="rem-garita-send" onclick="sendRemindersGarita()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow transition"><i class="fas fa-bell mr-1.5"></i><span id="rem-garita-label">Enviar por garita.app</span></button>
+                    <span class="text-xs text-slate-600 dark:text-slate-300">A cada residente le llega <b>su</b> mensaje en garita.app (la campana de Mensajes) y, si activó los avisos en su celular, le salta en el teléfono. No usa WhatsApp ni pide teléfono.</span>
+                </div>
+                <p id="rem-garita-info" class="hidden text-xs text-slate-600 dark:text-slate-300 mt-2"></p>
+                <p id="rem-garita-result" class="hidden text-xs mt-2 rounded-lg px-3 py-2 bg-indigo-100/70 dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-100"></p>
+            </div>
             <div id="rem-manual" class="mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-900/10 p-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="rem-manual-start" onclick="remManualStart()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-sky-600 hover:bg-sky-700 text-white shadow transition"><i class="fas fa-mobile-screen-button mr-1.5"></i><span id="rem-manual-label">Enviar desde mi WhatsApp</span></button>
@@ -6291,6 +6303,7 @@
             renderRemindersList(currentRemMode === 'varios' ? 'all' : 'mora');
             startReminderWatch();
             checkRemConnection();
+            loadRemGaritaInfo();
         }
         function renderRemindersList(filterMode) {
             currentRemFilter = remScopes().includes(filterMode) ? filterMode : (currentRemMode === 'varios' ? 'all' : 'mora');
@@ -6348,7 +6361,7 @@
                     : `<p class="text-emerald-600 dark:text-emerald-400 font-semibold text-sm mt-1">Sin saldo pendiente ${tag}${remManualTag(r.id)}</p>`;
                 const hasPhone = !!String(r.contact || '').replace(/[^0-9]/g, '');
                 const picked = currentRemFilter === 'seleccion' && remSelected.has(String(r.id));
-                const pick = remBridge() && hasPhone && currentRemFilter === 'seleccion'
+                const pick = currentRemFilter === 'seleccion' && (garitaBridge() || (remBridge() && hasPhone))
                     ? `<input type="checkbox" class="rem-pick shrink-0 w-5 h-5 accent-emerald-600 cursor-pointer" data-id="${esc(r.id)}" ${picked ? 'checked' : ''} onchange="remTogglePick(this.dataset.id, this.checked)" title="Seleccionar para el envío" aria-label="Seleccionar a ${esc(r.name || '')}">`
                     : '';
                 // Enviar (desde el WhatsApp del condominio) y Mi WhatsApp (abre el de la persona con el mensaje ya escrito)
@@ -6474,6 +6487,7 @@
         }
         function paintReminderBulk() {
             paintRemManual();   // Enviar desde mi WhatsApp cuenta a la misma lista (y se ve aunque no haya envio desde el servidor)
+            paintRemGarita();   // Enviar por garita.app: la misma lista, sin pedir telefono
             const box = document.getElementById('rem-bulk');
             if (!box) return;
             const bridge = remBridge();
@@ -6721,6 +6735,100 @@
             const only = document.getElementById('rem-only-selected');
             if (only) only.checked = false;
             renderRemindersList(currentRemFilter);
+        }
+        // ========== SISDEL: ENVIAR POR garita.app (2026-11-23) ==========
+        // Cada residente de la lista recibe SU mensaje (el texto de la ventana con sus datos) en garita.app: lo ve en la campana de
+        // Mensajes y, si activo los avisos en su celular, le salta en el telefono. Lo hace el servidor (residentMessages) por el puente
+        // de finanzas.html; sin el puente (OIKOS fuera de SISDEL) el recuadro no sale. No pide telefono: cuenta a toda la lista.
+        function garitaBridge() {
+            try { return window.parent && window.parent !== window && window.parent.sisdelGaritaMensajes ? window.parent.sisdelGaritaMensajes : null; } catch (e) { return null; }
+        }
+        var remGaritaBusy = false;
+        var remGaritaUsers = null;     // cuantos vecinos tienen los avisos activados en su celular (null = no se sabe)
+        var remGaritaLast = null;      // el resultado del ultimo envio de esta ventana
+        // A quienes: la lista de la barra (con "Por seleccion", los marcados), tengan o no telefono
+        function remGaritaList() {
+            if (currentRemFilter === 'seleccion') {
+                return remAllResidents.filter(r => remSelected.has(String(r.id)))
+                    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }));
+            }
+            return remShownList.slice();
+        }
+        function paintRemGarita() {
+            const box = document.getElementById('rem-garita');
+            if (!box) return;
+            const bridge = garitaBridge();
+            box.classList.toggle('hidden', !bridge);
+            if (!bridge) return;
+            const n = remGaritaList().length;
+            const label = document.getElementById('rem-garita-label');
+            if (label) label.textContent = remGaritaBusy ? 'Enviando por garita.app...' : `Enviar por garita.app${n ? ' (' + n + ')' : ''}`;
+            const btn = document.getElementById('rem-garita-send');
+            if (btn) {
+                btn.disabled = !n || remGaritaBusy;
+                btn.classList.toggle('opacity-50', btn.disabled);
+                btn.classList.toggle('cursor-not-allowed', btn.disabled);
+                btn.title = !n ? (currentRemFilter === 'seleccion' ? 'Marque al menos un residente' : 'No hay residentes en esta lista') : '';
+            }
+            const info = document.getElementById('rem-garita-info');
+            if (info) {
+                info.classList.toggle('hidden', remGaritaUsers === null);
+                info.textContent = remGaritaUsers === null ? '' : remGaritaUsers
+                    ? `${remGaritaUsers} vecino(s) tienen los avisos activados en su celular: a ellos les salta. Los demás lo ven al entrar a garita.app.`
+                    : 'Todavía ningún vecino activó los avisos en su celular (se hace en garita.app, con la campana de arriba): por ahora lo ven al entrar a garita.app.';
+            }
+            const result = document.getElementById('rem-garita-result');
+            if (result) {
+                result.classList.toggle('hidden', !remGaritaLast);
+                if (remGaritaLast) result.textContent = remGaritaLast;
+            }
+        }
+        async function loadRemGaritaInfo() {
+            const bridge = garitaBridge();
+            if (!bridge) return;
+            const r = await bridge.summary();
+            remGaritaUsers = r && r.ok ? Number(r.users) || 0 : null;
+            paintRemGarita();
+        }
+        async function sendRemindersGarita() {
+            const bridge = garitaBridge();
+            if (!bridge || remGaritaBusy) return;
+            const list = remGaritaList();
+            if (!list.length) return alert(currentRemFilter === 'seleccion' ? 'Marque al menos un residente.' : 'No hay residentes en esta lista.');
+            if (!reminderTemplateReadyText(list[0])) return;
+            const items = list.map(r => ({ residentId: String(r.id), text: reminderText(remManualTemplate(r), r) }));
+            if (items.some(i => i.text.length > 1000)) return alert('El mensaje pasa de 1000 letras: acórtelo antes de enviarlo.');
+            const first = list[0];
+            const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
+            const who = currentRemFilter === 'seleccion' ? `a los ${items.length} residentes que seleccionó` : remScopeWho(items.length);
+            if (!confirm(`Se enviará por garita.app ${who}.\n\nA cada uno le llega SU mensaje en la campana de Mensajes de garita.app y, si activó los avisos en su celular, le salta en el teléfono. No usa WhatsApp.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`)) return;
+            remGaritaBusy = true;
+            remGaritaLast = null;
+            paintRemGarita();
+            const result = await bridge.send({ mode: currentRemMode, template: remManualTemplate(first), items });
+            remGaritaBusy = false;
+            if (!result.ok) { paintRemGarita(); return alert(result.error); }
+            const skipped = result.skipped || {};
+            const out = (skipped.noExiste || 0) + (skipped.inactivo || 0) + (skipped.sinPermiso || 0) + (skipped.invalidos || 0);
+            const push = result.push || {};
+            remGaritaLast = `Enviado por garita.app a ${result.sent} residente(s). ` +
+                (push.users ? `Le saltó en el celular a ${push.users} (${push.sent} teléfono(s)). ` : 'Nadie de esta lista tiene todavía los avisos activados en su celular: lo verán al entrar a garita.app. ') +
+                (out ? `${out} no se enviaron (no existen en garita.app, están inactivos o no reciben mensajes).` : '');
+            showToast(`Enviado por garita.app a ${result.sent} residente(s).`);
+            remSelected.clear();
+            remOnlySelected = false;
+            const only = document.getElementById('rem-only-selected');
+            if (only) only.checked = false;
+            renderRemindersList(currentRemFilter);
+            loadRemGaritaInfo();
+        }
+        // Como reminderTemplateReady, sin la plantilla de Meta (garita.app no la necesita): solo que el aviso este escrito
+        function reminderTemplateReadyText(r) {
+            if (!remManualTemplate(r).includes(SISDEL_REMINDER_PLACEHOLDER)) return true;
+            document.getElementById('rem-msg-box').open = true;
+            document.getElementById('rem-msg-general').focus();
+            alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+            return false;
         }
         async function sendReminderTest() {
             const bridge = remBridge();

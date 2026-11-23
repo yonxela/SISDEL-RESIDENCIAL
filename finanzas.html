@@ -129,11 +129,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123b"></script>
-    <script src="sisdel-core.js?v=20261123b"></script>
+    <script src="privilegios.js?v=20261123c"></script>
+    <script src="sisdel-core.js?v=20261123c"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261122a"></script>
-    <script src="finanzas-bloqueo.js?v=20261122a"></script>
+    <script src="finanzas-sync.js?v=20261123a"></script>
+    <script src="finanzas-bloqueo.js?v=20261123a"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -209,6 +209,18 @@
                     } catch (error) { callback(null); return () => {}; }
                 }
             };
+
+            // Enviar por garita.app (OIKOS > Mensajes, pedido del usuario el 2026-11-23): cada residente recibe SU mensaje en la campana de
+            // garita.app y, si activo los avisos, le salta en el celular. Lo hace el servidor (residentMessages, functions/src/avisos-push.js),
+            // que pide el mismo privilegio de los recordatorios (finanzas.residentes_contactar) o el Master
+            window.sisdelGaritaMensajes = null;
+            if (session.role === 'master' || SISDEL.can('finanzas.residentes_contactar')) {
+                const garita = callServer('residentMessages');
+                window.sisdelGaritaMensajes = {
+                    summary: () => garita({ action: 'summary', condoId }),
+                    send: ({ mode, template, items }) => garita({ action: 'send', condoId, mode, template, items })
+                };
+            }
 
             // Entregar la clave de acceso con el QR de panico (ventana "Codigo del boton de panico" de OIKOS): al darle la tarjeta al
             // vecino, la oficina activa la entrega y la PRIMERA vez que el vecino escanea el QR ve su clave una sola vez (panico.html).

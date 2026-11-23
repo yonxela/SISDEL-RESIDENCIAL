@@ -295,8 +295,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123b"></script>
-    <script src="sisdel-core.js?v=20261123b"></script>
+    <script src="privilegios.js?v=20261123c"></script>
+    <script src="sisdel-core.js?v=20261123c"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="reportes-export.js?v=20261115a"></script>
     <script>
@@ -411,7 +411,7 @@
                 entered: { label: 'Ingresó', cls: 'badge-success' },
                 completed: { label: 'Completada', cls: 'badge-success' }
             };
-            const TO_ROLE = { all: 'Todos', vecino: 'Vecinos', policia: 'Guardias', admin: 'Administradores' };
+            const TO_ROLE = { all: 'Todos', vecino: 'Vecinos', policia: 'Guardias', admin: 'Administradores', varios: 'Vecinos, cada uno con su mensaje (desde Finanzas)' };
             function logStatus(s) { return LOG_STATUS[s] || { label: s || 'Sin estado', cls: 'badge-info' }; }
             function visitStatus(s) { return VISIT_STATUS[s] || { label: s || 'Sin estado', cls: 'badge-info' }; }
             function badge(info) { return `<span class="badge ${info.cls}">${esc(info.label)}</span>`; }

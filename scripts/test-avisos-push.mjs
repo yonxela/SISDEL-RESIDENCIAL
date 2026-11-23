@@ -296,6 +296,12 @@ console.log('\nPaginas, manifiesto, iconos, reglas y funciones');
     yes('lo que escribe la administracion se escapa al pintarlo (asunto, texto y quien lo manda)', /\$\{esc\(m\.subject \|\| 'Mensaje'\)\}/.test(ui) && /<p>\$\{esc\(m\.body\)\}<\/p>/.test(ui) && /esc\(m\.fromName/.test(ui));
     yes('"nuevo" es por persona y por equipo; la marca "leido" se sigue poniendo para la administracion', /SEEN_PREFIX = 'sisdel_msg_vistos_'/.test(ui) && /SISDEL\.markMessageRead\(m\.id\)/.test(ui));
     yes('sin "Recibir mensajes" no se monta nada', /if \(!canReceive\) return null;/.test(ui));
+    // SISDEL es un const global de sisdel-core.js (NO window.SISDEL): asi se publico la primera version y la campana no salia
+    const coreCtx = vm.createContext({});
+    vm.runInContext("const SISDEL = { marca: 'nucleo' }; var window = this;", coreCtx);
+    vm.runInContext(ui, coreCtx);
+    equal('la pantalla encuentra a SISDEL aunque sisdel-core.js lo declare con const (no es window.SISDEL)', vm.runInContext('SisdelAvisosUI.coreApi({}).marca', coreCtx), 'nucleo');
+    yes('y vecino.html se lo pasa directamente al montarla', /SisdelAvisosUI\.mount\(\{\s*SISDEL,\s*session,/.test(vecino));
     const V = (() => { const ctx = { window: {} }; ctx.window = ctx; vm.runInNewContext(ui, ctx); return ctx.SisdelAvisosUI; })();
     equal('cada estado del telefono ofrece lo que se puede hacer', ['activo', 'inactivo', 'otro-usuario', 'bloqueado', 'ios-instalar', 'ios-viejo', 'sin-soporte'].map((s) => V.phoneView(s, {}).buttons.map((b) => b[0])), [['test', 'disable'], ['enable'], ['enable'], ['enable'], [], [], []]);
     yes('en el iPhone explica como agregar garita.app a la pantalla de inicio y que el permiso se cambia en Ajustes', /Agregar a inicio/.test(V.phoneView('ios-instalar', { ios: true }).steps.join(' ')) && /Ajustes del iPhone > Notificaciones/.test(V.phoneView('bloqueado', { ios: true }).steps.join(' ')));
@@ -305,14 +311,50 @@ console.log('\nPaginas, manifiesto, iconos, reglas y funciones');
     const rules = read('firestore.rules');
     yes('reglas: nadie lee ni escribe los telefonos desde el navegador (con la direccion y la llave del servidor se mandan avisos)', /match \/push_dispositivos\/\{deviceId\} \{\s*allow read, write: if false;/.test(rules));
     const fnIndex = read('functions/index.js');
-    yes('functions exporta pushDevice y onMessagePush', /const \{ pushDevice, onMessagePush \} = require\('\.\/src\/avisos-push'\);/.test(fnIndex) && /pushDevice, onMessagePush,/.test(fnIndex));
+    yes('functions exporta pushDevice, onMessagePush y residentMessages', /const \{ pushDevice, onMessagePush, residentMessages \} = require\('\.\/src\/avisos-push'\);/.test(fnIndex) && /pushDevice, onMessagePush, residentMessages,/.test(fnIndex));
     const pkg = JSON.parse(read('functions/package.json'));
     equal('web-push fijo en una version estable (3.6.7, de enero de 2024)', pkg.dependencies['web-push'], '3.6.7');
     const srv = read('functions/src/avisos-push.js');
     yes('el servidor solo simula envios en los emuladores (nunca en produccion)', /const IS_EMULATOR = process\.env\.FUNCTIONS_EMULATOR === 'true';/.test(srv) && /if \(IS_EMULATOR && device\.endpoint\.includes\(FAKE_MARK\)\) return fakeSend/.test(srv));
     yes('la llave privada se crea en _privado/push y nunca sale del servidor (config solo entrega la publica)', /const KEYS_DOC = '_privado\/push';/.test(srv) && /return \{ publicKey: \(await loadKeys\(\)\)\.publicKey \};/.test(srv));
-    yes('un mensaje con push: false no avisa; un evento repetido no envia dos veces; con tope por hora', /if \(msg\.push === false\) return;/.test(srv) && /cur\.data\(\)\.pushResult\) return false/.test(srv) && /MESSAGE_LIMIT = \{ max: 30, windowMs: 60 \* 60 \* 1000 \}/.test(srv));
+    yes('un mensaje con push: false no avisa; un evento repetido no envia dos veces; con tope por hora', /if \(msg\.push === false \|\| msg\.toRole === 'usuario' \|\| msg\.toRole === 'varios'\) return;/.test(srv) && /cur\.data\(\)\.pushResult\) return false/.test(srv) && /MESSAGE_LIMIT = \{ max: 30, windowMs: 60 \* 60 \* 1000 \}/.test(srv));
     yes('la prueba va solo a un telefono del propio usuario y activo', /d\.active === false \|\| d\.userId !== uid\) fail\('failed-precondition'/.test(srv));
+}
+
+console.log('\nMensajes de Finanzas por garita.app (un mensaje por residente)');
+{
+    equal('se aceptan los mensajes con residente y texto; sin repetir residente; el texto se recorta y queda con saltos de linea normales', core.cleanMessageItems([
+        { residentId: 'u-ana', text: '  Hola Ana\r\nDebe Q 300  ' }, { residentId: 'u-ana', text: 'otra vez' }, { residentId: 'u-luis', text: 'Hola Luis' }
+    ]), { items: [{ residentId: 'u-ana', text: 'Hola Ana\nDebe Q 300' }, { residentId: 'u-luis', text: 'Hola Luis' }], invalid: 0 });
+    equal('no sirven: sin residente, con rutas, sin texto o de mas de 1000 letras (se cuentan)', core.cleanMessageItems([
+        { residentId: '', text: 'x' }, { residentId: 'a/b', text: 'x' }, { residentId: '..', text: 'x' }, { residentId: 'u-1', text: '   ' }, { residentId: 'u-2', text: 'x'.repeat(1001) }, { residentId: 'u-3', text: 'bien' }
+    ]), { items: [{ residentId: 'u-3', text: 'bien' }], invalid: 5 });
+    equal('vacio, sin lista o mas de 1500 de una vez: error con el motivo', [
+        !!core.cleanMessageItems([]).error, !!core.cleanMessageItems(null).error, /1500/.test(core.cleanMessageItems(Array.from({ length: 1501 }, (_, i) => ({ residentId: 'u' + i, text: 'x' }))).error || ''),
+        !!core.cleanMessageItems([{ residentId: 'u', text: '' }]).error
+    ], [true, true, true, true]);
+    equal('el asunto que ve el vecino segun el mensaje elegido', [core.messageSubject('mora'), core.messageSubject('varios'), core.messageSubject('x')], ['Aviso de saldo pendiente', 'Aviso de la administración', 'Aviso de saldo pendiente']);
+
+    const oikos = read('finanzas/index.html');
+    const fin = read('finanzas.html');
+    const bloq = read('finanzas-bloqueo.js');
+    const srv = read('functions/src/avisos-push.js');
+    const rules = read('firestore.rules');
+    const coreJs = read('sisdel-core.js');
+    const at = (id) => oikos.indexOf(`id="${id}"`);
+    yes('el boton de Residentes se llama "Mensajes" (antes "Recordatorios") y la ventana "Mensajes a los residentes"', /<span id="lbl-btn-rem">Mensajes<\/span>/.test(oikos) && /id="title-modal-rem">Mensajes a los residentes<\/h3>/.test(oikos) && !/>Recordatorios<\/span>/.test(oikos));
+    yes('el recuadro "Enviar por garita.app" va arriba de "Enviar desde mi WhatsApp" y del WhatsApp del condominio', at('rem-garita') > 0 && at('rem-garita') < at('rem-manual') && at('rem-manual') < at('rem-bulk') && /onclick="sendRemindersGarita\(\)"/.test(oikos));
+    yes('cuenta a toda la lista de la barra (sin pedir telefono); con Por seleccion, a los marcados', /function remGaritaList\(\) \{\s*if \(currentRemFilter === 'seleccion'\) \{\s*return remAllResidents\.filter\(r => remSelected\.has\(String\(r\.id\)\)\)/.test(oikos) && /return remShownList\.slice\(\);/.test(oikos));
+    yes('manda a cada residente SU texto (el de la ventana con su nombre y su saldo), confirma antes y no envia el aviso sin escribir', /const items = list\.map\(r => \(\{ residentId: String\(r\.id\), text: reminderText\(remManualTemplate\(r\), r\) \}\)\);/.test(oikos) && /if \(!confirm\(`Se enviará por garita\.app/.test(oikos) && /function reminderTemplateReadyText\(r\)/.test(oikos));
+    yes('sin el puente (OIKOS fuera de SISDEL) el recuadro no sale', /box\.classList\.toggle\('hidden', !bridge\);\s*if \(!bridge\) return;\s*const n = remGaritaList\(\)\.length;/.test(oikos));
+    yes('finanzas.html ofrece el puente solo con "Mensajes a los residentes" (o el Master) y llama a residentMessages', /if \(session\.role === 'master' \|\| SISDEL\.can\('finanzas\.residentes_contactar'\)\) \{\s*const garita = callServer\('residentMessages'\);/.test(fin));
+    yes('el bloqueo de pantalla pide el mismo privilegio', /\|sendRemindersGarita\)\\\(\/, \['residentes_contactar'\]\]/.test(bloq));
+    yes('el servidor pide el privilegio (o el Master), un condominio activo, tope de 10 envios por hora y solo vecinos activos que reciben mensajes', /const MSG_CONTACT = 'finanzas\.residentes_contactar';/.test(srv) && /privilegios\.has\(me\.data\(\)\.role, me\.data\(\)\.privilegios, MSG_CONTACT\)/.test(srv) && /SEND_LIMIT = \{ max: 10, windowMs: 60 \* 60 \* 1000 \}/.test(srv) && /'mensajes\.recibir'/.test(srv));
+    yes('cada vecino recibe su mensaje personal (toRole usuario) y la administracion un resumen (toRole varios); nada pasa por el aviso automatico', /toRole: 'usuario', toUserId: it\.residentId/.test(srv) && /toRole: 'varios', recipients: recipients\.length/.test(srv) && (srv.match(/push: false, source: 'finanzas'/g) || []).length === 2);
+    yes('reglas: el mensaje personal solo lo lee (y lo marca leido) el propio vecino, ademas de quien ve todos', /\(pMensajesRecibir\(condoId\) && resource\.data\.toRole == 'usuario' && resource\.data\.toUserId == request\.auth\.uid\)/.test(rules) && /\|\| \(resource\.data\.toRole == 'usuario' && resource\.data\.toUserId == request\.auth\.uid\)\)\s*&& onlyChanges\(\['read'\]\)/.test(rules));
+    yes('el portal pide los mensajes personales del vecino; quien ve todos no los baja uno por uno (ve el resumen)', /where\('toRole', '==', 'usuario'\)\.where\('toUserId', '==', String\(uid\)\)/.test(coreJs) && /where\('toRole', '!=', 'usuario'\)/.test(coreJs));
+    yes('la campana del vecino muestra sus mensajes personales', /\(m\.toRole === 'usuario' && m\.toUserId === session\.userId\)/.test(read('avisos-ui.js')));
+    yes('Administracion > Mensajes muestra el resumen del envio de Finanzas (a cuantos y el resultado en los celulares)', /m\.toRole === 'varios' \? `\$\{Number\(m\.recipients\) \|\| 0\} vecinos, cada uno con su mensaje/.test(read('admin.html')));
 }
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

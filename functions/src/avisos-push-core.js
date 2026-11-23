@@ -193,7 +193,38 @@ function overLimit(devices, keepId, max = MAX_ACTIVE_PER_USER) {
     return active.slice(Math.max(0, max - 1));
 }
 
+// Mensajes personales que manda Finanzas (OIKOS > Mensajes > "Enviar por garita.app", 2026-11-23): un texto por residente, ya
+// armado con su nombre y su saldo. Se revisan aqui: id valido, sin repetir residente, texto de 1 a 1000 letras, hasta 1500.
+const ITEMS_MAX = 1500;
+const TEXT_MAX = 1000;
+function validId(id) {
+    const s = String(id == null ? '' : id);
+    return s.length > 0 && s.length <= 128 && !s.includes('/') && s !== '.' && s !== '..';
+}
+function cleanMessageItems(items) {
+    if (!Array.isArray(items) || !items.length) return { error: 'No hay mensajes para enviar.' };
+    if (items.length > ITEMS_MAX) return { error: `Son demasiados de una vez (más de ${ITEMS_MAX}).` };
+    const seen = new Set();
+    const out = [];
+    let invalid = 0;
+    for (const it of items) {
+        const id = it && String(it.residentId == null ? '' : it.residentId);
+        const text = it && typeof it.text === 'string' ? it.text.replace(/\r\n/g, '\n').trim() : '';
+        if (!validId(id) || !text || text.length > TEXT_MAX) { invalid += 1; continue; }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ residentId: id, text });
+    }
+    if (!out.length) return { error: 'Los mensajes no sirven (vacíos o de más de 1000 letras).' };
+    return { items: out, invalid };
+}
+// El asunto que ve el vecino en su campana y en el aviso del celular, segun el mensaje que se eligio en la ventana
+function messageSubject(mode) {
+    return mode === 'varios' ? 'Aviso de la administración' : 'Aviso de saldo pendiente';
+}
+
 module.exports = {
+    ITEMS_MAX, TEXT_MAX, validId, cleanMessageItems, messageSubject,
     MAX_ACTIVE_PER_USER, TTL_SECONDS, PUSH_HOSTS, PAYLOAD_MAX_BYTES,
     deviceId, hostAllowed, cleanSubscription, platformOf, browserOf, clip,
     messagePayload, testPayload, fitPayload, recipientsFor, classifyError, sendAll, summarize, overLimit

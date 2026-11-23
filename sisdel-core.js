@@ -809,13 +809,23 @@ const SISDEL = (() => {
                 const scope = condominioId || sessionCondoId();
                 const seesAll = role === ROLES.MASTER || can('mensajes.historial');
                 const filter = (q) => (seesAll ? q : q.where('toRole', 'in', ['all', role]));
-
-                const local = scope ? filter(sub(scope, COL.messages)) : db().collectionGroup(COL.messages);
-                const [localSnap, globalSnap] = await Promise.all([
+                // Los mensajes personales que Finanzas manda a cada vecino por garita.app (toRole 'usuario'): el vecino lee los suyos;
+                // quien ve todos no los baja uno por uno (son cientos por envio): ve el resumen de cada envio (toRole 'varios')
+                const local = scope
+                    ? (seesAll ? sub(scope, COL.messages).where('toRole', '!=', 'usuario') : filter(sub(scope, COL.messages)))
+                    : db().collectionGroup(COL.messages);
+                const uid = (getSession() || {}).userId;
+                const mine = scope && !seesAll && uid
+                    ? sub(scope, COL.messages).where('toRole', '==', 'usuario').where('toUserId', '==', String(uid)).get(SERVER)
+                    : Promise.resolve({ docs: [] });
+                const [localSnap, globalSnap, mineSnap] = await Promise.all([
                     local.get(SERVER),
-                    filter(db().collection(COL.globalMessages)).get(SERVER)
+                    filter(db().collection(COL.globalMessages)).get(SERVER),
+                    mine.catch(() => ({ docs: [] }))
                 ]);
-                return [...localSnap.docs, ...globalSnap.docs].map((d) => toObj(COL.messages, d)).sort(byCreatedDesc);
+                return [...localSnap.docs, ...globalSnap.docs, ...mineSnap.docs].map((d) => toObj(COL.messages, d))
+                    .filter((m) => scope || m.toRole !== 'usuario')
+                    .sort(byCreatedDesc);
             } catch (error) { reportError('getMessages', error); return []; }
         });
     }

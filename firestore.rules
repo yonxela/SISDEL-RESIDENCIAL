@@ -425,17 +425,21 @@ service cloud.firestore {
           || (isResident(condoId) && pVecinoVehiculosQuitar(condoId) && isOwner());
       }
 
+      // toRole 'usuario' + toUserId: el mensaje personal que Finanzas manda a UN vecino por garita.app (con su saldo; lo escribe la
+      // funcion residentMessages): solo lo leen el, quien ve todos los mensajes y el master. toRole 'varios': el resumen de ese envio
       match /mensajes/{msgId} {
         allow read: if isMaster()
           || pMensajesHistorial(condoId)
-          || (pMensajesRecibir(condoId) && resource.data.toRole in ['all', memberRole(condoId)]);
+          || (pMensajesRecibir(condoId) && resource.data.toRole in ['all', memberRole(condoId)])
+          || (pMensajesRecibir(condoId) && resource.data.toRole == 'usuario' && resource.data.toUserId == request.auth.uid);
         allow create: if isMaster()
           || (pMensajesEnviar(condoId) && request.resource.data.condominioId == condoId);
         allow update: if isMaster()
           || pMensajesEnviar(condoId)
           || (pMensajesRecibir(condoId)
               && notAuditor(condoId)
-              && resource.data.toRole in ['all', memberRole(condoId)]
+              && (resource.data.toRole in ['all', memberRole(condoId)]
+                  || (resource.data.toRole == 'usuario' && resource.data.toUserId == request.auth.uid))
               && onlyChanges(['read']));
         allow delete: if isMaster() || pMensajesEliminar(condoId);
       }

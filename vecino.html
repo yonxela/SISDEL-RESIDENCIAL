@@ -380,14 +380,14 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123b"></script>
-    <script src="sisdel-core.js?v=20261123b"></script>
+    <script src="privilegios.js?v=20261123c"></script>
+    <script src="sisdel-core.js?v=20261123c"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
-    <script src="avisos-push.js?v=20261123a"></script>
-    <script src="avisos-ui.js?v=20261123a"></script>
+    <script src="avisos-push.js?v=20261123b"></script>
+    <script src="avisos-ui.js?v=20261123b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
@@ -1103,6 +1103,7 @@
             // salten aunque garita.app este cerrado. Se abre sola con mensajes nuevos o al llegar desde un aviso (#mensajes).
             const pushCall = window.sisdelFirebase.functions.httpsCallable('pushDevice');
             SisdelAvisosUI.mount({
+                SISDEL,
                 session,
                 avisos: SisdelAvisos.create({ call: (data) => pushCall(data).then((r) => r.data) })
             });

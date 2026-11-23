@@ -1745,6 +1745,24 @@ async function run() {
         equal('al abrir otro residente no se ve el estado del anterior mientras consulta', dlv.otherWhileLoading, 'loading');
         equal('y se puede cancelar', [dlv.cancelled, (await condoRef.collection('panico_entregas').doc('u-maria').get()).get('status')], ['cancelled', 'cancelled']);
 
+        // Reportes > Seguridad: el QR de panico por vecino tambien desde Finanzas (un operador de oficina no entra a Administracion)
+        console.log('\nReportes > Seguridad: el QR de pánico por vecino desde Finanzas');
+        const seg = await oikos(`(async () => {
+            navigate('reports'); showReportCatalog();
+            await new Promise((r) => setTimeout(r, 200));
+            const box = document.getElementById('rep-security');
+            const out = { visible: !!box && !box.classList.contains('hidden'), texto: box ? box.innerText.replace(/\\s+/g, ' ').trim() : '' };
+            document.getElementById('rep-seg-panico-qr').click();
+            return out;
+        })()`);
+        equal('Reportes de OIKOS trae la seccion Seguridad con "QR de pánico por vecino" (el administrador tiene el privilegio)', [seg.visible, /Seguridad/.test(seg.texto) && /QR de pánico por vecino/.test(seg.texto)], [true, true]);
+        await page.waitFor(`(() => { const p = document.getElementById('pqReport'); return !!p && !p.hidden && document.querySelectorAll('#pqPreview > *').length > 0; })()`, 'el reporte del QR encima de OIKOS', 40000);
+        const qrRep = await page.evaluate(`(() => ({ titulo: (document.querySelector('#pqReportMount h3') || {}).textContent, tarjetas: document.querySelectorAll('#pqPreview > *').length, volver: getComputedStyle(document.querySelector('#pqReportMount .rp-back')).display, entrega: !!document.getElementById('pqDelivery'), imprimir: !!document.getElementById('pqPrint') && !!document.getElementById('pqPdf') }))()`);
+        equal('al tocarlo se abre encima de OIKOS el mismo reporte de Administración: una tarjeta por vecino, Imprimir, PDF y la entrega de claves, sin "Volver al catálogo"',
+            [qrRep.titulo, qrRep.tarjetas, qrRep.imprimir, qrRep.entrega, qrRep.volver], ['QR de pánico por vecino', 2, true, true, 'none']);
+        await page.evaluate(`document.getElementById('pqReportClose').click()`);
+        equal('la X lo cierra y queda OIKOS donde estaba', [await page.evaluate(`document.getElementById('pqReport').hidden`), await oikos(`!document.getElementById('rep-catalog').classList.contains('hidden')`)], [true, true]);
+
         console.log('\nResidentes: enviar la clave de acceso del vecino y el enlace de garita.app');
         const anaAccessCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs.map((d) => d.id).find(Boolean);
         const ck = await oikos(`(async () => {

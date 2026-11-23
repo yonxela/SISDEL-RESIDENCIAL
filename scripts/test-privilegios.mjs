@@ -1263,6 +1263,30 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('Meta: el script de plantillas valida los datos y los huecos, comprueba que esten aprobadas y nunca imprime el token', /normalizeTemplate/.test(setScript) && /bodyParamCount\(tpl\.body\) !== tpl\.params\.length/.test(setScript) && /status === 'APPROVED'/.test(setScript) && !/console\.log\([^)]*metaToken/.test(setScript) && /--canal=meta/.test(setScript));
 }
 
+// El QR de panico por vecino tambien desde Finanzas > Reportes > Seguridad (un operador de oficina con el privilegio no entra a
+// Administracion, donde vive el reporte)
+{
+    const fin = read('finanzas.html');
+    const oik = read('finanzas/index.html');
+    const admin = read('admin.html');
+    yes('finanzas.html ofrece el reporte solo con Abrir Reportes, QR de panico y Ver usuarios, y monta el mismo reporte de Administracion',
+        /window\.sisdelPanicQrReport = null;\s*if \(SISDEL\.can\('reportes\.ver'\) && SISDEL\.can\('reportes\.panico_qr'\) && SISDEL\.can\('usuarios\.ver'\)\) \{/.test(fin)
+        && /SisdelReportes\.mount\(mount, \{ condominioId: condoId, condoName, userName: session\.userName, getUsers: \(\) => users \}\)/.test(fin) && /mounted\.show\('panico-qr'\);/.test(fin) && /users = await SISDEL\.getUsers\(condoId\);/.test(fin));
+    const lazy = (fin.match(/for \(const src of \[([^\]]+)\]\) await loadScript\(src\);/) || [])[1] || '';
+    const versionsOk = ['sisdel-busqueda.js', 'reportes-export.js', 'panico-qr.js', 'rondas-core.js', 'reportes-ui.js'].every((f) => {
+        const mine = (lazy.match(new RegExp(`${f.replace('.', '\\.')}\\?v=(\\w+)`)) || [])[1];
+        const theirs = (admin.match(new RegExp(`${f.replace('.', '\\.')}\\?v=(\\w+)`)) || [])[1];
+        return mine && mine === theirs;
+    });
+    yes('los scripts del reporte se cargan al abrirlo, con las mismas versiones que admin.html (al subir una alla, subirla aqui)', versionsOk);
+    yes('el reporte va encima de OIKOS con la X de cerrar de SISDEL (y Escape), sin "Volver al catalogo"',
+        /<section class="pq-report" id="pqReport" hidden/.test(fin) && /<button type="button" class="btn btn-ghost btn-icon modal-close" id="pqReportClose"/.test(fin) && /#pqReportMount \.rp-back \{ display: none; \}/.test(fin) && /if \(e\.key === 'Escape'\) close\(\);/.test(fin));
+    yes('OIKOS: Reportes trae la seccion Seguridad con "QR de panico por vecino" solo si finanzas.html la ofrece (fuera de la lista de los once)',
+        /<div id="rep-security" class="hidden /.test(oik) && /onclick="openPanicQrReport\(\)" id="rep-seg-panico-qr"/.test(oik)
+        && /function paintSecurityReports\(\) \{ const box = document\.getElementById\('rep-security'\); if \(box\) box\.classList\.toggle\('hidden', !panicQrReportBridge\(\)\); \}/.test(oik)
+        && oik.indexOf('id="rep-security"') > oik.indexOf('id="rep-catalog"') && oik.indexOf('id="rep-security"') < oik.indexOf('id="rep-detail"'));
+}
+
 // La busqueda de Configuracion > Privilegios no importa acentos (el usuario escribio "panico" y no salio "QR de pánico")
 {
     const ui = read('privilegios-ui.js');

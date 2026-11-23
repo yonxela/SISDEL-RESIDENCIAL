@@ -42,6 +42,13 @@
         .fin-banner.show { display: flex; }
 
         .fin-frame { flex: 1; min-height: 0; position: relative; background: #0f172a; }
+        /* Reporte "QR de panico por vecino" abierto desde Finanzas > Reportes (el mismo de Administracion > Reportes): encima de OIKOS */
+        .pq-report { position: fixed; inset: 0; z-index: 70; overflow-y: auto; background: var(--bg-app, #0f172a); }
+        .pq-report[hidden] { display: none; }
+        .pq-report-inner { max-width: 1200px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
+        .pq-report-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+        .pq-report-top p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
+        #pqReportMount .rp-back { display: none; }
         .fin-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
         .fin-frame iframe.pendiente { visibility: hidden; }
         .fin-message {
@@ -100,6 +107,18 @@
         <span>Otro usuario hizo cambios en el Sistema Financiero.</span>
         <button class="btn btn-primary btn-sm" id="btnReload">Actualizar</button>
     </div>
+
+    <!-- QR de panico por vecino (reportes.panico_qr): quien trabaja en Finanzas sin entrar a Administracion lo abre desde
+         Finanzas > Reportes > Seguridad. Es el mismo reporte de Administracion > Reportes (reportes-ui.js) -->
+    <section class="pq-report" id="pqReport" hidden aria-label="QR de pánico por vecino">
+        <div class="pq-report-inner">
+            <div class="pq-report-top modal-header">
+                <p>Finanzas · Reportes · Seguridad</p>
+                <button type="button" class="btn btn-ghost btn-icon modal-close" id="pqReportClose" title="Cerrar" aria-label="Cerrar">&times;</button>
+            </div>
+            <div id="pqReportMount"></div>
+        </div>
+    </section>
 
     <main class="fin-frame" id="frameBox">
         <div class="fin-message" id="frameMessage">Cargando datos financieros...</div>
@@ -201,6 +220,55 @@
                     status: (residentId) => delivery({ action: 'status', residentId: String(residentId), condoId }),
                     arm: (residentId) => delivery({ action: 'arm', residentId: String(residentId), condoId }),
                     cancel: (residentId) => delivery({ action: 'cancel', residentId: String(residentId), condoId })
+                };
+            }
+
+            // Reporte "QR de pánico por vecino" dentro de Finanzas (pedido del usuario el 2026-11-22: un operador de oficina con el
+            // privilegio del reporte trabaja solo en Finanzas y no lo veia: vive en Administracion > Reportes, a donde no entra).
+            // OIKOS lo ofrece en Reportes > Seguridad y llama aqui. Es el mismo reporte (reportes-ui.js, con su interruptor de entrega
+            // de claves para quien ve las claves); sus scripts se cargan la primera vez que se abre. Pide los mismos privilegios.
+            window.sisdelPanicQrReport = null;
+            if (SISDEL.can('reportes.ver') && SISDEL.can('reportes.panico_qr') && SISDEL.can('usuarios.ver')) {
+                const panel = document.getElementById('pqReport');
+                const loadScript = (src) => new Promise((resolve, reject) => {
+                    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+                    const tag = document.createElement('script');
+                    tag.src = src; tag.onload = () => resolve(); tag.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+                    document.head.appendChild(tag);
+                });
+                let ready = null;
+                let mounted = null;
+                let users = [];
+                const prepare = () => {
+                    if (!ready) {
+                        ready = (async () => {
+                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261117c', 'reportes-ui.js?v=20261122c']) await loadScript(src);
+                            if (typeof SisdelRondas !== 'undefined' && SisdelRondas.init) SisdelRondas.init(session);
+                            users = await SISDEL.getUsers(condoId);
+                        })().catch((error) => { ready = null; throw error; });
+                    }
+                    return ready;
+                };
+                const close = () => { panel.hidden = true; document.removeEventListener('keydown', onKey); };
+                const onKey = (e) => { if (e.key === 'Escape') close(); };
+                document.getElementById('pqReportClose').addEventListener('click', close);
+                window.sisdelPanicQrReport = {
+                    async open() {
+                        panel.hidden = false;
+                        panel.scrollTop = 0;
+                        document.addEventListener('keydown', onKey);
+                        const mount = document.getElementById('pqReportMount');
+                        if (!mounted) mount.innerHTML = '<p class="text-muted" style="padding:2rem 0; text-align:center;">Cargando el reporte...</p>';
+                        try {
+                            await prepare();
+                            if (!mounted) mounted = SisdelReportes.mount(mount, { condominioId: condoId, condoName, userName: session.userName, getUsers: () => users });
+                            mounted.show('panico-qr');
+                        } catch (error) {
+                            console.error(error);
+                            mount.innerHTML = '<p style="padding:2rem 0; text-align:center; color:var(--danger);">No se pudo abrir el reporte. Revise su conexión e intente de nuevo.</p>';
+                        }
+                    },
+                    close
                 };
             }
 

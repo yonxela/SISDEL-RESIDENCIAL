@@ -826,6 +826,18 @@
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
                         </div>
+                        <!-- SISDEL: Seguridad: el QR de panico por vecino (reportes.panico_qr), el mismo reporte de Administracion > Reportes.
+                             Lo abre finanzas.html encima de OIKOS (window.parent.sisdelPanicQrReport, que solo existe con ese privilegio):
+                             asi lo tiene quien trabaja en Finanzas sin entrar a Administracion -->
+                        <div id="rep-security" class="hidden mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
+                            <div class="flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700">
+                                <i class="fas fa-qrcode w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
+                                <span class="flex-1 font-bold text-slate-900 dark:text-white">Seguridad</span>
+                            </div>
+                            <ul class="p-1.5">
+                                <li><button type="button" onclick="openPanicQrReport()" id="rep-seg-panico-qr" class="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Una tarjeta por vecino con su QR de pánico, su lote y su nombre, para imprimir o descargar en PDF (todos, solo casas, solo lotes, por fase o elegidos)."><span>QR de pánico por vecino</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                            </ul>
+                        </div>
                     </div>
                     <div id="rep-detail" class="space-y-6 hidden">
                     <!-- Reporte abierto: volver a la lista, filtros y acciones -->
@@ -7314,7 +7326,13 @@
             const pane = document.getElementById('rep-detail');
             if (catalog) catalog.classList.toggle('hidden', detail);
             if (pane) pane.classList.toggle('hidden', !detail);
+            paintSecurityReports();
         }
+        // SISDEL: Reportes > Seguridad: el QR de panico por vecino solo si finanzas.html lo ofrece (reportes.panico_qr)
+        function panicQrReportBridge() { try { return window.parent && window.parent !== window && window.parent.sisdelPanicQrReport ? window.parent.sisdelPanicQrReport : null; } catch (e) { return null; } }
+        function paintSecurityReports() { const box = document.getElementById('rep-security'); if (box) box.classList.toggle('hidden', !panicQrReportBridge()); }
+        function openPanicQrReport() { const bridge = panicQrReportBridge(); if (bridge) bridge.open(); }
+        setTimeout(paintSecurityReports, 0);
 
         function showReportCatalog() {
             showReportPane(false);

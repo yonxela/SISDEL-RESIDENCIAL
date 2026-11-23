@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { connect } from './admin.mjs';
+import { EMULATOR } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
 const C = require('../functions/src/whatsapp-chat-core.js');
@@ -196,7 +197,7 @@ equal('un chat que empezo por UltraMsg se contesta por UltraMsg (sin la regla de
 equal('Meta no guarda los mensajes de antes', (await C.loadHistory({ db, whatsapp: metaWa, condominioId: A, data: { chatId: DORA } })).reason, 'meta');
 
 console.log('\nEl aviso por internet (funcion whatsappWebhook del emulador)');
-const URL_FN = 'http://127.0.0.1:5001/sisdel-datacenter/us-central1/whatsappWebhook';
+const URL_FN = `http://${EMULATOR.functions[0]}:${EMULATOR.functions[1]}/sisdel-datacenter/us-central1/whatsappWebhook`;
 const token = crypto.randomBytes(12).toString('hex');
 const cfgRef = db.doc('_privado/whatsapp');
 const cfgBefore = (await cfgRef.get()).data() || {};

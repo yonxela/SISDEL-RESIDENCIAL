@@ -820,7 +820,8 @@ const SISDEL = (() => {
         });
     }
 
-    async function createMessage(condominioId, fromName, toRole, subject, body) {
+    // opts.push: false = sin aviso en el celular (functions/src/avisos-push.js avisa a los telefonos con los avisos activados)
+    async function createMessage(condominioId, fromName, toRole, subject, body, opts) {
         try {
             await authReady();
             const isGlobal = !condominioId || condominioId === 'all';
@@ -831,6 +832,7 @@ const SISDEL = (() => {
                 id: ref.id, condominioId: isGlobal ? 'all' : condominioId, fromName: fromName || 'SISDEL',
                 toRole: toRole || 'all', subject: subject || '', body, read: false, createdAt: nowIso()
             };
+            if (opts && typeof opts.push === 'boolean') data.push = opts.push;
             await ref.set(data);
             refCache.set(`${COL.messages}:${ref.id}`, ref);
             return data;

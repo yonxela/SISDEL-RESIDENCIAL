@@ -797,6 +797,12 @@ service cloud.firestore {
       match /panico_entregas/{userId} {
         allow read, write: if false;
       }
+      // Telefonos con los avisos al celular activados (notificaciones push): la direccion del servicio de avisos de cada telefono y
+      // sus llaves. Con ellas y la llave del servidor se le pueden mandar avisos: solo la funcion pushDevice las escribe y solo el
+      // servidor las lee (functions/src/avisos-push.js)
+      match /push_dispositivos/{deviceId} {
+        allow read, write: if false;
+      }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
         allow read: if isMaster() || pPanicoContactos(condoId)

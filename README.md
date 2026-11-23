@@ -367,7 +367,7 @@ condominios/{condoId}
     plantillas_privilegios/{id}     plantillas de privilegios del condominio (nombre, rol sugerido, claves)
     visitas/{visitId}
     vehiculos/{vehicleId}
-    mensajes/{msgId}
+    mensajes/{msgId}                mensajes de la administración (push: false = sin aviso al celular; pushResult = a cuántos teléfonos llegó, lo escribe el servidor)
     camera_logs/{logId}
     salidas/{id}                    salidas de vecinos (vehículo o residente) que registra la garita; las de las visitas van en `visitas.exitedAt`
     accesos/{id}                    REGISTRO de ingresos y salidas (solo se agrega, nunca se cambia ni se borra): un registro con campos propios por cada movimiento de un vecino, su vehículo o una visita (`accesos.js`)
@@ -398,12 +398,13 @@ condominios/{condoId}
     panico_dispositivos/{huella}    telefonos vinculados al QR de panico de cada vecino (solo el servidor)
     panico_config/general           Configuracion > Boton de panico: telefonos de la garita y la PNC que reciben cada alerta y los textos del aviso (panico.configurar; con bitacora)
     panico_config/entregas          entrega general de claves con el QR de panico (solo el servidor)
+    push_dispositivos/{huella}      telefonos con los avisos al celular activados (direccion del servicio de avisos y llaves; solo el servidor)
 codigos/{codigo}            índice único código -> usuario
 mensajes_globales/{msgId}   mensajes del master para todos
 camera_logs_huerfanos/      lecturas de cámara sin condominio válido
 whatsapp_sin_asignar/       mensajes de WhatsApp de números que no son de ningún usuario (solo el master los lee)
 whatsapp_estados/           palomitas de WhatsApp de mensajes que no están en ningún chat (p. ej. recordatorios con plantilla); solo el master
-_privado/                   solo servidor (huella del código master, límites de intentos)
+_privado/                   solo servidor (huella del código master, límites de intentos, llaves de los avisos al celular en _privado/push)
 ```
 
 Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un vecino no puede leer el código del administrador.
@@ -426,6 +427,7 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `actualizaciones-ui.js` | La lista de la administración (`admin.html`): solicitudes de los vecinos por revisar, comparación "en el sistema / escribió el vecino", aplicar con la clave del administrador (la verifica el servidor), rechazar con motivo, imprimir, PDF y Excel. |
 | `gps-ayuda.js` | Botón "Activar ubicación" y la ayuda para activarla según el teléfono (portal del vecino y QR de pánico). |
 | `panico.html`, `panico-qr.js`, `functions/src/panico-qr.js` | QR de pánico por vecino: la tarjeta que se imprime en Reportes, la página que abre al escanearla y las funciones que vinculan el teléfono y envían la alerta. `vendor/qrcode-generator-1.4.4.js` (MIT) dibuja el QR en el navegador. |
+| `avisos-push.js`, `avisos-ui.js`, `sw-avisos.js`, `functions/src/avisos-push.js` | Avisos en el celular (notificaciones push): el vecino los activa en su portal (campana) y cada mensaje de la administración le aparece en el teléfono aunque tenga garita.app cerrado. `manifest.webmanifest` e `icono-app-*.png` dejan agregar garita.app a la pantalla de inicio (en el iPhone los avisos solo llegan así). |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |
 | `functions/src/finanzas/` | Mora automática: cuotas del mes y estado de pago de cada vecino según el Sistema Financiero. |
 | `finanzas/` | Sistema Financiero (OIKOS), que se mantiene aquí. `finanzas/sisdel-cuotas.js` arma el desglose de la cuota (`functions/src/finanzas/cuotas.js` es su copia idéntica). |

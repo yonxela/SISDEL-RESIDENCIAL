@@ -1,0 +1,16 @@
+{
+  "name": "garita.app",
+  "short_name": "garita.app",
+  "description": "Control de acceso y avisos de su condominio",
+  "lang": "es",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "/icono-app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icono-app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icono-app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

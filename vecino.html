@@ -6,6 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SISDEL - Portal del Vecino</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <!-- garita.app como app en la pantalla de inicio. Los avisos en el celular (avisos-push.js) en el iPhone solo funcionan
+         abriendo garita.app desde ese icono; en Android y en la computadora, en el navegador -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icono-app-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="garita.app">
+    <meta name="theme-color" content="#0f172a">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -372,12 +380,14 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123a"></script>
-    <script src="sisdel-core.js?v=20261123a"></script>
+    <script src="privilegios.js?v=20261123b"></script>
+    <script src="sisdel-core.js?v=20261123b"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
+    <script src="avisos-push.js?v=20261123a"></script>
+    <script src="avisos-ui.js?v=20261123a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
@@ -1088,58 +1098,14 @@
 
             renderVisits().then(() => SISDEL.reportPageLoad('vecino'));
 
-            // --- Check for unread messages from admin ---
-            async function checkUnreadMessages() {
-                if (!SISDEL.can('mensajes.recibir')) return;
-                const allMsgs = await SISDEL.getMessages(session.condominioId);
-                const myMsgs = allMsgs.filter(m => !m.read && (m.toRole === 'all' || m.toRole === SISDEL.ROLES.VECINO));
-                if (myMsgs.length === 0) return;
-
-                // Show messages as popup modal
-                const overlay = document.createElement('div');
-                overlay.className = 'modal-overlay';
-                overlay.style.display = 'flex';
-                overlay.id = 'msgPopupOverlay';
-                overlay.innerHTML = `
-                    <div class="modal" style="max-width:420px;">
-                        <div class="modal-header" style="background:linear-gradient(135deg, var(--primary-light), var(--accent));">
-                            <h3 style="color:white;">📬 Mensajes de Administración</h3>
-                            <span class="badge" style="background:rgba(255,255,255,0.25); color:white; font-size:0.7rem;">${myMsgs.length} nuevo(s)</span>
-                        </div>
-                        <div style="padding:1.25rem; max-height:50vh; overflow-y:auto;" id="msgPopupList"></div>
-                    </div>`;
-                document.body.appendChild(overlay);
-
-                const listEl = document.getElementById('msgPopupList');
-                myMsgs.forEach((m, idx) => {
-                    const msgDiv = document.createElement('div');
-                    msgDiv.style.cssText = 'padding:1rem; border-radius:10px; background:var(--bg-item); margin-bottom:0.75rem; border-left:4px solid var(--primary-light);';
-                    msgDiv.innerHTML = `
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                            <strong style="color:var(--primary-light); font-size:1rem;">${escHtml(m.subject)}</strong>
-                            <span class="text-xs text-muted">${SISDEL.formatDateTime(m.createdAt)}</span>
-                        </div>
-                        <p style="margin:0 0 0.75rem 0; color:var(--text-secondary); line-height:1.5;">${escHtml(m.body)}</p>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="text-xs text-muted">De: ${m.fromName}</span>
-                            <button class="btn btn-primary btn-sm" id="msgDismiss_${idx}" style="font-size:0.75rem;">✓ Entendido</button>
-                        </div>`;
-                    listEl.appendChild(msgDiv);
-
-                    document.getElementById(`msgDismiss_${idx}`).addEventListener('click', async () => {
-                        await SISDEL.markMessageRead(m.id);
-                        msgDiv.style.opacity = '0.3';
-                        msgDiv.querySelector(`#msgDismiss_${idx}`).disabled = true;
-                        msgDiv.querySelector(`#msgDismiss_${idx}`).textContent = '✓ Leído';
-                        // Check if all dismissed
-                        const remaining = listEl.querySelectorAll('button:not([disabled])');
-                        if (remaining.length === 0) {
-                            setTimeout(() => overlay.remove(), 500);
-                        }
-                    });
-                });
-            }
-            checkUnreadMessages();
+            // --- Mensajes de la administracion y avisos en el celular (avisos-ui.js y avisos-push.js) ---
+            // La campana del encabezado abre los mensajes; ahi mismo se activan los avisos en este telefono para que los mensajes le
+            // salten aunque garita.app este cerrado. Se abre sola con mensajes nuevos o al llegar desde un aviso (#mensajes).
+            const pushCall = window.sisdelFirebase.functions.httpsCallable('pushDevice');
+            SisdelAvisosUI.mount({
+                session,
+                avisos: SisdelAvisos.create({ call: (data) => pushCall(data).then((r) => r.data) })
+            });
         });
     </script>
 </body>

@@ -28,6 +28,9 @@ const { onPanicCreated, dailyRondas } = require('./src/rondas');
 const { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal } = require('./src/panico-qr');
 // Configuracion > Boton de panico: mensaje de prueba a los telefonos de la garita y la PNC (src/panico-config.js)
 const { testPanicNotice } = require('./src/panico-config');
+// Avisos en el celular (notificaciones push): registrar el telefono del vecino y avisarle cada mensaje de la administracion
+// aunque tenga garita.app cerrado (src/avisos-push.js)
+const { pushDevice, onMessagePush } = require('./src/avisos-push');
 // Bitacora: rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (ver src/bitacora.js)
 const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig } = require('./src/bitacora');
 
@@ -37,5 +40,6 @@ module.exports = {
     whatsappWebhook, sendChatMessage, markChatRead, loadChatHistory,
     onFinanceMovement, onFinanceSettings, dailyFinance,
     onPanicCreated, dailyRondas, linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, testPanicNotice,
+    pushDevice, onMessagePush,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig
 };

@@ -8,6 +8,14 @@
     <meta name="description"
         content="SISDEL es la plataforma líder para la gestión de acceso en condominios y residenciales.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <!-- garita.app como app en la pantalla de inicio. Los avisos en el celular (avisos-push.js) en el iPhone solo funcionan
+         abriendo garita.app desde ese icono; en Android y en la computadora, en el navegador -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icono-app-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="garita.app">
+    <meta name="theme-color" content="#0f172a">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -140,8 +148,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123a"></script>
-    <script src="sisdel-core.js?v=20261123a"></script>
+    <script src="privilegios.js?v=20261123b"></script>
+    <script src="sisdel-core.js?v=20261123b"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script>
         // El vecino con boton de panico: al ingresar, el telefono le pide permiso para la ubicacion y se espera su respuesta antes de
@@ -216,6 +224,8 @@
                         const entry = SISDEL.PRIV.PAGES.find((p) => p.page === next);
                         const logged = SISDEL.getSession();
                         if (entry && logged && logged.role !== 'master' && SISDEL.PRIV.canEnter(logged.role, logged.privilegios, entry)) target = entry.page;
+                        // Desde un aviso del celular (sw-avisos.js): despues de entrar, el portal abre los mensajes
+                        if (target === 'vecino.html' && new URLSearchParams(window.location.search).get('abrir') === 'mensajes') target += '#mensajes';
                         setTimeout(() => {
                             window.location.href = target;
                         }, 500);

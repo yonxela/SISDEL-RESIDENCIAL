@@ -11430,11 +11430,14 @@
                 numeric: m ? [2, 3, 4] : [2]
             };
         }
-        // La nota de abajo: a que dia son las cifras y como se cobra la mora (o el plazo de pago, sin mora)
+        // La nota de abajo (pantalla, impresion y PDF): el pedido de pagar a tiempo (texto del usuario, 2026-11-23; la fecha de las
+        // cifras ya la dicen el subtitulo y el total) y, con regla de mora, como se cobra y la mora descontada
+        // (una funcion y no una constante: OIKOS pinta pantallas al arrancar, antes de que corran las lineas de abajo)
+        function ecPayRequest() { return 'Le agradeceríamos pagar su cuota durante los primeros cinco días de cada mes; eso nos ayudará a cumplir con el pago de todos los servicios correspondientes.'; }
         function ecDueNoteText(dd) {
-            const rule = dd.withMora ? `Mora: ${sisdelMoraRuleText()}.` : 'Cada cuota se paga sin atraso durante su mes y hasta el día 5 del siguiente.';
+            const rule = dd.withMora ? ` Mora: ${sisdelMoraRuleText()}.` : '';
             const waived = dd.ms && dd.ms.moraWaived > 0.004 ? ` Mora descontada: ${formatMoney(dd.ms.moraWaived)} (ya no la debe).` : '';
-            return `Al ${ecDueDay(dd)}: lo que falta pagar de cada cuota. ${rule}${waived}`;
+            return `${ecPayRequest()}${rule}${waived}`;
         }
         function renderEcDue() {
             const box = document.getElementById('ec-due-box');

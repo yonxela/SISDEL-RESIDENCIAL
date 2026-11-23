@@ -30,14 +30,21 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/condominios/$(condoId)).data;
     }
 
-    // Miembro vigente: pertenece al condominio, sigue activo y el condominio tiene servicio
+    // Miembro vigente: pertenece al condominio, sigue activo y el condominio tiene servicio.
+    // LIMITE DE FIRESTORE: cada peticion evalua como maximo 1000 expresiones y, si se pasa, se RECHAZA (aunque deberia pasar).
+    // memberDoc() arma la ruta del usuario y lo lee (varias expresiones cada vez); por eso las funciones de abajo lo leen UNA
+    // vez y pasan el documento (m) a la que decide, en vez de volver a pedirlo en cada pregunta (antes can() lo pedia tres
+    // veces). Ver "Privilegios de gerente" en CLAUDE.md y la prueba de test-privilegios.mjs. Cuanto le falta a cada peticion
+    // permitida para llegar al limite lo mide `cd scripts && node margen-reglas.mjs --margen=300`.
+    function memberOk(condoId, m) {
+      return condoDoc(condoId).get('active', false) == true && m.get('active', true) != false;
+    }
     function isMember(condoId) {
-      return inCondo(condoId)
-        && condoDoc(condoId).get('active', false) == true
-        && memberDoc(condoId).get('active', true) != false;
+      return inCondo(condoId) && memberOk(condoId, memberDoc(condoId));
     }
     function memberRole(condoId) { return memberDoc(condoId).get('role', ''); }
-    function isResident(condoId) { return isMember(condoId) && memberRole(condoId) == 'vecino'; }
+    function isResident(condoId) { return inCondo(condoId) && residentWith(condoId, memberDoc(condoId)); }
+    function residentWith(condoId, m) { return memberOk(condoId, m) && m.get('role', '') == 'vecino'; }
     // El auditor es de solo lectura: no marca mensajes como leidos ni escribe nada
     function notAuditor(condoId) { return memberRole(condoId) != 'auditor'; }
 
@@ -45,8 +52,10 @@ service cloud.firestore {
     // Vale lo que diga el mapa del usuario; si no menciona la clave, el privilegio del rol (roles = quienes
     // lo tienen por defecto)
     function can(condoId, key, roles) {
-      return isMember(condoId)
-        && memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
+      return inCondo(condoId) && canWith(condoId, memberDoc(condoId), key, roles);
+    }
+    function canWith(condoId, m, key, roles) {
+      return memberOk(condoId, m) && m.get('privilegios', {}).get(key, m.get('role', '') in roles) == true;
     }
     // Una accion dentro de un paraguas vale si el usuario no la tiene quitada en su mapa de privilegios
     // (el paraguas se comprueba aparte, en la propia funcion pXxx).
@@ -64,7 +73,10 @@ service cloud.firestore {
     // Una accion con autoRoles (finiquitar o eliminar un residente): los roles de la lista la tienen salvo que se la quiten
     // (false) y cualquier otro rol solo si la tiene marcada (true), aunque tenga el paraguas
     function childAuto(condoId, key, roles) {
-      return memberDoc(condoId).get('privilegios', {}).get(key, memberRole(condoId) in roles) == true;
+      return autoWith(memberDoc(condoId), key, roles);
+    }
+    function autoWith(m, key, roles) {
+      return m.get('privilegios', {}).get(key, m.get('role', '') in roles) == true;
     }
     // Las funciones pXxx (una por clave de privilegios.js que las reglas aplican) se generan con
     // `cd scripts && npm run reglas`; scripts/test-privilegios.mjs verifica que esten al dia.

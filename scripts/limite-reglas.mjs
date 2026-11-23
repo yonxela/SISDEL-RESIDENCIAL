@@ -2,9 +2,11 @@
 //
 // Firestore evalua como maximo 1000 expresiones de reglas por peticion y, si se pasa, la RECHAZA (aunque deberia pasar). El
 // emulador lo anota en firestore-debug.log ("maximum of 1000") sin decir que documento ni que prueba (y a ratos deja de
-// escribir ese registro), y casi todos esos avisos son de peticiones que de todos modos se rechazan: al negar, Firestore evalua
-// todas las alternativas y el emulador arma su explicacion del rechazo, y ahi se acaban las 1000. Lo que importa es que
-// ninguna peticion PERMITIDA llegue al limite.
+// escribir ese registro), y casi todos esos avisos son de peticiones que de todos modos se rechazan: despues de rechazar una
+// actualizacion el emulador vuelve a evaluar la regla para explicar el rechazo, sin cortar en lo que depende de los datos, y
+// ahi se acaban las 1000 (comprobado el 2026-11-23: para decidir, && y || si cortan; el aviso llega con el rechazo ya
+// decidido). Lo que importa es que ninguna peticion PERMITIDA llegue al limite, y cuanto margen le queda lo mide
+// margen-reglas.mjs.
 // Esta herramienta se carga antes de una prueba y mira el error que la propia prueba recibe del emulador (el SDK de Firebase
 // lo escribe en la consola antes de que la prueba imprima su paso): debajo de cada paso cuyo rechazo trajo el aviso pone
 // "^ LIMITE" con las lineas de firestore.rules:

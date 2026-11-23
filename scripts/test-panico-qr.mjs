@@ -28,6 +28,7 @@ const yes = (name, value) => equal(name, !!value, true);
 
 const Q = require('../panico-qr.js');
 const qrcode = require('../vendor/qrcode-generator-1.4.4.js');
+const P_ITEM = (key) => !!require('../privilegios.js').itemOf(key);
 
 console.log('\nEl enlace del QR');
 {
@@ -524,6 +525,64 @@ console.log('\nEntregar la clave con el QR (la oficina la activa; el vecino la v
     let lastPeek = null;
     for (let i = 0; i < 61; i++) lastPeek = await reveal({ action: 'peek', c: 'c1', v: 'u-ana' }, IPHONE, '7.7.7.7');
     equal('60 intentos desde una misma red en 15 minutos se frenan', [lastPeek.ok, lastPeek.blocked], [false, true]);
+}
+
+console.log('\nSolo casas con lote, solo lotes y la busqueda por nombre o lote');
+{
+    const Busqueda = require('../sisdel-busqueda.js');
+    const users = [
+        { id: 'u1', role: 'vecino', name: 'Juan Núñez', casa: '12', fase: '1' },
+        { id: 'u2', role: 'vecino', name: 'Ana López', casa: 'Casa 7', fase: '2' },
+        { id: 'u3', role: 'vecino', name: 'Beto Pérez', casa: 'A10', fase: '1' },
+        { id: 'u4', role: 'vecino', name: 'Carla Díaz', casa: '120', fase: '' },
+        { id: 'u5', role: 'vecino', name: 'Sin ficha', casa: '5', fase: '2' }
+    ];
+    // El tipo de propiedad es el de OIKOS (unitTypeOf de finanzas/index.html): se compara con el codigo de OIKOS tal cual, no con una copia
+    {
+        const oik = fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8');
+        const grab = (name) => (oik.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n        \\}`)) || oik.match(new RegExp(`function ${name}\\([^)]*\\) \\{[^\\n]*\\}`)) || [''])[0];
+        const src = `${grab('isUnitType')}\n${grab('unitTypeMarked')}\n${grab('unitTypeOf')}`;
+        const vm = await import('node:vm');
+        const ctx = vm.createContext({ SisdelCuotas: require('../finanzas/sisdel-cuotas.js') });
+        vm.runInContext(`${src}\nthis.__t = unitTypeOf;`, ctx);
+        const cases = [undefined, null, {}, { unitType: 'casa' }, { unitType: 'lote' }, { unitType: 'lote', waterUnits: 1 }, { unitType: 'casa', waterUnits: 0 }, { unitType: 'otro', waterUnits: 1 },
+            { waterUnits: 0 }, { waterUnits: 0.5 }, { waterUnits: 1 }, { waterUnits: '1' }, { waterUnits: '0.5' }, { waterUnits: 2 }, { waterUnits: -1 }, { waterUnits: 'x' }, { unitType: '', waterUnits: 1 }];
+        equal(`el tipo de propiedad da lo mismo que unitTypeOf de OIKOS en ${cases.length} casos (marcado, agua, ficha ausente y datos raros)`, cases.map((c) => Q.unitTypeOf(c)), cases.map((c) => ctx.__t(c)));
+        yes('se encontro el codigo de OIKOS que se compara (la prueba no compara contra nada)', src.includes('function unitTypeOf') && src.includes('function isUnitType') && src.includes('function unitTypeMarked'));
+    }
+    const fichas = [{ id: 'u1', waterUnits: 1 }, { id: 'u2', unitType: 'lote', waterUnits: 1 }, { id: 'u3', unitType: 'casa' }, { id: 'u4', waterUnits: 0 }];
+    const types = Q.typesFor(users, fichas);
+    equal('cada vecino queda como casa o lote (u5 no tiene ficha: solo lote)', [...types], [['u1', 'casa'], ['u2', 'lote'], ['u3', 'casa'], ['u4', 'lote'], ['u5', 'lote']]);
+    equal('cuantos hay de cada uno', Q.countTypes(users, types), { casa: 2, lote: 3 });
+    equal('imprimir solo casas con lote, solo lotes (sin casa) o todos', [Q.select(users, { mode: 'casa', types }).map((u) => u.id), Q.select(users, { mode: 'lote', types }).map((u) => u.id), Q.select(users, { mode: 'all', types }).length], [['u1', 'u3'], ['u2', 'u4', 'u5'], 5]);
+    equal('sin saber los tipos (sin permiso o sin leerlos todavia) casas y lotes no eligen a nadie', [Q.select(users, { mode: 'casa' }).length, Q.select(users, { mode: 'lote' }).length], [0, 0]);
+    equal('los demas modos siguen igual: por fase y elegidos', [Q.select(users, { mode: 'fase', fase: '2', types }).map((u) => u.id), Q.select(users, { mode: 'picked', ids: ['u4', 'u1'], types }).map((u) => u.id)], [['u2', 'u5'], ['u1', 'u4']]);
+
+    const ids = (list) => list.map((u) => u.id);
+    equal('buscar por nombre sin acentos ni mayusculas: "nunez" encuentra a Núñez', ids(Q.search(users, 'nunez', Busqueda)), ['u1']);
+    equal('por el principio de cada palabra y en cualquier orden: "pe be" encuentra a Beto Pérez', ids(Q.search(users, 'pe be', Busqueda)), ['u3']);
+    equal('por lote: "12" encuentra el 12 y el 120 (partes del numero), no el 7', ids(Q.search(users, '12', Busqueda)), ['u1', 'u4']);
+    equal('"lote 7" y "casa 7" encuentran la casa 7 (el lote se busca tal como esta anotado y como sale en la tarjeta)', [ids(Q.search(users, 'lote 7', Busqueda)), ids(Q.search(users, 'casa 7', Busqueda))], [['u2'], ['u2']]);
+    equal('la fase no entra en la busqueda (se busca por nombre o lote: "2" no trae a toda la Fase 2; para eso esta "Por fase")', [ids(Q.search(users, 'fase 2', Busqueda)), ids(Q.search(users, '2', Busqueda))], [[], []]);
+    equal('el resultado sigue el orden de siempre (por lote), no por parecido: asi las hojas salen en el orden de las casas', ids(Q.search(Q.neighbors(users), 'e', Busqueda)).join(), ids(Q.neighbors(users)).filter((id) => ids(Q.search(Q.neighbors(users), 'e', Busqueda)).includes(id)).join());
+    equal('sin nada escrito salen todos, y una busqueda que no encuentra deja la lista vacia', [Q.search(users, '', Busqueda).length, Q.search(users, '   ', Busqueda).length, Q.search(users, 'zzzzz', Busqueda).length], [5, 5, 0]);
+    equal('se combina con lo elegido: entre las casas con lote, "12" deja solo a Juan', ids(Q.search(Q.select(users, { mode: 'casa', types }), '12', Busqueda)), ['u1']);
+    equal('sin el modulo de busqueda no se rompe: salen todos', Q.search(users, 'nunez', null).length, 5);
+    equal('Fase 2 y Sin fase se escriben como en el reporte', [Q.faseLabel('2'), Q.faseLabel('Fase 3'), Q.faseLabel('')], ['Fase 2', 'Fase 3', 'Sin fase']);
+
+    // La pantalla del reporte
+    const rp = read('reportes-ui.js');
+    const admin = read('admin.html');
+    const core = read('sisdel-core.js');
+    yes('el selector "Imprimir" ofrece Solo casas con lote y Solo lotes (sin casa), con cuantos hay de cada uno', /Solo casas con lote/.test(rp) && /Solo lotes, sin casa/.test(rp) && /typeOption\('casa'/.test(rp) && /typeOption\('lote'/.test(rp));
+    yes('sin el privilegio "Leer datos financieros" (finanzas.ver) esas dos opciones quedan apagadas y dicen por que; mientras leen los tipos, tambien', /can\('finanzas\.ver'\)/.test(rp) && /necesita el privilegio "Leer datos financieros"/.test(rp) && /leyendo los tipos\.\.\./.test(rp) && /value="\$\{value\}" disabled/.test(rp));
+    yes('los tipos salen de las fichas financieras (una lectura de finanzas_residentes con SISDEL.getFinanceResidents) y la nota dice la regla', /S\.getFinanceResidents\(condoId\)/.test(rp) && /sub\(condominioId, 'finanzas_residentes'\)\.get\(SERVER\)/.test(core) && /getFinanceResident, getFinanceResidents,/.test(core) && /se toma por el agua/.test(rp));
+    yes('un fallo al leer los tipos lo dice y deja las dos opciones apagadas (no imprime lo que no sabe)', /typeStatus = 'error'/.test(rp) && /No se pudo leer el tipo de cada lote/.test(rp));
+    yes('un campo de busqueda por nombre o lote con la busqueda inteligente de todo el sistema (SisdelBusqueda.filter, no includes)', /<label for="pqSearch">Buscar por nombre o lote<\/label>/.test(rp) && /SisdelBusqueda\.filter\(all, pqState\.search, Q\.searchFields\)/.test(rp) && /Q\.search\(base\(\), pqState\.search, SisdelBusqueda\)/.test(rp) && !/\.includes\(pqState\.search/.test(rp));
+    yes('en "Elegidos uno por uno" la busqueda filtra la lista para marcar (no las tarjetas) y lo que coincide sale resaltado y escapado', /const searchOn = \(\) => pqState\.mode !== 'picked'/.test(rp) && /if \(pqState\.mode === 'picked'\) paintPick\(\); paintCards\(\);/.test(rp) && /SisdelBusqueda\.highlight\(text, pqState\.search\)/.test(rp));
+    yes('el resumen dice cuantas tarjetas coinciden con la busqueda', /que coinciden con/.test(rp) && /Ningún vecino coincide con/.test(rp));
+    yes('admin.html carga sisdel-busqueda.js antes de reportes-ui.js', admin.indexOf('src="sisdel-busqueda.js') > 0 && admin.indexOf('src="sisdel-busqueda.js') < admin.indexOf('src="reportes-ui.js'));
+    yes('el reporte solo usa privilegios del catalogo (finanzas.ver incluido)', P_ITEM('finanzas.ver'));
 }
 
 console.log('\nReglas y paginas');

@@ -547,7 +547,7 @@ const SisdelReportes = (() => {
             }
             return qrLibLoad;
         }
-        const pqState = { mode: 'all', fase: '', size: 'chica', paper: 'carta', picked: new Set(), search: '' };
+        const pqState = { mode: 'all', fase: '', size: 'chica', paper: 'carta', picked: new Set(), search: '' }; // mode: all | casa | lote | fase | picked
         async function renderPanicQr(def) {
             const Q = PQ();
             if (!Q) { body.innerHTML = emptyState('Falta panico-qr.js en la página.'); return; }
@@ -574,7 +574,18 @@ const SisdelReportes = (() => {
             // (La Perla: 719); cambiar un filtro antes de terminar corta la pintada anterior (paintSeq)
             const PREVIEW_CHUNK = 40;
             let paintSeq = 0;
-            const faseLabel = (f) => (f ? (/^fase\b/i.test(f) ? f : `Fase ${f}`) : 'Sin fase');
+            const faseLabel = Q.faseLabel;
+            // Solo casas con lote / solo lotes: el tipo de cada residente sale de su ficha financiera (finanzas_residentes: lo marcado o, si
+            // no, el agua, como en OIKOS) y leerla pide finanzas.ver. status: loading | ok | denied | error
+            let typeStatus = can('finanzas.ver') && typeof S.getFinanceResidents === 'function' ? 'loading' : 'denied';
+            let types = null;
+            if (pqState.mode === 'casa' || pqState.mode === 'lote') pqState.mode = 'all'; // hasta saber los tipos
+            const modeOptions = () => {
+                const counts = types ? Q.countTypes(all, types) : { casa: 0, lote: 0 };
+                const typeOption = (value, label, n) => (typeStatus === 'ok' ? `<option value="${value}">${label} (${n})</option>`
+                    : `<option value="${value}" disabled>${label} (${typeStatus === 'loading' ? 'leyendo los tipos...' : typeStatus === 'denied' ? 'necesita el privilegio "Leer datos financieros"' : 'no se pudieron leer los tipos'})</option>`);
+                return `<option value="all">Todos los vecinos (${all.length})</option>${typeOption('casa', 'Solo casas con lote', counts.casa)}${typeOption('lote', 'Solo lotes, sin casa', counts.lote)}<option value="fase">Por fase</option><option value="picked">Elegidos uno por uno</option>`;
+            };
             body.innerHTML = `
                 <div class="rp-head">
                     <div>
@@ -590,21 +601,20 @@ const SisdelReportes = (() => {
                 <p class="rp-note warn" id="pqWarn" style="display:none;"></p>
                 <div class="rp-filter">
                     <div class="rp-field"><label for="pqMode">Imprimir</label>
-                        <select class="form-input" id="pqMode" style="padding-left:0.85rem;">
-                            <option value="all">Todos los vecinos (${all.length})</option>
-                            <option value="fase">Por fase</option>
-                            <option value="picked">Elegidos uno por uno</option>
-                        </select></div>
+                        <select class="form-input" id="pqMode" style="padding-left:0.85rem;">${modeOptions()}</select></div>
                     <div class="rp-field" id="pqFaseField"><label for="pqFase">Fase</label>
                         <select class="form-input" id="pqFase" style="padding-left:0.85rem;" ${hasFases ? '' : 'disabled'}>${fases.map((f) => `<option value="${esc(f)}">${esc(faseLabel(f))} (${all.filter((u) => String(u.fase || '').trim() === f).length})</option>`).join('')}</select></div>
+                    <div class="rp-field" style="flex:1; min-width:14rem;"><label for="pqSearch">Buscar por nombre o lote</label>
+                        <input type="search" class="form-input" id="pqSearch" placeholder="Ej.: juan, perez, 30 o lote 12" autocomplete="off" style="padding-left:1rem;"></div>
                     <div class="rp-field"><label for="pqSize">Tamaño</label>
                         <select class="form-input" id="pqSize" style="padding-left:0.85rem;">${Object.entries(Q.SIZES).map(([id, z]) => `<option value="${id}">${esc(z.label)}</option>`).join('')}</select></div>
                     <div class="rp-field"><label for="pqPaper">Hoja</label>
                         <select class="form-input" id="pqPaper" style="padding-left:0.85rem;">${Object.entries(Q.PAPERS).map(([id, z]) => `<option value="${id}">${esc(z.label)}</option>`).join('')}</select></div>
                 </div>
+                <p class="rp-note" id="pqTypeNote"></p>
                 <div id="pqPick" class="card rp-card" style="margin-bottom:1.25rem; display:none;">
                     <div class="pq-pickbar">
-                        <input type="search" class="form-input" id="pqSearch" placeholder="Buscar por nombre, lote o fase" style="flex:1; min-width:12rem; padding-left:1rem;">
+                        <span class="text-sm text-muted" style="flex:1; min-width:12rem;">Escriba arriba el nombre o el lote para encontrar a cada vecino y márquelo.</span>
                         <button type="button" class="btn btn-ghost btn-sm" id="pqPickAll" style="border:1px solid var(--border-strong);">Marcar los de la lista</button>
                         <button type="button" class="btn btn-ghost btn-sm" id="pqPickNone" style="border:1px solid var(--border-strong);">Quitar marcas</button>
                     </div>
@@ -632,15 +642,21 @@ const SisdelReportes = (() => {
                 }).catch(() => {});
             }
 
-            const chosen = () => Q.select(all, { mode: pqState.mode, fase: pqState.fase, ids: [...pqState.picked] });
-            const searchFields = (u) => [u.name, u.casa, u.fase ? faseLabel(u.fase) : ''];
-            const visibleForPick = () => (pqState.search && typeof SisdelBusqueda !== 'undefined' ? SisdelBusqueda.filter(all, pqState.search, searchFields) : all);
+            // Lo que se imprime: lo elegido en "Imprimir" (todos, casas, lotes, fase) y, de eso, lo que coincide con la busqueda (sin cambiar
+            // el orden por lote). En "Elegidos uno por uno" se imprimen los marcados: la busqueda solo sirve para encontrarlos en la lista
+            const base = () => Q.select(all, { mode: pqState.mode, fase: pqState.fase, ids: [...pqState.picked], types });
+            const searchOn = () => pqState.mode !== 'picked' && !!pqState.search.trim() && typeof SisdelBusqueda !== 'undefined';
+            const chosen = () => (searchOn() ? Q.search(base(), pqState.search, SisdelBusqueda) : base());
+            // La lista para marcar: con la busqueda, los que mas se parecen primero (como en las demas busquedas del sistema)
+            const visibleForPick = () => (pqState.search.trim() && typeof SisdelBusqueda !== 'undefined' ? SisdelBusqueda.filter(all, pqState.search, Q.searchFields) : all);
+            // El texto con lo que coincide marcado (sisdel-busqueda.js lo devuelve ya escapado: lo que viene de la base nunca se vuelve HTML)
+            const hl = (text) => (pqState.search.trim() && typeof SisdelBusqueda !== 'undefined' ? SisdelBusqueda.highlight(text, pqState.search) : esc(text));
             function paintPick() {
                 const list = visibleForPick();
                 $('pqPickList').innerHTML = list.length ? list.slice(0, 300).map((u) => `
                     <label class="pq-pickrow"><input type="checkbox" data-pq-id="${esc(u.id)}" ${pqState.picked.has(u.id) ? 'checked' : ''}>
-                        <span class="u">${esc(Q.unitLabel(u.casa) || 'Sin lote')}</span><span>${esc(u.name)}</span>${u.fase ? `<span class="text-xs text-muted">${esc(faseLabel(u.fase))}</span>` : ''}</label>`).join('')
-                    + (list.length > 300 ? `<p class="text-xs text-muted" style="padding:0.4rem 0.5rem;">Se muestran 300 de ${list.length}: busque para ver los demás.</p>` : '')
+                        <span class="u">${hl(Q.unitLabel(u.casa) || 'Sin lote')}</span><span>${hl(u.name)}</span>${u.fase ? `<span class="text-xs text-muted">${esc(faseLabel(u.fase))}</span>` : ''}</label>`).join('')
+                    + (list.length > 300 ? `<p class="text-xs text-muted" style="padding:0.4rem 0.5rem;">Se muestran 300 de ${list.length}: escriba más del nombre o del lote para ver los demás.</p>` : '')
                     : '<p class="text-sm text-muted" style="padding:0.5rem;">Ningún vecino coincide con la búsqueda.</p>';
                 $('pqPickList').querySelectorAll('[data-pq-id]').forEach((box) => box.addEventListener('change', () => {
                     if (box.checked) pqState.picked.add(box.dataset.pqId); else pqState.picked.delete(box.dataset.pqId);
@@ -653,9 +669,12 @@ const SisdelReportes = (() => {
                 const list = chosen();
                 const L = Q.layout(pqState.paper, pqState.size);
                 const sheets = Q.pages(list.length, L.perPage);
+                // Con una busqueda se dice cuantos de los elegidos coinciden ("12 de 86")
+                const ofTotal = searchOn() ? ` de ${base().length}` : '';
                 $('pqSummary').textContent = list.length
-                    ? `${list.length} tarjeta${list.length === 1 ? '' : 's'} · ${sheets} hoja${sheets === 1 ? '' : 's'} ${L.paper.label.toLowerCase()} (${L.perPage} por hoja)`
-                    : (pqState.mode === 'picked' ? 'Marque a los vecinos que quiere imprimir.' : 'No hay vecinos para imprimir.');
+                    ? `${list.length}${ofTotal} tarjeta${list.length === 1 && !ofTotal ? '' : 's'}${searchOn() ? ` que coinciden con "${pqState.search.trim()}"` : ''} · ${sheets} hoja${sheets === 1 ? '' : 's'} ${L.paper.label.toLowerCase()} (${L.perPage} por hoja)`
+                    : (pqState.mode === 'picked' ? 'Marque a los vecinos que quiere imprimir.' : searchOn() ? `Ningún vecino coincide con "${pqState.search.trim()}".` : 'No hay vecinos para imprimir.');
+                paintTypeNote();
                 const preview = $('pqPreview');
                 const cards = Q.cardsFor(list, origin, condoId);
                 const mine = ++paintSeq;
@@ -678,11 +697,32 @@ const SisdelReportes = (() => {
                 style.textContent = Q.CARD_CSS;
                 document.head.appendChild(style);
             }
+            // La nota de casas y lotes: de donde sale el tipo y, si no se puede, por que
+            function paintTypeNote() {
+                const note = $('pqTypeNote');
+                if (!note) return;
+                note.className = 'rp-note' + (typeStatus === 'denied' || typeStatus === 'error' ? ' warn' : '');
+                note.textContent = typeStatus === 'denied' ? 'Las opciones "Solo casas con lote" y "Solo lotes" necesitan el privilegio "Leer datos financieros": el tipo de cada lote sale de su ficha en Finanzas.'
+                    : typeStatus === 'error' ? 'No se pudo leer el tipo de cada lote (Finanzas). Revise su conexión y vuelva a abrir este reporte.'
+                        : 'Casas y lotes: se usa el tipo marcado en Finanzas; si un residente no lo tiene marcado, se toma por el agua (con agua = casa con lote, sin agua = solo lote).';
+            }
+            // Los tipos llegan despues (una lectura de las fichas financieras): las opciones se encienden cuando estan
+            if (typeStatus === 'loading') {
+                S.getFinanceResidents(condoId).then((fichas) => {
+                    if (mine !== seq || !$('pqMode')) return;
+                    if (fichas) { types = Q.typesFor(all, fichas); typeStatus = 'ok'; } else typeStatus = 'error';
+                    const keep = $('pqMode').value;
+                    $('pqMode').innerHTML = modeOptions();
+                    $('pqMode').value = keep;
+                    paintTypeNote();
+                });
+            }
             $('pqMode').addEventListener('change', (e) => { pqState.mode = e.target.value; if (pqState.mode === 'picked') paintPick(); paintCards(); });
             $('pqFase').addEventListener('change', (e) => { pqState.fase = e.target.value; paintCards(); });
             $('pqSize').addEventListener('change', (e) => { pqState.size = e.target.value; paintCards(); });
             $('pqPaper').addEventListener('change', (e) => { pqState.paper = e.target.value; paintCards(); });
-            $('pqSearch').addEventListener('input', (e) => { pqState.search = e.target.value; paintPick(); });
+            // Buscar al escribir: en las listas filtra las tarjetas; en "Elegidos uno por uno" filtra la lista para marcar
+            $('pqSearch').addEventListener('input', (e) => { pqState.search = e.target.value; if (pqState.mode === 'picked') paintPick(); paintCards(); });
             $('pqPickAll').addEventListener('click', () => { visibleForPick().forEach((u) => pqState.picked.add(u.id)); paintPick(); paintCards(); });
             $('pqPickNone').addEventListener('click', () => { pqState.picked.clear(); paintPick(); paintCards(); });
             const fileName = () => `qr-panico-${slug}-${ymd(today())}`;

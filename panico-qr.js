@@ -171,11 +171,53 @@
     function fases(list) {
         return [...new Set((list || []).map((u) => String(u.fase || '').trim()))].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : natural(a, b)));
     }
-    // A quienes se les imprime: todos, una fase o los elegidos (uno solo es una eleccion de uno)
+    // "Fase 2" (si ya dice Fase se deja igual); "Sin fase" para quien no tiene
+    const faseLabel = (f) => (f ? (/^fase\b/i.test(f) ? f : `Fase ${f}`) : 'Sin fase');
+
+    // ── Tipo de propiedad: casa con lote o solo lote ──
+    // La MISMA regla de OIKOS (`unitTypeOf` de finanzas/index.html; una prueba las compara): el tipo que se marco en la ficha
+    // financiera del residente (`finanzas_residentes/{id}.unitType`: 'casa' o 'lote') o, si no se marco, el agua del lote
+    // (`waterUnits` 0, 0.5 o 1: con agua = casa con lote; sin agua, o sin ficha, = solo lote)
+    const isUnitType = (v) => v === 'lote' || v === 'casa';
+    function waterUnitsOf(fin) {
+        const n = parseFloat(fin && fin.waterUnits);
+        return n === 0 || n === 0.5 || n === 1 ? n : 0;
+    }
+    function unitTypeOf(fin) {
+        if (fin && isUnitType(fin.unitType)) return fin.unitType;
+        return waterUnitsOf(fin) > 0 ? 'casa' : 'lote';
+    }
+    // id del vecino -> 'casa' | 'lote', de la lista de vecinos y de las fichas financieras del condominio
+    function typesFor(users, fichas) {
+        const byId = new Map((fichas || []).map((f) => [f.id, f]));
+        return new Map((users || []).map((u) => [u.id, unitTypeOf(byId.get(u.id))]));
+    }
+    function countTypes(list, types) {
+        const n = { casa: 0, lote: 0 };
+        (list || []).forEach((u) => { const t = types && types.get(u.id); if (t === 'casa' || t === 'lote') n[t]++; });
+        return n;
+    }
+
+    // A quienes se les imprime: todos, solo casas con lote, solo lotes (sin casa), una fase o los elegidos (uno solo es una
+    // eleccion de uno). Casas y lotes necesitan `types` (typesFor): sin ellos no hay a quien elegir
     function select(list, opts = {}) {
         if (opts.mode === 'fase') return list.filter((u) => String(u.fase || '').trim() === String(opts.fase || '').trim());
         if (opts.mode === 'picked') { const ids = new Set(opts.ids || []); return list.filter((u) => ids.has(u.id)); }
+        if (opts.mode === 'casa' || opts.mode === 'lote') return list.filter((u) => !!opts.types && opts.types.get(u.id) === opts.mode);
         return list.slice();
+    }
+
+    // ── Busqueda inteligente por nombre o lote (sisdel-busqueda.js, la misma de todo el sistema) ──
+    // Los textos de cada vecino: el nombre (el principal), el lote tal como esta anotado ("12", "Casa 12"), el lote como sale en la
+    // tarjeta ("Lote 12") y siempre "Lote <lote>" (para que "lote 12" encuentre tambien a quien tiene anotado "Casa 12"). La fase NO
+    // entra: se busca por nombre o lote, y buscar "1" no debe traer a toda la Fase 1 (para eso esta "Por fase")
+    const searchFields = (u) => [u.name, u.casa, unitLabel(u.casa), String(u.casa || '').trim() ? `Lote ${String(u.casa).trim()}` : ''];
+    // Los que coinciden con lo escrito, EN EL ORDEN DE SIEMPRE (por lote): para imprimir conviene que las hojas sigan el orden de las
+    // casas y no el de lo que mas se parece. Sin nada escrito, todos
+    function search(list, text, busqueda) {
+        if (!busqueda || !String(text == null ? '' : text).trim()) return list.slice();
+        const found = new Set(busqueda.filter(list, text, searchFields));
+        return list.filter((u) => found.has(u));
     }
     function cardsFor(list, origin, condoId) {
         return list.map((u) => ({ id: u.id, name: String(u.name || '').trim(), unit: unitLabel(u.casa), fase: String(u.fase || '').trim(), url: panicUrl(origin, condoId, u.id) }));
@@ -391,7 +433,7 @@
     return {
         QR_LIB, PUBLIC_ORIGIN, SIZES, PAPERS, MARGIN, GAP, CARD_CSS, ICON_LAYERS, headHeight,
         esc, publicOrigin, panicUrl, parsePanicQuery, functionUrl, callFunction, storageKey, createKeeper, validLink,
-        unitLabel, neighbors, fases, select, cardsFor,
+        unitLabel, faseLabel, neighbors, fases, select, cardsFor, isUnitType, unitTypeOf, typesFor, countTypes, searchFields, search,
         qrMatrix, qrRuns, qrSvg, panicIconSvg, layout, pages, cardHtml, printHtml, latin1, drawCard, drawPdf
     };
 });

@@ -588,6 +588,16 @@ const SISDEL = (() => {
         } catch (error) { console.warn('getFinanceResident', error); return null; }
     }
 
+    // Todas las fichas financieras del condominio, de una vez (para saber el tipo de cada lote: casa con lote o solo lote; el reporte del
+    // QR de panico las usa). Solo con finanzas.ver: sin permiso o sin conexion devuelve null y quien llama lo dice
+    async function getFinanceResidents(condominioId) {
+        try {
+            await authReady();
+            const snap = await sub(condominioId, 'finanzas_residentes').get(SERVER);
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch (error) { console.warn('getFinanceResidents', error); return null; }
+    }
+
     // Guarda solo los campos de la ficha que se pasan (merge). Si la ficha no existe se crea con su id, la fecha de alta
     // y desde que mes se cobra (el mes actual, salvo que se indique otro). Devuelve true si se guardo.
     async function saveFinanceResident(condominioId, userId, changes, existing) {
@@ -1274,7 +1284,7 @@ const SISDEL = (() => {
         PRIV, can, canAny, effectivePrivileges, homePage, otherPanels, bindExitButton, refreshAccess,
         setUserAccess, getPrivilegeTemplates, savePrivilegeTemplate, deletePrivilegeTemplate,
         getUsers, getUserByCode, getUserById, createUser, updateUser, deleteUser, hasFinanceMovements, getUsersByPaymentStatus, generateAccessCode, isValidCodeFormat,
-        getFinanceResident, saveFinanceResident, ownerGroupOf,
+        getFinanceResident, getFinanceResidents, saveFinanceResident, ownerGroupOf,
         getVisits, getVisitsByUser, getVisitsBetween, getTodayVisits, createVisit, updateVisit, getVisitByQR, markVisitAsEntered, markVisitAsExited, isVisitInside,
         getVehicles, createVehicle, getVehicleByQR, deleteVehicle,
         getMessages, createMessage, markMessageRead, deleteMessage,

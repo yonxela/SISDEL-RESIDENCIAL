@@ -1746,9 +1746,45 @@ async function run() {
         equal('y se puede cancelar', [dlv.cancelled, (await condoRef.collection('panico_entregas').doc('u-maria').get()).get('status')], ['cancelled', 'cancelled']);
 
         // Reportes > Seguridad: el QR de panico por vecino tambien desde Finanzas (un operador de oficina no entra a Administracion)
+        // Reportes en acordeon por categoria (pedido del usuario el 2026-11-22: "ordena los reportes segun su categoria en forma de concertina")
+        console.log('\nReportes: acordeón por categoría');
+        const acc = await oikos(`(async () => {
+            try { localStorage.removeItem('sisdel_rep_cat'); } catch (e) { /* sin almacenamiento */ }
+            repOpenCat = null; repReturnKey = null;
+            navigate('reports'); showReportCatalog();
+            await new Promise((r) => setTimeout(r, 150));
+            const cats = () => [...document.querySelectorAll('#rep-catalog .rep-cat')].filter((c) => !c.classList.contains('hidden'));
+            const openOnes = () => cats().filter((c) => !c.querySelector('.rep-cat-items').classList.contains('hidden')).map((c) => c.dataset.cat);
+            const head = (id) => document.querySelector('.rep-cat[data-cat="' + id + '"] .rep-cat-head');
+            const out = {
+                visibles: cats().map((c) => c.dataset.cat),
+                cuentas: cats().map((c) => Number(c.querySelector('.rep-cat-count').textContent) === [...c.querySelectorAll('.rep-cat-items button')].filter((b) => getComputedStyle(b).display !== 'none').length),
+                alEntrar: openOnes()
+            };
+            head('cobranza').click(); out.cobranza = [openOnes(), head('cobranza').getAttribute('aria-expanded')];
+            head('dinero').click(); out.dinero = [openOnes(), localStorage.getItem('sisdel_rep_cat')];
+            head('dinero').click(); out.cerrada = [openOnes(), localStorage.getItem('sisdel_rep_cat')];
+            // Lo que el bloqueo oculta no cuenta: sin marbetes ni propietarios, Residentes y vehiculos no sale
+            const st = document.createElement('style'); st.id = 'prueba-oculta'; st.textContent = '#rep-tab-owners, #rep-tab-marbetes { display: none !important; }';
+            document.head.appendChild(st); paintReportCategories();
+            out.sinResidentes = cats().map((c) => c.dataset.cat);
+            st.remove(); paintReportCategories();
+            // Abrir un reporte y volver: queda abierta su categoria
+            selectReport('mora-list'); await new Promise((r) => setTimeout(r, 400)); showReportCatalog();
+            out.alVolver = openOnes();
+            return out;
+        })()`);
+        equal('cuatro categorías (Seguridad porque el administrador tiene el QR), cada una con cuántos reportes puede abrir, todas cerradas al entrar',
+            [acc.visibles, acc.cuentas, acc.alEntrar], [['dinero', 'cobranza', 'residentes', 'seguridad'], [true, true, true, true], []]);
+        equal('una abierta a la vez: abrir otra cierra la anterior, se recuerda la abierta y tocarla de nuevo la cierra',
+            [acc.cobranza, acc.dinero, acc.cerrada], [[['cobranza'], 'true'], [['dinero'], 'dinero'], [[], null]]);
+        equal('una categoría sin reportes que este usuario pueda abrir no sale', acc.sinResidentes, ['dinero', 'cobranza', 'seguridad']);
+        equal('al volver de un reporte queda abierta su categoría', acc.alVolver, ['cobranza']);
+
         console.log('\nReportes > Seguridad: el QR de pánico por vecino desde Finanzas');
         const seg = await oikos(`(async () => {
             navigate('reports'); showReportCatalog();
+            repOpenCat = 'seguridad'; paintReportCategories();
             await new Promise((r) => setTimeout(r, 200));
             const box = document.getElementById('rep-security');
             const out = { visible: !!box && !box.classList.contains('hidden'), texto: box ? box.innerText.replace(/\\s+/g, ' ').trim() : '' };

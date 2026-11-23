@@ -806,37 +806,66 @@
                          elegir uno se abre con "Volver a los reportes". Los id rep-tab-* y los onclick son los de siempre:
                          finanzas-bloqueo.js oculta y bloquea cada reporte por su privilegio con ellos. -->
                     <div id="rep-catalog">
-                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Click en un reporte para abrirlo.</p>
-                        <div class="rounded-xl border border-blue-600 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
-                            <div class="flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700">
-                                <i class="fas fa-dollar-sign w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
-                                <span class="flex-1 font-bold text-slate-900 dark:text-white">Finanzas (OIKOS)</span>
-                            </div>
-                            <ul class="p-1.5">
+                        <!-- SISDEL: los reportes en acordeon por categoria (pedido del usuario el 2026-11-22: "ordena los reportes segun su
+                             categoria en forma de concertina"): una categoria abierta a la vez, con cuantos reportes puede abrir este usuario
+                             (los que finanzas-bloqueo.js oculta no cuentan y una categoria sin ninguno no sale). Los id rep-tab-* y los
+                             onclick son los de siempre (el bloqueo los usa); el orden es el mismo de Administracion > Reportes > Finanzas -->
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Toque una categoría para ver sus reportes.</p>
+                        <div class="space-y-3" id="rep-cats">
+                        <div class="rep-cat rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm transition" data-cat="dinero">
+                            <button type="button" onclick="toggleReportCategory('dinero')" class="rep-cat-head w-full flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 text-left hover:bg-slate-100 dark:hover:bg-slate-700/70 transition" aria-expanded="false">
+                                <i class="fas fa-coins w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
+                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Ingresos y gastos</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Lo que entra y sale de la caja: ingresos, gastos, saldo por mes y el libro.</span></span>
+                                <span class="rep-cat-count inline-flex items-center justify-center min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-bold border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300">5</span>
+                                <i class="fas fa-chevron-down rep-cat-chev text-slate-400 transition-transform"></i>
+                            </button>
+                            <ul class="rep-cat-items hidden p-1.5 border-t border-slate-200 dark:border-slate-700">
                                 <li><button type="button" onclick="selectReport('income')" id="rep-tab-income" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago."><span>Ingresos por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('expense-cat')" id="rep-tab-expense-cat" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="En qué se gasta el dinero del condominio en el período que elija."><span>Gastos por período y categoría</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('month-balance')" id="rep-tab-month-balance" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año."><span>Ingresos, egresos y saldo por mes</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('mora-list')" id="rep-tab-mora-list" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Solo los vecinos con morosidad: número de lote, nombre, una columna por cada mes que deben (en rojo) y el total que adeudan."><span>Listado de vecinos con morosidad</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('marbetes')" id="rep-tab-marbetes" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) con un subtotal por fase, para imprimir y entregar los marbetes; también imprime las calcomanías con su código QR."><span>Impresión de marbetes por fase</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
-                                <li><button type="button" onclick="selectReport('mora-discounts')" id="rep-tab-mora-discounts" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo."><span>Descuentos de mora</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('account-statement')" id="rep-tab-account-statement" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período."><span>Estado de cuenta general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="openReportModal()" id="rep-tab-resumen" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp."><span>Reporte financiero mensual o por período</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
                         </div>
-                        <!-- SISDEL: Seguridad: el QR de panico por vecino (reportes.panico_qr), el mismo reporte de Administracion > Reportes.
-                             Lo abre finanzas.html encima de OIKOS (window.parent.sisdelPanicQrReport, que solo existe con ese privilegio):
-                             asi lo tiene quien trabaja en Finanzas sin entrar a Administracion -->
-                        <div id="rep-security" class="hidden mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm">
-                            <div class="flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700">
+                        <div class="rep-cat rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm transition" data-cat="cobranza">
+                            <button type="button" onclick="toggleReportCategory('cobranza')" class="rep-cat-head w-full flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 text-left hover:bg-slate-100 dark:hover:bg-slate-700/70 transition" aria-expanded="false">
+                                <i class="fas fa-hand-holding-dollar w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
+                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Cobranza y morosidad</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Quién debe, cuánto y desde cuándo, y los descuentos de mora.</span></span>
+                                <span class="rep-cat-count inline-flex items-center justify-center min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-bold border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300">4</span>
+                                <i class="fas fa-chevron-down rep-cat-chev text-slate-400 transition-transform"></i>
+                            </button>
+                            <ul class="rep-cat-items hidden p-1.5 border-t border-slate-200 dark:border-slate-700">
+                                <li><button type="button" onclick="selectReport('morosos')" id="rep-tab-morosos" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente en mora con los meses que debe y el total."><span>Morosos y meses adeudados</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('mora-list')" id="rep-tab-mora-list" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Solo los vecinos con morosidad: número de lote, nombre, una columna por cada mes que deben (en rojo) y el total que adeudan."><span>Listado de vecinos con morosidad</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('pay-map')" id="rep-tab-pay-map" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó. Arriba los que más tiempo llevan en mora; abajo los que están al día."><span>Tabla general</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('mora-discounts')" id="rep-tab-mora-discounts" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo."><span>Descuentos de mora</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                            </ul>
+                        </div>
+                        <div class="rep-cat rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm transition" data-cat="residentes">
+                            <button type="button" onclick="toggleReportCategory('residentes')" class="rep-cat-head w-full flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 text-left hover:bg-slate-100 dark:hover:bg-slate-700/70 transition" aria-expanded="false">
+                                <i class="fas fa-users w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
+                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Residentes y vehículos</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Propietarios con su deuda y los marbetes de los vehículos.</span></span>
+                                <span class="rep-cat-count inline-flex items-center justify-center min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-bold border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300">2</span>
+                                <i class="fas fa-chevron-down rep-cat-chev text-slate-400 transition-transform"></i>
+                            </button>
+                            <ul class="rep-cat-items hidden p-1.5 border-t border-slate-200 dark:border-slate-700">
+                                <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('marbetes')" id="rep-tab-marbetes" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) con un subtotal por fase, para imprimir y entregar los marbetes; también imprime las calcomanías con su código QR."><span>Impresión de marbetes por fase</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                            </ul>
+                        </div>
+                            <!-- Seguridad: el QR de panico por vecino (reportes.panico_qr), el mismo reporte de Administracion > Reportes. Lo abre
+                                 finanzas.html encima de OIKOS (window.parent.sisdelPanicQrReport, que solo existe con ese privilegio) -->
+                        <div id="rep-security" class="hidden rep-cat rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm transition" data-cat="seguridad">
+                            <button type="button" onclick="toggleReportCategory('seguridad')" class="rep-cat-head w-full flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 text-left hover:bg-slate-100 dark:hover:bg-slate-700/70 transition" aria-expanded="false">
                                 <i class="fas fa-qrcode w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
-                                <span class="flex-1 font-bold text-slate-900 dark:text-white">Seguridad</span>
-                            </div>
-                            <ul class="p-1.5">
+                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Seguridad</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">El QR de pánico de cada vecino, para imprimir o en PDF.</span></span>
+                                <span class="rep-cat-count inline-flex items-center justify-center min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-bold border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300">1</span>
+                                <i class="fas fa-chevron-down rep-cat-chev text-slate-400 transition-transform"></i>
+                            </button>
+                            <ul class="rep-cat-items hidden p-1.5 border-t border-slate-200 dark:border-slate-700">
                                 <li><button type="button" onclick="openPanicQrReport()" id="rep-seg-panico-qr" class="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Una tarjeta por vecino con su QR de pánico, su lote y su nombre, para imprimir o descargar en PDF (todos, solo casas, solo lotes, por fase o elegidos)."><span>QR de pánico por vecino</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
+                        </div>
                         </div>
                     </div>
                     <div id="rep-detail" class="space-y-6 hidden">
@@ -7330,16 +7359,52 @@
         }
         // SISDEL: Reportes > Seguridad: el QR de panico por vecino solo si finanzas.html lo ofrece (reportes.panico_qr)
         function panicQrReportBridge() { try { return window.parent && window.parent !== window && window.parent.sisdelPanicQrReport ? window.parent.sisdelPanicQrReport : null; } catch (e) { return null; } }
-        function paintSecurityReports() { const box = document.getElementById('rep-security'); if (box) box.classList.toggle('hidden', !panicQrReportBridge()); }
+        function paintSecurityReports() { paintReportCategories(); }
+        // SISDEL: el acordeon de categorias de Reportes. Una abierta a la vez (o ninguna); se recuerda en el equipo la ultima abierta
+        // (sisdel_rep_cat). Cada categoria dice cuantos reportes puede abrir este usuario: los que finanzas-bloqueo.js oculta no
+        // cuentan y una categoria sin ninguno no sale (Seguridad, ademas, solo con el puente del QR de panico)
+        var repReturnKey = null;
+        var repOpenCat = (function () { try { return localStorage.getItem('sisdel_rep_cat') || null; } catch (e) { return null; } })();
+        function repItemShown(btn) { return !!btn && getComputedStyle(btn).display !== 'none'; }
+        function paintReportCategories() {
+            document.querySelectorAll('#rep-catalog .rep-cat').forEach((cat) => {
+                const shown = [...cat.querySelectorAll('.rep-cat-items button')].filter(repItemShown).length;
+                const off = (cat.id === 'rep-security' && !panicQrReportBridge()) || shown === 0;
+                const open = !off && cat.dataset.cat === repOpenCat;
+                cat.classList.toggle('hidden', off);
+                cat.classList.toggle('border-blue-600', open);
+                cat.classList.toggle('border-slate-200', !open);
+                cat.classList.toggle('dark:border-slate-700', !open);
+                const items = cat.querySelector('.rep-cat-items');
+                if (items) items.classList.toggle('hidden', !open);
+                const head = cat.querySelector('.rep-cat-head');
+                if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+                const chev = cat.querySelector('.rep-cat-chev');
+                if (chev) chev.classList.toggle('rotate-180', open);
+                const count = cat.querySelector('.rep-cat-count');
+                if (count) count.textContent = String(shown);
+            });
+        }
+        function toggleReportCategory(id) {
+            repOpenCat = repOpenCat === id ? null : id;
+            try { if (repOpenCat) localStorage.setItem('sisdel_rep_cat', repOpenCat); else localStorage.removeItem('sisdel_rep_cat'); } catch (e) { /* sin almacenamiento */ }
+            paintReportCategories();
+        }
         function openPanicQrReport() { const bridge = panicQrReportBridge(); if (bridge) bridge.open(); }
         setTimeout(paintSecurityReports, 0);
 
         function showReportCatalog() {
+            // Al volver de un reporte queda abierta su categoria (se vuelve a donde se estaba)
+            const back = repReturnKey ? document.getElementById('rep-tab-' + repReturnKey) : null;
+            const cat = back ? back.closest('.rep-cat') : null;
+            if (cat) repOpenCat = cat.dataset.cat;
+            repReturnKey = null;
             showReportPane(false);
         }
 
         function selectReport(key) {
             currentReportKey = key;
+            repReturnKey = key; // al volver a la lista se abre su categoria
             // SISDEL: el reporte elegido reemplaza a la lista, con su nombre arriba
             showReportPane(true);
             const nameEl = document.getElementById('rep-current');

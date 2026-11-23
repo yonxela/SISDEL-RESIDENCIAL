@@ -498,7 +498,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 11);
     // Los accesos directos llegan a pantallas que existen en OIKOS
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
-    equal('los once reportes de OIKOS tienen acceso directo', ids, ['income', 'expense-cat', 'month-balance', 'morosos', 'mora-list', 'pay-map', 'owners', 'marbetes', 'mora-discounts', 'account-statement', 'resumen']);
+    equal('los once reportes de OIKOS tienen acceso directo (en el orden de sus categorias)', ids, ['income', 'expense-cat', 'month-balance', 'account-statement', 'resumen', 'morosos', 'mora-list', 'pay-map', 'mora-discounts', 'owners', 'marbetes']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
     // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
     const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
@@ -1283,8 +1283,27 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
         /<section class="pq-report" id="pqReport" hidden/.test(fin) && /<button type="button" class="btn btn-ghost btn-icon modal-close" id="pqReportClose"/.test(fin) && /#pqReportMount \.rp-back \{ display: none; \}/.test(fin) && /if \(e\.key === 'Escape'\) close\(\);/.test(fin));
     yes('OIKOS: Reportes trae la seccion Seguridad con "QR de panico por vecino" solo si finanzas.html la ofrece (fuera de la lista de los once)',
         /<div id="rep-security" class="hidden /.test(oik) && /onclick="openPanicQrReport\(\)" id="rep-seg-panico-qr"/.test(oik)
-        && /function paintSecurityReports\(\) \{ const box = document\.getElementById\('rep-security'\); if \(box\) box\.classList\.toggle\('hidden', !panicQrReportBridge\(\)\); \}/.test(oik)
+        && /const off = \(cat\.id === 'rep-security' && !panicQrReportBridge\(\)\) \|\| shown === 0;/.test(oik)
         && oik.indexOf('id="rep-security"') > oik.indexOf('id="rep-catalog"') && oik.indexOf('id="rep-security"') < oik.indexOf('id="rep-detail"'));
+}
+
+// Finanzas > Reportes en acordeon por categoria ("ordena los reportes segun su categoria en forma de concertina")
+{
+    const oik = read('finanzas/index.html');
+    const catalog = oik.slice(oik.indexOf('id="rep-catalog"'), oik.indexOf('id="rep-detail"'));
+    const cats = [...catalog.matchAll(/data-cat="([a-z]+)">[\s\S]*?<\/ul>/g)].map((m) => [m[1], [...m[0].matchAll(/id="rep-(?:tab|seg)-([a-z-]+)"/g)].map((x) => x[1])]);
+    equal('cuatro categorias con sus reportes: ingresos y gastos, cobranza y morosidad, residentes y vehiculos y seguridad', cats, [
+        ['dinero', ['income', 'expense-cat', 'month-balance', 'account-statement', 'resumen']],
+        ['cobranza', ['morosos', 'mora-list', 'pay-map', 'mora-discounts']],
+        ['residentes', ['owners', 'marbetes']],
+        ['seguridad', ['panico-qr']]
+    ]);
+    yes('cada categoria es un boton que abre y cierra su lista (una a la vez), con cuantos reportes tiene y su flecha',
+        (catalog.match(/onclick="toggleReportCategory\('[a-z]+'\)" class="rep-cat-head /g) || []).length === 4 && (catalog.match(/<ul class="rep-cat-items hidden /g) || []).length === 4
+        && /function toggleReportCategory\(id\) \{\s*repOpenCat = repOpenCat === id \? null : id;/.test(oik) && /const open = !off && cat\.dataset\.cat === repOpenCat;/.test(oik));
+    yes('las que el bloqueo oculta no cuentan (y una categoria sin ninguna no sale); se recuerda la ultima abierta y al volver de un reporte se abre la suya',
+        /function repItemShown\(btn\) \{ return !!btn && getComputedStyle\(btn\)\.display !== 'none'; \}/.test(oik) && /localStorage\.setItem\('sisdel_rep_cat', repOpenCat\)/.test(oik)
+        && /repReturnKey = key; \/\/ al volver a la lista se abre su categoria/.test(oik) && /if \(cat\) repOpenCat = cat\.dataset\.cat;/.test(oik));
 }
 
 // La busqueda de Configuracion > Privilegios no importa acentos (el usuario escribio "panico" y no salio "QR de pánico")

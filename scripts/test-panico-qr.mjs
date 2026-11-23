@@ -692,7 +692,7 @@ console.log('\nReglas y paginas');
         Pq.itemOf('reportes.panico_entrega').parent === 'reportes.panico_qr' && Pq.itemOf('reportes.panico_entrega').sensitive === true && Pq.itemOf('reportes.panico_entrega').enforce === 'reglas'
         && Pq.has('admin', {}, 'reportes.panico_entrega') && !Pq.has('operador', { 'reportes.ver': true }, 'reportes.panico_entrega') && !Pq.templateById('sys-admin-delegado').claves.includes('reportes.panico_entrega'));
     yes('lo que dice el servidor (quien la activo) se pinta con textContent', /\$\('pqDlvText'\)\.textContent = text;/.test(rp) && /\$\('pqDlvState'\)\.textContent = /.test(rp));
-    yes('reportes-ui.js subio de version en admin.html', /reportes-ui\.js\?v=20261122c/.test(admin));
+    yes('reportes-ui.js lleva la misma version en admin.html y en finanzas.html (que lo carga para el QR de panico)', (admin.match(/reportes-ui\.js\?v=(\w+)/) || [])[1] === (read('finanzas.html').match(/reportes-ui\.js\?v=(\w+)/) || [])[1]);
     yes('el reporte avisa si el boton de panico de vecinos esta apagado en RONDIN', /SisdelRondas\.neighborPanicEnabled\(\)\.then/.test(rp) && /los QR no enviarán alertas hasta activarlo/.test(rp));
     yes('el reporte no manda nada a otro servicio para hacer el QR (sin APIs de QR externas)', !/api\.qrserver|chart\.googleapis|quickchart/i.test(rp + read('panico-qr.js')));
 }

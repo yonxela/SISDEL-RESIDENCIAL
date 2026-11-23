@@ -24,18 +24,20 @@ const SisdelReportes = (() => {
     const SHOWN_ROWS = 150;
 
     // Reportes de OIKOS a los que se llega desde aqui (la clave de cada uno es su privilegio en Finanzas)
+    // Mismo orden que Finanzas > Reportes de OIKOS, que los agrupa por categoria (pedido del usuario el 2026-11-22): ingresos y gastos
+    // (los cinco primeros), cobranza y morosidad (los cuatro siguientes) y residentes y vehiculos (los dos ultimos)
     const FIN_REPORTS = [
         { id: 'income', key: 'finanzas.reportes_ingresos', title: 'Ingresos por período', text: 'Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago.' },
         { id: 'expense-cat', key: 'finanzas.reportes_gastos', title: 'Gastos por período y categoría', text: 'En qué se gasta el dinero del condominio en el período que elija.' },
         { id: 'month-balance', key: 'finanzas.reportes_resumen', title: 'Ingresos, egresos y saldo por mes', text: 'Por cada mes: lo que entró, lo que salió y el saldo, con el total de cada año.' },
+        { id: 'account-statement', key: 'finanzas.reportes_libro', title: 'Estado de cuenta general', text: 'El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período.' },
+        { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' },
         { id: 'morosos', key: 'finanzas.reportes_morosos', title: 'Morosos y meses adeudados', text: 'Cada residente en mora con los meses que debe y el total; también la lista de los que están al día.' },
         { id: 'mora-list', key: 'finanzas.reportes_morosos', title: 'Listado de vecinos con morosidad', text: 'Solo los vecinos con morosidad: número de lote, nombre, una columna por cada mes que deben (en rojo) y el total que adeudan; con envío por WhatsApp, Excel, PDF e impresión.' },
         { id: 'pay-map', key: 'finanzas.reportes_morosos', title: 'Tabla general', text: 'Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó; arriba los que más tiempo llevan en mora.' },
-        { id: 'owners', key: 'finanzas.reportes_morosos', title: 'Listado general de propietarios', text: 'Número de lote, nombre y teléfono de cada propietario con su deuda por cuotas, su mora y su saldo total; por período, por fase, en orden alfabético o de mayor a menor deuda.' },
-        { id: 'marbetes', key: 'finanzas.reportes_marbetes', title: 'Impresión de marbetes por fase', text: 'Los vehículos de los vecinos agrupados por fase, con su lote o casa, placa, marca, color y código del marbete, y un subtotal por fase; con Imprimir, PDF y Excel, y las calcomanías con su código QR.' },
         { id: 'mora-discounts', key: 'finanzas.reportes_descuentos', title: 'Descuentos de mora', text: 'Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo.' },
-        { id: 'account-statement', key: 'finanzas.reportes_libro', title: 'Estado de cuenta general', text: 'El libro de ingresos y egresos con el saldo acumulado y el saldo anterior al período.' },
-        { id: 'resumen', key: 'finanzas.reportes_resumen', title: 'Reporte financiero mensual o por período', text: 'Ingresos netos, gastos y balance, con el resumen listo para enviar por WhatsApp.' }
+        { id: 'owners', key: 'finanzas.reportes_morosos', title: 'Listado general de propietarios', text: 'Número de lote, nombre y teléfono de cada propietario con su deuda por cuotas, su mora y su saldo total; por período, por fase, en orden alfabético o de mayor a menor deuda.' },
+        { id: 'marbetes', key: 'finanzas.reportes_marbetes', title: 'Impresión de marbetes por fase', text: 'Los vehículos de los vecinos agrupados por fase, con su lote o casa, placa, marca, color y código del marbete, y un subtotal por fase; con Imprimir, PDF y Excel, y las calcomanías con su código QR.' }
     ];
 
     // Reportes de garita: todos usan el mismo rango de fechas y los mismos datos

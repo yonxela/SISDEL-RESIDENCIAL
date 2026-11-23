@@ -248,6 +248,32 @@ const DELIVERY_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
 const REVEAL_IP_LIMIT = { max: 60, windowMs: 15 * 60 * 1000 };
 const HISTORY_MAX = 20;
 const deliveryPath = (condoId, userId) => `condominios/${condoId}/panico_entregas/${userId}`;
+// Entrega GENERAL (pedido del usuario el 2026-11-22: "boton de activar entrega de claves: activado entrega las claves a todos los
+// QR de casas y lotes; desactivado ya no muestra nada"): un interruptor por condominio en Reportes > QR de panico. Mientras esta
+// activa (hasta una fecha que se elige: se apaga sola), el QR de cada vecino que NUNCA ha recibido su clave la muestra una vez,
+// como una entrega activada por la oficina. Puede ser para todos los vecinos o solo para una lista (la que se ve en el reporte:
+// solo casas, solo lotes, una fase...). Quien ya la recibio no la vuelve a ver por la entrega general: para darsela otra vez,
+// la ventana del QR de OIKOS. condominios/{c}/panico_config/entregas, solo el servidor (como panico_entregas).
+const campaignPath = (condoId) => `condominios/${condoId}/panico_config/entregas`;
+const CAMPAIGN_DAYS = [1, 3, 7, 15, 30];
+const CAMPAIGN_MAX_IDS = 3000;
+const campaignActive = (cp, now = Date.now()) => !!cp && cp.enabled === true && Date.parse(cp.until) > now;
+// Ya recibio su clave alguna vez (por la oficina o por una entrega general)
+const everDelivered = (d) => !!d && (!!d.deliveredAt || (Array.isArray(d.history) && d.history.some((h) => h && h.deliveredAt)));
+const campaignCovers = (cp, userId, d, now = Date.now()) => campaignActive(cp, now) && (!Array.isArray(cp.ids) || cp.ids.includes(userId)) && !everDelivered(d);
+// Por donde se le puede dar la clave ahora: 'oficina' (la activo la oficina para el), 'general' o null
+function deliverable(d, cp, userId, now = Date.now()) {
+    if (deliveryState(d, now).status === 'armed') return 'oficina';
+    return campaignCovers(cp, userId, d, now) ? 'general' : null;
+}
+function campaignState(cp, now = Date.now()) {
+    if (!cp) return { active: false };
+    return {
+        active: campaignActive(cp, now), enabled: cp.enabled === true, campaignId: cp.campaignId || '', startedAt: cp.startedAt || '', until: cp.until || '',
+        startedByName: cp.startedByName || '', endedAt: cp.endedAt || '', endedByName: cp.endedByName || '', days: cp.days || null,
+        scope: Array.isArray(cp.ids) ? 'lista' : 'todos', count: Array.isArray(cp.ids) ? cp.ids.length : null, label: cp.label || ''
+    };
+}
 
 // La clave vigente del vecino en este condominio (la mas nueva)
 async function currentCode(condoId, userId) {
@@ -273,14 +299,15 @@ function deliveryState(d, now = Date.now()) {
     return {
         status, armedAt: d.armedAt || '', armedUntil: d.armedUntil || '', armedByName: d.armedByName || '',
         deliveredAt: d.deliveredAt || '', deliveredOn: d.deliveredOn || '', cancelledAt: d.cancelledAt || '',
-        times: (Array.isArray(d.history) ? d.history.length : 0) + 1
+        via: d.via || 'oficina', times: (Array.isArray(d.history) ? d.history.length : 0) + 1
     };
 }
 // Lo que se guarda en la historia al empezar otra entrega
 function historyEntry(d) {
     return {
         status: deliveryState(d).status, armedAt: d.armedAt || '', armedUntil: d.armedUntil || '', armedById: d.armedById || '', armedByName: d.armedByName || '',
-        deliveredAt: d.deliveredAt || '', deliveredOn: d.deliveredOn || '', cancelledAt: d.cancelledAt || '', cancelledByName: d.cancelledByName || ''
+        deliveredAt: d.deliveredAt || '', deliveredOn: d.deliveredOn || '', cancelledAt: d.cancelledAt || '', cancelledByName: d.cancelledByName || '',
+        via: d.via || 'oficina', campaignId: d.campaignId || ''
     };
 }
 
@@ -290,7 +317,7 @@ const panicCodeDelivery = onCall(async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Sesión requerida');
     const data = request.data || {};
     const action = String(data.action || '');
-    if (!['status', 'arm', 'cancel'].includes(action)) throw new HttpsError('invalid-argument', 'Acción no válida');
+    if (!['status', 'arm', 'cancel', 'generalStatus', 'generalOn', 'generalOff'].includes(action)) throw new HttpsError('invalid-argument', 'Acción no válida');
     const { uid, token = {} } = request.auth;
     let condoId = '';
     let caller = null;
@@ -304,14 +331,18 @@ const panicCodeDelivery = onCall(async (request) => {
         if (!ok) throw new HttpsError('permission-denied', 'Su usuario no puede entregar claves de acceso (privilegio "Ver y cambiar códigos de acceso").');
         caller = { id: uid, name: String(me.data().name || '') };
     }
+    if (!condoId) throw new HttpsError('invalid-argument', 'Condominio inválido.');
+    if (action.startsWith('general')) return generalDelivery({ action, condoId, caller, data });
     const userId = cleanId(data.residentId);
-    if (!condoId || !userId) throw new HttpsError('invalid-argument', 'Residente inválido.');
+    if (!userId) throw new HttpsError('invalid-argument', 'Residente inválido.');
     const ref = db.doc(deliveryPath(condoId, userId));
     const log = (outcome, extra = {}) => logger.info('qr panico: entrega de la clave', { action, outcome, condominioId: condoId, userId, by: caller.id, ...extra });
 
     if (action === 'status') {
-        const snap = await ref.get();
-        return { ok: true, ...deliveryState(snap.exists ? snap.data() : null) };
+        const [snap, cpSnap] = await Promise.all([ref.get(), db.doc(campaignPath(condoId)).get()]);
+        const d = snap.exists ? snap.data() : null;
+        const cp = cpSnap.exists ? cpSnap.data() : null;
+        return { ok: true, ...deliveryState(d), general: { active: campaignActive(cp), until: cp && cp.until ? cp.until : '', covers: campaignCovers(cp, userId, d) } };
     }
     if (await rateLimit.isBlocked('panico_entrega', caller.id, DELIVERY_LIMIT)) {
         throw new HttpsError('resource-exhausted', 'Demasiadas entregas seguidas. Espere unos minutos.');
@@ -350,6 +381,54 @@ const panicCodeDelivery = onCall(async (request) => {
     return { ok: true, ...deliveryState((await ref.get()).data()) };
 });
 
+// La entrega general (Reportes > QR de panico): ver como esta, activarla (para todos o una lista, de 1 a 30 dias) o desactivarla.
+// Quien la activa y la desactiva queda anotado; las anteriores quedan en la historia
+async function generalDelivery({ action, condoId, caller, data }) {
+    const ref = db.doc(campaignPath(condoId));
+    const log = (outcome, extra = {}) => logger.info('qr panico: entrega general de claves', { action, outcome, condominioId: condoId, by: caller.id, ...extra });
+    const withCount = async (cp) => {
+        const st = campaignState(cp);
+        if (!st.campaignId) return { ok: true, ...st, delivered: 0 };
+        const snap = await db.collection(`condominios/${condoId}/panico_entregas`).where('campaignId', '==', st.campaignId).get();
+        return { ok: true, ...st, delivered: snap.size };
+    };
+    if (action === 'generalStatus') {
+        const snap = await ref.get();
+        return withCount(snap.exists ? snap.data() : null);
+    }
+    if (await rateLimit.isBlocked('panico_entrega', caller.id, DELIVERY_LIMIT)) throw new HttpsError('resource-exhausted', 'Demasiados cambios seguidos. Espere unos minutos.');
+    await rateLimit.hit('panico_entrega', caller.id, DELIVERY_LIMIT);
+    const snap = await ref.get();
+    const prev = snap.exists ? snap.data() : null;
+    if (action === 'generalOff') {
+        if (!campaignActive(prev)) return { ...(await withCount(prev)), ok: false, error: 'La entrega general de claves no está activada.' };
+        await ref.update({ enabled: false, endedAt: nowIso(), endedById: caller.id, endedByName: caller.name });
+        log('ok');
+        return withCount((await ref.get()).data());
+    }
+    // generalOn
+    const condo = await db.doc(`condominios/${condoId}`).get();
+    if (!condo.exists || condo.data().active !== true) return { ok: false, error: 'El condominio no está activo.' };
+    const days = CAMPAIGN_DAYS.includes(Number(data.days)) ? Number(data.days) : 7;
+    let ids = null;
+    if (Array.isArray(data.ids)) {
+        ids = [...new Set(data.ids.map(cleanId).filter(Boolean))];
+        if (!ids.length) return { ok: false, error: 'No hay vecinos en la lista.' };
+        if (ids.length > CAMPAIGN_MAX_IDS) return { ok: false, error: `Son demasiados vecinos (más de ${CAMPAIGN_MAX_IDS}).` };
+    }
+    const now = Date.now();
+    const old = prev ? campaignState(prev) : null;
+    const history = prev ? [...(Array.isArray(prev.history) ? prev.history : []), { campaignId: old.campaignId, startedAt: old.startedAt, until: old.until, startedByName: old.startedByName, endedAt: prev.endedAt || (campaignActive(prev, now) ? new Date(now).toISOString() : ''), endedByName: prev.endedByName || (campaignActive(prev, now) ? caller.name : ''), scope: old.scope, count: old.count, label: old.label }].slice(-HISTORY_MAX) : [];
+    await ref.set({
+        enabled: true, campaignId: `${now.toString(36)}${crypto.randomBytes(3).toString('hex')}`,
+        startedAt: new Date(now).toISOString(), until: new Date(now + days * 24 * 3600 * 1000).toISOString(), days,
+        startedById: caller.id, startedByName: caller.name, endedAt: null, endedById: null, endedByName: null,
+        ids, label: String(data.label || '').slice(0, 80), history
+    });
+    log('ok', { days, scope: ids ? ids.length : 'todos' });
+    return withCount((await ref.get()).data());
+}
+
 // El telefono que escanea el QR (sin sesion): 'peek' dice si hay una entrega activa (sin mostrar la clave) y 'claim' la muestra
 // UNA vez y vincula ese telefono al boton. Con la clave del vinculo de ese mismo telefono ('secret') se puede volver a ver durante
 // 15 minutos; un telefono ya vinculado tambien puede reclamarla (no se crea otro vinculo)
@@ -370,8 +449,10 @@ const panicCodeReveal = onCall(async (request) => {
 
     const secret = SECRET_RE.test(String(data.secret || '')) ? String(data.secret) : '';
     const ref = db.doc(deliveryPath(condoId, userId));
-    const [snap, neighbor] = await Promise.all([ref.get(), loadNeighbor(condoId, userId)]);
+    const cpRef = db.doc(campaignPath(condoId));
+    const [snap, cpSnap, neighbor] = await Promise.all([ref.get(), cpRef.get(), loadNeighbor(condoId, userId)]);
     const d = snap.exists ? snap.data() : null;
+    const cp = cpSnap.exists ? cpSnap.data() : null;
     const state = deliveryState(d);
     const usable = !!neighbor.condo && neighbor.condo.active === true && !!neighbor.user && neighbor.user.role === ROLES.VECINO && neighbor.user.active !== false;
     // Lo que se dice de una entrega que ya se uso (para que el vecino sepa si fue el)
@@ -379,7 +460,7 @@ const panicCodeReveal = onCall(async (request) => {
     const mineAgain = !!secret && !!d && d.status === 'delivered' && d.deliveredDevice === sha256(secret) && (Date.now() - Date.parse(d.deliveredAt)) < RESHOW_MS;
 
     if (action === 'peek') {
-        const available = usable && (state.status === 'armed' || mineAgain);
+        const available = usable && (!!deliverable(d, cp, userId) || mineAgain);
         return { ok: true, available, reshow: available && mineAgain, ...(available ? { name: neighbor.user.name || '', casa: neighbor.user.casa || '', condoName: neighbor.condo.name || '' } : used) };
     }
 
@@ -404,9 +485,21 @@ const panicCodeReveal = onCall(async (request) => {
     // Solo UNO la ve: la entrega se gasta dentro de una transaccion (dos telefonos al mismo tiempo: el segundo ya la encuentra usada)
     const won = await db.runTransaction(async (tx) => {
         const cur = await tx.get(ref);
+        const cpCur = await tx.get(cpRef);
         const c = cur.exists ? cur.data() : null;
-        if (deliveryState(c).status !== 'armed') return false;
-        tx.set(ref, { ...c, status: 'delivered', deliveredAt: nowIso(), deliveredOn: deviceKind(userAgent), deliveredDevice: deviceHash, deliveredUserAgent: userAgent });
+        const g = cpCur.exists ? cpCur.data() : null;
+        const via = deliverable(c, g, userId);
+        if (!via) return false;
+        const delivered = { status: 'delivered', deliveredAt: nowIso(), deliveredOn: deviceKind(userAgent), deliveredDevice: deviceHash, deliveredUserAgent: userAgent };
+        if (via === 'oficina') tx.set(ref, { ...c, ...delivered, via: 'oficina' });
+        else {
+            // Por la entrega general: queda como una entrega de quien activo la general (lo anterior del vecino, a la historia)
+            const history = c ? [...(Array.isArray(c.history) ? c.history : []), historyEntry(c)].slice(-HISTORY_MAX) : [];
+            tx.set(ref, {
+                userId, condominioId: condoId, armedAt: g.startedAt, armedUntil: g.until, armedById: g.startedById || '', armedByName: g.startedByName || '',
+                cancelledAt: null, cancelledById: null, cancelledByName: null, history, via: 'general', campaignId: g.campaignId, ...delivered
+            });
+        }
         return true;
     });
     if (!won) {
@@ -423,4 +516,4 @@ const panicCodeReveal = onCall(async (request) => {
     return { ok: true, code, ...(linked ? { secret: linked } : {}), ...info(neighbor), problem, alert: null };
 });
 
-module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, _test: { cleanPos, neighborProblem, deliveryState, deviceKind } };
+module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, _test: { cleanPos, neighborProblem, deliveryState, deviceKind, campaignCovers, deliverable } };

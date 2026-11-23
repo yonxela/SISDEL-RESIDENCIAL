@@ -585,11 +585,67 @@ console.log('\nSolo casas con lote, solo lotes y la busqueda por nombre o lote')
     yes('el reporte solo usa privilegios del catalogo (finanzas.ver incluido)', P_ITEM('finanzas.ver'));
 }
 
+console.log('\nEntrega GENERAL de claves (el interruptor de Reportes > QR de panico)');
+{
+    seed();
+    store.set('condominios/c1/usuarios/u-admin', { name: 'Admin Uno', role: 'admin' });
+    store.set('condominios/c1/usuarios/u-op', { name: 'Operador Sin Claves', role: 'operador' });
+    store.set('codigos/VS106', { condominioId: 'c1', userId: 'u-sincancel', role: 'vecino' });
+    const staffReq = (uid, data, token) => ({ auth: uid ? { uid, token: token || { condominioId: 'c1' } } : null, data, rawRequest: { headers: { 'user-agent': 'Oficina/1.0' }, ip: '127.0.0.1' } });
+    const office = (data, uid = 'u-admin', token) => panicCodeDelivery.run(staffReq(uid, data, token));
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)';
+    const reveal = (data, ua = IPHONE) => panicCodeReveal.run({ auth: null, data, rawRequest: { headers: { 'user-agent': ua, 'x-forwarded-for': `10.2.0.${++ipCounter % 250}` }, ip: '127.0.0.1' } });
+    const peek = async (v) => (await reveal({ action: 'peek', c: 'c1', v })).available;
+    const deliveryOf = (v) => store.get(`condominios/c1/panico_entregas/${v}`);
+
+    equal('solo quien ve las claves maneja la entrega general (ni un operador comun ni un vecino)', [await errOf(office({ action: 'generalOn' }, 'u-op')), await errOf(office({ action: 'generalStatus' }, 'u-ana'))], ['permission-denied', 'permission-denied']);
+    const off0 = await office({ action: 'generalStatus' });
+    equal('al principio esta desactivada y ningun QR ofrece la clave', [off0.ok, off0.active, await peek('u-ana'), await peek('u-maria')], [true, false, false, false]);
+    const on = await office({ action: 'generalOn', days: 3 });
+    const days = (Date.parse(on.until) - Date.now()) / 86400000;
+    equal('activarla (para todos, 3 dias): queda quien la activo, hasta cuando y en cero entregadas', [on.ok, on.active, on.scope, on.startedByName, days > 2.99 && days < 3.01, on.delivered], [true, true, 'todos', 'Admin Uno', true, 0]);
+    equal('con la general activa, el QR de cada vecino ofrece su clave (sin activar nada vecino por vecino)', [await peek('u-ana'), await peek('u-maria'), await peek('u-sincancel')], [true, true, true]);
+    equal('la ventana de OIKOS de un vecino dice que la general lo cubre', (await office({ action: 'status', residentId: 'u-ana' })).general.covers, true);
+    const ana = await reveal({ action: 'claim', c: 'c1', v: 'u-ana' });
+    equal('el vecino ve su clave y queda anotada como entregada por la general', [ana.ok, ana.code, deliveryOf('u-ana').status, deliveryOf('u-ana').via, deliveryOf('u-ana').campaignId === on.campaignId, deliveryOf('u-ana').armedByName], [true, 'VA101', 'delivered', 'general', true, 'Admin Uno']);
+    equal('una sola vez: otro telefono ya no la ve', [(await reveal({ action: 'claim', c: 'c1', v: 'u-ana' }, 'Android')).ok, await peek('u-ana')], [false, false]);
+    await reveal({ action: 'claim', c: 'c1', v: 'u-maria' });
+    equal('la oficina ve cuantas van entregadas en esta entrega', (await office({ action: 'generalStatus' })).delivered, 2);
+    yes('la general no guarda claves (ni su configuracion ni las entregas)', !/VA101|VM102|VS106/.test(JSON.stringify([...store.entries()].filter(([k]) => /panico_(config|entregas)/.test(k)))));
+    const offed = await office({ action: 'generalOff' });
+    equal('desactivarla: los QR dejan de mostrar claves (tambien a quien no la recibio)', [offed.ok, offed.active, offed.endedByName, await peek('u-sincancel'), (await reveal({ action: 'claim', c: 'c1', v: 'u-sincancel' })).ok], [true, false, 'Admin Uno', false, false]);
+    equal('desactivar dos veces dice que no estaba activa', (await office({ action: 'generalOff' })).ok, false);
+    // Activarla otra vez: solo para quien nunca la recibio
+    const again = await office({ action: 'generalOn', days: 7 });
+    equal('otra entrega general: quien ya la recibio NO la vuelve a ver; los demas si; la anterior queda en la historia', [again.campaignId !== on.campaignId, await peek('u-ana'), await peek('u-maria'), await peek('u-sincancel'), store.get('condominios/c1/panico_config/entregas').history.length], [true, false, false, true, 1]);
+    // Para dar la clave OTRA vez a uno que ya la recibio: la oficina (OIKOS), aunque la general este activa
+    await office({ action: 'arm', residentId: 'u-ana' });
+    equal('a quien ya la recibio, la oficina se la puede volver a dar desde OIKOS', [(await reveal({ action: 'claim', c: 'c1', v: 'u-ana' })).code, deliveryOf('u-ana').via], ['VA101', 'oficina']);
+    // Solo para una lista (lo que se ve en el reporte)
+    await office({ action: 'generalOff' });
+    store.delete('condominios/c1/panico_entregas/u-sincancel');
+    store.delete('condominios/c1/panico_entregas/u-maria');
+    const list = await office({ action: 'generalOn', days: 1, ids: ['u-maria', 'x/../y', 'u-maria'], label: 'Solo casas con lote' });
+    equal('para una lista: solo esos vecinos (sin repetidos ni ids raros) y con el nombre de la lista', [list.scope, list.count, list.label, await peek('u-maria'), await peek('u-sincancel')], ['lista', 1, 'Solo casas con lote', true, false]);
+    equal('una lista vacia no se activa', (await office({ action: 'generalOn', ids: [] })).ok, false);
+    equal('dias raros se toman como 7', Math.round((Date.parse((await office({ action: 'generalOn', days: 999 })).until) - Date.now()) / 86400000), 7);
+    // Se apaga sola
+    store.get('condominios/c1/panico_config/entregas').until = new Date(Date.now() - 1000).toISOString();
+    equal('al pasar los dias elegidos se apaga sola', [(await office({ action: 'generalStatus' })).active, await peek('u-sincancel')], [false, false]);
+    equal('con una entrega vencida, ver el estado no da error y apagarla dice que no esta activa', (await office({ action: 'generalOff' })).ok, false);
+    equal('el Master tambien la maneja (en el condominio que elige)', (await office({ action: 'generalStatus', condoId: 'c1' }, 'master', { role: 'master' })).ok, true);
+    // Un vecino desactivado no la recibe aunque la general este activa
+    await office({ action: 'generalOn', days: 1 });
+    store.set('condominios/c1/usuarios/u-sincancel', { ...store.get('condominios/c1/usuarios/u-sincancel'), active: false });
+    equal('un vecino desactivado no la recibe aunque la general este activa', [await peek('u-sincancel'), (await reveal({ action: 'claim', c: 'c1', v: 'u-sincancel' })).ok], [false, false]);
+}
+
 console.log('\nReglas y paginas');
 {
     const rules = read('firestore.rules');
     yes('las reglas no dejan leer ni escribir los telefonos vinculados desde el navegador', /match \/panico_dispositivos\/\{deviceId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
     yes('ni las entregas de la clave', /match \/panico_entregas\/\{userId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
+    yes('ni la entrega general', /match \/panico_config\/\{docId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
     const index = read('functions/index.js');
     yes('functions/index.js publica linkPanicDevice y panicDevice', /require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice/.test(index));
     yes('y las dos de la entrega de la clave', /const \{ linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal \} = require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal,/.test(index));
@@ -612,6 +668,14 @@ console.log('\nReglas y paginas');
     const rp = read('reportes-ui.js');
     yes('el reporte usa la libreria de vendor/ y el privilegio reportes.panico_qr', /tag\.src = PQ\(\)\.QR_LIB;/.test(rp) && /can\('reportes\.panico_qr'\)/.test(rp) && /else if \(def\.id === 'panico-qr'\) renderPanicQr\(def\);/.test(rp));
     yes('la vista previa muestra TODAS las tarjetas (no solo las primeras), pintadas de 40 en 40 y cortando la pintada anterior al cambiar un filtro', /const cards = Q\.cardsFor\(list, origin, condoId\);/.test(rp) && !/list\.slice\(0, PREVIEW\)/.test(rp) && /const PREVIEW_CHUNK = 40;/.test(rp) && /if \(mine !== paintSeq \|\| !preview\.isConnected\) return;/.test(rp) && /if \(next < cards\.length\) setTimeout\(paintChunk, 0\);/.test(rp));
+    yes('el reporte trae el interruptor "Entrega de claves con el QR" solo para quien ve las claves, y llama al servidor (panicCodeDelivery)',
+        /const canDeliver = can\('usuarios\.codigos'\) && !!\(window\.sisdelFirebase && window\.sisdelFirebase\.functions\);/.test(rp) && /\$\{canDeliver \? `<div class="card rp-card pq-dlv" id="pqDelivery">/.test(rp)
+        && /httpsCallable\('panicCodeDelivery'\)\(\{ condoId, \.\.\.payload \}\)/.test(rp) && /role="switch" aria-checked="false"/.test(rp));
+    yes('activar y desactivar piden confirmar, advierten de los QR ya pegados y dicen para quien y cuantos dias',
+        /runGeneral\(\{ action: 'generalOff' \}/.test(rp) && /Desactivar la entrega de claves\?/.test(rp) && /la PRIMERA persona que escanee el QR de cada vecino verá su clave una sola vez \(también en los QR que ya estén pegados/.test(rp)
+        && /runGeneral\(\{ action: 'generalOn', days, \.\.\.\(list \? \{ ids: list\.map\(\(u\) => u\.id\), label: listLabel\(\) \} : \{\}\) \}/.test(rp) && /<option value="7" selected>7 días<\/option>/.test(rp));
+    yes('lo que dice el servidor (quien la activo) se pinta con textContent', /\$\('pqDlvText'\)\.textContent = text;/.test(rp) && /\$\('pqDlvState'\)\.textContent = /.test(rp));
+    yes('reportes-ui.js subio de version en admin.html', /reportes-ui\.js\?v=20261122b/.test(admin));
     yes('el reporte avisa si el boton de panico de vecinos esta apagado en RONDIN', /SisdelRondas\.neighborPanicEnabled\(\)\.then/.test(rp) && /los QR no enviarán alertas hasta activarlo/.test(rp));
     yes('el reporte no manda nada a otro servicio para hacer el QR (sin APIs de QR externas)', !/api\.qrserver|chart\.googleapis|quickchart/i.test(rp + read('panico-qr.js')));
 }

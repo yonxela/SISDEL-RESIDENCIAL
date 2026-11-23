@@ -766,6 +766,11 @@ service cloud.firestore {
       match /panico_entregas/{userId} {
         allow read, write: if false;
       }
+      // Entrega GENERAL de claves con el QR (el interruptor de Reportes > QR de panico): si esta activa, hasta cuando, para quienes
+      // y quien la activo o la apago. Solo la funcion panicCodeDelivery (functions/src/panico-qr.js)
+      match /panico_config/{docId} {
+        allow read, write: if false;
+      }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
         allow read: if isMaster() || pPanicoContactos(condoId)

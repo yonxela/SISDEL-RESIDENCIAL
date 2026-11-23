@@ -180,6 +180,20 @@ const SisdelReportes = (() => {
         .pq-pickrow input { width:1.05rem; height:1.05rem; flex:none; }
         .pq-pickrow .u { font-weight:700; min-width:5.5rem; }
         .pq-pickbar { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
+        .pq-dlv { margin-bottom:1.25rem; border:1px solid rgba(245,158,11,0.5); }
+        .pq-dlv.on { border-color:rgba(34,197,94,0.7); }
+        .pq-dlv-head { display:flex; align-items:flex-start; gap:1rem; }
+        .pq-dlv-head h4 { margin:0 0 0.3rem; font-size:1rem; color:var(--text-primary); }
+        .pq-dlv-state { font-weight:800; letter-spacing:0.04em; }
+        .pq-dlv.on .pq-dlv-state { color:#22c55e; }
+        .pq-dlv-text { font-size:0.88rem; margin:0; color:var(--text-secondary); }
+        .pq-switch { flex:none; position:relative; width:3.6rem; height:2rem; border-radius:999px; border:none; background:#64748b; cursor:pointer; transition:background .2s; }
+        .pq-switch::after { content:''; position:absolute; top:0.2rem; left:0.2rem; width:1.6rem; height:1.6rem; border-radius:50%; background:#fff; transition:transform .2s; box-shadow:0 1px 3px rgba(0,0,0,0.4); }
+        .pq-switch[aria-checked="true"] { background:#16a34a; }
+        .pq-switch[aria-checked="true"]::after { transform:translateX(1.6rem); }
+        .pq-switch:disabled { opacity:0.5; cursor:default; }
+        .pq-dlv-opts { display:flex; flex-wrap:wrap; gap:0.75rem; margin-top:0.75rem; align-items:flex-end; }
+        .pq-dlv-help { font-size:0.78rem; color:var(--text-muted); margin:0.6rem 0 0; }
         .rp-printonly { display:none; }
         @media (max-width:640px) {
             .rp-grid { grid-template-columns:1fr; }
@@ -559,6 +573,8 @@ const SisdelReportes = (() => {
             try { lib = await loadQrLib(); } catch (e) { if (mine === seq) body.innerHTML = emptyState('No se pudo cargar el generador de QR. Revise su conexión e intente de nuevo.'); return; }
             if (mine !== seq) return;
             const all = Q.neighbors(opts.getUsers ? opts.getUsers() : []);
+            // La entrega de claves con el QR la maneja quien ve las claves (usuarios.codigos; el servidor tambien lo exige)
+            const canDeliver = can('usuarios.codigos') && !!(window.sisdelFirebase && window.sisdelFirebase.functions);
             const fases = Q.fases(all);
             const hasFases = fases.some((f) => f);
             if (!pqState.fase || !fases.includes(pqState.fase)) pqState.fase = fases[0] || '';
@@ -597,7 +613,24 @@ const SisdelReportes = (() => {
                         <button type="button" class="btn btn-ghost btn-sm" id="pqPdf" style="gap:0.4rem; border:1px solid var(--border-strong);">${ICONS.pdf} Descargar PDF</button>
                     </div>
                 </div>
-                ${note('Cada vecino tiene su propio QR. Al escanearlo, el teléfono pide primero la ubicación y después muestra el botón de pánico. La primera vez en cada teléfono, el vecino escribe su código de acceso para vincularlo: el QR solo no deja enviar alertas y no lleva el código.')}
+                ${note('Cada vecino tiene su propio QR. Al escanearlo, el teléfono pide primero la ubicación y después muestra el botón de pánico. La primera vez en cada teléfono, el vecino escribe su código de acceso para vincularlo (o, si la entrega de claves está activada, ve su clave una sola vez y su teléfono queda vinculado): el QR no lleva el código y por sí solo no deja enviar alertas.')}
+                ${canDeliver ? `<div class="card rp-card pq-dlv" id="pqDelivery">
+                    <div class="pq-dlv-head">
+                        <div style="flex:1; min-width:0;">
+                            <h4>Entrega de claves con el QR: <span class="pq-dlv-state" id="pqDlvState">consultando...</span></h4>
+                            <p class="pq-dlv-text" id="pqDlvText"></p>
+                        </div>
+                        <button type="button" class="pq-switch" id="pqDlvSwitch" role="switch" aria-checked="false" aria-label="Activar la entrega de claves" disabled></button>
+                    </div>
+                    <div class="pq-dlv-opts" id="pqDlvOpts">
+                        <div class="rp-field"><label for="pqDlvScope">Para</label>
+                            <select class="form-input" id="pqDlvScope" style="padding-left:0.85rem;"><option value="todos">Todos los vecinos (${all.length})</option><option value="lista">Solo las tarjetas de abajo</option></select></div>
+                        <div class="rp-field"><label for="pqDlvDays">Se apaga sola en</label>
+                            <select class="form-input" id="pqDlvDays" style="padding-left:0.85rem;"><option value="1">1 día</option><option value="3">3 días</option><option value="7" selected>7 días</option><option value="15">15 días</option><option value="30">30 días</option></select></div>
+                        <button type="button" class="btn btn-ghost btn-sm" id="pqDlvRefresh" style="border:1px solid var(--border-strong);">Actualizar</button>
+                    </div>
+                    <p class="pq-dlv-help">Mientras esté activada, la primera persona que escanee el QR de cada vecino ve su clave UNA sola vez y ese teléfono queda vinculado al botón; también en los QR que ya estén pegados en puertas o carros, así que actívela solo mientras se reparten las tarjetas. Desactivada, los QR no muestran ninguna clave. Quien ya la recibió no la vuelve a ver: para dársela otra vez a uno, use Finanzas > Residentes > Generar código botón de pánico.</p>
+                </div>` : ''}
                 <p class="rp-note warn" id="pqWarn" style="display:none;"></p>
                 <div class="rp-filter">
                     <div class="rp-field"><label for="pqMode">Imprimir</label>
@@ -647,6 +680,91 @@ const SisdelReportes = (() => {
             const base = () => Q.select(all, { mode: pqState.mode, fase: pqState.fase, ids: [...pqState.picked], types });
             const searchOn = () => pqState.mode !== 'picked' && !!pqState.search.trim() && typeof SisdelBusqueda !== 'undefined';
             const chosen = () => (searchOn() ? Q.search(base(), pqState.search, SisdelBusqueda) : base());
+            // ── Entrega de claves con el QR (pedido del usuario el 2026-11-22: "boton de activar entrega de claves: activado entrega las
+            // claves a todos los QR de casas y lotes; desactivado ya no muestra nada") ──
+            // Un interruptor por condominio (el servidor: panicCodeDelivery 'generalOn' / 'generalOff' / 'generalStatus', que pide
+            // usuarios.codigos como las reglas de las claves). Para todos o solo las tarjetas que se ven (con la busqueda), y se
+            // apaga sola a los dias elegidos. Lo que dice el servidor se pinta con textContent
+            let general = null;
+            let generalBusy = false;
+            let generalError = '';
+            const fmtWhen = (iso) => { const d = new Date(iso); return iso && !isNaN(d) ? d.toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : ''; };
+            const callGeneral = async (payload) => {
+                try {
+                    const r = await window.sisdelFirebase.functions.httpsCallable('panicCodeDelivery')({ condoId, ...payload });
+                    return r.data || { ok: false, error: 'Sin respuesta del servidor.' };
+                } catch (e) { return { ok: false, error: String((e && e.message) || 'No se pudo completar. Intente de nuevo.').replace(/\s*\[\d{3}\]\s*$/, '') }; }
+            };
+            // Que se esta viendo abajo, para decirlo al activar solo esas tarjetas ("Solo casas con lote", "Fase 2", "que coinciden con ...")
+            const listLabel = () => {
+                const opt = $('pqMode') && $('pqMode').selectedOptions[0];
+                const base = pqState.mode === 'fase' ? faseLabel(pqState.fase) : pqState.mode === 'picked' ? 'elegidos uno por uno' : (opt ? opt.textContent.replace(/\s*\(.*\)\s*$/, '') : '');
+                return (base + (searchOn() ? ` que coinciden con "${pqState.search.trim()}"` : '')).slice(0, 80);
+            };
+            function paintGeneral() {
+                const box = $('pqDelivery');
+                if (!box) return;
+                const on = !!(general && general.active);
+                box.classList.toggle('on', on);
+                const sw = $('pqDlvSwitch');
+                sw.setAttribute('aria-checked', on ? 'true' : 'false');
+                sw.disabled = generalBusy || !general;
+                $('pqDlvState').textContent = generalBusy ? 'guardando...' : !general ? (generalError ? 'no se pudo consultar' : 'consultando...') : on ? 'ACTIVADA' : 'DESACTIVADA';
+                let text = '';
+                if (!general) text = generalError;
+                else if (on) {
+                    text = `Hasta el ${fmtWhen(general.until)}${general.startedByName ? ` (la activó ${general.startedByName})` : ''}, ${general.scope === 'lista' ? `para ${general.count} vecino${general.count === 1 ? '' : 's'}${general.label ? ` (${general.label})` : ''}` : 'para todos los vecinos'}. `
+                        + `La primera vez que se escanee el QR de cada uno, mostrará su clave una sola vez. Entregadas en esta entrega: ${general.delivered || 0}.`;
+                } else {
+                    const ended = general.endedAt ? ` Se desactivó el ${fmtWhen(general.endedAt)}${general.endedByName ? ` (${general.endedByName})` : ''}.`
+                        : general.until && Date.parse(general.until) <= Date.now() ? ` La última venció el ${fmtWhen(general.until)}.` : '';
+                    text = `Los QR no muestran ninguna clave.${ended}${general.campaignId ? ` En la última entrega se entregaron ${general.delivered || 0}.` : ''}`;
+                }
+                $('pqDlvText').textContent = text;
+                $('pqDlvOpts').style.display = on ? 'none' : '';
+                $('pqDlvRefresh').disabled = generalBusy;
+            }
+            function paintScopeCount() {
+                const opt = $('pqDlvScope') && $('pqDlvScope').querySelector('option[value="lista"]');
+                if (opt) opt.textContent = `Solo las tarjetas de abajo (${chosen().length})`;
+            }
+            async function loadGeneral() {
+                const res = await callGeneral({ action: 'generalStatus' });
+                if (mine !== seq) return;
+                general = res.ok ? res : null;
+                generalError = res.ok ? '' : res.error;
+                paintGeneral();
+            }
+            async function runGeneral(payload, done) {
+                generalBusy = true;
+                paintGeneral();
+                const res = await callGeneral(payload);
+                generalBusy = false;
+                if (mine !== seq) return;
+                if (res.ok) { general = res; S.showToast(done, 'success'); }
+                else { alert(res.error || 'No se pudo completar. Intente de nuevo.'); if (res.campaignId !== undefined) general = res; }
+                paintGeneral();
+            }
+            function wireGeneral() {
+                if (!$('pqDelivery')) return;
+                $('pqDlvSwitch').addEventListener('click', () => {
+                    if (!general || generalBusy) return;
+                    if (general.active) {
+                        if (!confirm('¿Desactivar la entrega de claves?\n\nDesde ahora los QR no mostrarán ninguna clave. Las que ya se entregaron no cambian.')) return;
+                        runGeneral({ action: 'generalOff' }, 'Entrega de claves desactivada: los QR ya no muestran claves.');
+                        return;
+                    }
+                    const days = Number($('pqDlvDays').value) || 7;
+                    const list = $('pqDlvScope').value === 'lista' ? chosen() : null;
+                    if (list && !list.length) { S.showToast('No hay tarjetas en la lista de abajo.', 'warning'); return; }
+                    const who = list ? `las ${list.length} tarjeta${list.length === 1 ? '' : 's'} de abajo (${listLabel()})` : `todos los vecinos (${all.length})`;
+                    if (!confirm(`¿Activar la entrega de claves para ${who} durante ${days} día${days === 1 ? '' : 's'}?\n\nMientras esté activada, la PRIMERA persona que escanee el QR de cada vecino verá su clave una sola vez (también en los QR que ya estén pegados en puertas o carros). Actívela solo mientras se reparten las tarjetas.`)) return;
+                    runGeneral({ action: 'generalOn', days, ...(list ? { ids: list.map((u) => u.id), label: listLabel() } : {}) }, `Entrega de claves activada por ${days} día${days === 1 ? '' : 's'}.`);
+                });
+                $('pqDlvRefresh').addEventListener('click', () => { general = null; generalError = ''; paintGeneral(); loadGeneral(); });
+                loadGeneral();
+            }
+
             // La lista para marcar: con la busqueda, los que mas se parecen primero (como en las demas busquedas del sistema)
             const visibleForPick = () => (pqState.search.trim() && typeof SisdelBusqueda !== 'undefined' ? SisdelBusqueda.filter(all, pqState.search, Q.searchFields) : all);
             // El texto con lo que coincide marcado (sisdel-busqueda.js lo devuelve ya escapado: lo que viene de la base nunca se vuelve HTML)
@@ -675,6 +793,7 @@ const SisdelReportes = (() => {
                     ? `${list.length}${ofTotal} tarjeta${list.length === 1 && !ofTotal ? '' : 's'}${searchOn() ? ` que coinciden con "${pqState.search.trim()}"` : ''} · ${sheets} hoja${sheets === 1 ? '' : 's'} ${L.paper.label.toLowerCase()} (${L.perPage} por hoja)`
                     : (pqState.mode === 'picked' ? 'Marque a los vecinos que quiere imprimir.' : searchOn() ? `Ningún vecino coincide con "${pqState.search.trim()}".` : 'No hay vecinos para imprimir.');
                 paintTypeNote();
+                paintScopeCount();
                 const preview = $('pqPreview');
                 const cards = Q.cardsFor(list, origin, condoId);
                 const mine = ++paintSeq;
@@ -758,6 +877,7 @@ const SisdelReportes = (() => {
             });
             if (pqState.mode === 'picked') paintPick();
             paintCards();
+            wireGeneral();
         }
 
         function showCatalog(openId) {

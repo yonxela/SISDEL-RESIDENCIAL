@@ -769,6 +769,18 @@ async function run() {
     await denied('QR clave: nadie lee las entregas desde el navegador (ni el administrador)', () => getDoc(rref(admin, 'panico_entregas', 'u-maria')));
     await denied('QR clave: ni las escribe', () => setDoc(rref(admin, 'panico_entregas', 'u-ana'), { status: 'armed', armedUntil: '2999-01-01T00:00:00.000Z' }));
     await qrCall('panicDevice', { action: 'unlink', c: A, v: 'u-maria', secret: winners[0] && winners[0].secret });
+    // Entrega GENERAL (el interruptor de Reportes > QR de panico): activada, el QR de quien nunca la recibio la muestra una vez
+    equal('QR general: un vecino no la activa', await callErr(delivery(ana, { action: 'generalOn' })), 'permission-denied');
+    equal('QR general: desactivada, el QR de Ana no ofrece la clave', (await qrCall('panicCodeReveal', { action: 'peek', c: A, v: 'u-ana' })).available, false);
+    const gOn = await delivery(admin, { action: 'generalOn', days: 1 });
+    equal('QR general: el administrador la activa para todos por un dia', [gOn.ok, gOn.active, gOn.scope], [true, true, 'todos']);
+    equal('QR general: el QR de Ana la ofrece; el de Maria no (ya la recibio)', [(await qrCall('panicCodeReveal', { action: 'peek', c: A, v: 'u-ana' })).available, (await qrCall('panicCodeReveal', { action: 'peek', c: A, v: 'u-maria' })).available], [true, false]);
+    const gAna = await qrCall('panicCodeReveal', { action: 'claim', c: A, v: 'u-ana' });
+    equal('QR general: Ana ve su clave una vez y la oficina la ve contada', [gAna.ok, gAna.code, (await delivery(admin, { action: 'generalStatus' })).delivered, (await qrCall('panicCodeReveal', { action: 'claim', c: A, v: 'u-ana' })).ok], [true, 'VA101', 1, false]);
+    const gOff = await delivery(admin, { action: 'generalOff' });
+    equal('QR general: desactivada', [gOff.ok, gOff.active], [true, false]);
+    await denied('QR general: nadie lee la entrega general desde el navegador', () => getDoc(rref(admin, 'panico_config', 'entregas')));
+    await qrCall('panicDevice', { action: 'unlink', c: A, v: 'u-ana', secret: gAna.secret });
 
     await allowed('vecino guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: [{ name: 'Luis', phone: '5555-1111' }], updatedAt: ts() }));
     await denied('vecino no edita contactos de otro', () => setDoc(rref(ana, 'emergencia', 'u-maria'), { userId: 'u-maria', condominioId: A, contacts: [], updatedAt: ts() }));

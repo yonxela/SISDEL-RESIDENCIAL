@@ -9500,12 +9500,16 @@
         // Que dice el estado de la entrega ({ status, armedUntil, armedByName, deliveredAt, deliveredOn, cancelledAt })
         function panicDeliveryText(st) {
             const on = { iPhone: 'en un iPhone', Android: 'en un teléfono Android' };
+            // La entrega GENERAL de Reportes > QR de panico (un interruptor para todos o una lista): si cubre a este vecino, su QR le
+            // mostrara la clave la primera vez aunque aqui no se haya activado nada
+            const general = st.general && st.general.covers && st.status !== 'armed' && st.status !== 'delivered'
+                ? ' La entrega general de claves (Reportes > QR de pánico) está ACTIVA hasta el ' + panicDeliveryDate(st.general.until) + ': la primera vez que se escanee su QR mostrará la clave.' : '';
             switch (st.status) {
                 case 'armed': return 'Entrega ACTIVA hasta el ' + panicDeliveryDate(st.armedUntil) + (st.armedByName ? ' (la activó ' + st.armedByName + ')' : '') + '. La primera persona que escanee el QR y toque «Ver mi clave» la verá: entréguele la tarjeta y pídale que lo escanee.';
-                case 'delivered': return 'Clave ENTREGADA el ' + panicDeliveryDate(st.deliveredAt) + (st.deliveredOn ? ' ' + (on[st.deliveredOn] || 'en una computadora u otro aparato') : '') + '. El QR ya no la vuelve a mostrar. Si el vecino dice que no fue él, cámbiele la clave en su ficha y active otra entrega.';
-                case 'expired': return 'La entrega venció el ' + panicDeliveryDate(st.armedUntil) + ' sin que nadie viera la clave.';
-                case 'cancelled': return 'Entrega cancelada el ' + panicDeliveryDate(st.cancelledAt) + '.';
-                default: return 'Pendiente: todavía no se ha activado la entrega de su clave.';
+                case 'delivered': return 'Clave ENTREGADA el ' + panicDeliveryDate(st.deliveredAt) + (st.deliveredOn ? ' ' + (on[st.deliveredOn] || 'en una computadora u otro aparato') : '') + (st.via === 'general' ? ' (por la entrega general)' : '') + '. El QR ya no la vuelve a mostrar. Si el vecino dice que no fue él, cámbiele la clave en su ficha y active otra entrega.';
+                case 'expired': return 'La entrega venció el ' + panicDeliveryDate(st.armedUntil) + ' sin que nadie viera la clave.' + general;
+                case 'cancelled': return 'Entrega cancelada el ' + panicDeliveryDate(st.cancelledAt) + '.' + general;
+                default: return general ? 'Pendiente aquí.' + general : 'Pendiente: todavía no se ha activado la entrega de su clave.';
             }
         }
         function panicDeliveryHtml(r) {

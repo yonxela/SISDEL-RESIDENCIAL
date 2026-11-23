@@ -2014,6 +2014,7 @@
                 <div id="ec-due-empty" class="hidden mb-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-6 text-center text-emerald-800 dark:text-emerald-200">
                     <i class="fas fa-circle-check text-3xl block mb-2"></i><p class="font-bold">No tiene cuotas pendientes de pago.</p>
                 </div>
+                <p class="text-[14.3px] leading-snug font-bold text-slate-600 dark:text-slate-300 mb-1" id="ec-pay-request"></p>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-1" id="ec-due-note"></p>
             </div>
             <div id="ec-pane-movs" class="hidden">
@@ -11430,14 +11431,15 @@
                 numeric: m ? [2, 3, 4] : [2]
             };
         }
-        // La nota de abajo (pantalla, impresion y PDF): el pedido de pagar a tiempo (texto del usuario, 2026-11-23; la fecha de las
-        // cifras ya la dicen el subtitulo y el total) y, con regla de mora, como se cobra y la mora descontada
-        // (una funcion y no una constante: OIKOS pinta pantallas al arrancar, antes de que corran las lineas de abajo)
-        function ecPayRequest() { return 'Le agradeceríamos pagar su cuota durante los primeros cinco días de cada mes; eso nos ayudará a cumplir con el pago de todos los servicios correspondientes.'; }
+        // Abajo de la tabla (pantalla, impresion y PDF): el pedido de pagar a tiempo, con las palabras del usuario (2026-11-23,
+        // solo la ortografia corregida), un 30 % mas grande que la nota y en negrita; debajo, con regla de mora, la nota de como
+        // se cobra y la mora descontada (vacia sin mora). La fecha de las cifras ya la dicen el subtitulo y el total.
+        // (funciones y no constantes: OIKOS pinta pantallas al arrancar, antes de que corran las lineas de abajo)
+        function ecPayRequest() { return 'Agradeceríamos pagar su cuota los primeros cinco días de cada mes; eso nos ayudará a cumplir con los pagos de todos los servicios correspondientes.'; }
         function ecDueNoteText(dd) {
-            const rule = dd.withMora ? ` Mora: ${sisdelMoraRuleText()}.` : '';
-            const waived = dd.ms && dd.ms.moraWaived > 0.004 ? ` Mora descontada: ${formatMoney(dd.ms.moraWaived)} (ya no la debe).` : '';
-            return `${ecPayRequest()}${rule}${waived}`;
+            const rule = dd.withMora ? `Mora: ${sisdelMoraRuleText()}.` : '';
+            const waived = dd.ms && dd.ms.moraWaived > 0.004 ? `Mora descontada: ${formatMoney(dd.ms.moraWaived)} (ya no la debe).` : '';
+            return [rule, waived].filter(Boolean).join(' ');
         }
         function renderEcDue() {
             const box = document.getElementById('ec-due-box');
@@ -11454,7 +11456,10 @@
             document.getElementById('ec-due-total-label').textContent = owes ? (showMora ? '= Total que debe' : 'Total que debe') : 'Al día';
             document.getElementById('ec-due-total').textContent = formatMoney(debt.total);
             document.getElementById('ec-due-total-note').textContent = debt.credit > 0 ? `Saldo a favor ${formatMoney(debt.credit)}` : `al ${ecDueDay(dd)}`;
-            document.getElementById('ec-due-note').textContent = ecDueNoteText(dd);
+            document.getElementById('ec-pay-request').textContent = ecPayRequest();
+            const dueNote = document.getElementById('ec-due-note');
+            dueNote.textContent = ecDueNoteText(dd);
+            dueNote.classList.toggle('hidden', !dueNote.textContent);
             const empty = list.rows.length === 0;
             document.getElementById('ec-due-wrap').classList.toggle('hidden', empty);
             document.getElementById('ec-due-empty').classList.toggle('hidden', !empty);
@@ -11549,7 +11554,8 @@
                 <div style="display:flex;gap:12px;margin-bottom:16px;align-items:stretch">${boxes}</div>
                 ${creditHtml}
                 ${tableHtml}
-                <p style="font-size:11px;color:#64748b;margin:0">${ecEsc(ecDueNoteText(dd))}</p>
+                <p style="font-size:14.3px;font-weight:700;color:#475569;margin:0 0 4px">${ecEsc(ecPayRequest())}</p>
+                ${ecDueNoteText(dd) ? `<p style="font-size:11px;color:#64748b;margin:0">${ecEsc(ecDueNoteText(dd))}</p>` : ''}
                 <p style="text-align:center;color:#94a3b8;font-size:11px;margin-top:24px">Generado el ${new Date().toLocaleString('es-MX')}</p>
             </body></html>`;
             const w = window.open('', '_blank', 'width=800,height=600');
@@ -11637,9 +11643,16 @@
                 doc.text('No tiene cuotas pendientes de pago.', 14, y + 6);
                 y += 12;
             }
-            if (y > 280) { doc.addPage(); y = 20; }
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
-            doc.text(doc.splitTextToSize(L(ecDueNoteText(dd)), 182), 14, y);
+            if (y > 275) { doc.addPage(); y = 20; }
+            // El pedido de pagar a tiempo: 30 % mas grande que la nota (7 -> 9.1) y en negrita
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9.1); doc.setTextColor(71, 85, 105);
+            const payLines = doc.splitTextToSize(L(ecPayRequest()), 182);
+            doc.text(payLines, 14, y);
+            y += payLines.length * 4.2 + 1;
+            if (ecDueNoteText(dd)) {
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+                doc.text(doc.splitTextToSize(L(ecDueNoteText(dd)), 182), 14, y);
+            }
             doc.save('Estado_Cuenta_' + String(r.unit || '').replace(/\s+/g, '_') + '_' + String(r.name || '').replace(/\s+/g, '_') + '.pdf');
             showToast('PDF de Estado de Cuenta generado.');
         }

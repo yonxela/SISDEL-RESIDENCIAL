@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 159 privilegios: 32 paraguas y 127 acciones', [P.KEYS.length, roots.length, kids.length], [159, 32, 127]);
+equal('hay 160 privilegios: 33 paraguas y 127 acciones', [P.KEYS.length, roots.length, kids.length], [160, 33, 127]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -402,7 +402,36 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('las pestanas del panel y las de Configuracion no se mezclan', !/querySelectorAll\('\.tab'\)/.test(admin) && (admin.match(/querySelectorAll\('#mainTabs \.tab'\)/g) || []).length === 2);
     const shown = (admin.match(/SISDEL\.canAny\(\[('usuarios\.[a-z]+'(?:, )?)+\]\)/) || [''])[0].match(/usuarios\.[a-z]+/g) || [];
     equal('el boton Configuracion lo ve quien tenga algun paraguas usuarios.* (las acciones cuelgan de ellos)', sorted(shown), sorted(P.ITEMS.filter((i) => i.key.startsWith('usuarios.') && !i.parent).map((i) => i.key)));
-    yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\)\)\?\$/.test(admin) && /hashchange/.test(admin));
+    yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\|panico\)\)\?\$/.test(admin) && /hashchange/.test(admin));
+    {
+        // Configuracion > Boton de panico (pedido del usuario el 2026-11-20): telefonos de la garita y la PNC y los textos del aviso
+        const ui = read('panico-config-ui.js');
+        const rules = read('firestore.rules');
+        const fnIndex = read('functions/index.js');
+        const rondas = read('functions/src/rondas/index.js');
+        const prueba = read('functions/src/panico-config.js');
+        const def = P.ITEMS.find((i) => i.key === 'panico.configurar');
+        yes('boton de panico: privilegio propio del administrador, sensible y en las reglas', !!def && !def.parent && JSON.stringify(def.roles) === '["admin"]' && def.sensitive === true && def.enforce === 'reglas');
+        yes('boton de panico: la pestana existe, se abre con su privilegio y con #configuracion/panico', /data-cfg="panico">Botón de pánico</.test(admin) && /<section id="cfgPanico"/.test(admin)
+            && /panico: SISDEL\.can\('panico\.configurar'\)/.test(admin) && /'usuarios\.privilegios', 'panico\.configurar'\]\);/.test(admin));
+        yes('boton de panico: la pagina carga el modulo de los avisos y la pestana', /<script src="panico-avisos\.js\?v=\d{8}[a-z]"><\/script>/.test(admin) && /<script src="panico-config-ui\.js\?v=\d{8}[a-z]"><\/script>/.test(admin)
+            && admin.indexOf('panico-avisos.js?v=') < admin.indexOf('panico-config-ui.js?v='));
+        yes('boton de panico: salir con cambios sin guardar pregunta (como Privilegios y Plantillas)', /\(panicTab && panicTab\.isDirty\(\)\)/.test(admin));
+        yes('boton de panico: con solo este privilegio no se ven Usuarios, Privilegios ni Plantillas', /plantillas: SISDEL\.canAny\(\['usuarios\.panel'/.test(admin) && /\.find\(\(t\) => cfgAllowed\[t\]\)/.test(admin));
+        // SISDEL es una constante global de sisdel-core.js, no cuelga de window: con window.SISDEL la pestana no arrancaba en admin.html
+        yes('boton de panico: usa la constante SISDEL del nucleo (no window.SISDEL a secas)', /const S = typeof SISDEL !== 'undefined' \? SISDEL : window\.SISDEL;/.test(ui));
+        yes('boton de panico: lo escrito se pinta como texto, nunca como HTML', !/innerHTML\s*=(?!\s*''\s*;)/.test(ui) && /textContent/.test(ui));
+        yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
+        yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));
+        yes('boton de panico: el interruptor de los vecinos pide su propio privilegio y escribe como RONDIN', /S\.can\('rondas\.ajustes_panicovecinos'\)/.test(ui) && /company_id: condoId, neighbor_panic_enabled: next \? 1 : 0/.test(ui));
+        yes('boton de panico: las reglas piden el privilegio, revisan cada campo y no dejan borrar', /match \/panico_config\/\{docId\} \{/.test(rules) && /allow read: if docId == 'general' && \(isMaster\(\) \|\| pPanicoConfigurar\(condoId\)\);/.test(rules)
+            && /allow create, update: if pPanicoConfigurar\(condoId\) && panicConfigOk\(\);/.test(rules) 
+            && /get\('updatedBy', \{\}\)\.get\('id', ''\) == request\.auth\.uid/.test(rules) && /'phones', 'notifyStaff', 'staffTitle', 'staffNote', 'familyNote', 'signature', 'updatedAt', 'updatedBy'/.test(rules));
+        yes('boton de panico: cada alerta lee la configuracion del condominio', /collection\('panico_config'\)\.doc\('general'\)/.test(rondas) && /config: panicConfig/.test(rondas));
+        yes('boton de panico: la prueba pide el privilegio, tiene tope y solo va a los telefonos guardados', /privilegios\.has\(.*'panico\.configurar'\)/.test(prueba) && /rateLimit\.isBlocked\('panico-prueba'/.test(prueba)
+            && /for \(const p of cfg\.phones\)/.test(prueba) && !/request\.data\.(phone|phones|to)/.test(prueba));
+        yes('boton de panico: la funcion de prueba y la bitacora estan publicadas', /testPanicNotice/.test(fnIndex) && /auditPanicConfig/.test(fnIndex));
+    }
     yes('Configuracion reutiliza la lista, Agregar Usuario y el editor (sin duplicarlos)', /async function openNewUser\(\)/.test(admin) && /btnCfgNewUser'\)\.addEventListener\('click', openNewUser\)/.test(admin)
         && /mountPrivilegesTab\(/.test(admin) && /mountTemplatesTab\(/.test(admin) && (admin.match(/const userRow = /g) || []).length === 1);
     yes('Configuracion sin privilegios usuarios.privilegios queda en solo lectura', /readOnly: !caps\.privilegios/.test(admin) && /canManage: caps\.privilegios/.test(admin));

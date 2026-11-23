@@ -118,6 +118,7 @@ service cloud.firestore {
     function pPanicoContactos(c) { return pPanicoVer(c) && childOk(c, 'panico.contactos'); }
     function pPanicoAtender(c) { return can(c, 'panico.atender', ['admin', 'policia', 'supervisor']); }
     function pPanicoResolver(c) { return pPanicoAtender(c) && childOk(c, 'panico.resolver'); }
+    function pPanicoConfigurar(c) { return can(c, 'panico.configurar', ['admin']); }
     // Sistema Financiero (OIKOS)
     function pFinanzasVer(c) { return can(c, 'finanzas.ver', ['admin', 'auditor']); }
     function pFinanzasUsar(c) { return can(c, 'finanzas.usar', ['admin']); }
@@ -737,6 +738,31 @@ service cloud.firestore {
         allow delete: if isMaster() || pRondasDronesRegistrar(condoId);
       }
 
+
+      // ── Configuracion del boton de panico (Configuracion > Boton de panico de admin.html, panico-avisos.js): los telefonos de la garita
+      // y de la PNC que reciben cada alerta y los textos del aviso. La lee y la escribe quien tiene panico.configurar; el servidor la lee
+      // en cada alerta (onPanicCreated) y la vuelve a limpiar (cleanConfig). Un solo documento ('general'), no se borra y cada cambio
+      // queda en la bitacora (auditPanicConfig). En la misma coleccion, 'entregas' es la entrega GENERAL de claves con el QR (el
+      // interruptor de Reportes > QR de panico: si esta activa, hasta cuando, para quienes y quien la activo o la apago): solo la
+      // escribe y la lee la funcion panicCodeDelivery (functions/src/panico-qr.js), nunca el navegador.
+      match /panico_config/{docId} {
+        function panicConfigOk() {
+          let d = request.resource.data;
+          return docId == 'general'
+            && d.keys().hasOnly(['phones', 'notifyStaff', 'staffTitle', 'staffNote', 'familyNote', 'signature', 'updatedAt', 'updatedBy'])
+            && d.get('phones', []) is list && d.get('phones', []).size() <= 10
+            && d.get('notifyStaff', true) is bool
+            && d.get('staffTitle', '') is string && d.get('staffTitle', '').size() <= 60
+            && d.get('staffNote', '') is string && d.get('staffNote', '').size() <= 600
+            && d.get('familyNote', '') is string && d.get('familyNote', '').size() <= 600
+            && d.get('signature', '') is string && d.get('signature', '').size() <= 60
+            && d.get('updatedBy', {}) is map && d.get('updatedBy', {}).get('id', '') == request.auth.uid;
+        }
+        allow read: if docId == 'general' && (isMaster() || pPanicoConfigurar(condoId));
+        allow create, update: if pPanicoConfigurar(condoId) && panicConfigOk();
+        allow delete: if false;
+      }
+
       // ── Alertas de panico (vecinos y guardias) ──
       // El vecino o guardia la crea a su nombre; admin, policia y supervisor la atienden;
       // el vecino puede cancelar la suya mientras siga activa. Nunca se borran.
@@ -768,11 +794,6 @@ service cloud.firestore {
       // se vio y en que telefono, con la historia de cada entrega; nunca la clave. Solo las funciones panicCodeDelivery y
       // panicCodeReveal (functions/src/panico-qr.js)
       match /panico_entregas/{userId} {
-        allow read, write: if false;
-      }
-      // Entrega GENERAL de claves con el QR (el interruptor de Reportes > QR de panico): si esta activa, hasta cuando, para quienes
-      // y quien la activo o la apago. Solo la funcion panicCodeDelivery (functions/src/panico-qr.js)
-      match /panico_config/{docId} {
         allow read, write: if false;
       }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)

@@ -11,7 +11,8 @@ const AUDITED = {
     finanzas_movimientos: ['type', 'kind', 'period', 'amount', 'concept', 'resiId', 'receiptNum'],
     finanzas_config: [],
     finanzas_bancos: ['bankName', 'accountNumber', 'accountType', 'currency'],
-    finanzas_bancos_movs: ['accountId', 'type', 'direction', 'amount', 'concept', 'reference']
+    finanzas_bancos_movs: ['accountId', 'type', 'direction', 'amount', 'concept', 'reference'],
+    panico_config: []
 };
 // Campos que no son un cambio del negocio: el sello del servidor de los movimientos (finanzas/sello.js)
 const IGNORED_FIELDS = ['server_at'];

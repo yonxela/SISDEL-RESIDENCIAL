@@ -654,7 +654,9 @@ console.log('\nReglas y paginas');
     const rules = read('firestore.rules');
     yes('las reglas no dejan leer ni escribir los telefonos vinculados desde el navegador', /match \/panico_dispositivos\/\{deviceId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
     yes('ni las entregas de la clave', /match \/panico_entregas\/\{userId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
-    yes('ni la entrega general', /match \/panico_config\/\{docId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
+    // panico_config tambien guarda la configuracion del boton ('general', Configuracion > Boton de panico): el navegador solo alcanza ese documento
+    yes('ni la entrega general', /allow read: if docId == 'general' && \(isMaster\(\) \|\| pPanicoConfigurar\(condoId\)\);/.test(rules) && /function panicConfigOk\(\) \{\s*let d = request\.resource\.data;\s*return docId == 'general'/.test(rules)
+        && (rules.match(/match \/panico_config\/\{docId\}/g) || []).length === 1);
     const index = read('functions/index.js');
     yes('functions/index.js publica linkPanicDevice y panicDevice', /require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice/.test(index));
     yes('y las dos de la entrega de la clave', /const \{ linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal \} = require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal,/.test(index));

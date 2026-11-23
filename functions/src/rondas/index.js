@@ -3,13 +3,14 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
-const { recipientsFor } = require('./avisos');
+const { recipientsFor, cleanConfig } = require('./avisos');
 const whatsapp = require('./whatsapp');
 const { cleanAll } = require('./mantenimiento');
 const privilegios = require('../privilegios');
 
-// Alerta de panico nueva: WhatsApp a la central, al personal del condominio y,
-// si es un vecino, a sus contactos de emergencia. El resultado queda en la alerta.
+// Alerta de panico nueva: WhatsApp a la central, a los telefonos que configuro el condominio (garita, PNC...), al personal del
+// condominio y, si es un vecino, a sus contactos de emergencia. El resultado queda en la alerta. Los textos y los telefonos salen de
+// condominios/{id}/panico_config/general (Configuracion > Boton de panico de admin.html); sin configurar, los de siempre.
 const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{alertId}', async (event) => {
     const alert = event.data && event.data.data();
     if (!alert) return;
@@ -21,11 +22,13 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         return;
     }
 
-    const [condoSnap, contactsSnap, staffSnap] = await Promise.all([
+    const [condoSnap, contactsSnap, staffSnap, panicCfgSnap] = await Promise.all([
         condoRef.get(),
         alert.source === 'vecino' ? condoRef.collection('emergencia').doc(String(alert.userId)).get() : Promise.resolve(null),
-        condoRef.collection('usuarios').where('role', 'in', ['admin', 'supervisor', 'operador']).get()
+        condoRef.collection('usuarios').where('role', 'in', ['admin', 'supervisor', 'operador']).get(),
+        condoRef.collection('panico_config').doc('general').get().catch(() => null)
     ]);
+    const panicConfig = cleanConfig(panicCfgSnap && panicCfgSnap.exists ? panicCfgSnap.data() : null);
     // Se avisa al personal que puede atender alertas de panico (admin y supervisores por defecto; el administrador
     // del condominio puede quitarselo a uno o dárselo a un operador)
     const staff = staffSnap.docs.map((d) => d.data())
@@ -35,7 +38,8 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         condoName: condoSnap.exists ? condoSnap.data().name : '',
         contacts: contactsSnap && contactsSnap.exists ? contactsSnap.data().contacts || [] : [],
         staff: staff.map((u) => ({ name: u.name, phone: u.phone })),
-        central: config.central || ''
+        central: config.central || '',
+        config: panicConfig
     });
 
     const results = [];

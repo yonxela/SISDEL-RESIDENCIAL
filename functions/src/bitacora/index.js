@@ -78,5 +78,7 @@ module.exports = {
     auditFinanceSettings: audit('finanzas_config'),
     auditBankAccounts: audit('finanzas_bancos'),
     auditBankMovements: audit('finanzas_bancos_movs'),
+    // Configuracion del boton de panico: telefonos de la garita y la PNC y textos del aviso
+    auditPanicConfig: audit('panico_config'),
     record, AUDITED
 };

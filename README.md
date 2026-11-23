@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-159 privilegios: 32 paraguas y 127 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+160 privilegios: 33 paraguas y 127 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -146,6 +146,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `panico.avisos` | Recibir avisos y sirena. La barra roja y el sonido cuando llega una alerta nueva. | los de su paraguas | Pantalla |
 | `panico.atender` | Atender alertas de pánico. Marcar las alertas como atendidas. | `admin`, `policia`, `supervisor` | Reglas |
 | `panico.resolver` | Resolver alertas de pánico. Cerrar una alerta con sus notas. | los de su paraguas | Reglas |
+| `panico.configurar` | Configurar el botón de pánico **(sensible)**. Configuración > Botón de pánico: los teléfonos de la garita y de la PNC que reciben cada alerta, el título y las indicaciones de su aviso, lo que se les dice a los familiares y la firma; y enviarles un mensaje de prueba. | `admin` | Reglas |
 
 ### Sistema Financiero (OIKOS)
 
@@ -394,6 +395,8 @@ condominios/{condoId}
     alertas_panico/{id}             boton de panico de vecinos y guardias
     emergencia/{userId}             contactos de emergencia del vecino
     panico_dispositivos/{huella}    telefonos vinculados al QR de panico de cada vecino (solo el servidor)
+    panico_config/general           Configuracion > Boton de panico: telefonos de la garita y la PNC que reciben cada alerta y los textos del aviso (panico.configurar; con bitacora)
+    panico_config/entregas          entrega general de claves con el QR de panico (solo el servidor)
 codigos/{codigo}            índice único código -> usuario
 mensajes_globales/{msgId}   mensajes del master para todos
 camera_logs_huerfanos/      lecturas de cámara sin condominio válido

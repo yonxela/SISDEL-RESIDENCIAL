@@ -728,6 +728,49 @@ async function run() {
     await denied('el auditor no atiende alertas', () => updateDoc(rref(auditor, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sofia' }));
     await allowed('el auditor ve las alertas', () => getDocs(rcol(auditor, 'alertas_panico')));
 
+    // ───────── Configuracion > Boton de panico (admin.html): telefonos de la garita y la PNC y los textos del aviso ─────────
+    console.log('\nConfiguracion del boton de panico');
+    {
+        const cfgRef = (c, id = 'general') => rref(c, 'panico_config', id);
+        const by = (c) => ({ id: c.auth.currentUser.uid, name: 'Prueba' });
+        const cfg = (c, extra = {}) => ({
+            phones: [{ kind: 'garita', name: 'Garita principal', phone: '50244440001' }, { kind: 'pnc', name: 'PNC Villa Nueva', phone: '50244440002' }],
+            notifyStaff: false, staffTitle: 'EMERGENCIA EN VILLA', staffNote: 'Diríjase al lote.', familyNote: 'Ya avisamos a la garita.', signature: 'Garita',
+            updatedAt: new Date().toISOString(), updatedBy: by(c), ...extra
+        });
+        await denied('boton de panico: la garita no lee la configuracion', () => getDoc(cfgRef(guard)));
+        await denied('boton de panico: un vecino no la lee', () => getDoc(cfgRef(ana)));
+        await denied('boton de panico: el supervisor no la cambia', () => setDoc(cfgRef(sup), cfg(sup)));
+        await denied('boton de panico: el auditor no la cambia', () => setDoc(cfgRef(auditor), cfg(auditor)));
+        await denied('boton de panico: no se guarda a nombre de otro', () => setDoc(cfgRef(admin), cfg(admin, { updatedBy: { id: 'u-otro', name: 'Otro' } })));
+        await denied('boton de panico: no admite campos de mas', () => setDoc(cfgRef(admin), cfg(admin, { central: '50299999999' })));
+        await denied('boton de panico: no mas de 10 telefonos', () => setDoc(cfgRef(admin), cfg(admin, { phones: Array.from({ length: 11 }, (_, i) => ({ kind: 'otro', name: 'T' + i, phone: '5024444' + String(1000 + i) })) })));
+        await denied('boton de panico: textos con su largo', () => setDoc(cfgRef(admin), cfg(admin, { staffNote: 'x'.repeat(601) })));
+        await denied('boton de panico: un solo documento (general)', () => setDoc(cfgRef(admin, 'otro'), cfg(admin)));
+        await allowed('boton de panico: el administrador guarda los telefonos y los textos', () => setDoc(cfgRef(admin), cfg(admin)));
+        await allowed('boton de panico: el administrador la lee', () => getDoc(cfgRef(admin)));
+        await denied('boton de panico: no se borra', () => deleteDoc(cfgRef(admin)));
+        await denied('boton de panico: la entrega general de claves sigue sin leerse desde el navegador', () => getDoc(cfgRef(admin, 'entregas')));
+        await allowed('boton de panico: vecino activa una alerta con la configuracion', () => setDoc(rref(ana, 'alertas_panico', 'pan-cfg'), panico('pan-cfg')));
+        await waitFor('boton de panico: la alerta avisa a la garita y la PNC configuradas y, sin el personal, a la central y los familiares', async () => {
+            const w = ((await getDoc(rref(admin, 'alertas_panico', 'pan-cfg'))).data() || {}).whatsapp;
+            if (!w) return false;
+            const names = w.recipients.map((r) => r.nombre);
+            return w.sent === true && JSON.stringify(names.slice(0, 3)) === JSON.stringify(['Central SISDEL', 'Garita principal', 'PNC Villa Nueva'])
+                && names.includes('Luis García') && !names.includes('Samuel Ortiz');
+        });
+        const testCall = (c) => httpsCallable(c.functions, 'testPanicNotice')({}).then((r) => r.data);
+        const testErr = async (c) => { try { await testCall(c); return 'sin error'; } catch (e) { return String(e.code || e.message).replace(/^functions\//, ''); } };
+        equal('boton de panico: la prueba la pide solo quien configura (ni un vecino ni el supervisor)', [await testErr(ana), await testErr(sup)], ['permission-denied', 'permission-denied']);
+        const test = await testCall(admin);
+        equal('boton de panico: la prueba va solo a los telefonos guardados (simulado)', test.results.map((r) => [r.name, r.phoneTail, r.sent]), [['Garita principal', '0001', true], ['PNC Villa Nueva', '0002', true]]);
+        await waitFor('boton de panico: el cambio queda en la bitacora con quien lo hizo', async () => {
+            const snap = await getDocs(query(rcol(admin, 'bitacora'), where('collection', '==', 'panico_config')));
+            return snap.docs.some((d) => d.data().docId === 'general' && d.data().action === 'crear');
+        });
+        await allowed('boton de panico: vuelve a avisar al personal', () => setDoc(cfgRef(admin), cfg(admin, { notifyStaff: true })));
+    }
+
     // ───────── QR de panico por vecino: panico.html llama a las funciones con fetch, sin sesion (ver test-panico-qr.mjs) ─────────
     console.log('\nQR de panico');
     const qrCall = async (name, data) => {

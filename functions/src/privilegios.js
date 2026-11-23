@@ -155,7 +155,8 @@
                 { key: 'panico.contactos', sub: 'Ver', parent: 'panico.ver', label: 'Ver los contactos de emergencia', description: 'Los familiares registrados por los vecinos.', enforce: 'reglas' },
                 { key: 'panico.avisos', sub: 'Ver', parent: 'panico.ver', label: 'Recibir avisos y sirena', description: 'La barra roja y el sonido cuando llega una alerta nueva.', enforce: 'pantalla' },
                 { key: 'panico.atender', sub: 'Atender', label: 'Atender alertas de pánico', description: 'Marcar las alertas como atendidas.', roles: ['admin', 'policia', 'supervisor'], requires: ['panico.ver'], enforce: 'reglas' },
-                { key: 'panico.resolver', sub: 'Atender', parent: 'panico.atender', label: 'Resolver alertas de pánico', description: 'Cerrar una alerta con sus notas.', enforce: 'reglas' }
+                { key: 'panico.resolver', sub: 'Atender', parent: 'panico.atender', label: 'Resolver alertas de pánico', description: 'Cerrar una alerta con sus notas.', enforce: 'reglas' },
+                { key: 'panico.configurar', sub: 'Configurar', label: 'Configurar el botón de pánico', description: 'Configuración > Botón de pánico: los teléfonos de la garita y de la PNC que reciben cada alerta, el título y las indicaciones de su aviso, lo que se les dice a los familiares y la firma; y enviarles un mensaje de prueba.', roles: ['admin'], sensitive: true, enforce: 'reglas' }
             ]
         },
         {

@@ -200,7 +200,7 @@ console.log('\nPantallas que lo usan');
         yes(`${name}: aunque la respuesta tarde, el boton pasa solo a enviada cuando llega`, /sending\.then\(/.test(html));
         yes(`${name}: pasa el id de la alerta al boton (30 segundos despues de ALERTA ENVIADA queda listo para otra, y esa alerta no lo bloquea de nuevo)`, /setState\(SisdelPanicoBoton\.stateForAlert\((alert|a)\.status\), (alert|a)\.id,/.test(html) && /setState\('sent', (saved|res\.alert)\.id\)/.test(html));
     }
-    yes('en el portal el circulo sigue arriba a la derecha de la bienvenida', /\.panic-top \{ display: none; flex-direction: column; align-items: flex-end;/.test(vecino) && /size: '11rem'/.test(vecino));
+    yes('en el portal el circulo va en la pestaña Seguridad, centrado y grande (antes arriba a la derecha de la bienvenida)', /\.panic-top \{ display: none; flex-direction: column; align-items: center;/.test(vecino) && /size: '11rem'/.test(vecino) && /id="panelSeguridad"[\s\S]*?id="panicBtnHost"/.test(vecino));
     yes('panico-boton.js lleva la misma version en el portal y en el QR', (() => { const v = (h) => (h.match(/panico-boton\.js\?v=(\w+)/) || [])[1]; return v(vecino) && v(vecino) === v(qr); })());
     yes('el aro y el relleno del circulo suben juntos y tardan lo mismo (var --pb-hold)', /\.pb-wrap\[data-state="holding"\] \.pb-prog \{ stroke-dashoffset: 0; transition: stroke-dashoffset var\(--pb-hold/.test(lib) && /\.pb-wrap\[data-state="holding"\] \.pb-fill \{ height: 100%; transition: height var\(--pb-hold/.test(lib));
     yes('al enviarse el circulo pasa a verde con palomita', /\.pb-wrap\[data-state="sent"\] \.pb-done[\s\S]{0,60}opacity: 1/.test(lib) && /icon: 'check'/.test(lib));

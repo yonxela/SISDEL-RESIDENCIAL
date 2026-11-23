@@ -78,6 +78,7 @@ service cloud.firestore {
     function pUsuariosEstado(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.estado'); }
     function pUsuariosPago(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.pago'); }
     function pUsuariosFicha(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.ficha'); }
+    function pUsuariosActualizaciones(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.actualizaciones'); }
     function pUsuariosEmergencia(c) { return pUsuariosEditar(c) && childOk(c, 'usuarios.emergencia'); }
     function pUsuariosPrivilegios(c) { return can(c, 'usuarios.privilegios', ['admin']); }
     function pPlantillasGestionar(c) { return pUsuariosPrivilegios(c) && childOk(c, 'plantillas.gestionar'); }
@@ -833,6 +834,53 @@ service cloud.firestore {
         allow read: if isMaster() || pFinanzasResidentesContactar(condoId);
         allow write: if false;
       }
+      // Actualizacion de datos de los vecinos (sisdel-actualizaciones.js; pedido del usuario el 2026-11-23): el vecino confirma o
+      // corrige su lote, telefono, correo, NIT y DPI y eso queda aqui como una solicitud; NO cambia la base. La administracion
+      // (usuarios.actualizaciones, ademas de los privilegios con que ya edita al vecino) la revisa y la aplica o la rechaza.
+      // Nada se borra. El vecino solo crea y cambia las SUYAS y solo mientras estan pendientes; no toca la revision.
+      match /actualizaciones_datos/{reqId} {
+        function dataMapOk(m) {
+          return m is map && m.keys().hasOnly(['casa', 'phone', 'email', 'nit', 'dpi', 'propietario', 'direccion'])
+            && m.get('casa', '') is string && m.get('casa', '').size() <= 40
+            && m.get('phone', '') is string && m.get('phone', '').size() <= 40
+            && m.get('email', '') is string && m.get('email', '').size() <= 120
+            && m.get('nit', '') is string && m.get('nit', '').size() <= 20
+            && m.get('dpi', '') is string && m.get('dpi', '').size() <= 20
+            && m.get('propietario', '') is string && m.get('propietario', '').size() <= 160
+            && m.get('direccion', '') is string && m.get('direccion', '').size() <= 160;
+        }
+        function ownRequestOk() {
+          return request.resource.data.userId == request.auth.uid
+            && request.resource.data.condominioId == condoId
+            && request.resource.data.origin in ['primer-ingreso', 'mis-datos']
+            && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 120
+            && request.resource.data.get('casa', '') is string && request.resource.data.get('casa', '').size() <= 40
+            && dataMapOk(request.resource.data.current) && dataMapOk(request.resource.data.proposed)
+            && request.resource.data.changed is list && request.resource.data.changed.size() <= 7
+            && request.resource.data.sinCambios is bool && request.resource.data.noNit is bool && request.resource.data.noDpi is bool
+            && request.resource.data.createdAt is string;
+        }
+        allow read: if isMaster() || pUsuariosActualizaciones(condoId)
+          || (isResident(condoId) && pVecinoFicha(condoId) && resource.data.userId == request.auth.uid);
+        allow create: if isResident(condoId) && pVecinoFicha(condoId)
+          && request.resource.data.keys().hasOnly(['userId', 'condominioId', 'name', 'casa', 'status', 'origin', 'current', 'proposed', 'changed', 'sinCambios', 'noNit', 'noDpi', 'createdAt'])
+          && request.resource.data.status == 'pendiente' && ownRequestOk();
+        allow update: if
+          // El vecino corrige su solicitud o la cancela, solo mientras nadie la haya revisado
+          (isResident(condoId) && pVecinoFicha(condoId) && resource.data.userId == request.auth.uid && resource.data.status == 'pendiente'
+            && request.resource.data.status in ['pendiente', 'cancelada']
+            && onlyChanges(['status', 'origin', 'name', 'casa', 'current', 'proposed', 'changed', 'sinCambios', 'noNit', 'noDpi', 'updatedAt'])
+            && ownRequestOk())
+          // La administracion la aplica o la rechaza (la clave del administrador se verifica en la pantalla, como la cuota del mes)
+          || (pUsuariosActualizaciones(condoId) && resource.data.status == 'pendiente'
+            && request.resource.data.status in ['aplicada', 'rechazada']
+            && onlyChanges(['status', 'review'])
+            && request.resource.data.review is map
+            && request.resource.data.review.byId == request.auth.uid
+            && request.resource.data.review.get('note', '') is string && request.resource.data.review.get('note', '').size() <= 300);
+        allow delete: if false;
+      }
+
       // Envios de recordatorios por WhatsApp a todos los residentes (functions/src/recordatorios-core.js): los escribe solo el
       // servidor; los lee quien tiene el privilegio de recordatorios, para ver el avance
       match /recordatorios_envios/{campId} {

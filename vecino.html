@@ -9,11 +9,58 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        /* Boton de panico: arriba a la derecha de la bienvenida, encima del nombre del residente. El boton (el circulo que se llena
-           al mantenerlo presionado, igual que en el QR de panico) lo pone panico-boton.js */
-        .panic-top { display: none; flex-direction: column; align-items: flex-end; gap: 0.5rem; margin-bottom: 1rem; }
-        .panic-top .pb-host { align-self: flex-end; }
+        /* Boton de panico: ahora en la pestana Seguridad, centrado y grande (antes arriba a la derecha de la bienvenida). El boton
+           (el circulo que se llena al mantenerlo presionado, igual que en el QR de panico) lo pone panico-boton.js */
+        .panic-top { display: none; flex-direction: column; align-items: center; gap: 0.75rem; margin: 0.5rem 0 1rem; text-align: center; }
+        .panic-top .pb-host { align-self: center; }
         .panic-top .panic-status { align-self: stretch; text-align: left; margin-top: 0.25rem; }
+        .panic-help { margin: 0; max-width: 28rem; color: var(--text-secondary); font-size: 0.95rem; line-height: 1.45; }
+        /* Pestanas del portal: debajo de la bienvenida en pantallas grandes y abajo, fijas, en el celular */
+        .vec-tabs { display: flex; gap: 0.5rem; margin: 0 0 1.5rem; padding: 0.4rem; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); }
+        .vec-tab { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.55rem; padding: 0.8rem 0.5rem; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font-size: 1rem; font-weight: 700; cursor: pointer; transition: background .15s, color .15s; }
+        .vec-tab[hidden] { display: none; }
+        .vec-tab[aria-selected="true"] { background: var(--primary); color: #fff; box-shadow: var(--shadow-md); }
+        .vec-dot { position: absolute; top: 0.45rem; right: calc(50% - 2.4rem); width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--warning); border: 2px solid var(--bg-surface-solid); }
+        .vec-dot[hidden] { display: none; }
+        .vec-panel[hidden] { display: none; }
+        @media (max-width: 640px) {
+            .vec-tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; margin: 0; gap: 0.25rem; padding: 0.4rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom)); border-width: 1px 0 0; border-radius: 1rem 1rem 0 0; background: var(--bg-surface-solid); box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.25); }
+            .vec-tab { flex-direction: column; gap: 0.2rem; padding: 0.5rem 0.25rem; font-size: 0.78rem; }
+            .vec-dot { right: calc(50% - 1.9rem); top: 0.35rem; }
+            .page-content { padding-bottom: 6.5rem; }
+            /* Visitas: las dos tarjetas lado a lado y mas bajas (apiladas ocupaban casi toda la pantalla) */
+            #panelVisitas .stats-grid { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+            #panelVisitas .stat-card { padding: 1rem; }
+            #panelVisitas .stat-value { font-size: 1.6rem; }
+        }
+        /* Mis datos: la ficha del vecino, el estado de su solicitud y el formulario */
+        .datos-card { padding: 1.25rem; margin-bottom: 1rem; }
+        .datos-title { margin: 0 0 0.85rem; font-size: 1.15rem; }
+        .datos-list { display: grid; grid-template-columns: minmax(7.5rem, 38%) 1fr; gap: 0.55rem 1rem; margin: 0; }
+        .datos-list dt { color: var(--text-muted); font-size: 0.82rem; font-weight: 600; }
+        .datos-list dd { margin: 0; color: var(--text-primary); font-weight: 600; word-break: break-word; }
+        .datos-list dd.vacio { color: var(--text-muted); font-weight: 400; font-style: italic; }
+        .datos-banner { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.9rem 1rem; margin-bottom: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--bg-item); font-size: 0.92rem; line-height: 1.45; }
+        .datos-banner strong { display: block; margin-bottom: 0.2rem; }
+        .datos-banner.warn { border-color: var(--warning); background: var(--warning-bg); }
+        .datos-banner.ok { border-color: var(--success); background: rgba(16, 185, 129, 0.1); }
+        .datos-banner.bad { border-color: var(--danger); background: var(--danger-bg); }
+        .datos-banner .btn { margin-top: 0.6rem; }
+        .datos-sent { margin: 0.5rem 0 0; padding: 0; list-style: none; font-size: 0.85rem; color: var(--text-secondary); }
+        .dato-error { margin: 0.35rem 0 0; color: var(--danger); font-size: 0.82rem; }
+        .dato-error[hidden] { display: none; }
+        .dato-check { display: flex; align-items: center; gap: 0.5rem; margin: 0.55rem 0 0; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; }
+        .dato-check input { width: 1.15rem; height: 1.15rem; accent-color: var(--primary); flex-shrink: 0; }
+        #datosForm .form-group { margin-bottom: 1.1rem; }
+        .dato-more { margin: 0 0 1rem; }
+        .dato-more summary { cursor: pointer; font-weight: 700; color: var(--primary-light); padding: 0.4rem 0; }
+        /* El formulario de datos: sin el relleno doble del modal (en un celular dejaba una columna muy angosta) y con los botones
+           siempre a la vista al final, aunque haya que desplazarse */
+        #modalDatos .modal { max-width: 480px; padding: 1.25rem 1.25rem 0; overflow-x: hidden; }
+        #datosForm { padding: 0.5rem 0 0; }
+        .dato-actions { display: flex; gap: 0.6rem; margin-top: 1rem; position: sticky; bottom: 0; padding: 0.85rem 0 1.25rem; background: var(--bg-surface-solid); }
+        .dato-actions .btn { flex: 1; }
+        #datosForm .form-input:disabled { opacity: 0.6; }
         /* El boton de la ubicacion del celular (.panic-loc: casilla vacia, chequesito verde o rojo) lo pinta gps-ayuda.js */
         .panic-status { margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.9rem; }
         .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -25,12 +72,6 @@
         /* Fecha y hora lado a lado si caben; en pantallas angostas, una debajo de la otra */
         .date-time-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); column-gap: 1rem; }
         .date-time-row > * { min-width: 0; }
-        /* Mi ficha: secciones y campos de dos en dos (uno debajo del otro si no caben) */
-        .ficha-section { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 700; margin: 0.25rem 0 0.6rem; }
-        .ficha-section:not(:first-child) { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--border-subtle); }
-        .ficha-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); column-gap: 1rem; }
-        .ficha-grid > * { min-width: 0; }
-        #fichaForm .form-input:disabled { opacity: 0.85; cursor: default; }
         /* Fila de botones del encabezado (paneles y Salir): el texto un 30 % mas grande que antes y en negrita (pedido
            del usuario el 2026-11-18, como en admin.html). Antes: botones 1rem */
         .top-bar-actions .btn { font-weight: 700; }
@@ -78,25 +119,46 @@
 
         <div class="page-content">
             <div class="welcome-hero"
-                style="text-align:left; margin-bottom:2rem; padding:1.5rem; background:var(--bg-surface); border-radius:var(--radius-lg); border:1px solid var(--border-strong);">
-                <!-- Boton de panico: avisa a la garita, la administracion y sus contactos de emergencia (solo si RONDIN lo activa y el vecino tiene panico.activar) -->
+                style="text-align:left; margin-bottom:1.25rem; padding:1.25rem 1.5rem; background:var(--bg-surface); border-radius:var(--radius-lg); border:1px solid var(--border-strong);">
+                <h2 style="font-size:1.6rem; margin-bottom:0.4rem; color:var(--text-primary);">¡Hola, <span
+                        id="userName">...</span>!</h2>
+                <p style="color:var(--text-secondary); margin:0;">Bienvenido a su centro de gestión residencial. Casa/Lote: <span
+                        id="userCasa" class="badge badge-info">...</span></p>
+            </div>
+
+            <!-- Pestanas del portal (pedido del usuario el 2026-11-23): en el celular van abajo, al alcance del pulgar; en pantallas
+                 grandes, debajo de la bienvenida. Seguridad (panico y contactos), Visitas (visitas y marbetes) y Mis datos (su ficha:
+                 lote, telefono, NIT y DPI; lo que cambia lo revisa la administracion). Cada una se oculta si no hay nada que mostrar. -->
+            <nav class="vec-tabs" id="vecTabs" role="tablist" aria-label="Secciones del portal" style="visibility:hidden;">
+                <button type="button" class="vec-tab" role="tab" data-tab="seguridad" id="tabBtnSeguridad" aria-selected="false" aria-controls="panelSeguridad" hidden>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>
+                    <span>Seguridad</span>
+                </button>
+                <button type="button" class="vec-tab" role="tab" data-tab="visitas" id="tabBtnVisitas" aria-selected="false" aria-controls="panelVisitas" hidden>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>Visitas</span>
+                </button>
+                <button type="button" class="vec-tab" role="tab" data-tab="datos" id="tabBtnDatos" aria-selected="false" aria-controls="panelDatos" hidden>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.5 17c.8-2 2.2-3 3.5-3s2.7 1 3.5 3"/><line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/></svg>
+                    <span>Mis datos</span>
+                    <i class="vec-dot" id="datosDot" hidden></i>
+                </button>
+            </nav>
+
+            <!-- SEGURIDAD: boton de panico (avisa a la garita, la administracion y sus contactos de emergencia; solo si RONDIN lo activa y el vecino tiene panico.activar) -->
+            <section class="vec-panel" id="panelSeguridad" role="tabpanel" aria-labelledby="tabBtnSeguridad" hidden>
                 <div class="panic-top" id="panicCard">
+                    <p class="panic-help">Mantenga presionado el botón 2 segundos. Avisa a la garita, a la administración y a sus contactos de emergencia.</p>
                     <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
                     <div id="panicBtnHost" title="Avisa a la garita, la administración y sus contactos de emergencia"></div>
                     <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false" style="display:none;"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
                     <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
                 </div>
-                <h2 style="font-size:1.75rem; margin-bottom:0.5rem; color:var(--text-primary);">¡Hola, <span
-                        id="userName">...</span>!</h2>
-                <p style="color:var(--text-secondary);">Bienvenido a su centro de gestión residencial. Casa/Lote: <span
-                        id="userCasa" class="badge badge-info">...</span></p>
-                <button class="btn btn-ghost btn-sm" id="btnMyFicha" type="button" style="display:none; margin-top:0.85rem; gap:0.4rem; border:1px solid var(--border-strong);">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    Mi ficha
-                </button>
-            </div>
+            </section>
 
+            <!-- VISITAS: visitas con codigo QR, marbetes y el historial -->
+            <section class="vec-panel" id="panelVisitas" role="tabpanel" aria-labelledby="tabBtnVisitas" hidden>
             <div class="stats-grid">
                 <div class="stat-card" style="cursor:pointer;" id="cardNewVisit">
                     <div class="stat-value" style="color:var(--primary-light)">+</div>
@@ -112,6 +174,18 @@
 
             <h3 style="margin-bottom:1.25rem; font-size:1.25rem;">📋 Mis Visitas Recientes</h3>
             <div id="visitasList"></div>
+            </section>
+
+            <!-- MIS DATOS: su ficha. Lo que cambia NO toca la base: queda en una lista que la administracion revisa y aplica con su clave -->
+            <section class="vec-panel" id="panelDatos" role="tabpanel" aria-labelledby="tabBtnDatos" hidden>
+                <div id="datosBanner"></div>
+                <div class="card datos-card">
+                    <h3 class="datos-title">Mis datos</h3>
+                    <dl class="datos-list" id="datosList"><dt>Cargando...</dt><dd></dd></dl>
+                    <button type="button" class="btn btn-primary" id="btnDatosEditar" style="width:100%; margin-top:1.1rem; display:none;">Actualizar mis datos</button>
+                    <p class="text-xs text-muted" style="margin:0.75rem 0 0;">Su nombre, la fase y el agua del lote los cambia la administración. Lo que usted corrige aquí queda en una lista y la administración lo revisa antes de actualizar el sistema.</p>
+                </div>
+            </section>
         </div>
 
         <footer class="app-footer">
@@ -119,41 +193,31 @@
         </footer>
     </div>
 
-    <!-- Modal Mi ficha (vecino.ficha): ve sus datos y, con Editar, cambia su contacto y los datos del propietario.
-         Su nombre, su casa, la fase y el agua del lote los cambia la administracion. -->
-    <div class="modal-overlay" id="modalFicha" style="display:none;">
-        <div class="modal" style="max-width:460px;">
+    <!-- Modal para confirmar o corregir sus datos (vecino.ficha). Se abre solo la primera vez que entra (origen "primer-ingreso") y desde
+         Mis datos. NO cambia la base: crea una solicitud en actualizaciones_datos que la administracion revisa y aplica. -->
+    <div class="modal-overlay" id="modalDatos" style="display:none;">
+        <div class="modal" style="max-width:480px;">
             <div class="modal-header">
-                <h3 id="fichaTitle">Mi ficha</h3>
-                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseFicha" type="button">&times;</button>
+                <h3 id="datosTitle">Confirme sus datos</h3>
+                <button class="btn btn-ghost btn-icon modal-close" id="btnCloseDatos" type="button" aria-label="Cerrar">&times;</button>
             </div>
-            <form id="fichaForm" style="padding:1.25rem;">
-                <p class="ficha-section">Mis datos</p>
-                <div class="ficha-grid">
-                    <div class="form-group"><label>Nombre</label><input class="form-input" id="fNombre" disabled></div>
-                    <div class="form-group"><label>Casa o lote</label><input class="form-input" id="fCasa" disabled></div>
-                    <div class="form-group"><label>Fase</label><input class="form-input" id="fFase" disabled></div>
-                    <div class="form-group"><label>Agua del lote</label><input class="form-input" id="fAgua" disabled></div>
-                </div>
-                <div class="ficha-grid">
-                    <div class="form-group"><label>Teléfono</label><input type="tel" class="form-input" id="fPhone" maxlength="40" data-editable disabled></div>
-                    <div class="form-group"><label>Correo</label><input type="email" class="form-input" id="fEmail" maxlength="120" data-editable disabled></div>
-                </div>
-                <p class="ficha-section">Propietario</p>
-                <div class="form-group"><label>Nombre del propietario</label><input class="form-input" id="fPropietario" maxlength="160" placeholder="Igual a su nombre" data-editable disabled></div>
-                <div class="ficha-grid">
-                    <div class="form-group"><label>NIT</label><input class="form-input" id="fNit" maxlength="20" placeholder="Ej. 1234567-8 o C/F" style="text-transform:uppercase;" data-editable disabled></div>
-                    <div class="form-group"><label>DPI</label><input class="form-input" id="fDpi" maxlength="20" inputmode="numeric" placeholder="13 dígitos" data-editable disabled></div>
-                </div>
-                <div class="form-group"><label>Dirección</label><input class="form-input" id="fDireccion" maxlength="160" placeholder="Para recibos y avisos" data-editable disabled></div>
-                <p class="text-xs text-muted" style="margin-top:0.25rem;">Su nombre, su casa, la fase y el agua del lote los cambia la administración.</p>
-                <button type="button" class="btn btn-primary" id="btnFichaEdit" style="width:100%; margin-top:1rem; display:flex; align-items:center; justify-content:center; gap:0.5rem;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    Editar
-                </button>
-                <div id="fichaSaveRow" style="display:none; gap:0.5rem; margin-top:1rem;">
-                    <button type="button" class="btn btn-ghost" id="btnFichaCancel" style="flex:1; border:1px solid var(--border-strong);">Cancelar</button>
-                    <button type="submit" class="btn btn-primary" id="btnFichaSave" style="flex:1;">Guardar</button>
+            <form id="datosForm" novalidate autocomplete="off">
+                <p class="text-xs text-muted" id="datosIntro" style="margin:0 0 1rem; line-height:1.45;"></p>
+                <div class="form-group"><label for="dCasa">Su lote o casa</label><input class="form-input" id="dCasa" maxlength="40"><p class="dato-error" id="eCasa" hidden></p></div>
+                <div class="form-group"><label for="dPhone">Teléfono</label><input type="tel" inputmode="tel" class="form-input" id="dPhone" maxlength="40" placeholder="5555-1234"><p class="dato-error" id="ePhone" hidden></p></div>
+                <div class="form-group"><label for="dEmail">Correo electrónico (para recibir avisos)</label><input type="email" inputmode="email" class="form-input" id="dEmail" maxlength="120" placeholder="nombre@correo.com"><p class="dato-error" id="eEmail" hidden></p></div>
+                <div class="form-group"><label for="dNit">NIT</label><input class="form-input" id="dNit" maxlength="20" placeholder="Ej. 1234567-8" style="text-transform:uppercase;"><p class="dato-error" id="eNit" hidden></p>
+                    <label class="dato-check"><input type="checkbox" id="dNoNit"> No tengo NIT (se anota C/F)</label></div>
+                <div class="form-group"><label for="dDpi">DPI</label><input class="form-input" id="dDpi" maxlength="20" inputmode="numeric" placeholder="13 números"><p class="dato-error" id="eDpi" hidden></p>
+                    <label class="dato-check"><input type="checkbox" id="dNoDpi"> No tengo DPI a la mano</label></div>
+                <details class="dato-more">
+                    <summary>Más datos (propietario y dirección)</summary>
+                    <div class="form-group"><label for="dPropietario">Nombre del propietario</label><input class="form-input" id="dPropietario" maxlength="160" placeholder="Igual a su nombre"><p class="dato-error" id="ePropietario" hidden></p></div>
+                    <div class="form-group"><label for="dDireccion">Dirección</label><input class="form-input" id="dDireccion" maxlength="160" placeholder="Para recibos y avisos"><p class="dato-error" id="eDireccion" hidden></p></div>
+                </details>
+                <div class="dato-actions">
+                    <button type="button" class="btn btn-ghost" id="btnDatosLater" style="border:1px solid var(--border-strong);">Ahora no</button>
+                    <button type="submit" class="btn btn-primary" id="btnDatosSend">Enviar mis datos</button>
                 </div>
             </form>
         </div>
@@ -308,8 +372,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261122c"></script>
-    <script src="sisdel-core.js?v=20261122c"></script>
+    <script src="privilegios.js?v=20261123a"></script>
+    <script src="sisdel-core.js?v=20261123a"></script>
+    <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -365,80 +430,191 @@
 
             SISDEL.bindExitButton(document.getElementById('btnLogout'), 'vecino.html');
 
-            // --- Mi ficha (vecino.ficha) ---
-            // Se abre en solo lectura; Editar habilita su telefono, su correo y los datos del propietario. Las reglas solo le
-            // dejan cambiar eso (usuarios: phone y email; finanzas_residentes: propietario, NIT, direccion y DPI)
+            // --- Pestanas: Seguridad (panico), Visitas y Mis datos ---
+            // En el celular van abajo (CSS); aqui solo se decide cual se ve. Una pestana sin nada que mostrar no aparece, y con una
+            // sola se oculta la barra. Se puede abrir una directo con #seguridad, #visitas o #datos.
+            const TAB_PANELS = { seguridad: 'panelSeguridad', visitas: 'panelVisitas', datos: 'panelDatos' };
+            const TAB_BUTTONS = { seguridad: 'tabBtnSeguridad', visitas: 'tabBtnVisitas', datos: 'tabBtnDatos' };
             const canFicha = SISDEL.can('vecino.ficha');
-            const fichaEl = (id) => document.getElementById(id);
-            const WATER_NAMES = { 0: 'Sin agua', 0.5: 'Media paja', 1: 'Paja completa' };
-            let fichaUser = null;
-            let fichaData = null;
-            fichaEl('btnMyFicha').style.display = canFicha ? 'inline-flex' : 'none';
+            const tabState = { seguridad: false, visitas: canVisits || canVehicles || canMarbete || canHistory, datos: canFicha };
+            let tabsStarted = false;
+            const availableTabs = () => Object.keys(tabState).filter((k) => tabState[k]);
+            function showTab(name) {
+                const avail = availableTabs();
+                if (!avail.includes(name)) name = avail[0];
+                if (!name) return;
+                Object.keys(TAB_PANELS).forEach((k) => {
+                    document.getElementById(TAB_PANELS[k]).hidden = k !== name;
+                    document.getElementById(TAB_BUTTONS[k]).setAttribute('aria-selected', k === name ? 'true' : 'false');
+                });
+                try { history.replaceState(null, '', '#' + name); } catch (e) { /* sin historial */ }
+            }
+            // Se arranca cuando se sabe si el vecino tiene el boton de panico (RONDIN lo activa o no): asi no salta de una pestana a otra
+            function startTabs() {
+                if (tabsStarted) return;
+                tabsStarted = true;
+                const avail = availableTabs();
+                Object.keys(TAB_BUTTONS).forEach((k) => { document.getElementById(TAB_BUTTONS[k]).hidden = !tabState[k]; });
+                const bar = document.getElementById('vecTabs');
+                bar.style.visibility = 'visible';
+                if (avail.length <= 1) bar.style.display = 'none';
+                const fromHash = location.hash.replace('#', '');
+                showTab(TAB_PANELS[fromHash] ? fromHash : (tabState.seguridad ? 'seguridad' : 'visitas'));
+            }
+            document.querySelectorAll('.vec-tab').forEach((button) => button.addEventListener('click', () => showTab(button.dataset.tab)));
+            window.addEventListener('hashchange', () => { const h = location.hash.replace('#', ''); if (TAB_PANELS[h]) showTab(h); });
+            setTimeout(startTabs, 3500); // si RONDIN no responde, las pestanas salen igual
 
-            function setFichaEditing(on) {
-                document.querySelectorAll('#fichaForm [data-editable]').forEach((el) => { el.disabled = !on; });
-                fichaEl('btnFichaEdit').style.display = on ? 'none' : 'flex';
-                fichaEl('fichaSaveRow').style.display = on ? 'flex' : 'none';
-                fichaEl('fichaTitle').textContent = on ? 'Editar mi ficha' : 'Mi ficha';
-            }
-            function fillFicha() {
-                const u = fichaUser || {};
-                const f = fichaData || {};
-                fichaEl('fNombre').value = u.name || session.userName || '';
-                fichaEl('fCasa').value = u.casa || session.userCasa || '';
-                fichaEl('fFase').value = u.fase || '';
+            // --- Mis datos (vecino.ficha) ---
+            // El vecino confirma o corrige su lote, telefono, correo, NIT y DPI (y el propietario y la direccion). Eso NO cambia la base:
+            // queda como una solicitud en actualizaciones_datos y la administracion la revisa y la aplica con su clave
+            // (sisdel-actualizaciones.js, admin.html). La primera vez que entra se le piden (puede dejarlo para despues, y vuelve a
+            // aparecer en su siguiente ingreso hasta que los envie: no se le cierra el panico detras de un formulario).
+            const A = SisdelActualizaciones;
+            const WATER_NAMES = { 0: 'Sin agua', 0.5: 'Media paja', 1: 'Paja completa' };
+            const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const $ = (id) => document.getElementById(id);
+            const reqCol = () => window.sisdelFirebase.db.collection('condominios').doc(session.condominioId).collection('actualizaciones_datos');
+            const LATER_KEY = 'sisdel_datos_luego_' + session.userId;
+            const ERROR_IDS = { casa: 'eCasa', phone: 'ePhone', email: 'eEmail', nit: 'eNit', dpi: 'eDpi', propietario: 'ePropietario', direccion: 'eDireccion' };
+            const INPUT_IDS = { casa: 'dCasa', phone: 'dPhone', email: 'dEmail', nit: 'dNit', dpi: 'dDpi', propietario: 'dPropietario', direccion: 'dDireccion' };
+            let datosUser = null;
+            let datosFicha = null;
+            let myRequests = [];
+            let datosMode = 'mis-datos';
+            const pendingRequest = () => myRequests.find((r) => r.status === 'pendiente') || null;
+            const plainText = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+            function paintDatos() {
+                const u = datosUser || {};
+                const f = datosFicha || {};
                 const units = parseFloat(f.waterUnits);
-                fichaEl('fAgua').value = WATER_NAMES[[0, 0.5, 1].includes(units) ? units : 0];
-                fichaEl('fPhone').value = u.phone || '';
-                fichaEl('fEmail').value = u.email || '';
-                fichaEl('fPropietario').value = f.propietario || '';
-                fichaEl('fNit').value = f.nit || '';
-                fichaEl('fDpi').value = f.dpi || '';
-                fichaEl('fDireccion').value = f.direccion || '';
-                setFichaEditing(false);
+                const rows = [
+                    ['Nombre', u.name || session.userName], ['Lote o casa', u.casa || session.userCasa], ['Fase', u.fase],
+                    ['Agua del lote', WATER_NAMES[[0, 0.5, 1].includes(units) ? units : 0]],
+                    ['Teléfono', u.phone], ['Correo electrónico', u.email], ['NIT', f.nit], ['DPI', f.dpi],
+                    ['Propietario', f.propietario || (u.name ? 'Igual a su nombre' : '')], ['Dirección', f.direccion]
+                ];
+                $('datosList').innerHTML = rows.map(([label, value]) => `<dt>${esc(label)}</dt><dd${value ? '' : ' class="vacio"'}>${value ? esc(value) : 'Sin dato'}</dd>`).join('');
+                const last = A.latest(myRequests);
+                const pend = pendingRequest();
+                const when = (iso) => esc(SISDEL.formatDateTime(iso));
+                let banner = '';
+                if (!last) {
+                    banner = `<div class="datos-banner warn"><div><strong>Falta confirmar sus datos</strong>Revise su lote, teléfono, NIT y DPI y envíelos: la administración los revisa y actualiza el sistema.</div></div>`;
+                } else if (last.status === 'pendiente') {
+                    const sent = A.changedRows(last);
+                    banner = `<div class="datos-banner"><div><strong>Sus datos fueron enviados</strong>Los envió el ${when(last.createdAt)}; la administración los revisará y actualizará el sistema.
+                        ${sent.length ? `<ul class="datos-sent">${sent.map((r) => `<li>${esc(r.label)}: ${esc(r.proposed || '(vacío)')}</li>`).join('')}</ul>` : '<div class="datos-sent">Usted confirmó que sus datos están correctos.</div>'}</div></div>`;
+                } else if (last.status === 'aplicada') {
+                    banner = `<div class="datos-banner ok"><div><strong>Sus datos están al día</strong>La administración los revisó${last.review && last.review.at ? ' el ' + when(last.review.at) : ''}${last.review && last.review.byName ? ' (' + esc(last.review.byName) + ')' : ''}.</div></div>`;
+                } else if (last.status === 'rechazada') {
+                    banner = `<div class="datos-banner bad"><div><strong>La administración no los aplicó</strong>${last.review && last.review.note ? esc(last.review.note) : 'Revise lo que envió y envíelo de nuevo.'}</div></div>`;
+                }
+                $('datosBanner').innerHTML = banner;
+                const button = $('btnDatosEditar');
+                button.style.display = canFicha ? 'block' : 'none';
+                button.textContent = pend ? 'Cambiar lo que envié' : (last ? 'Actualizar mis datos' : 'Confirmar mis datos');
+                // El punto de aviso en la pestana: nunca los ha enviado, o la administracion no los aplico
+                $('datosDot').hidden = !(canFicha && (!last || last.status === 'rechazada'));
             }
-            async function openFicha() {
-                fichaUser = await SISDEL.getUserById(session.userId);
-                fichaData = await SISDEL.getFinanceResident(session.condominioId, session.userId);
-                fillFicha();
-                fichaEl('modalFicha').style.display = 'flex';
+            async function loadDatos() {
+                const [user, ficha, snap] = await Promise.all([
+                    SISDEL.getUserById(session.userId), SISDEL.getFinanceResident(session.condominioId, session.userId),
+                    reqCol().where('userId', '==', session.userId).get().catch((error) => { console.warn('actualizaciones_datos', error); return null; })
+                ]);
+                datosUser = user;
+                datosFicha = ficha;
+                myRequests = snap ? snap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+                paintDatos();
+                return !!snap;
             }
-            fichaEl('btnMyFicha').addEventListener('click', openFicha);
-            fichaEl('btnCloseFicha').addEventListener('click', () => { fichaEl('modalFicha').style.display = 'none'; });
-            fichaEl('btnFichaEdit').addEventListener('click', () => { setFichaEditing(true); fichaEl('fPhone').focus(); });
-            fichaEl('btnFichaCancel').addEventListener('click', fillFicha);
-            fichaEl('fichaForm').addEventListener('submit', async (event) => {
+            function syncNoFlags() {
+                $('dNit').disabled = $('dNoNit').checked;
+                if ($('dNoNit').checked) $('dNit').value = '';
+                $('dDpi').disabled = $('dNoDpi').checked;
+                if ($('dNoDpi').checked) $('dDpi').value = '';
+            }
+            function clearDatosErrors() {
+                Object.values(ERROR_IDS).forEach((id) => { $(id).hidden = true; $(id).textContent = ''; });
+            }
+            function openDatosForm(mode) {
+                if (!datosUser) { SISDEL.showToast('No se pudieron leer sus datos. Intente de nuevo.', 'danger'); return; }
+                datosMode = mode;
+                const pend = pendingRequest();
+                const v = pend ? pend.proposed : A.currentOf(datosUser, datosFicha);
+                A.KEYS.forEach((key) => { $(INPUT_IDS[key]).value = v[key] || ''; });
+                $('dNoNit').checked = !!(pend && pend.noNit);
+                $('dNoDpi').checked = !!(pend && pend.noDpi);
+                syncNoFlags();
+                clearDatosErrors();
+                $('datosTitle').textContent = mode === 'primer-ingreso' ? 'Confirme sus datos' : (pend ? 'Cambiar lo que envié' : 'Actualizar mis datos');
+                $('datosIntro').textContent = mode === 'primer-ingreso'
+                    ? 'Antes de seguir, revise que sus datos estén correctos y corríjalos si hace falta. Quedan en una lista: la administración los revisa y actualiza el sistema.'
+                    : 'Corrija lo que haga falta. Quedan en una lista: la administración los revisa antes de actualizar el sistema.';
+                $('btnDatosLater').textContent = mode === 'primer-ingreso' ? 'Ahora no' : 'Cancelar';
+                $('btnDatosSend').textContent = pend ? 'Guardar cambios' : 'Enviar mis datos';
+                $('modalDatos').style.display = 'flex';
+                $('dCasa').focus();
+            }
+            function closeDatosForm() {
+                // En el primer ingreso "Ahora no" lo deja para despues: vuelve a pedirse en el siguiente ingreso
+                if (datosMode === 'primer-ingreso') { try { sessionStorage.setItem(LATER_KEY, '1'); } catch (e) { /* sin almacenamiento */ } }
+                $('modalDatos').style.display = 'none';
+            }
+            $('dNoNit').addEventListener('change', syncNoFlags);
+            $('dNoDpi').addEventListener('change', syncNoFlags);
+            $('btnDatosLater').addEventListener('click', closeDatosForm);
+            $('btnCloseDatos').addEventListener('click', closeDatosForm);
+            $('btnDatosEditar').addEventListener('click', () => openDatosForm('mis-datos'));
+            $('datosForm').addEventListener('submit', async (event) => {
                 event.preventDefault();
-                const save = fichaEl('btnFichaSave');
-                save.disabled = true;
+                const send = $('btnDatosSend');
+                const values = {};
+                A.KEYS.forEach((key) => { values[key] = $(INPUT_IDS[key]).value; });
+                // Si el propietario es el mismo vecino, se deja vacio (como en OIKOS)
+                if (plainText(values.propietario) === plainText(datosUser && datosUser.name)) values.propietario = '';
+                const flags = { noNit: $('dNoNit').checked, noDpi: $('dNoDpi').checked };
+                const errors = A.validate(values, flags);
+                clearDatosErrors();
+                const bad = Object.keys(errors);
+                if (bad.length) {
+                    bad.forEach((key) => { $(ERROR_IDS[key]).textContent = errors[key]; $(ERROR_IDS[key]).hidden = false; });
+                    const first = A.KEYS.find((key) => errors[key]);
+                    if (first === 'propietario' || first === 'direccion') document.querySelector('.dato-more').open = true;
+                    $(INPUT_IDS[first]).focus();
+                    return;
+                }
+                send.disabled = true;
                 try {
-                    // Solo lo que cambio
-                    const u = fichaUser || {};
-                    const f = fichaData || {};
-                    const userChanges = {};
-                    const phone = fichaEl('fPhone').value.trim();
-                    const email = fichaEl('fEmail').value.trim();
-                    if (phone !== (u.phone || '')) userChanges.phone = phone;
-                    if (email !== (u.email || '')) userChanges.email = email;
-                    const plain = (text) => String(text || '').trim().replace(/\s+/g, ' ').toLowerCase();
-                    const ownerName = fichaEl('fPropietario').value.trim().replace(/\s+/g, ' ');
-                    const owner = {
-                        propietario: plain(ownerName) === plain(u.name) ? '' : ownerName,
-                        nit: fichaEl('fNit').value.trim().toUpperCase(),
-                        direccion: fichaEl('fDireccion').value.trim(),
-                        dpi: fichaEl('fDpi').value.trim()
-                    };
-                    Object.keys(owner).forEach((key) => { if (owner[key] === String(f[key] || '')) delete owner[key]; });
-                    let ok = true;
-                    if (Object.keys(userChanges).length) ok = !!(await SISDEL.updateUser(session.userId, userChanges)) && ok;
-                    if (Object.keys(owner).length) ok = (await SISDEL.saveFinanceResident(session.condominioId, session.userId, owner, fichaData)) && ok;
-                    if (!ok) { SISDEL.showToast('No se pudieron guardar todos los cambios. Intente de nuevo.', 'danger'); return; }
-                    SISDEL.showToast(Object.keys(userChanges).length || Object.keys(owner).length ? 'Su ficha quedó guardada' : 'No había cambios', 'success');
-                    await openFicha();
+                    const doc = A.buildRequest({ user: datosUser, ficha: datosFicha, userId: session.userId, condominioId: session.condominioId, values, origin: datosMode, noNit: flags.noNit, noDpi: flags.noDpi });
+                    const pend = pendingRequest();
+                    if (pend) {
+                        // Mientras nadie la revise, el vecino corrige su misma solicitud (no se amontonan varias)
+                        await reqCol().doc(pend.id).update({ status: 'pendiente', origin: pend.origin, name: doc.name, casa: doc.casa, current: doc.current, proposed: doc.proposed, changed: doc.changed, sinCambios: doc.sinCambios, noNit: doc.noNit, noDpi: doc.noDpi, updatedAt: new Date().toISOString() });
+                    } else {
+                        await reqCol().add(doc);
+                    }
+                    try { sessionStorage.removeItem(LATER_KEY); } catch (e) { /* sin almacenamiento */ }
+                    $('modalDatos').style.display = 'none';
+                    SISDEL.showToast(doc.sinCambios ? 'Gracias: confirmó que sus datos están correctos' : 'Sus datos fueron enviados a la administración', 'success');
+                    await loadDatos();
+                    showTab('datos');
+                } catch (error) {
+                    console.error(error);
+                    SISDEL.showToast('No se pudieron enviar sus datos. Revise su conexión e intente de nuevo.', 'danger');
                 } finally {
-                    save.disabled = false;
+                    send.disabled = false;
                 }
             });
+            if (canFicha) {
+                loadDatos().then((read) => {
+                    // La primera vez (nunca ha enviado nada) se le piden; si dijo "Ahora no" se le vuelve a pedir en su siguiente ingreso
+                    let later = false;
+                    try { later = !!sessionStorage.getItem(LATER_KEY); } catch (e) { /* sin almacenamiento */ }
+                    if (read && myRequests.length === 0 && datosUser && !later) openDatosForm('primer-ingreso');
+                });
+            }
 
             // Un vecino con privilegios de otros paneles (p. ej. fiscalizador: reportes en solo lectura) los ve como botones
             const PANEL_ICONS = {
@@ -458,13 +634,15 @@
             SisdelRondas.neighborPanicEnabled().then((enabled) => {
                 panicOn = enabled && canPanic;
                 document.getElementById('panicCard').style.display = panicOn ? 'flex' : 'none';
+                tabState.seguridad = panicOn;
+                startTabs();
                 // El GPS del celular: se pide el permiso al abrir (y se sigue la posicion) para que la alerta salga con las coordenadas
                 if (panicOn) {
                     paintGps(SisdelRondas.gps.state());
                     SisdelRondas.gps.start(); // se intenta de verdad: la API de permisos de iOS se equivoca (si esta negado, el error 1 llega al instante)
                     SisdelRondas.gps.watchPermission((state) => { if (state === 'granted') SisdelRondas.gps.start(); else if (state === 'denied') paintGps({ status: 'denied' }); });
                 }
-            });
+            }).catch(() => startTabs());
             // Estado del GPS bajo el boton (#panicGps): lo que se ve es lo que la alerta llevara. Lo pinta gps-ayuda.js (lo comparte con panico.html)
             const panicGps = document.getElementById('panicGps');
             const paintGps = SisdelGpsAyuda.paint;

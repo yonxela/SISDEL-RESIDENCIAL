@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 160 privilegios: 33 paraguas y 127 acciones', [P.KEYS.length, roots.length, kids.length], [160, 33, 127]);
+equal('hay 161 privilegios: 33 paraguas y 128 acciones', [P.KEYS.length, roots.length, kids.length], [161, 33, 128]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -1319,6 +1319,49 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
         /matchesSearch\(`\$\{i\.label\} \$\{i\.description\} \$\{g\.title\} \$\{i\.sub \|\| ''\} \$\{i\.key\}`, filter\)/.test(ui) && /matchesSearch\(`\$\{u\.name\} /.test(ui) && !/toLowerCase\(\)\.includes\(filter\)/.test(ui));
     const v = (f) => (read(f).match(/privilegios-ui\.js\?v=(\w+)/) || [])[1];
     yes('privilegios-ui.js lleva la misma version en admin.html y master.html', v('admin.html') && v('admin.html') === v('master.html'));
+}
+
+// ───────── Portal del vecino con pestañas y actualizacion de datos (2026-11-23) ─────────
+console.log('\nPortal del vecino: pestañas y actualizacion de datos');
+{
+    const vecino = read('vecino.html');
+    const admin = read('admin.html');
+    const ui = read('actualizaciones-ui.js');
+    const rules = read('firestore.rules');
+    const item = P.ITEMS.find((i) => i.key === 'usuarios.actualizaciones');
+    yes('el privilegio usuarios.actualizaciones: accion de usuarios.editar, sensible, la hacen cumplir las reglas y pide ver usuarios y la ficha',
+        item && item.parent === 'usuarios.editar' && item.sensitive === true && item.enforce === 'reglas' && item.requires.includes('usuarios.ver') && item.requires.includes('usuarios.ficha'));
+    yes('el administrador la trae por defecto y un vecino o un guardia no', P.has('admin', {}, 'usuarios.actualizaciones') && !P.has('vecino', {}, 'usuarios.actualizaciones') && !P.has('policia', {}, 'usuarios.actualizaciones'));
+    yes('las reglas: pUsuariosActualizaciones existe y la coleccion nunca se borra', /function pUsuariosActualizaciones\(c\)/.test(rules) && /match \/actualizaciones_datos\/\{reqId\} \{[\s\S]*?allow delete: if false;/.test(rules));
+    yes('las reglas: el vecino crea solo la suya, pendiente, y la corrige solo mientras esta pendiente (sin tocar la revision)',
+        /allow create: if isResident\(condoId\) && pVecinoFicha\(condoId\)[\s\S]{0,400}request\.resource\.data\.status == 'pendiente' && ownRequestOk\(\)/.test(rules)
+        && /resource\.data\.userId == request\.auth\.uid && resource\.data\.status == 'pendiente'[\s\S]{0,200}request\.resource\.data\.status in \['pendiente', 'cancelada'\][\s\S]{0,200}onlyChanges\(\['status', 'origin', 'name', 'casa', 'current', 'proposed', 'changed', 'sinCambios', 'noNit', 'noDpi', 'updatedAt'\]\)/.test(rules));
+    yes('las reglas: la administracion solo la pasa de pendiente a aplicada o rechazada, con su revision a su nombre', /pUsuariosActualizaciones\(condoId\) && resource\.data\.status == 'pendiente'[\s\S]{0,160}request\.resource\.data\.status in \['aplicada', 'rechazada'\][\s\S]{0,80}onlyChanges\(\['status', 'review'\]\)[\s\S]{0,200}review\.byId == request\.auth\.uid/.test(rules));
+    yes('vecino.html: tres pestañas (Seguridad, Visitas y Mis datos), con su panel cada una, y el panico va en Seguridad',
+        ['tabBtnSeguridad', 'tabBtnVisitas', 'tabBtnDatos', 'panelSeguridad', 'panelVisitas', 'panelDatos', 'vecTabs'].every((id) => vecino.includes(`id="${id}"`))
+        && /<section class="vec-panel" id="panelSeguridad"[\s\S]*?id="panicCard"[\s\S]*?id="btnContacts"[\s\S]*?<\/section>/.test(vecino) && /<section class="vec-panel" id="panelVisitas"[\s\S]*?id="visitasList"/.test(vecino));
+    yes('vecino.html: en el celular las pestañas van abajo y fijas (con el area segura del iPhone) y el contenido deja espacio',
+        /@media \(max-width: 640px\) \{[\s\S]{0,300}\.vec-tabs \{ position: fixed; left: 0; right: 0; bottom: 0;[^}]*env\(safe-area-inset-bottom\)[\s\S]{0,700}\.page-content \{ padding-bottom: 6\.5rem; \}/.test(vecino));
+    yes('vecino.html: se puede abrir una pestaña directo (#seguridad, #visitas, #datos) y la de pánico solo sale si RONDIN lo activa',
+        /const TAB_PANELS = \{ seguridad: 'panelSeguridad', visitas: 'panelVisitas', datos: 'panelDatos' \}/.test(vecino) && /hashchange/.test(vecino) && /tabState\.seguridad = panicOn;\s*startTabs\(\);/.test(vecino));
+    yes('vecino.html: la ficha vieja con guardado directo ya no esta (ni su ventana ni sus escrituras)', !/modalFicha|btnMyFicha|fichaForm/.test(vecino) && !/SISDEL\.saveFinanceResident\(/.test(vecino) && !/SISDEL\.updateUser\(session\.userId/.test(vecino));
+    yes('vecino.html: lo que escribe el vecino va a una solicitud (nunca a la base): la crea o corrige la suya y se revisa antes',
+        /reqCol\(\)\.add\(doc\)/.test(vecino) && /reqCol\(\)\.doc\(pend\.id\)\.update\(/.test(vecino) && /A\.validate\(values, flags\)/.test(vecino) && /A\.buildRequest\(/.test(vecino));
+    yes('vecino.html: la primera vez (ninguna solicitud) se le piden los datos; "Ahora no" lo deja para su siguiente ingreso y no le cierra el panico',
+        /myRequests\.length === 0 && datosUser && !later\) openDatosForm\('primer-ingreso'\)/.test(vecino) && /sessionStorage\.setItem\(LATER_KEY, '1'\)/.test(vecino) && /id="btnDatosLater"/.test(vecino));
+    yes('vecino.html: lo que viene de la base se escapa al pintarlo', /\$\{esc\(label\)\}<\/dt><dd\$\{value \? '' : ' class="vacio"'\}>\$\{value \? esc\(value\) : 'Sin dato'\}/.test(vecino) && /esc\(r\.label\)\}: \$\{esc\(r\.proposed/.test(vecino));
+    yes('el formulario trae lote, telefono, correo, NIT y DPI (con "no tengo") y, aparte, propietario y direccion',
+        ['dCasa', 'dPhone', 'dEmail', 'dNit', 'dNoNit', 'dDpi', 'dNoDpi', 'dPropietario', 'dDireccion'].every((id) => vecino.includes(`id="${id}"`)) && /<details class="dato-more">/.test(vecino));
+    yes('admin.html: la barra de datos por revisar y los dos scripts, con la misma version que vecino.html',
+        /id="actBar"/.test(admin) && /SisdelActualizacionesUI\.mount\(\{ bar: document\.getElementById\('actBar'\), condoId, session \}\)/.test(admin)
+        && (admin.match(/sisdel-actualizaciones\.js\?v=(\w+)/) || [])[1] && (admin.match(/sisdel-actualizaciones\.js\?v=(\w+)/) || [])[1] === (vecino.match(/sisdel-actualizaciones\.js\?v=(\w+)/) || [])[1]);
+    yes('la lista del administrador: aplicar pide SU clave y la verifica el servidor ANTES de tocar nada (falla cerrado), y rechazar pide un motivo',
+        /httpsCallable\('confirmOwnCode'\)/.test(ui) && /const key = await confirmKey\(rows\.length\);\s*if \(key === null\) return;[\s\S]{0,200}for \(const r of rows\) \{[\s\S]{0,120}applyOne\(r\)/.test(ui)
+        && /result\.data && result\.data\.ok \? '' : 'Esa no es su clave\.'/.test(ui) && /Escriba el motivo \(3 letras o más\)/.test(ui));
+    yes('la lista del administrador: cambia el vecino (lote, telefono, correo) y su ficha (NIT, DPI...) con sus propios privilegios y deja la solicitud como aplicada, con quien y cuando',
+        /SISDEL\.updateUser\(r\.userId, plan\.usuarios\)/.test(ui) && /SISDEL\.saveFinanceResident\(condoId, r\.userId, plan\.finanzas, ficha\)/.test(ui) && /status: 'aplicada', review: \{ at: new Date\(\)\.toISOString\(\), byId: session\.userId, byName: session\.userName/.test(ui));
+    yes('la lista del administrador: todo lo que viene de la base se escapa (tambien en la impresion) y los ids no van dentro de un onclick',
+        !/onclick=/.test(ui) && (ui.match(/\$\{esc\(/g) || []).length > 30 && /<td>\$\{esc\(row\.label\)\}<\/td>/.test(ui) && /row\.map\(\(c\) => `<td>\$\{esc\(c\)\}<\/td>`\)/.test(ui));
 }
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

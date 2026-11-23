@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-160 privilegios: 33 paraguas y 127 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+161 privilegios: 33 paraguas y 128 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -78,6 +78,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `usuarios.estado` | Activar o desactivar usuarios **(sensible)**. Un usuario desactivado no puede entrar hasta que se vuelva a activar. | los de su paraguas | Reglas |
 | `usuarios.pago` | Cambiar el estado de pago **(sensible)**. Marcar a un vecino como moroso o al día a mano (con la mora automática lo calcula el Sistema Financiero). | los de su paraguas | Reglas |
 | `usuarios.ficha` | Botón Editar de la ficha del vecino **(sensible)**. La ventana del vecino se abre en solo lectura y este botón la desbloquea. Además deja ver y cambiar los datos del propietario (nombre, NIT, dirección, DPI y observaciones) aunque no use el Sistema Financiero. El agua, el cobro y las cuotas siguen pidiendo sus privilegios del Sistema Financiero. | los de su paraguas | Reglas |
+| `usuarios.actualizaciones` | Revisar y aplicar la actualización de datos de los vecinos **(sensible)**. Los vecinos confirman o corrigen su lote, teléfono, correo, NIT y DPI en su portal; esos datos quedan en una lista y no cambian la base hasta que la administración los revisa y los aplica con su propia clave. Al aplicarlos se cambia el lote, el teléfono y el correo del vecino y los datos de su ficha (NIT, DPI, propietario y dirección). | los de su paraguas | Reglas |
 | `usuarios.emergencia` | Editar contactos de emergencia de vecinos. Los familiares a quienes avisa el botón de pánico de un vecino. | los de su paraguas | Reglas |
 | `usuarios.privilegios` | Asignar privilegios **(sensible)**. Cambiar los privilegios de otros usuarios y crear, editar o eliminar administradores y operadores. Equivale a control total del condominio: darlo solo a administradores de confianza. Solo puede tenerlo un administrador o un operador. | `admin` | Reglas |
 | `plantillas.gestionar` | Crear, editar y borrar plantillas. Las plantillas de privilegios propias del condominio (las del sistema no se pueden cambiar). | los de su paraguas | Reglas |
@@ -421,6 +422,8 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `rondin/` | SISDEL RONDÍN con su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
 | `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
 | `panico-boton.js` | El botón de pánico de mantener presionado (círculo que se llena; al terminar dice ALERTA ENVIADA), el mismo en el portal del vecino y en el QR de pánico. |
+| `sisdel-actualizaciones.js` | Actualización de datos de los vecinos (lógica pura, UMD): limpia, compara y valida el lote, teléfono, correo, NIT y DPI que el vecino escribe en su portal, arma la solicitud y calcula lo que se aplica. Lo cargan `vecino.html` y `admin.html`. |
+| `actualizaciones-ui.js` | La lista de la administración (`admin.html`): solicitudes de los vecinos por revisar, comparación "en el sistema / escribió el vecino", aplicar con la clave del administrador (la verifica el servidor), rechazar con motivo, imprimir, PDF y Excel. |
 | `gps-ayuda.js` | Botón "Activar ubicación" y la ayuda para activarla según el teléfono (portal del vecino y QR de pánico). |
 | `panico.html`, `panico-qr.js`, `functions/src/panico-qr.js` | QR de pánico por vecino: la tarjeta que se imprime en Reportes, la página que abre al escanearla y las funciones que vinculan el teléfono y envían la alerta. `vendor/qrcode-generator-1.4.4.js` (MIT) dibuja el QR en el navegador. |
 | `functions/src/rondas/` | Avisos de pánico por WhatsApp y limpieza diaria de rondas. |

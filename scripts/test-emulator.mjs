@@ -2009,6 +2009,90 @@ async function run() {
     await denied('ni sin el privilegio de recordatorios, aunque vea las claves', () => remCode(admin, { residentId: remVecinoId }));
     await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
 
+    // ───────── Actualizacion de datos de los vecinos (portal del vecino > Mis datos; lista del administrador) ─────────
+    // El vecino confirma o corrige su lote, telefono, correo, NIT y DPI y eso queda en actualizaciones_datos SIN tocar la base; la
+    // administracion (usuarios.actualizaciones) la aplica o la rechaza. Lo que se prueba aqui son las reglas.
+    console.log('\nActualizacion de datos de los vecinos');
+    await createUserAs(admin, mkUser('u-act1', 'Vecino Actualiza Uno', 'vecino', { casa: 'Casa 70' }), 'PAC01');
+    await createUserAs(admin, mkUser('u-act2', 'Vecino Actualiza Dos', 'vecino', { casa: 'Casa 71' }), 'PAC02');
+    await createUserAs(admin, mkUser('u-act3', 'Vecino Sin Ficha', 'vecino', { casa: 'Casa 72', privilegios: { 'vecino.ficha': false } }), 'PAC03');
+    const act1 = await loginAs('PAC01');
+    const act2 = await loginAs('PAC02');
+    const act3 = await loginAs('PAC03');
+    const actRef = (c, id) => rref(c, 'actualizaciones_datos', id);
+    const actDoc = (uid, extra = {}) => ({
+        userId: uid, condominioId: A, name: 'Vecino Actualiza', casa: 'Casa 70', status: 'pendiente', origin: 'primer-ingreso',
+        current: { casa: 'Casa 70', phone: '', email: '', nit: '', dpi: '', propietario: '', direccion: '' },
+        proposed: { casa: 'Casa 70', phone: '5555-7070', email: '', nit: 'C/F', dpi: '2345678901234', propietario: '', direccion: '' },
+        changed: ['phone', 'nit', 'dpi'], sinCambios: false, noNit: true, noDpi: false, createdAt: ts(), ...extra
+    });
+    const review = (extra = {}) => ({ at: ts(), byId: adminIdA, byName: 'Fernando López', applied: ['phone'], note: '', ...extra });
+    // El vecino crea la suya
+    await allowed('vecino: envia sus datos (queda pendiente)', () => setDoc(actRef(act1, 'req-act1'), actDoc('u-act1')));
+    await denied('vecino: no envia datos a nombre de otro vecino', () => setDoc(actRef(act1, 'req-otro'), actDoc('u-act2')));
+    await denied('vecino: su solicitud no nace aplicada ni rechazada', () => setDoc(actRef(act1, 'req-aplicada'), actDoc('u-act1', { status: 'aplicada' })));
+    await denied('vecino: no trae la revision ya escrita', () => setDoc(actRef(act1, 'req-revisada'), actDoc('u-act1', { review: review() })));
+    await denied('vecino: no manda campos de mas', () => setDoc(actRef(act1, 'req-extra'), actDoc('u-act1', { rol: 'admin' })));
+    await denied('vecino: el origen es uno de los dos conocidos', () => setDoc(actRef(act1, 'req-origen'), actDoc('u-act1', { origin: 'otro' })));
+    await denied('vecino: en otro condominio no', () => setDoc(actRef(act1, 'req-condo'), actDoc('u-act1', { condominioId: 'condo-los-olivos' })));
+    await denied('vecino: un telefono enorme no pasa', () => setDoc(actRef(act1, 'req-largo'), actDoc('u-act1', { proposed: { casa: 'Casa 70', phone: '5'.repeat(41) } })));
+    await denied('vecino: un dato que no existe no pasa', () => setDoc(actRef(act1, 'req-campo'), actDoc('u-act1', { proposed: { casa: 'Casa 70', saldo: '0' } })));
+    await denied('vecino: lo propuesto debe ser un mapa', () => setDoc(actRef(act1, 'req-mapa'), actDoc('u-act1', { proposed: 'hola' })));
+    await denied('vecino: sin su ficha no envia datos', () => setDoc(actRef(act3, 'req-act3'), actDoc('u-act3')));
+    await denied('sin sesion no se envia nada', () => setDoc(actRef(nobody, 'req-anon'), actDoc('u-act1')));
+    // Quien la ve
+    await allowed('vecino: ve las suyas', () => getDocs(query(rcol(act1, 'actualizaciones_datos'), where('userId', '==', 'u-act1'))));
+    await allowed('vecino: lee la suya por su id', () => getDoc(actRef(act1, 'req-act1')));
+    await denied('vecino: no ve las de otro vecino', () => getDocs(query(rcol(act2, 'actualizaciones_datos'), where('userId', '==', 'u-act1'))));
+    await denied('vecino: no lee la de otro vecino por su id', () => getDoc(actRef(act2, 'req-act1')));
+    await denied('vecino: no lista todas', () => getDocs(rcol(act1, 'actualizaciones_datos')));
+    await denied('vecino: sin su ficha no ve ni las suyas', () => getDocs(query(rcol(act3, 'actualizaciones_datos'), where('userId', '==', 'u-act3'))));
+    await denied('el guardia no las ve', () => getDocs(rcol(guard, 'actualizaciones_datos')));
+    await denied('el auditor tampoco (ve usuarios, pero esto trae NIT y DPI)', () => getDocs(rcol(auditor, 'actualizaciones_datos')));
+    await allowed('el administrador ve la lista', async () => { const snap = await getDocs(rcol(admin, 'actualizaciones_datos')); if (!snap.docs.some((d) => d.id === 'req-act1')) throw new Error('falta la solicitud'); });
+    await allowed('el master tambien la ve', () => getDocs(rcol(master, 'actualizaciones_datos')));
+    // El vecino la corrige o la cancela mientras este pendiente
+    await allowed('vecino: corrige lo que envio mientras esta pendiente', () => updateDoc(actRef(act1, 'req-act1'), { proposed: { casa: 'Casa 70', phone: '5555-7071', email: 'v1@ejemplo.test', nit: 'C/F', dpi: '2345678901234', propietario: '', direccion: '' }, changed: ['phone', 'email', 'nit', 'dpi'], updatedAt: ts() }));
+    await denied('vecino: no se la aplica a si mismo', () => updateDoc(actRef(act1, 'req-act1'), { status: 'aplicada' }));
+    await denied('vecino: no escribe la revision', () => updateDoc(actRef(act1, 'req-act1'), { review: review() }));
+    await denied('vecino: no cambia a quien pertenece', () => updateDoc(actRef(act1, 'req-act1'), { userId: 'u-act2' }));
+    await denied('vecino: no corrige la de otro vecino', () => updateDoc(actRef(act2, 'req-act1'), { updatedAt: ts() }));
+    // La administracion la revisa
+    await denied('administrador: no cambia lo que el vecino escribio', () => updateDoc(actRef(admin, 'req-act1'), { proposed: { casa: 'Casa 99' }, status: 'aplicada', review: review() }));
+    await denied('administrador: la revision va a su nombre (no a nombre de otro)', () => updateDoc(actRef(admin, 'req-act1'), { status: 'aplicada', review: review({ byId: 'u-act2' }) }));
+    await denied('administrador: no la deja en otro estado', () => updateDoc(actRef(admin, 'req-act1'), { status: 'cancelada', review: review() }));
+    await denied('administrador: la revision lleva su mapa', () => updateDoc(actRef(admin, 'req-act1'), { status: 'aplicada', review: 'listo' }));
+    await denied('administrador: el motivo no pasa de 300 letras', () => updateDoc(actRef(admin, 'req-act1'), { status: 'rechazada', review: review({ note: 'x'.repeat(301) }) }));
+    await denied('vecino: no se mete en la revision de otro', () => updateDoc(actRef(act2, 'req-act1'), { status: 'aplicada', review: review() }));
+    // Aplicar de verdad: con las reglas de siempre el administrador cambia al vecino y su ficha, y marca la solicitud
+    await allowed('administrador: aplica el telefono, el correo y el lote en el vecino', () => updateDoc(uref(admin, 'u-act1'), { phone: '5555-7071', email: 'v1@ejemplo.test', casa: 'Casa 70-B', updatedAt: ts() }));
+    await allowed('administrador: aplica el NIT y el DPI en la ficha del vecino', () => setDoc(fichaRef(admin, 'u-act1'), fichaNueva('u-act1', { nit: 'C/F', ownerGroup: '', dpi: '2345678901234' }), { merge: true }));
+    await allowed('administrador: la marca aplicada, a su nombre', () => updateDoc(actRef(admin, 'req-act1'), { status: 'aplicada', review: review({ applied: ['phone', 'email', 'nit', 'dpi'] }) }));
+    equal('la solicitud queda aplicada con quien y cuando, y lo que el vecino escribio no cambia', await (async () => { const d = (await getDoc(actRef(admin, 'req-act1'))).data(); return [d.status, d.review.byId === adminIdA, d.review.applied, d.proposed.phone, d.userId]; })(), ['aplicada', true, ['phone', 'email', 'nit', 'dpi'], '5555-7071', 'u-act1']);
+    equal('y el vecino tiene sus datos nuevos', await (async () => { const d = (await getDoc(uref(admin, 'u-act1'))).data(); return [d.phone, d.casa]; })(), ['5555-7071', 'Casa 70-B']);
+    await denied('vecino: ya revisada, no la corrige', () => updateDoc(actRef(act1, 'req-act1'), { updatedAt: ts() }));
+    await denied('vecino: ya revisada, no la cancela', () => updateDoc(actRef(act1, 'req-act1'), { status: 'cancelada' }));
+    await denied('administrador: una ya aplicada no se revisa otra vez', () => updateDoc(actRef(admin, 'req-act1'), { status: 'rechazada', review: review({ note: 'otra vez' }) }));
+    await allowed('vecino: ve que la aplicaron', async () => { const d = (await getDoc(actRef(act1, 'req-act1'))).data(); if (d.status !== 'aplicada') throw new Error(d.status); });
+    // Rechazar y cancelar
+    await allowed('vecino dos: envia sus datos', () => setDoc(actRef(act2, 'req-act2'), actDoc('u-act2', { origin: 'mis-datos', name: 'Vecino Actualiza Dos', casa: 'Casa 71' })));
+    await allowed('administrador: la rechaza con su motivo', () => updateDoc(actRef(admin, 'req-act2'), { status: 'rechazada', review: review({ applied: [], note: 'El DPI no coincide con el de la escritura.' }) }));
+    equal('el vecino ve el motivo del rechazo', await (async () => { const d = (await getDoc(actRef(act2, 'req-act2'))).data(); return [d.status, d.review.note]; })(), ['rechazada', 'El DPI no coincide con el de la escritura.']);
+    await allowed('vecino dos: envia otra vez (una nueva, la anterior queda)', () => setDoc(actRef(act2, 'req-act2b'), actDoc('u-act2', { origin: 'mis-datos' })));
+    await allowed('vecino dos: cancela la que aun esta pendiente', () => updateDoc(actRef(act2, 'req-act2b'), { status: 'cancelada', updatedAt: ts() }));
+    equal('la lista del vecino trae las dos, con sus estados', await (async () => { const snap = await getDocs(query(rcol(act2, 'actualizaciones_datos'), where('userId', '==', 'u-act2'))); return snap.docs.map((d) => [d.id, d.data().status]).sort(); })(), [['req-act2', 'rechazada'], ['req-act2b', 'cancelada']]);
+    // Nada se borra
+    await denied('vecino: no borra su solicitud', () => deleteDoc(actRef(act2, 'req-act2')));
+    await denied('administrador: no borra solicitudes', () => deleteDoc(actRef(admin, 'req-act1')));
+    await denied('ni el master las borra', () => deleteDoc(actRef(master, 'req-act1')));
+    // Sin el privilegio, el administrador no las ve ni las aplica
+    await allowed('(sin el privilegio) el vecino uno envia otra', () => setDoc(actRef(act1, 'req-act1b'), actDoc('u-act1', { origin: 'mis-datos' })));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: { 'usuarios.actualizaciones': false } });
+    await denied('administrador sin el privilegio: no ve la lista', () => getDocs(rcol(admin, 'actualizaciones_datos')));
+    await denied('administrador sin el privilegio: no la aplica', () => updateDoc(actRef(admin, 'req-act1b'), { status: 'aplicada', review: review() }));
+    await updateDoc(doc(master.db, `condominios/${A}/usuarios/${adminIdA}`), { privilegios: {} });
+    await allowed('administrador: con su privilegio de vuelta, la rechaza', () => updateDoc(actRef(admin, 'req-act1b'), { status: 'rechazada', review: review({ applied: [], note: 'Prueba.' }) }));
+
     // ───────── Limite de intentos ─────────
     console.log('\nLimite de intentos');
     let blocked = null;

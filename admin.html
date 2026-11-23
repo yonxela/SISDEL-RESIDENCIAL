@@ -104,6 +104,9 @@
             <!-- Stats -->
             <div class="stats-grid" id="statsGrid"></div>
 
+            <!-- Actualizacion de datos de los vecinos: cuantos enviaron su lote, telefono, NIT y DPI para revisar (actualizaciones-ui.js) -->
+            <div id="actBar" style="display:none;"></div>
+
             <!-- Tabs -->
             <div class="tabs" id="mainTabs">
                 <button class="tab active" data-tab="vecinos">🏠 Vecinos</button>
@@ -370,14 +373,16 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261122c"></script>
+    <script src="privilegios.js?v=20261123a"></script>
     <script src="accesos.js?v=20261121a"></script>
-    <script src="sisdel-core.js?v=20261122c"></script>
+    <script src="sisdel-core.js?v=20261123a"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="privilegios-ui.js?v=20261122a"></script>
     <script src="reportes-export.js?v=20261115a"></script>
     <script src="panico-qr.js?v=20261122a"></script>
     <script src="reportes-ui.js?v=20261122d"></script>
+    <script src="sisdel-actualizaciones.js?v=20261123a"></script>
+    <script src="actualizaciones-ui.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <!-- Configuracion > Boton de panico: el modulo de los avisos (el mismo del servidor) y la pestana -->
     <script src="panico-avisos.js?v=20261122a"></script>
@@ -485,6 +490,12 @@
             SisdelRondas.init(session);
             if (SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) SisdelPanico.watch({ canResolve: SISDEL.can('usuarios.panel') && SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender') });
 
+            // Actualizacion de datos de los vecinos (actualizaciones-ui.js, privilegio usuarios.actualizaciones): la barra de arriba
+            // dice cuantos enviaron sus datos y abre la lista donde se revisan y se aplican con la clave del administrador
+            if (SISDEL.can('usuarios.actualizaciones') && window.SisdelActualizacionesUI) {
+                SisdelActualizacionesUI.mount({ bar: document.getElementById('actBar'), condoId, session });
+            }
+
             // Messages button toggles to messages view
             let showingMessages = false;
             document.getElementById('btnMessages').addEventListener('click', () => {
@@ -492,6 +503,7 @@
                 document.getElementById('tabMensajes').style.display = showingMessages ? 'block' : 'none';
                 document.getElementById('usersList').style.display = showingMessages ? 'none' : 'block';
                 document.querySelector('.stats-grid').style.display = showingMessages ? 'none' : '';
+                document.getElementById('actBar').style.display = showingMessages || !SISDEL.can('usuarios.actualizaciones') ? 'none' : '';
                 document.getElementById('searchInput').closest('div[style]').style.display = showingMessages ? 'none' : 'flex';
                 document.getElementById('mainTabs').style.display = showingMessages ? 'none' : '';
                 document.getElementById('btnMessages').style.background = showingMessages ? 'var(--primary-light)' : '';

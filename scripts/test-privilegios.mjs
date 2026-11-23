@@ -845,12 +845,23 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             /Q\.cardsFor\(list, Q\.publicOrigin\(location\), panicQrCondoId\(\)\)/.test(oik) && /function panicQrWhatsAppText\(r, card\)[\s\S]{0,700}card\.url/.test(oik) && !/codes?\b[\s\S]{0,40}residentCodeOf[\s\S]{0,200}panicQrWhatsAppText/.test(oik)
             && /openMyWhatsApp\(r\.contact, panicQrWhatsAppText\(r, card\)\)/.test(oik));
         yes('el bloqueo pide contactar residentes para todo lo del QR de panico y oculta la opcion y la ventana sin ese privilegio',
-            /\(openPanicQr\|panicQrSetSize\|panicQrSetPaper\|panicQrCopyLink\|printPanicQr\|downloadPanicQrPDF\|sendPanicQrWhatsApp\)\\\(\/, \['residentes_contactar'\]/.test(blq) && /button\[onclick\^="openPanicQr\("\]', '#modal-panico-qr'/.test(blq));
+            /\(openPanicQr\|panicQrSetSize\|panicQrSetPaper\|panicQrCopyLink\|printPanicQr\|downloadPanicQrPDF\|sendPanicQrWhatsApp\|panicDeliveryArm\|panicDeliveryCancel\|panicDeliveryLoad\)\\\(\/, \['residentes_contactar'\]/.test(blq) && /button\[onclick\^="openPanicQr\("\]', '#modal-panico-qr'/.test(blq));
+        // Entregar la clave con el QR (pedido del usuario el 2026-11-22): la oficina activa la entrega y el vecino la ve una sola vez
+        const finHtml = read('finanzas.html');
+        yes('el puente de la entrega de la clave solo existe con "Ver y cambiar codigos de acceso" y llama al servidor (panicCodeDelivery)',
+            /window\.sisdelPanicDelivery = null;\s*if \(SISDEL\.can\('usuarios\.codigos'\)\) \{\s*const delivery = callServer\('panicCodeDelivery'\);/.test(finHtml)
+            && /status: \(residentId\) => delivery\(\{ action: 'status', residentId: String\(residentId\), condoId \}\)/.test(finHtml) && /arm: \(residentId\) => delivery\(\{ action: 'arm'/.test(finHtml) && /cancel: \(residentId\) => delivery\(\{ action: 'cancel'/.test(finHtml));
+        yes('la ventana del QR trae "Entregar la clave con este QR" solo con ese puente, y lo consulta al abrir (sin pintar el estado de otro residente)',
+            /\+ \(panicDeliveryBridge\(\) \? '<div id="pqm-delivery"/.test(oik) && /openModal\('modal-panico-qr'\);\s*panicDeliveryLoad\(\);/.test(oik) && /if \(panicQrModalId !== id\) return; \/\/ ya se abrio otro residente/.test(oik));
+        yes('activar pide confirmar (y avisa si ya se entrego), y el estado dice pendiente, activa, entregada (cuando y en que telefono), vencida o cancelada',
+            /function panicDeliveryArm\(\)[\s\S]{0,900}ya se entregó el[\s\S]{0,400}panicDeliveryRun\('arm', q\)/.test(oik) && /case 'armed': return 'Entrega ACTIVA hasta el '/.test(oik) && /case 'delivered': return 'Clave ENTREGADA el '/.test(oik) && /case 'expired':/.test(oik) && /case 'cancelled':/.test(oik) && /default: return 'Pendiente: /.test(oik));
+        yes('lo que dice el servidor (nombre de quien la activo) se escapa al pintarlo y la clave nunca pasa por OIKOS', /esc\(status\)/.test(oik) && !/function panicDelivery[\s\S]{0,4000}residentCodeOf/.test(oik.slice(oik.indexOf('var panicDelivery = '), oik.indexOf('function panicQrReady()'))));
+        yes('los pasos de la ventana dicen como se entrega la clave con el QR', /Al darle la tarjeta al vecino, active <b>Entregar la clave con este QR<\/b>/.test(oik) && /ve su clave de acceso <b>una sola vez<\/b> y su teléfono queda vinculado/.test(oik));
         // La clave guardada en el telefono
         yes('panico-qr.js guarda la clave en localStorage e IndexedDB, repone la copia que falte y pide que el navegador no la borre',
             /function createKeeper\(env, key\)/.test(qrmod) && /indexedDB\.open\|idbFactory\.open\(IDB_NAME, 1\)|idbFactory\.open\(IDB_NAME, 1\)/.test(qrmod) && /nav\.storage\.persist/.test(qrmod) && /if \(!local && writeLocal\(link\)\) repaired = true;/.test(qrmod) && /if \(!fromIdb && await writeIdb\(link\)\) repaired = true;/.test(qrmod));
         yes('panico.html usa las dos copias, repone la de IndexedDB antes de pedir el codigo y ofrece guardarlo en la pantalla de inicio (con su icono)',
-            /Q\.createKeeper\(\{ localStorage: safeStorage, indexedDB: window\.indexedDB, navigator \}, KEY\)/.test(pan) && /keeper\.load\(\)\.then\(\(r\) => \{\s*if \(r && r\.link && !link\)/.test(pan) && /let restoreDone = !!link;/.test(pan) && /if \(!gpsDone \|\| !restoreDone \|\| blocked\) return;/.test(pan)
+            /Q\.createKeeper\(\{ localStorage: safeStorage, indexedDB: window\.indexedDB, navigator \}, KEY\)/.test(pan) && /keeper\.load\(\)\.then\(\(r\) => \{\s*if \(r && r\.link && !link\)/.test(pan) && /let restoreDone = !!link;/.test(pan) && /if \(!gpsDone \|\| !restoreDone\) return;/.test(pan)
             && /id="pqStepSave"/.test(pan) && /apple-mobile-web-app-capable/.test(pan) && /<link rel="apple-touch-icon" href="icono-panico\.png">/.test(pan) && fs.existsSync(root('icono-panico.png')));
         yes('panico.html no guarda el codigo de acceso: solo la clave del vinculo',
             /input\.value = '';\s*\/\/ el codigo no se queda en la pagina/.test(pan) && !/keeper\.save\([^)]*code/.test(pan) && !/setItem\([^)]*code/.test(pan));

@@ -2,7 +2,7 @@
 // con el codigo del vecino y la clave queda en DOS copias (localStorage e IndexedDB); si el telefono pierde una, se repone sola con la
 // otra, y solo si pierde las dos (borrar los datos del sitio, o Safari tras 7 dias sin uso) vuelve a pedir el codigo. Tambien: el aviso
 // de guardarlo en la pantalla de inicio (con pasos para iPhone y Android), que no sale si ya se abrio desde ahi, y que la pagina nunca
-// guarda el codigo de acceso.
+// guarda el codigo de acceso. Al final, la clave que entrega la oficina con el QR: se ve una sola vez y vincula el telefono.
 // No corre con `npm test` porque necesita Chrome instalado:
 //   cd scripts && npm run seed && node test-panico-guardado.mjs     (con los emuladores levantados; tambien en `npm run test:navegador`)
 import { connect, parseArgs } from './admin.mjs';
@@ -30,6 +30,7 @@ async function run() {
     await db.doc(`condominios/${CONDO}/rondas_config/general`).set({ neighbor_panic_enabled: 1 }, { merge: true });
     // Sin vinculos de corridas anteriores
     for (const d of (await db.collection(`condominios/${CONDO}/panico_dispositivos`).get()).docs) await d.ref.delete();
+    for (const d of (await db.collection(`condominios/${CONDO}/panico_entregas`).get()).docs) await d.ref.delete();
 
     const { newPage, close } = await launch(args.chrome);
     try {
@@ -155,6 +156,52 @@ async function run() {
         await sleep(400);
         c = await copies();
         record('desvincular borra las DOS copias y vuelve a pedir el codigo', !c.local && !c.idb && (await state()).link === true, JSON.stringify(c));
+
+        console.log('\nLa oficina entrega la clave con el QR: el vecino la ve una sola vez');
+        const reveal = () => page.evaluate(`(() => { const d = (id) => document.getElementById(id); return { step: !d('pqStepReveal').hidden, ask: !d('pqRevealAsk').hidden, show: !d('pqRevealShow').hidden, code: d('pqRevealCode').textContent, btn: d('pqRevealBtn').textContent, notice: d('pqRevealNotice').textContent, link: !d('pqStepLink').hidden, panic: !d('pqStepPanic').hidden, delivered: d('pqDelivered').hidden ? '' : d('pqDelivered').textContent }; })()`);
+        // La oficina la activa (en OIKOS lo hace panicCodeDelivery; aqui se escribe igual que el servidor)
+        const now = Date.now();
+        await db.doc(`condominios/${CONDO}/panico_entregas/${NEIGHBOR}`).set({ userId: NEIGHBOR, condominioId: CONDO, status: 'armed', armedAt: new Date(now).toISOString(), armedUntil: new Date(now + 24 * 3600000).toISOString(), armedById: 'u-admin', armedByName: 'Administrador', history: [] });
+        const devicesBefore = (await db.collection(`condominios/${CONDO}/panico_dispositivos`).get()).size;
+        await open(visible('pqStepReveal'));
+        let rv = await reveal();
+        equal('con la entrega activa, el QR ofrece ver la clave (sin mostrarla todavia) en vez de pedir el codigo', [rv.step, rv.ask, rv.show, rv.code, rv.btn, rv.link, rv.panic], [true, true, false, '', 'Ver mi clave (una sola vez)', false, false]);
+        equal('abrir la pagina no gasta la entrega', (await db.doc(`condominios/${CONDO}/panico_entregas/${NEIGHBOR}`).get()).get('status'), 'armed');
+        await page.evaluate(`document.getElementById('pqRevealBtn').click()`);
+        await page.waitFor(visible('pqRevealShow'), 'la clave en pantalla', 20000);
+        await sleep(400);
+        rv = await reveal();
+        const codeNow = (await db.collection('codigos').where('userId', '==', NEIGHBOR).get()).docs.filter((d) => d.get('condominioId') === CONDO).map((d) => d.id)[0];
+        equal('al tocar "Ver mi clave" se ve SU clave en grande, con el aviso, y el telefono ya tiene el boton', [rv.show, rv.code, rv.code === codeNow, rv.panic, rv.link], [true, codeNow, true, true, false]);
+        record('el aviso es el del mensaje "Enviar clave de acceso" (guardarla, no compartirla y a quien llega el panico)', /^Favor guarde y no comparta su clave\. ESTA APLICACIÓN SERÁ DE GRAN UTILIDAD/.test(rv.notice) && /A GARITA, A PNC Y A 5 FAMILIARES PREVIAMENTE CONFIGURADOS\.$/.test(rv.notice), rv.notice);
+        const dl = (await db.doc(`condominios/${CONDO}/panico_entregas/${NEIGHBOR}`).get()).data();
+        const devicesAfter = (await db.collection(`condominios/${CONDO}/panico_dispositivos`).get()).docs.map((d) => d.data()).filter((x) => x.via === 'entrega' && !x.revokedAt);
+        equal('la entrega queda gastada (cuando y en que aparato) y el telefono vinculado en el servidor', [dl.status, !!dl.deliveredAt, !!dl.deliveredOn, devicesAfter.length, (await db.collection(`condominios/${CONDO}/panico_dispositivos`).get()).size], ['delivered', true, true, 1, devicesBefore + 1]);
+        c = await copies();
+        record('el telefono guarda el vinculo (las dos copias) pero NUNCA la clave', !!c.local && !!c.idb && !(await page.evaluate(`JSON.stringify(Object.entries(localStorage)).toUpperCase().includes(${JSON.stringify(codeNow)})`)) && !JSON.stringify(c).toUpperCase().includes(codeNow), JSON.stringify(c));
+        // Se recargo la pagina antes de anotarla: el mismo telefono la puede volver a ver un rato
+        await open(visible('pqStepPanic'));
+        await page.waitFor(visible('pqStepReveal'), 'volver a verla', 15000);
+        rv = await reveal();
+        equal('si recarga antes de anotarla, el mismo telefono puede volver a verla (con el boton a la vista)', [rv.step, rv.btn, rv.panic], [true, 'Volver a ver mi clave', true]);
+        await page.evaluate(`document.getElementById('pqRevealBtn').click()`);
+        await page.waitFor(visible('pqRevealShow'), 'la clave otra vez', 15000);
+        equal('y la ve otra vez', (await reveal()).code, codeNow);
+        page.evaluate(`window.confirm = () => true`);
+        await page.evaluate(`document.getElementById('pqRevealDone').click()`);
+        await sleep(300);
+        rv = await reveal();
+        equal('"Ya la guarde" la quita de la pantalla y queda el boton', [rv.step, rv.code, rv.panic], [false, '', true]);
+        await open(visible('pqStepPanic'));
+        await sleep(1500);
+        equal('y al volver a escanear ya no la ofrece: el QR solo abre el boton de panico', [(await reveal()).step, (await state()).panic], [false, true]);
+        // Otro telefono (sin el vinculo) escanea el mismo QR
+        await wipe(['local', 'idb']);
+        await page.evaluate(`localStorage.clear()`);
+        await open(visible('pqStepLink'));
+        await sleep(500);
+        rv = await reveal();
+        record('otro telefono ya no la ve: pide el codigo y dice cuando se entrego (por si no fue el vecino)', !rv.step && rv.link && /La clave de este QR ya se entregó el .+avise a la administración/.test(rv.delivered), JSON.stringify(rv));
         record('sin errores de JavaScript en la pagina', page.errors.length === 0, JSON.stringify(page.errors.slice(0, 4)));
     } finally {
         await close();

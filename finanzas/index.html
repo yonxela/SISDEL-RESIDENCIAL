@@ -9425,6 +9425,7 @@
             loadMarbeteQrLib().then(() => { if (panicQrModalOpen()) paintPanicQrModal(); }).catch(() => { /* queda el aviso */ });
             document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
             openModal('modal-panico-qr');
+            panicDeliveryLoad();
             paintPanicQrModal();
         }
         function panicQrSetSize(v) { panicQrSize = v === 'mediana' ? 'mediana' : 'chica'; paintPanicQrModal(); }
@@ -9458,15 +9459,106 @@
                     + '</div>'
                     + '<div><span class="block text-xs font-bold text-slate-400 uppercase mb-1">Enlace del QR</span><input id="pqm-url" type="text" readonly value="' + esc(card.url) + '" onfocus="this.select()" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-mono"></div>'
                     + '<ol class="list-decimal pl-5 space-y-1 text-[13px]">'
+                    + '<li>Al darle la tarjeta al vecino, active <b>Entregar la clave con este QR</b> (abajo; lo ve quien puede ver las claves).</li>'
                     + '<li>El vecino escanea el QR (o abre el enlace) y permite la ubicación.</li>'
-                    + '<li>La <b>primera vez</b> en cada teléfono escribe su código de acceso, el mismo con que ingresa a garita.app, para vincular ese teléfono.</li>'
+                    + '<li>Con la entrega activa ve su clave de acceso <b>una sola vez</b> y su teléfono queda vinculado. Sin ella, la primera vez en cada teléfono escribe su código de acceso, el mismo con que ingresa a garita.app.</li>'
                     + '<li>Después basta con escanear: aparece el botón. La página le pide guardarlo en la pantalla de inicio para que el teléfono no lo olvide.</li></ol>'
-                    + '<p class="text-xs text-slate-500 dark:text-slate-400">El QR no lleva el código del vecino: quien lo escanee sin el código no puede enviar alertas. El botón solo funciona si el botón de pánico de vecinos está activado en Rondas.</p>'
+                    + '<p class="text-xs text-slate-500 dark:text-slate-400">El QR no lleva el código del vecino: quien lo escanee sin el código no puede enviar alertas, y solo muestra la clave si la oficina activó su entrega (una vez). El botón solo funciona si el botón de pánico de vecinos está activado en Rondas.</p>'
+                    + (panicDeliveryBridge() ? '<div id="pqm-delivery" class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2">' + panicDeliveryHtml(r) + '</div>' : '')
                     + '</div></div>';
             }
             body.innerHTML = html;
             ['pqm-print', 'pqm-pdf', 'pqm-wa', 'pqm-copy'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !ready; });
         }
+        // ─── SISDEL: entregar la clave de acceso con el QR (pedido del usuario el 2026-11-22: "oficina entregara el QR de boton de
+        // panico al vecino, el vecino escanea y vera su clave por una sola vez con el aviso correspondiente, luego el codigo QR
+        // servira solo para boton de panico") ───
+        // El QR nunca lleva la clave ni la muestra por si solo (los ya pegados en puertas y carros son el mismo QR): al darle la
+        // tarjeta, la oficina ACTIVA la entrega por 24 horas y la primera vez que se escanea muestra la clave una sola vez y vincula ese
+        // telefono (panico.html). Lo hace el servidor (panicCodeDelivery por el puente window.parent.sisdelPanicDelivery, que solo
+        // existe con usuarios.codigos); aqui solo se ve el estado: pendiente, activa, entregada (cuando y en que telefono), vencida o
+        // cancelada. Si el vecino dice que no fue el quien la vio: cambiarle la clave en su ficha y activar otra entrega.
+        var panicDelivery = { id: null, state: null, busy: false, error: '' };
+        function panicDeliveryBridge() { try { return window.parent && window.parent !== window && window.parent.sisdelPanicDelivery ? window.parent.sisdelPanicDelivery : null; } catch (e) { return null; } }
+        function panicDeliveryDate(iso) { const d = new Date(iso); return iso && !isNaN(d) ? d.toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : ''; }
+        function panicDeliveryLoad() {
+            const bridge = panicDeliveryBridge();
+            const id = panicQrModalId;
+            if (!bridge || !id) return;
+            panicDelivery = { id: id, state: null, busy: true, error: '' };
+            Promise.resolve(bridge.status(id)).catch(() => null).then((res) => {
+                if (panicQrModalId !== id) return; // ya se abrio otro residente
+                panicDelivery = { id: id, state: res && res.ok ? res : null, busy: false, error: res && res.ok ? '' : ((res && res.error) || 'No se pudo leer el estado de la entrega.') };
+                paintPanicDelivery();
+            });
+        }
+        function paintPanicDelivery() {
+            const box = document.getElementById('pqm-delivery');
+            const r = panicQrResidentOf(panicQrModalId);
+            if (box && r) box.innerHTML = panicDeliveryHtml(r);
+        }
+        // Que dice el estado de la entrega ({ status, armedUntil, armedByName, deliveredAt, deliveredOn, cancelledAt })
+        function panicDeliveryText(st) {
+            const on = { iPhone: 'en un iPhone', Android: 'en un teléfono Android' };
+            switch (st.status) {
+                case 'armed': return 'Entrega ACTIVA hasta el ' + panicDeliveryDate(st.armedUntil) + (st.armedByName ? ' (la activó ' + st.armedByName + ')' : '') + '. La primera persona que escanee el QR y toque «Ver mi clave» la verá: entréguele la tarjeta y pídale que lo escanee.';
+                case 'delivered': return 'Clave ENTREGADA el ' + panicDeliveryDate(st.deliveredAt) + (st.deliveredOn ? ' ' + (on[st.deliveredOn] || 'en una computadora u otro aparato') : '') + '. El QR ya no la vuelve a mostrar. Si el vecino dice que no fue él, cámbiele la clave en su ficha y active otra entrega.';
+                case 'expired': return 'La entrega venció el ' + panicDeliveryDate(st.armedUntil) + ' sin que nadie viera la clave.';
+                case 'cancelled': return 'Entrega cancelada el ' + panicDeliveryDate(st.cancelledAt) + '.';
+                default: return 'Pendiente: todavía no se ha activado la entrega de su clave.';
+            }
+        }
+        function panicDeliveryHtml(r) {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const mine = panicDelivery.id === String(r.id);
+            const st = mine ? panicDelivery.state : null;
+            const busy = !mine || panicDelivery.busy;
+            const status = busy ? 'Consultando el estado de la entrega...' : (st ? panicDeliveryText(st) : panicDelivery.error);
+            const tone = !st ? 'text-slate-600 dark:text-slate-300' : st.status === 'armed' ? 'text-amber-700 dark:text-amber-300' : st.status === 'delivered' ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200';
+            const armLabel = !st || st.status === 'none' ? 'Activar la entrega (24 horas)' : st.status === 'armed' ? 'Activar de nuevo (24 horas desde ahora)' : 'Activar otra entrega (24 horas)';
+            const btn = 'px-3 py-2 rounded-lg font-semibold text-sm transition disabled:opacity-50';
+            return '<p class="font-bold text-slate-800 dark:text-white"><i class="fas fa-key mr-1.5 text-amber-600"></i>Entregar la clave con este QR</p>'
+                + '<p class="text-xs text-slate-600 dark:text-slate-300">Al darle la tarjeta al vecino, active la entrega: la primera vez que escanee el QR verá su clave de acceso <b>una sola vez</b> (con el aviso de guardarla) y su teléfono quedará vinculado al botón de pánico. Sin activarla, el QR nunca muestra la clave.</p>'
+                + '<p id="pqm-dlv-status" data-status="' + esc(busy ? 'loading' : (st ? st.status : 'error')) + '" class="text-sm font-semibold ' + tone + '">' + esc(status) + '</p>'
+                + '<div class="flex flex-wrap gap-2">'
+                + '<button type="button" id="pqm-dlv-arm" onclick="panicDeliveryArm()" class="' + btn + ' bg-amber-500 hover:bg-amber-600 text-white"' + (busy || !st ? ' disabled' : '') + '><i class="fas fa-key mr-1.5"></i>' + esc(armLabel) + '</button>'
+                + (st && st.status === 'armed' ? '<button type="button" id="pqm-dlv-cancel" onclick="panicDeliveryCancel()" class="' + btn + ' bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100"' + (busy ? ' disabled' : '') + '>Cancelar la entrega</button>' : '')
+                + (!busy && !st ? '<button type="button" onclick="panicDeliveryLoad()" class="' + btn + ' bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100">Reintentar</button>' : '')
+                + '</div>';
+        }
+        async function panicDeliveryRun(action, question) {
+            const bridge = panicDeliveryBridge();
+            const r = panicQrResidentOf(panicQrModalId);
+            if (!bridge || !r || panicDelivery.busy) return;
+            if (question && !confirm(question)) return;
+            const id = String(r.id);
+            panicDelivery = { id: id, state: panicDelivery.id === id ? panicDelivery.state : null, busy: true, error: '' };
+            paintPanicDelivery();
+            let res = null;
+            try { res = await bridge[action](id); } catch (e) { res = null; }
+            if (panicQrModalId !== id) return;
+            if (res && res.ok) {
+                panicDelivery = { id: id, state: res, busy: false, error: '' };
+                showToast(action === 'arm' ? 'Entrega activa hasta el ' + panicDeliveryDate(res.armedUntil) + ': el vecino ya puede escanear su QR.' : 'Entrega cancelada.');
+            } else {
+                panicDelivery = { id: id, state: res && res.status ? res : panicDelivery.state, busy: false, error: '' };
+                alert((res && res.error) || 'No se pudo completar. Revise su conexión e intente de nuevo.');
+                if (!panicDelivery.state) panicDelivery.error = (res && res.error) || 'No se pudo leer el estado de la entrega.';
+            }
+            paintPanicDelivery();
+        }
+        function panicDeliveryArm() {
+            const r = panicQrResidentOf(panicQrModalId);
+            if (!r) return;
+            const who = [r.unit, r.name].filter(Boolean).join(' · ');
+            const st = panicDelivery.id === String(r.id) ? panicDelivery.state : null;
+            const q = st && st.status === 'delivered'
+                ? 'La clave de ' + who + ' ya se entregó el ' + panicDeliveryDate(st.deliveredAt) + '.\n\n¿Activar otra entrega por 24 horas? Si otra persona la vio, cámbiele la clave en su ficha antes.'
+                : '¿Activar la entrega de la clave de ' + who + ' por 24 horas?\n\nHágalo al darle la tarjeta: la primera persona que escanee el QR y toque «Ver mi clave» la verá.';
+            panicDeliveryRun('arm', q);
+        }
+        function panicDeliveryCancel() { panicDeliveryRun('cancel', '¿Cancelar la entrega? El QR ya no mostrará la clave.'); }
+
         // Todo lo que hace falta para imprimir, bajar el PDF o mandar el enlace (o null, avisando por que no)
         function panicQrReady() {
             const r = panicQrResidentOf(panicQrModalId);

@@ -83,6 +83,11 @@ equal('Generar codigo boton de panico (menu del residente): todo pide contactar 
     B.cssFor(only('residentes_ver')).includes('openPanicQr(') && B.cssFor(only('residentes_ver')).includes('#modal-panico-qr'), B.cssFor(only('residentes_contactar')).includes('openPanicQr(')
 ], [false, false, false, false, false, false, false, true, true, true, false]);
 
+equal('Entregar la clave con el QR de panico (ventana del QR): activar, cancelar y consultar piden contactar residentes', [
+    ...['panicDeliveryArm()', 'panicDeliveryCancel()', 'panicDeliveryLoad()'].map((a) => blocked(a, only('residentes_contactar'))),
+    blocked('panicDeliveryArm()', only('residentes_ver')), blocked('panicDeliveryCancel()', none)
+], [false, false, false, true, true]);
+
 equal('Enviar clave de acceso (menu del residente): pide contactar residentes y se oculta sin ese privilegio', [
     ...['openSendCode(this.dataset.id)', 'sendCodeMine()', 'sendCodeServer()', 'copyCodeMessage()'].map((a) => blocked(a, only('residentes_contactar'))),
     blocked('openSendCode(this.dataset.id)', only('residentes_ver')),

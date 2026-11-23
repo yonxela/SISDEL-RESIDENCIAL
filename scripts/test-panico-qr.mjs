@@ -2,6 +2,7 @@
 //  1. panico-qr.js: el enlace del QR, la lista de vecinos, el QR (con la libreria de vendor/), las tarjetas, la hoja y el PDF.
 //  2. functions/src/panico-qr.js (linkPanicDevice y panicDevice) con una base de datos simulada en memoria: vincular el
 //     telefono con el codigo del vecino, enviar la alerta, verla, cancelarla, desvincular, y que un extrano no pueda nada.
+//  3. La entrega de la clave con el QR (panicCodeDelivery y panicCodeReveal): la oficina la activa y el vecino la ve una sola vez.
 // Las mismas funciones corren contra los emuladores en test-emulator.mjs (seccion "QR de panico").
 // Uso: node test-panico-qr.mjs (tambien corre con npm test).
 import fs from 'node:fs';
@@ -285,7 +286,7 @@ const fakeDb = {
 const devicePathOf = (condo, secret) => `condominios/${condo}/panico_dispositivos/${sha256(secret)}`;
 const firebasePath = require.resolve('../functions/src/firebase.js');
 require.cache[firebasePath] = { id: firebasePath, filename: firebasePath, loaded: true, exports: { db: fakeDb, auth: {} } };
-const { linkPanicDevice, panicDevice } = require('../functions/src/panico-qr.js');
+const { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal } = require('../functions/src/panico-qr.js');
 
 let ipCounter = 0;
 const req = (data, ip) => ({ auth: null, data, rawRequest: { headers: { 'user-agent': 'Prueba/1.0', 'x-forwarded-for': ip || `10.0.0.${++ipCounter % 250}` }, ip: '127.0.0.1' } });
@@ -431,17 +432,120 @@ seed();
     equal('al siguiente se reemplaza el mas viejo SIN USO (el que se uso hace poco se queda)', [again.ok, !!store.get(devicePathOf('c1', phones[1])).revokedAt, !!store.get(devicePathOf('c1', phones[2])).revokedAt, liveCount()], [true, false, true, 20]);
 }
 
+console.log('\nEntregar la clave con el QR (la oficina la activa; el vecino la ve una sola vez)');
+{
+    seed();
+    store.set('condominios/c1/usuarios/u-admin', { name: 'Admin Uno', role: 'admin' });
+    store.set('condominios/c1/usuarios/u-op', { name: 'Operador Sin Claves', role: 'operador' });
+    const staffReq = (uid, data, token) => ({ auth: uid ? { uid, token: token || { condominioId: 'c1' } } : null, data, rawRequest: { headers: { 'user-agent': 'Oficina/1.0' }, ip: '127.0.0.1' } });
+    const office = (data, uid = 'u-admin', token) => panicCodeDelivery.run(staffReq(uid, data, token));
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15';
+    const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36';
+    const reveal = (data, ua = IPHONE, ip) => panicCodeReveal.run({ auth: null, data, rawRequest: { headers: { 'user-agent': ua, 'x-forwarded-for': ip || `10.1.0.${++ipCounter % 250}` }, ip: '127.0.0.1' } });
+    const deliveryOf = (v) => store.get(`condominios/c1/panico_entregas/${v}`);
+    const devicesOf = (v) => [...store.entries()].filter(([k, d]) => k.startsWith('condominios/c1/panico_dispositivos/') && d.userId === v && !d.revokedAt);
+
+    equal('sin sesion, o sin el privilegio de ver claves (un operador comun o un vecino), nadie activa ni consulta entregas', [
+        await errOf(panicCodeDelivery.run(staffReq(null, { action: 'status', residentId: 'u-ana' }))),
+        await errOf(office({ action: 'arm', residentId: 'u-ana' }, 'u-op')),
+        await errOf(office({ action: 'arm', residentId: 'u-maria' }, 'u-ana')),
+        await errOf(office({ action: 'borrar', residentId: 'u-ana' }))
+    ], ['unauthenticated', 'permission-denied', 'permission-denied', 'invalid-argument']);
+    equal('antes de activarla: la oficina ve "pendiente" y el QR no ofrece la clave ni dice de quien es', [(await office({ action: 'status', residentId: 'u-ana' })).status, await reveal({ action: 'peek', c: 'c1', v: 'u-ana' })], ['none', { ok: true, available: false, reshow: false }]);
+    const early = await reveal({ action: 'claim', c: 'c1', v: 'u-ana' });
+    equal('escanear sin la entrega activa NO muestra la clave (asi los QR ya pegados en puertas y carros nunca la dan)', [early.ok, early.code, /no está activa/.test(early.error), devicesOf('u-ana').length, !!deliveryOf('u-ana')], [false, undefined, true, 0, false]);
+    equal('solo se entrega la clave de un vecino', (await office({ action: 'arm', residentId: 'u-guardia' })).error, 'Solo se entrega la clave de un vecino.');
+
+    const t0 = Date.now();
+    const armed = await office({ action: 'arm', residentId: 'u-ana' });
+    const hours = (Date.parse(armed.armedUntil) - t0) / 3600000;
+    equal('la oficina activa la entrega por 24 horas y queda quien la activo', [armed.ok, armed.status, armed.armedByName, hours > 23.9 && hours < 24.1], [true, 'armed', 'Admin Uno', true]);
+    yes('el registro de la entrega nunca guarda la clave', !JSON.stringify(deliveryOf('u-ana')).includes('VA101'));
+    equal('con la entrega activa el QR la ofrece (con el lote y el nombre de la tarjeta), sin mostrarla todavia', await reveal({ action: 'peek', c: 'c1', v: 'u-ana' }), { ok: true, available: true, reshow: false, name: 'Nombre u-ana', casa: 'Casa 12', condoName: 'Villa Uno' });
+    equal('mirar si hay una entrega no la gasta', (await office({ action: 'status', residentId: 'u-ana' })).status, 'armed');
+
+    const got = await reveal({ action: 'claim', c: 'c1', v: 'u-ana' }, IPHONE);
+    equal('al tocar "Ver mi clave" el vecino ve SU clave y su telefono queda vinculado al boton', [got.ok, got.code, /^[A-Za-z0-9_-]{43}$/.test(got.secret || ''), got.name, got.casa, got.problem, devicesOf('u-ana').length, devicesOf('u-ana')[0][1].via], [true, 'VA101', true, 'Nombre u-ana', 'Casa 12', null, 1, 'entrega']);
+    equal('ese telefono ya manda alertas con el QR (sin escribir el codigo)', (await device({ action: 'check', c: 'c1', v: 'u-ana', secret: got.secret })).ok, true);
+    const st = await office({ action: 'status', residentId: 'u-ana' });
+    equal('la oficina ve que se entrego, cuando y en que telefono', [st.status, !!st.deliveredAt, st.deliveredOn], ['delivered', true, 'iPhone']);
+    const second = await reveal({ action: 'claim', c: 'c1', v: 'u-ana' }, ANDROID);
+    equal('UNA sola vez: otro telefono que escanea despues no la ve, y se le dice cuando y en que telefono se entrego', [second.ok, second.code, second.delivered, second.deliveredOn, second.deliveredAt === st.deliveredAt, JSON.stringify(second).includes('VA101')], [false, undefined, true, 'iPhone', true, false]);
+    equal('el QR ya no la ofrece a otros (solo dice que ya se entrego)', await reveal({ action: 'peek', c: 'c1', v: 'u-ana' }, ANDROID), { ok: true, available: false, reshow: false, deliveredAt: st.deliveredAt, deliveredOn: 'iPhone' });
+    // Se corto la senal o recargo la pagina: el MISMO telefono la puede volver a ver un rato
+    equal('el mismo telefono puede volver a verla durante 15 minutos (sin crear otro vinculo)', [
+        (await reveal({ action: 'peek', c: 'c1', v: 'u-ana', secret: got.secret })).reshow,
+        (await reveal({ action: 'claim', c: 'c1', v: 'u-ana', secret: got.secret })).code,
+        devicesOf('u-ana').length
+    ], [true, 'VA101', 1]);
+    deliveryOf('u-ana').deliveredAt = new Date(Date.now() - 16 * 60000).toISOString();
+    equal('pasados los 15 minutos ya no, ni en ese telefono', [(await reveal({ action: 'peek', c: 'c1', v: 'u-ana', secret: got.secret })).available, (await reveal({ action: 'claim', c: 'c1', v: 'u-ana', secret: got.secret })).ok], [false, false]);
+
+    // Si el vecino dice que no fue el: se le cambia la clave y la oficina activa otra entrega con la MISMA tarjeta
+    store.delete('codigos/VA101');
+    store.set('codigos/VA777', { condominioId: 'c1', userId: 'u-ana', role: 'vecino', createdAt: '2026-11-22T10:00:00.000Z' });
+    const again = await office({ action: 'arm', residentId: 'u-ana' });
+    equal('otra entrega con la misma tarjeta: la anterior queda en la historia', [again.status, again.times, deliveryOf('u-ana').history.length, deliveryOf('u-ana').history[0].status], ['armed', 2, 1, 'delivered']);
+    const fresh = await reveal({ action: 'claim', c: 'c1', v: 'u-ana' }, ANDROID);
+    equal('y se ve la clave VIGENTE (la nueva)', [fresh.ok, fresh.code, (await office({ action: 'status', residentId: 'u-ana' })).deliveredOn], [true, 'VA777', 'Android']);
+    equal('el telefono vinculado con la clave vieja deja de servir (pide vincular otra vez)', (await device({ action: 'check', c: 'c1', v: 'u-ana', secret: got.secret })).relink, true);
+
+    // Vencida y cancelada
+    await office({ action: 'arm', residentId: 'u-maria' });
+    deliveryOf('u-maria').armedUntil = new Date(Date.now() - 1000).toISOString();
+    equal('pasadas las 24 horas sin usarse la entrega vence: la oficina lo ve y el QR ya no la ofrece', [(await office({ action: 'status', residentId: 'u-maria' })).status, (await reveal({ action: 'peek', c: 'c1', v: 'u-maria' })).available, (await reveal({ action: 'claim', c: 'c1', v: 'u-maria' })).ok], ['expired', false, false]);
+    equal('cancelar una entrega vencida no se puede (no hay una activa)', (await office({ action: 'cancel', residentId: 'u-maria' })).ok, false);
+    await office({ action: 'arm', residentId: 'u-maria' });
+    const cancelled = await office({ action: 'cancel', residentId: 'u-maria' });
+    equal('la oficina puede cancelar una entrega activa y el QR ya no la ofrece', [cancelled.ok, cancelled.status, (await reveal({ action: 'claim', c: 'c1', v: 'u-maria' })).ok, deliveryOf('u-maria').cancelledByName], [true, 'cancelled', false, 'Admin Uno']);
+
+    // Un telefono que ya estaba vinculado (con el codigo) tambien puede verla, sin otro vinculo
+    const maryPhone = await link('c1', 'u-maria', 'VM102');
+    await office({ action: 'arm', residentId: 'u-maria' });
+    const maryGot = await reveal({ action: 'claim', c: 'c1', v: 'u-maria', secret: maryPhone.secret });
+    equal('un telefono ya vinculado la ve sin crear otro vinculo', [maryGot.ok, maryGot.code, maryGot.secret, devicesOf('u-maria').length], [true, 'VM102', undefined, 1]);
+
+    // Vecino desactivado, condominio sin servicio y el panico de vecinos apagado
+    store.set('condominios/c1/usuarios/u-maria', { ...store.get('condominios/c1/usuarios/u-maria'), active: false });
+    equal('a un vecino desactivado no se le activa la entrega', /desactivado/.test((await office({ action: 'arm', residentId: 'u-maria' })).error), true);
+    store.set('condominios/c1/usuarios/u-maria', { ...store.get('condominios/c1/usuarios/u-maria'), active: true });
+    store.set('condominios/c1/rondas_config/general', { neighbor_panic_enabled: 0 });
+    store.set('codigos/VS106', { condominioId: 'c1', userId: 'u-sincancel', role: 'vecino' });
+    await office({ action: 'arm', residentId: 'u-sincancel' });
+    const off = await reveal({ action: 'claim', c: 'c1', v: 'u-sincancel' });
+    equal('con el panico de vecinos apagado en Rondas ve su clave igual y se le dice por que el boton no funciona todavia', [off.ok, off.code, /no está activado/.test(off.problem || ''), devicesOf('u-sincancel').length], [true, 'VS106', true, 1]);
+    store.set('condominios/c1/rondas_config/general', { neighbor_panic_enabled: 1 });
+
+    equal('el Master tambien la activa (en el condominio que elige)', (await office({ action: 'status', residentId: 'u-ana', condoId: 'c1' }, 'master', { role: 'master' })).status, 'delivered');
+    // La clave no queda en ninguna parte fuera de codigos (ni entregas, ni telefonos vinculados, ni limites)
+    const leaks = [...store.entries()].filter(([k]) => !k.startsWith('codigos/')).filter(([, d]) => /VA101|VA777|VM102|VS106/.test(JSON.stringify(d)));
+    equal('la clave no se guarda en ningun otro lugar de la base', leaks.map(([k]) => k), []);
+    // Muchos intentos desde una misma red se frenan
+    let lastPeek = null;
+    for (let i = 0; i < 61; i++) lastPeek = await reveal({ action: 'peek', c: 'c1', v: 'u-ana' }, IPHONE, '7.7.7.7');
+    equal('60 intentos desde una misma red en 15 minutos se frenan', [lastPeek.ok, lastPeek.blocked], [false, true]);
+}
+
 console.log('\nReglas y paginas');
 {
     const rules = read('firestore.rules');
     yes('las reglas no dejan leer ni escribir los telefonos vinculados desde el navegador', /match \/panico_dispositivos\/\{deviceId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
+    yes('ni las entregas de la clave', /match \/panico_entregas\/\{userId\} \{\s*allow read, write: if false;\s*\}/.test(rules));
     const index = read('functions/index.js');
     yes('functions/index.js publica linkPanicDevice y panicDevice', /require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice/.test(index));
+    yes('y las dos de la entrega de la clave', /const \{ linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal \} = require\('\.\/src\/panico-qr'\)/.test(index) && /linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal,/.test(index));
     const page = read('panico.html');
     yes('panico.html no carga el SDK de Firebase (abre rapido) y llama al servidor con panico-qr.js', !/firebasejs/.test(page) && /Q\.callFunction\(Q\.functionUrl\(location, name, forceProd\)/.test(page));
     yes('panico.html no se indexa ni manda su direccion a otros sitios', /<meta name="robots" content="noindex, nofollow">/.test(page) && /<meta name="referrer" content="no-referrer">/.test(page));
     yes('el codigo no se queda en la pagina ni en el telefono: se borra del campo y solo se guarda la clave del vinculo', /input\.value = ''; \/\/ el codigo no se queda en la pagina/.test(page) && /link = \{ secret: res\.secret, name: res\.name, casa: res\.casa, condoName: res\.condoName, canCancel: res\.canCancel, at: /.test(page) && !/code:\s*code[\s\S]{0,40}saveLink/.test(page));
     yes('panico.html pinta los datos del vecino con textContent (nunca como HTML)', !/innerHTML/.test(page.split('<script>').slice(1).join('')));
+    const R = require('../functions/src/recordatorios-core.js');
+    const closing = R.accessCodeText({ name: 'X', code: 'Y', condoName: '' }).split('\n').pop();
+    yes('la clave entregada con el QR lleva el mismo aviso del mensaje "Enviar clave de acceso"', /^Favor guarde y no comparta su clave\./.test(closing) && page.includes(`<p class="pq-notice" id="pqRevealNotice">${closing}</p>`));
+    yes('la clave se pide al servidor solo al tocar "Ver mi clave" (abrir la pagina o una vista previa del enlace no la gasta)', page.split("action: 'claim'").length === 2 && page.indexOf("action: 'claim'") > page.indexOf("$('pqRevealBtn').addEventListener('click'") && /api\('panicCodeReveal', \{ action: 'peek'/.test(page));
+    yes('la clave se pinta con textContent y no se guarda en el telefono (solo la hora en que se vio)', /\$\('pqRevealCode'\)\.textContent = showing \? reveal\.code : '';/.test(page) && /safeStorage\.setItem\(SHOW_FLAG, String\(Date\.now\(\)\)\)/.test(page) && !/setItem\([^)]*(code|reveal)/.test(page));
+    yes('"Ya la guarde" la borra de la pantalla y un telefono vinculado ve el boton sin esperar a nada mas', /\$\('pqRevealDone'\)\.addEventListener\('click', \(\) => \{\s*if \(!confirm\(/.test(page) && /if \(!link && !peekDone\) return;/.test(page) && /\$\('pqStepPanic'\)\.hidden = blocked \|\| !link;/.test(page));
+    yes('si ya se entrego, el paso de vincular dice cuando y en que telefono (para que el vecino sepa si fue el)', /La clave de este QR ya se entregó el \$\{when\}/.test(page) && /id="pqDelivered"/.test(page));
     const v = (f, name) => (read(f).match(new RegExp(`${name.replace('.', '\\.')}\\?v=(\\w+)`)) || [])[1];
     yes('panico-qr.js lleva la misma version en admin.html y panico.html', v('admin.html', 'panico-qr.js') && v('admin.html', 'panico-qr.js') === v('panico.html', 'panico-qr.js'));
     const admin = read('admin.html');

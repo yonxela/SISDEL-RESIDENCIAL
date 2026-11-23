@@ -113,8 +113,8 @@
     <script src="privilegios.js?v=20261121a"></script>
     <script src="sisdel-core.js?v=20261121a"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261121c"></script>
-    <script src="finanzas-bloqueo.js?v=20261121c"></script>
+    <script src="finanzas-sync.js?v=20261122a"></script>
+    <script src="finanzas-bloqueo.js?v=20261122a"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script>
@@ -190,6 +190,19 @@
                     } catch (error) { callback(null); return () => {}; }
                 }
             };
+
+            // Entregar la clave de acceso con el QR de panico (ventana "Codigo del boton de panico" de OIKOS): al darle la tarjeta al
+            // vecino, la oficina activa la entrega y la PRIMERA vez que el vecino escanea el QR ve su clave una sola vez (panico.html).
+            // Solo con "Ver y cambiar codigos de acceso" (usuarios.codigos), que el servidor (panicCodeDelivery) tambien exige
+            window.sisdelPanicDelivery = null;
+            if (SISDEL.can('usuarios.codigos')) {
+                const delivery = callServer('panicCodeDelivery');
+                window.sisdelPanicDelivery = {
+                    status: (residentId) => delivery({ action: 'status', residentId: String(residentId), condoId }),
+                    arm: (residentId) => delivery({ action: 'arm', residentId: String(residentId), condoId }),
+                    cancel: (residentId) => delivery({ action: 'cancel', residentId: String(residentId), condoId })
+                };
+            }
 
             const STATUS_TEXT = {
                 loading: 'Cargando', ok: 'Guardado en la nube', saving: 'Guardando...',

@@ -46,6 +46,11 @@
         #pqStepSave .pq-why { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem; }
         .pq-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
         .pq-foot a { color: var(--text-muted); }
+        /* La clave que entrega la oficina con el QR: se ve una sola vez, en grande */
+        .pq-step p.pq-code { margin: 0.25rem 0 0.6rem; line-height: 1.2; padding: 0.85rem 0.5rem; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 2.3rem; font-weight: 800; letter-spacing: 0.16em; color: var(--text-primary); border: 2px dashed var(--primary); border-radius: var(--radius-md); user-select: all; -webkit-user-select: all; overflow-wrap: anywhere; }
+        .pq-notice { padding: 0.75rem 0.9rem; border-radius: var(--radius-md); background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.45); color: var(--text-primary) !important; font-weight: 700; font-size: 0.86rem !important; line-height: 1.45; }
+        .pq-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .pq-row .btn { flex: 1 1 auto; justify-content: center; }
         [hidden] { display: none !important; }
     </style>
 </head>
@@ -70,6 +75,27 @@
             <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
         </section>
 
+        <!-- Paso 2 cuando la oficina activo la entrega de la clave al darle el QR al vecino: verla UNA sola vez (y este telefono queda
+             vinculado al boton). Sin esa entrega activa el QR nunca muestra la clave -->
+        <section class="pq-step" id="pqStepReveal" hidden>
+            <h2><span class="pq-num">2</span> Su clave de acceso</h2>
+            <div id="pqRevealAsk">
+                <p id="pqRevealAskText">La administración le entregó este QR con su clave de acceso a garita.app. Toque el botón para verla. <b>Se muestra una sola vez</b>: tenga a mano dónde anotarla o tome una captura de pantalla.</p>
+                <button class="btn btn-primary" id="pqRevealBtn" type="button" style="width:100%; justify-content:center;">Ver mi clave (una sola vez)</button>
+            </div>
+            <div id="pqRevealShow" hidden>
+                <p style="margin-bottom:0.35rem;">Su clave de acceso:</p>
+                <p class="pq-code" id="pqRevealCode" aria-live="polite"></p>
+                <p class="pq-notice" id="pqRevealNotice">Favor guarde y no comparta su clave. ESTA APLICACIÓN SERÁ DE GRAN UTILIDAD PARA EL TEMA DE SEGURIDAD, YA QUE AL PRESIONAR EL BOTÓN DE PÁNICO EL MENSAJE LLEGARÁ A GARITA, A PNC Y A 5 FAMILIARES PREVIAMENTE CONFIGURADOS.</p>
+                <p>Esta es la única vez que el QR le muestra su clave. Con ella entra a garita.app (visitas, marbete) y puede vincular otro teléfono al botón de pánico. <span id="pqRevealLinked">Este teléfono ya quedó vinculado: desde ahora este QR solo abre el botón de pánico.</span></p>
+                <div class="pq-row">
+                    <button class="btn btn-ghost" id="pqRevealCopy" type="button" style="border:1px solid var(--border-strong);">Copiar la clave</button>
+                    <button class="btn btn-primary" id="pqRevealDone" type="button">Ya la guardé: continuar</button>
+                </div>
+            </div>
+            <p class="pq-msg" id="pqRevealMsg" hidden></p>
+        </section>
+
         <!-- Paso 2, solo la primera vez en este telefono: vincularlo con el codigo del vecino (el QR solo no deja enviar alertas) -->
         <section class="pq-step" id="pqStepLink" hidden>
             <h2><span class="pq-num">2</span> Vincule este teléfono</h2>
@@ -79,6 +105,7 @@
                 <button class="btn btn-primary" id="pqLinkBtn" type="submit" style="justify-content:center;">Vincular este teléfono</button>
             </form>
             <p class="pq-msg" id="pqLinkMsg" hidden></p>
+            <p class="pq-msg bad" id="pqDelivered" hidden></p>
             <p class="text-xs text-muted" style="margin:0.75rem 0 0;">El código no se guarda en el teléfono. Quien escanee el QR sin el código no puede enviar alertas.</p>
         </section>
 
@@ -142,6 +169,11 @@
             let restoreDone = !!link; // sin la copia de localStorage se revisa la de IndexedDB antes de pedir el codigo
             let gpsDone = false;
             let blocked = false; // el servidor dijo que este vecino no puede usar el boton
+            // La clave que entrega la oficina con el QR (una sola vez): reveal = { reshow } mientras se ofrece y { code } mientras se ve.
+            // La clave solo vive en la pantalla: no se guarda en el telefono (SHOW_FLAG guarda solo la hora en que se vio)
+            let reveal = null;
+            let peekDone = false;
+            const SHOW_FLAG = `sisdel_pq_ver_${qs.c}_${qs.v}`;
 
             function paintWho() {
                 $('pqWho').textContent = link ? [Q.unitLabel(link.casa), link.name].filter(Boolean).join(' · ') || 'Vecino' : 'QR de pánico de un vecino';
@@ -175,12 +207,15 @@
                     : 'Por qué: así el teléfono no depende de que el navegador conserve lo que guardó, y el botón queda a un toque.';
             }
             $('pqSaveOk').addEventListener('click', () => { try { if (safeStorage) safeStorage.setItem(SAVED_FLAG, '1'); } catch (e) { /* sin almacenamiento */ } paintSaveCard(); });
-            // Despues de la ubicacion: el boton si el telefono esta vinculado; si no, vincularlo
+            // Despues de la ubicacion: el boton si el telefono esta vinculado (sin esperar a nada mas: puede ser una emergencia); si no,
+            // la clave si la oficina activo su entrega y, si no, vincularlo con el codigo
             function showNext() {
-                if (!gpsDone || !restoreDone || blocked) return;
-                $('pqStepLink').hidden = !!link;
-                $('pqStepPanic').hidden = !link;
-                if (!link) setTimeout(() => $('pqCode').focus(), 50);
+                if (!gpsDone || !restoreDone) return;
+                if (!link && !peekDone) return; // sin vinculo: primero se sabe si hay una clave por entregar
+                $('pqStepReveal').hidden = !reveal;
+                $('pqStepLink').hidden = blocked || !!link || !!reveal;
+                $('pqStepPanic').hidden = blocked || !link;
+                if (!blocked && !link && !reveal) setTimeout(() => $('pqCode').focus(), 50);
             }
             function linkMessage(text, bad) {
                 const m = $('pqLinkMsg');
@@ -245,12 +280,13 @@
             }
             if (link) {
                 verifyLink();
+                peekDelivery();
                 keeper.load().catch(() => {}); // repone la copia de IndexedDB si falta
             } else {
                 // Sin la copia de localStorage: se mira la de IndexedDB antes de pedir el codigo (se repone sola)
                 keeper.load().then((r) => {
                     if (r && r.link && !link) { link = r.link; paintWho(); verifyLink(); }
-                }).catch(() => {}).then(() => { restoreDone = true; showNext(); });
+                }).catch(() => {}).then(() => { restoreDone = true; peekDelivery(); showNext(); });
             }
             asking.then(afterGps, () => afterGps('timeout'));
             // Al volver de los Ajustes del telefono la ubicacion se comprueba sola; oculta, descansa (bateria)
@@ -259,6 +295,94 @@
                 else if (gpsDone) SisdelRondas.gps.start();
             });
             ['focus', 'pageshow'].forEach((ev) => window.addEventListener(ev, () => { if (gpsDone && SisdelRondas.gps.state().status !== 'ok') SisdelRondas.gps.start(); }));
+
+            // ── Paso 2 si la oficina lo activo: la clave de acceso, una sola vez (panicCodeReveal) ──
+            // 'peek' solo dice si hay una entrega activa; la clave sale con 'claim', al tocar el boton (asi una vista previa del enlace o
+            // abrir la pagina sin querer no la gasta). El telefono que la ve queda vinculado al boton de panico
+            const shownRecently = () => { try { const t = Number(safeStorage && safeStorage.getItem(SHOW_FLAG)); return t > 0 && Date.now() - t < 15 * 60 * 1000; } catch (e) { return false; } };
+            const fmtDate = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }); };
+            const ON_DEVICE = { iPhone: 'en un iPhone', Android: 'en un teléfono Android' };
+            function paintDelivered(res) {
+                const box = $('pqDelivered');
+                const when = res && res.deliveredAt ? fmtDate(res.deliveredAt) : '';
+                box.textContent = when ? `La clave de este QR ya se entregó el ${when}${res.deliveredOn ? ' ' + (ON_DEVICE[res.deliveredOn] || 'en una computadora u otro aparato') : ''}. Si no fue usted quien la vio, avise a la administración para que le cambie la clave.` : '';
+                box.hidden = !when;
+            }
+            function revealMessage(text, bad) {
+                const m = $('pqRevealMsg');
+                m.textContent = text || '';
+                m.className = 'pq-msg' + (bad ? ' bad' : '');
+                m.hidden = !text;
+            }
+            function paintReveal() {
+                const showing = !!(reveal && reveal.code);
+                $('pqRevealAsk').hidden = showing;
+                $('pqRevealShow').hidden = !showing;
+                $('pqRevealCode').textContent = showing ? reveal.code : '';
+                $('pqRevealLinked').hidden = !link;
+                $('pqRevealBtn').textContent = reveal && reveal.reshow ? 'Volver a ver mi clave' : 'Ver mi clave (una sola vez)';
+                $('pqRevealAskText').textContent = reveal && reveal.reshow
+                    ? 'Su clave ya se mostró en este teléfono hace unos minutos. Puede volver a verla aquí durante 15 minutos después de la primera vez.'
+                    : 'La administración le entregó este QR con su clave de acceso a garita.app. Toque el botón para verla. Se muestra UNA SOLA VEZ: tenga a mano dónde anotarla o tome una captura de pantalla.';
+            }
+            function peekDelivery() {
+                const ask = api('panicCodeReveal', { action: 'peek', ...(link ? { secret: link.secret } : {}) });
+                SisdelPanicoBoton.withTimeout(ask, 12000, 'sin respuesta').then((res) => {
+                    // Volver a verla solo si este telefono la vio hace poco y no dijo "ya la guarde"
+                    if (res && res.ok && res.available && (!res.reshow || shownRecently())) reveal = { reshow: !!res.reshow };
+                    else { reveal = null; paintDelivered(res && res.ok ? res : null); }
+                }).catch(() => { reveal = null; }).then(() => { peekDone = true; paintReveal(); showNext(); });
+            }
+            $('pqRevealBtn').addEventListener('click', async () => {
+                const btn = $('pqRevealBtn');
+                btn.disabled = true;
+                revealMessage('Comprobando...', false);
+                try {
+                    const res = await api('panicCodeReveal', { action: 'claim', ...(link ? { secret: link.secret } : {}) });
+                    if (!res.ok) {
+                        // Ya la vio alguien (o la entrega vencio): se vuelve al paso de siempre, con el aviso
+                        revealMessage('', false);
+                        reveal = null;
+                        paintReveal();
+                        if (res.delivered) paintDelivered(res); else linkMessage(res.error, true);
+                        showNext();
+                        return;
+                    }
+                    if (res.secret) {
+                        link = { secret: res.secret, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel, at: new Date().toISOString() };
+                        await saveLink(link);
+                    }
+                    try { if (safeStorage) safeStorage.setItem(SHOW_FLAG, String(Date.now())); } catch (e) { /* sin almacenamiento */ }
+                    reveal = { code: res.code };
+                    revealMessage('', false);
+                    // El boton todavia no le funciona (ej. el panico de vecinos apagado en Rondas): ve su clave igual y se dice por que
+                    if (res.problem) { blocked = true; fail(res.problem); }
+                    paintWho();
+                    paintReveal();
+                    showNext();
+                    if (navigator.vibrate) navigator.vibrate(120);
+                } catch (err) {
+                    console.error(err);
+                    revealMessage('No hay conexión con el servidor. Revise su internet e intente de nuevo.', true);
+                } finally { btn.disabled = false; }
+            });
+            $('pqRevealCopy').addEventListener('click', () => {
+                const code = reveal && reveal.code;
+                if (!code) return;
+                const btn = $('pqRevealCopy');
+                const done = () => { btn.textContent = 'Clave copiada'; setTimeout(() => { btn.textContent = 'Copiar la clave'; }, 1800); };
+                const select = () => { const r = document.createRange(); r.selectNodeContents($('pqRevealCode')); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+                try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(code).then(done, select); return; } } catch (e) { /* se selecciona */ }
+                select();
+            });
+            $('pqRevealDone').addEventListener('click', () => {
+                if (!confirm('¿Ya anotó o guardó su clave? Este QR no se la volverá a mostrar.')) return;
+                reveal = null;
+                try { if (safeStorage) safeStorage.removeItem(SHOW_FLAG); } catch (e) { /* sin almacenamiento */ }
+                revealMessage('', false);
+                paintReveal();
+                showNext();
+            });
 
             // ── Paso 2: vincular este telefono con el codigo del vecino (una sola vez) ──
             $('pqLinkForm').addEventListener('submit', async (e) => {

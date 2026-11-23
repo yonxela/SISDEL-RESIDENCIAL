@@ -753,6 +753,22 @@ async function run() {
     equal('QR: cancela su alerta desde el telefono', (await qrCall('panicDevice', { action: 'cancel', c: A, v: 'u-ana', secret: qrLink.secret, alertId: qrAlert.alert.id })).alert.status, 'CANCELLED');
     equal('QR: desvincular el telefono', (await qrCall('panicDevice', { action: 'unlink', c: A, v: 'u-ana', secret: qrLink.secret })).ok, true);
     equal('QR: desvinculado ya no envia alertas', (await qrCall('panicDevice', { action: 'alert', c: A, v: 'u-ana', secret: qrLink.secret })).relink, true);
+    // Entregar la clave con el QR: la oficina la activa (con su sesion y "Ver y cambiar codigos") y el vecino la ve una sola vez
+    const delivery = (c, data) => httpsCallable(c.functions, 'panicCodeDelivery')(data).then((r) => r.data);
+    const callErr = async (p) => { try { await p; return 'sin error'; } catch (e) { return String(e.code || e.message).replace(/^functions\//, ''); } };
+    equal('QR clave: un vecino o la garita no activan entregas (no ven las claves)', [await callErr(delivery(ana, { action: 'arm', residentId: 'u-maria' })), await callErr(delivery(guard, { action: 'arm', residentId: 'u-maria' }))], ['permission-denied', 'permission-denied']);
+    equal('QR clave: sin activarla, el QR no la muestra', [(await qrCall('panicCodeReveal', { action: 'peek', c: A, v: 'u-maria' })).available, (await qrCall('panicCodeReveal', { action: 'claim', c: A, v: 'u-maria' })).ok], [false, false]);
+    const armedEmu = await delivery(admin, { action: 'arm', residentId: 'u-maria' });
+    equal('QR clave: el administrador activa la entrega de Maria por 24 horas', [armedEmu.ok, armedEmu.status], [true, 'armed']);
+    // Dos telefonos tocan "Ver mi clave" al mismo tiempo: la transaccion deja verla a UNO
+    const both = await Promise.all([qrCall('panicCodeReveal', { action: 'claim', c: A, v: 'u-maria' }), qrCall('panicCodeReveal', { action: 'claim', c: A, v: 'u-maria' })]);
+    const winners = both.filter((x) => x.ok);
+    equal('QR clave: dos telefonos al mismo tiempo: solo uno ve la clave (la de Maria) y el otro sabe que ya se entrego', [winners.length, winners[0] && winners[0].code, both.filter((x) => !x.ok && x.delivered).length], [1, 'VM102', 1]);
+    equal('QR clave: el que la vio quedo vinculado y ya puede mandar alertas', (await qrCall('panicDevice', { action: 'check', c: A, v: 'u-maria', secret: winners[0] && winners[0].secret })).ok, true);
+    equal('QR clave: la oficina ve que se entrego', (await delivery(admin, { action: 'status', residentId: 'u-maria' })).status, 'delivered');
+    await denied('QR clave: nadie lee las entregas desde el navegador (ni el administrador)', () => getDoc(rref(admin, 'panico_entregas', 'u-maria')));
+    await denied('QR clave: ni las escribe', () => setDoc(rref(admin, 'panico_entregas', 'u-ana'), { status: 'armed', armedUntil: '2999-01-01T00:00:00.000Z' }));
+    await qrCall('panicDevice', { action: 'unlink', c: A, v: 'u-maria', secret: winners[0] && winners[0].secret });
 
     await allowed('vecino guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', condominioId: A, contacts: [{ name: 'Luis', phone: '5555-1111' }], updatedAt: ts() }));
     await denied('vecino no edita contactos de otro', () => setDoc(rref(ana, 'emergencia', 'u-maria'), { userId: 'u-maria', condominioId: A, contacts: [], updatedAt: ts() }));

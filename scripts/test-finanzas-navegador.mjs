@@ -1710,6 +1710,40 @@ async function run() {
         equal('el boton de la izquierda abre solo su menu', pmOut.soloIzq, [true, false]);
         equal('el codigo del boton de panico: la tarjeta del vecino con su QR y el enlace con su condominio y su id (sin codigo de acceso)',
             [pmOut.modal.abierta, pmOut.modal.url, pmOut.modal.qr, /BOTÓN DE PÁNICO/.test(pmOut.modal.tarjeta), /Ana García/.test(pmOut.modal.tarjeta), pmOut.modal.botones], [true, `${BASE}/panico.html?c=${CONDO}&v=u-ana`, 1, true, true, [false, false, false, false]]);
+        // Entregar la clave con el QR (pedido del usuario el 2026-11-22): la ventana consulta y activa la entrega por el puente real
+        // (panicCodeDelivery en el emulador); el vecino la ve una sola vez al escanear (eso lo prueba test-panico-guardado.mjs)
+        await condoRef.collection('panico_entregas').doc('u-maria').delete().catch(() => {});
+        const dlv = await oikos(`(async () => {
+            const d = (id) => document.getElementById(id);
+            const wait = async (fn) => { for (let i = 0; i < 80 && !fn(); i++) await new Promise((r) => setTimeout(r, 150)); };
+            const realConfirm = window.confirm;
+            window.confirm = () => true;
+            openPanicQr('u-maria');
+            await wait(() => d('pqm-dlv-status') && d('pqm-dlv-status').dataset.status !== 'loading');
+            const out = { bridge: !!window.parent.sisdelPanicDelivery, before: d('pqm-dlv-status').dataset.status, beforeText: d('pqm-dlv-status').textContent, armLabel: d('pqm-dlv-arm').textContent.trim() };
+            d('pqm-dlv-arm').click();
+            await wait(() => d('pqm-dlv-status').dataset.status === 'armed');
+            out.after = d('pqm-dlv-status').dataset.status;
+            out.afterText = d('pqm-dlv-status').textContent;
+            out.cancel = !!d('pqm-dlv-cancel');
+            out.again = d('pqm-dlv-arm').textContent.trim();
+            openPanicQr('u-ana');
+            out.otherWhileLoading = d('pqm-dlv-status').dataset.status;
+            await wait(() => d('pqm-dlv-status').dataset.status !== 'loading');
+            openPanicQr('u-maria');
+            await wait(() => d('pqm-dlv-status').dataset.status !== 'loading');
+            d('pqm-dlv-cancel').click();
+            await wait(() => d('pqm-dlv-status').dataset.status === 'cancelled');
+            out.cancelled = d('pqm-dlv-status').dataset.status;
+            closeModal('modal-panico-qr');
+            window.confirm = realConfirm;
+            return out;
+        })()`);
+        equal('la ventana del QR trae "Entregar la clave con este QR" (el administrador ve las claves) y dice que esta pendiente', [dlv.bridge, dlv.before, /^Pendiente/.test(dlv.beforeText), dlv.armLabel], [true, 'none', true, 'Activar la entrega (24 horas)']);
+        const dlvDoc = (await condoRef.collection('panico_entregas').doc('u-maria').get()).data();
+        equal('activarla la deja ACTIVA 24 horas (en la ventana, con Cancelar, y en la base con quien la activo)', [dlv.after, /^Entrega ACTIVA hasta el .+ \(la activó .+\)/.test(dlv.afterText), dlv.cancel, dlv.again, !!dlvDoc && !!dlvDoc.armedByName], ['armed', true, true, 'Activar de nuevo (24 horas desde ahora)', true]);
+        equal('al abrir otro residente no se ve el estado del anterior mientras consulta', dlv.otherWhileLoading, 'loading');
+        equal('y se puede cancelar', [dlv.cancelled, (await condoRef.collection('panico_entregas').doc('u-maria').get()).get('status')], ['cancelled', 'cancelled']);
 
         console.log('\nResidentes: enviar la clave de acceso del vecino y el enlace de garita.app');
         const anaAccessCode = (await db.collection('codigos').where('userId', '==', 'u-ana').get()).docs.map((d) => d.id).find(Boolean);

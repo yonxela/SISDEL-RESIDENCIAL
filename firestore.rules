@@ -760,6 +760,12 @@ service cloud.firestore {
       match /panico_dispositivos/{deviceId} {
         allow read, write: if false;
       }
+      // Entrega de la clave de acceso con el QR de panico (una sola vez, la activa la oficina): quien la activo, hasta cuando, cuando
+      // se vio y en que telefono, con la historia de cada entrega; nunca la clave. Solo las funciones panicCodeDelivery y
+      // panicCodeReveal (functions/src/panico-qr.js)
+      match /panico_entregas/{userId} {
+        allow read, write: if false;
+      }
       // Contactos de emergencia del vecino (los avisa el boton de panico por WhatsApp)
       match /emergencia/{userId} {
         allow read: if isMaster() || pPanicoContactos(condoId)

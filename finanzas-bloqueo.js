@@ -111,7 +111,7 @@
         [/^sendResidentMarbeteWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
         // Generar codigo boton de panico (menu de cada residente): la tarjeta del QR, su enlace y mandarselo por WhatsApp (el privilegio de
         // contactar residentes)
-        [/^(openPanicQr|panicQrSetSize|panicQrSetPaper|panicQrCopyLink|printPanicQr|downloadPanicQrPDF|sendPanicQrWhatsApp)\(/, ['residentes_contactar']],
+        [/^(openPanicQr|panicQrSetSize|panicQrSetPaper|panicQrCopyLink|printPanicQr|downloadPanicQrPDF|sendPanicQrWhatsApp|panicDeliveryArm|panicDeliveryCancel|panicDeliveryLoad)\(/, ['residentes_contactar']],
         // Enviar clave de acceso (menu de cada residente): mandar un mensaje al residente; la opcion solo sale si el usuario ve las claves
         // (el puente de claves pide usuarios.codigos) y el servidor lo vuelve a pedir al mandarla desde el numero del condominio
         [/^(openSendCode|sendCodeMine|sendCodeServer|copyCodeMessage)\(/, ['residentes_contactar']],

@@ -12,6 +12,8 @@
 // Un extrano que escanea el QR de otro no puede vincularse sin el codigo de ese vecino (5 intentos fallidos por vecino y
 // 30 por IP cada 15 minutos). La alerta sale como la del portal (alertas_panico, source 'vecino') con via 'qr', y
 // onPanicCreated avisa por WhatsApp igual que siempre.
+// Ademas, la oficina puede ENTREGAR la clave con el QR (panicCodeDelivery y panicCodeReveal, al final): la primera vez que el
+// vecino lo escanea ve su clave una sola vez y su telefono queda vinculado, solo si la oficina activo esa entrega al darle la tarjeta.
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions/v2');
 const crypto = require('crypto');
@@ -131,6 +133,15 @@ const linkPanicDevice = onCall(async (request) => {
     const problem = neighborProblem(neighbor);
     if (problem) { log('not_allowed'); return { ok: false, error: problem }; }
 
+    const secret = await createDeviceLink({ condoId, userId, code, request, log });
+    log('ok');
+    return { ok: true, secret, ...info(neighbor), alert: null };
+});
+
+const userAgentOf = (request) => String((request && request.rawRequest && request.rawRequest.headers && request.rawRequest.headers['user-agent']) || '').slice(0, 200);
+
+// Vincula un telefono nuevo al QR del vecino (con su codigo vigente) y devuelve la clave al azar que se queda en el telefono
+async function createDeviceLink({ condoId, userId, code, request, log, via = 'codigo', secret = crypto.randomBytes(32).toString('base64url') }) {
     const codeHash = sha256(code);
     const devices = await db.collection(`condominios/${condoId}/panico_dispositivos`).where('userId', '==', userId).get();
     const live = devices.docs.filter((d) => !d.data().revokedAt && d.data().codeHash === codeHash);
@@ -143,15 +154,11 @@ const linkPanicDevice = onCall(async (request) => {
         await Promise.all(oldest.map((d) => d.ref.update({ revokedAt: nowIso(), revokedBy: 'reemplazado' })));
         log('replaced', { count: oldest.length });
     }
-
-    const secret = crypto.randomBytes(32).toString('base64url');
     await db.doc(devicePath(condoId, secret)).create({
-        userId, condominioId: condoId, codeHash, createdAt: nowIso(), lastUsedAt: null,
-        userAgent: String((request.rawRequest && request.rawRequest.headers && request.rawRequest.headers['user-agent']) || '').slice(0, 200)
+        userId, condominioId: condoId, codeHash, createdAt: nowIso(), lastUsedAt: null, userAgent: userAgentOf(request), via
     });
-    log('ok');
-    return { ok: true, secret, ...info(neighbor), alert: null };
-});
+    return secret;
+}
 
 // Lo que hace un telefono vinculado: comprobar el vinculo ('check'), enviar la alerta ('alert'), ver como va ('status'),
 // cancelarla ('cancel') o desvincularse ('unlink')
@@ -226,4 +233,194 @@ const panicDevice = onCall(async (request) => {
     return { ok: true, alert: publicAlert(current) };
 });
 
-module.exports = { linkPanicDevice, panicDevice, _test: { cleanPos, neighborProblem } };
+// ───────── Entregar la clave de acceso con el QR (pedido del usuario el 2026-11-22) ─────────
+// "La oficina entrega el QR de panico al vecino; el vecino lo escanea y ve su clave por una sola vez con el aviso; luego el QR sirve
+// solo para el boton de panico". El QR NO lleva la clave y por si solo nunca la muestra: va pegado en puertas y carros, y los ya
+// pegados (y los enlaces mandados por WhatsApp) son el mismo QR. Por eso la oficina ACTIVA la entrega al darle la tarjeta al vecino
+// (panicCodeDelivery, quien ve las claves: usuarios.codigos), por 24 horas. La primera persona que escanea el QR en ese tiempo y toca
+// "Ver mi clave" la ve (panicCodeReveal, 'claim'), ese telefono queda vinculado al boton y la entrega se gasta: nadie mas la vuelve a
+// ver por el QR. Si la vio otra persona, el vecino lo sabe ("ya se entrego el dia X") y la oficina le cambia la clave y activa otra
+// entrega con la MISMA tarjeta. Todo queda en condominios/{c}/panico_entregas/{vecino} (que solo escribe y lee el servidor, con la
+// historia de cada entrega); la clave nunca se guarda ahi ni en el registro del servidor.
+const DELIVERY_MS = 24 * 3600 * 1000;
+const RESHOW_MS = 15 * 60 * 1000; // el mismo telefono puede volver a verla un rato (se corto la senal, recargo la pagina)
+const DELIVERY_LIMIT = { max: 120, windowMs: 10 * 60 * 1000 };
+const REVEAL_IP_LIMIT = { max: 60, windowMs: 15 * 60 * 1000 };
+const HISTORY_MAX = 20;
+const deliveryPath = (condoId, userId) => `condominios/${condoId}/panico_entregas/${userId}`;
+
+// La clave vigente del vecino en este condominio (la mas nueva)
+async function currentCode(condoId, userId) {
+    const snap = await db.collection('codigos').where('userId', '==', userId).get();
+    const codes = snap.docs.filter((d) => d.data().condominioId === condoId)
+        .sort((a, b) => String(b.data().createdAt || '').localeCompare(String(a.data().createdAt || '')));
+    return codes.length ? codes[0].id : '';
+}
+
+// En que telefono se vio (para que el vecino y la oficina sepan si fue el suyo), sin guardar mas datos del aparato
+function deviceKind(userAgent) {
+    const ua = String(userAgent || '');
+    if (/iPhone|iPad|iPod/.test(ua)) return 'iPhone';
+    if (/Android/i.test(ua)) return 'Android';
+    return ua ? 'computadora u otro aparato' : '';
+}
+
+// Como esta la entrega: none (nunca se activo), armed (activa), expired (vencio sin usarse), delivered o cancelled
+function deliveryState(d, now = Date.now()) {
+    if (!d || !d.status) return { status: 'none' };
+    let status = d.status;
+    if (status === 'armed' && !(Date.parse(d.armedUntil) > now)) status = 'expired';
+    return {
+        status, armedAt: d.armedAt || '', armedUntil: d.armedUntil || '', armedByName: d.armedByName || '',
+        deliveredAt: d.deliveredAt || '', deliveredOn: d.deliveredOn || '', cancelledAt: d.cancelledAt || '',
+        times: (Array.isArray(d.history) ? d.history.length : 0) + 1
+    };
+}
+// Lo que se guarda en la historia al empezar otra entrega
+function historyEntry(d) {
+    return {
+        status: deliveryState(d).status, armedAt: d.armedAt || '', armedUntil: d.armedUntil || '', armedById: d.armedById || '', armedByName: d.armedByName || '',
+        deliveredAt: d.deliveredAt || '', deliveredOn: d.deliveredOn || '', cancelledAt: d.cancelledAt || '', cancelledByName: d.cancelledByName || ''
+    };
+}
+
+// La oficina: ver como esta, activar la entrega (24 horas) o cancelarla. Pide la sesion de un usuario con "Ver y cambiar codigos de
+// acceso" (usuarios.codigos: el mismo privilegio con que las reglas dejan leer las claves) o la del Master
+const panicCodeDelivery = onCall(async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sesión requerida');
+    const data = request.data || {};
+    const action = String(data.action || '');
+    if (!['status', 'arm', 'cancel'].includes(action)) throw new HttpsError('invalid-argument', 'Acción no válida');
+    const { uid, token = {} } = request.auth;
+    let condoId = '';
+    let caller = null;
+    if (token.role === ROLES.MASTER) {
+        condoId = cleanId(data.condoId);
+        caller = { id: 'master', name: 'Master (programador)' };
+    } else {
+        condoId = cleanId(token.condominioId);
+        const me = condoId ? await db.doc(`condominios/${condoId}/usuarios/${uid}`).get() : null;
+        const ok = !!me && me.exists && me.data().active !== false && privilegios.has(me.data().role, me.data().privilegios, 'usuarios.codigos');
+        if (!ok) throw new HttpsError('permission-denied', 'Su usuario no puede entregar claves de acceso (privilegio "Ver y cambiar códigos de acceso").');
+        caller = { id: uid, name: String(me.data().name || '') };
+    }
+    const userId = cleanId(data.residentId);
+    if (!condoId || !userId) throw new HttpsError('invalid-argument', 'Residente inválido.');
+    const ref = db.doc(deliveryPath(condoId, userId));
+    const log = (outcome, extra = {}) => logger.info('qr panico: entrega de la clave', { action, outcome, condominioId: condoId, userId, by: caller.id, ...extra });
+
+    if (action === 'status') {
+        const snap = await ref.get();
+        return { ok: true, ...deliveryState(snap.exists ? snap.data() : null) };
+    }
+    if (await rateLimit.isBlocked('panico_entrega', caller.id, DELIVERY_LIMIT)) {
+        throw new HttpsError('resource-exhausted', 'Demasiadas entregas seguidas. Espere unos minutos.');
+    }
+    await rateLimit.hit('panico_entrega', caller.id, DELIVERY_LIMIT);
+
+    if (action === 'cancel') {
+        const snap = await ref.get();
+        const state = deliveryState(snap.exists ? snap.data() : null);
+        if (state.status !== 'armed') return { ok: false, error: 'No hay una entrega activa que cancelar.', ...state };
+        await ref.update({ status: 'cancelled', cancelledAt: nowIso(), cancelledById: caller.id, cancelledByName: caller.name });
+        log('ok');
+        return { ok: true, ...deliveryState((await ref.get()).data()) };
+    }
+
+    // arm: solo a un vecino activo de un condominio activo, que tenga clave
+    const [condoSnap, userSnap, code] = await Promise.all([db.doc(`condominios/${condoId}`).get(), db.doc(`condominios/${condoId}/usuarios/${userId}`).get(), currentCode(condoId, userId)]);
+    if (!condoSnap.exists || condoSnap.data().active !== true) return { ok: false, error: 'El condominio no está activo.' };
+    const user = userSnap.exists ? userSnap.data() : null;
+    if (!user || user.role !== ROLES.VECINO) return { ok: false, error: 'Solo se entrega la clave de un vecino.' };
+    if (user.active === false) return { ok: false, error: 'Este vecino está desactivado: actívelo antes de entregarle la clave.' };
+    if (!code) return { ok: false, error: 'Este vecino no tiene clave de acceso. Créela en su ficha antes de entregarla.' };
+    const now = Date.now();
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const prev = snap.exists ? snap.data() : null;
+        const history = prev ? [...(Array.isArray(prev.history) ? prev.history : []), historyEntry(prev)].slice(-HISTORY_MAX) : [];
+        tx.set(ref, {
+            userId, condominioId: condoId, status: 'armed',
+            armedAt: new Date(now).toISOString(), armedUntil: new Date(now + DELIVERY_MS).toISOString(), armedById: caller.id, armedByName: caller.name,
+            deliveredAt: null, deliveredOn: null, deliveredDevice: null, deliveredUserAgent: null,
+            cancelledAt: null, cancelledById: null, cancelledByName: null, history
+        });
+    });
+    log('ok');
+    return { ok: true, ...deliveryState((await ref.get()).data()) };
+});
+
+// El telefono que escanea el QR (sin sesion): 'peek' dice si hay una entrega activa (sin mostrar la clave) y 'claim' la muestra
+// UNA vez y vincula ese telefono al boton. Con la clave del vinculo de ese mismo telefono ('secret') se puede volver a ver durante
+// 15 minutos; un telefono ya vinculado tambien puede reclamarla (no se crea otro vinculo)
+const panicCodeReveal = onCall(async (request) => {
+    const data = request.data || {};
+    const action = String(data.action || '');
+    if (!['peek', 'claim'].includes(action)) throw new HttpsError('invalid-argument', 'Acción no válida');
+    const condoId = cleanId(data.c);
+    const userId = cleanId(data.v);
+    const ip = clientIp(request.rawRequest);
+    const log = (outcome, extra = {}) => logger.info('qr panico: ver la clave', { action, outcome, ip, condominioId: condoId, userId, ...extra });
+    if (!condoId || !userId) return { ok: false, error: 'Este QR no es válido.' };
+    if (await rateLimit.isBlocked('panico_entrega_ip', ip, REVEAL_IP_LIMIT)) {
+        log('blocked');
+        return { ok: false, blocked: true, error: 'Demasiados intentos desde esta red. Espere 15 minutos e intente de nuevo.' };
+    }
+    await rateLimit.hit('panico_entrega_ip', ip, REVEAL_IP_LIMIT);
+
+    const secret = SECRET_RE.test(String(data.secret || '')) ? String(data.secret) : '';
+    const ref = db.doc(deliveryPath(condoId, userId));
+    const [snap, neighbor] = await Promise.all([ref.get(), loadNeighbor(condoId, userId)]);
+    const d = snap.exists ? snap.data() : null;
+    const state = deliveryState(d);
+    const usable = !!neighbor.condo && neighbor.condo.active === true && !!neighbor.user && neighbor.user.role === ROLES.VECINO && neighbor.user.active !== false;
+    // Lo que se dice de una entrega que ya se uso (para que el vecino sepa si fue el)
+    const used = state.status === 'delivered' ? { deliveredAt: state.deliveredAt, deliveredOn: state.deliveredOn } : {};
+    const mineAgain = !!secret && !!d && d.status === 'delivered' && d.deliveredDevice === sha256(secret) && (Date.now() - Date.parse(d.deliveredAt)) < RESHOW_MS;
+
+    if (action === 'peek') {
+        const available = usable && (state.status === 'armed' || mineAgain);
+        return { ok: true, available, reshow: available && mineAgain, ...(available ? { name: neighbor.user.name || '', casa: neighbor.user.casa || '', condoName: neighbor.condo.name || '' } : used) };
+    }
+
+    if (!usable) { log('not_allowed'); return { ok: false, error: 'La clave de este QR no se puede entregar. Pídala en la administración.' }; }
+    const code = await currentCode(condoId, userId);
+    if (!code) { log('no_code'); return { ok: false, error: 'Este vecino no tiene clave de acceso. Pídala en la administración.' }; }
+    const problem = neighborProblem(neighbor);
+    if (mineAgain) {
+        log('reshow');
+        return { ok: true, code, reshown: true, ...info(neighbor), problem };
+    }
+
+    // Un telefono que ya estaba vinculado (con un vinculo vigente de este vecino) no necesita otro
+    let linkedHash = '';
+    if (secret) {
+        const dev = await db.doc(devicePath(condoId, secret)).get();
+        if (dev.exists && dev.data().userId === userId && !dev.data().revokedAt) linkedHash = sha256(secret);
+    }
+    const newSecret = linkedHash ? '' : crypto.randomBytes(32).toString('base64url');
+    const deviceHash = linkedHash || sha256(newSecret);
+    const userAgent = userAgentOf(request);
+    // Solo UNO la ve: la entrega se gasta dentro de una transaccion (dos telefonos al mismo tiempo: el segundo ya la encuentra usada)
+    const won = await db.runTransaction(async (tx) => {
+        const cur = await tx.get(ref);
+        const c = cur.exists ? cur.data() : null;
+        if (deliveryState(c).status !== 'armed') return false;
+        tx.set(ref, { ...c, status: 'delivered', deliveredAt: nowIso(), deliveredOn: deviceKind(userAgent), deliveredDevice: deviceHash, deliveredUserAgent: userAgent });
+        return true;
+    });
+    if (!won) {
+        const after = deliveryState((await ref.get()).data());
+        log('not_armed', { status: after.status });
+        if (after.status === 'delivered') return { ok: false, delivered: true, deliveredAt: after.deliveredAt, deliveredOn: after.deliveredOn, error: 'La clave de este QR ya se entregó. Si no fue usted quien la vio, avise a la administración para que le cambie la clave.' };
+        return { ok: false, error: 'La entrega de la clave no está activa. Pídala en la administración (la activan al entregarle el QR).' };
+    }
+    // El telefono que la vio queda vinculado al boton. Si el vecino todavia no puede usarlo (el panico de vecinos apagado en RONDIN,
+    // sin el privilegio), el vinculo queda listo para cuando pueda y la pagina dice por que no sale el boton (problem)
+    let linked = '';
+    if (!linkedHash) linked = await createDeviceLink({ condoId, userId, code, request, log, via: 'entrega', secret: newSecret });
+    log('ok', { linked: !!(linked || linkedHash) });
+    return { ok: true, code, ...(linked ? { secret: linked } : {}), ...info(neighbor), problem, alert: null };
+});
+
+module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, _test: { cleanPos, neighborProblem, deliveryState, deviceKind } };

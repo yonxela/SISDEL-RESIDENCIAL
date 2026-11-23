@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-158 privilegios: 32 paraguas y 126 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+159 privilegios: 32 paraguas y 127 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -253,7 +253,8 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `reportes.morosos` | Listado de morosos a la fecha. Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago). | los de su paraguas | Pantalla |
 | `reportes.finanzas` | Accesos a los reportes de Finanzas. Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas. | los de su paraguas | Pantalla |
 | `reportes.rondas` | Acceso a los reportes de Rondas. Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas). | los de su paraguas | Pantalla |
-| `reportes.panico_qr` | QR de pánico de los vecinos. Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código. | los de su paraguas | Pantalla |
+| `reportes.panico_qr` | QR de pánico de los vecinos. Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código (o ve su clave una vez si la entrega de claves está activada). | los de su paraguas | Pantalla |
+| `reportes.panico_entrega` | Activar o desactivar la entrega de claves con el QR **(sensible)**. El interruptor de Reportes > QR de pánico: mientras está activado, el QR de cada vecino que nunca recibió su clave se la muestra una vez, también en los QR ya pegados en puertas o carros. Necesita ver las claves de acceso. | los de su paraguas | Reglas |
 | `reportes.exportar` | Imprimir, PDF, WhatsApp y Excel **(sensible)**. Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema. | los de su paraguas | Pantalla |
 
 <!-- END tabla-privilegios -->

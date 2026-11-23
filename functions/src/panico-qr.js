@@ -321,6 +321,7 @@ const panicCodeDelivery = onCall(async (request) => {
     const { uid, token = {} } = request.auth;
     let condoId = '';
     let caller = null;
+    let canSwitch = true; // el interruptor de la entrega general: reportes.panico_entrega (el Master siempre)
     if (token.role === ROLES.MASTER) {
         condoId = cleanId(data.condoId);
         caller = { id: 'master', name: 'Master (programador)' };
@@ -330,9 +331,15 @@ const panicCodeDelivery = onCall(async (request) => {
         const ok = !!me && me.exists && me.data().active !== false && privilegios.has(me.data().role, me.data().privilegios, 'usuarios.codigos');
         if (!ok) throw new HttpsError('permission-denied', 'Su usuario no puede entregar claves de acceso (privilegio "Ver y cambiar códigos de acceso").');
         caller = { id: uid, name: String(me.data().name || '') };
+        canSwitch = privilegios.has(me.data().role, me.data().privilegios, 'reportes.panico_entrega');
     }
     if (!condoId) throw new HttpsError('invalid-argument', 'Condominio inválido.');
-    if (action.startsWith('general')) return generalDelivery({ action, condoId, caller, data });
+    if (action.startsWith('general')) {
+        // Ver como esta basta con ver las claves; activarla o desactivarla pide ademas su privilegio (Configuracion > Privilegios >
+        // Reportes > "Activar o desactivar la entrega de claves con el QR", que solo trae el administrador)
+        if (action !== 'generalStatus' && !canSwitch) throw new HttpsError('permission-denied', 'Su usuario no puede activar ni desactivar la entrega de claves (privilegio "Activar o desactivar la entrega de claves con el QR").');
+        return generalDelivery({ action, condoId, caller, data });
+    }
     const userId = cleanId(data.residentId);
     if (!userId) throw new HttpsError('invalid-argument', 'Residente inválido.');
     const ref = db.doc(deliveryPath(condoId, userId));

@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 158 privilegios: 32 paraguas y 126 acciones', [P.KEYS.length, roots.length, kids.length], [158, 32, 126]);
+equal('hay 159 privilegios: 32 paraguas y 127 acciones', [P.KEYS.length, roots.length, kids.length], [159, 32, 127]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -334,14 +334,14 @@ yes('childOk() deja pasar una accion salvo que este apagada (false) en el docume
 yes('childOn() deja pasar una accion optIn solo si esta marcada (true) en el documento del usuario', /function childOn\(condoId, key\) \{[\s\S]*?get\(key, false\) == true/.test(rules));
 yes('cada accion optIn usa childOn, cada una con autoRoles childAuto y las demas childOk', childWrappers.every((w) => w.check === (P.isOptIn(w.key) ? 'childOn' : P.itemOf(w.key).autoRoles ? 'childAuto' : 'childOk')));
 yes('childAuto() deja pasar a los roles de la lista salvo que se la quiten (false) y a los demas solo si la tienen marcada (true)', /function childAuto\(condoId, key, roles\) \{[\s\S]*?get\(key, memberRole\(condoId\) in roles\) == true/.test(rules));
-yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (las ocho de la tarjeta de gerente que aplican las reglas)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 8 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
+yes('las acciones con autoRoles pasan a las reglas los mismos roles del catalogo (las ocho de la tarjeta de gerente que aplican las reglas y la entrega de claves con el QR)', childWrappers.filter((w) => P.itemOf(w.key).autoRoles).length === 9 && childWrappers.filter((w) => P.itemOf(w.key).autoRoles).every((w) => JSON.stringify((w.roles || '').split(',').map((r) => r.trim().replace(/'/g, ''))) === JSON.stringify(P.itemOf(w.key).autoRoles)));
 yes('cada funcion pXxx usa el nombre de su clave', wrappers.every((w) => w.fn === camel(w.key)));
 yes('cada clave de las reglas existe en el catalogo', wrappers.every((w) => P.KEYS.includes(w.key)));
 yes('los roles por defecto de las reglas son los del catalogo', rootWrappers.every((w) => JSON.stringify(sorted(w.roles)) === JSON.stringify(sorted(P.itemOf(w.key).roles))));
 yes('solo los paraguas llevan roles en las reglas; cada accion usa a su paraguas', rootWrappers.every((w) => !P.itemOf(w.key).parent) && childWrappers.every((w) => P.itemOf(w.key).parent && camel(P.itemOf(w.key).parent) === w.parentFn));
 yes('toda clave que dice garantizarse por reglas tiene su funcion en las reglas', P.ITEMS.filter((i) => i.enforce === 'reglas').every((i) => wrappers.some((w) => w.key === i.key)));
 yes('toda clave sin funcion en las reglas es solo de pantalla', P.KEYS.filter((k) => !wrappers.some((w) => w.key === k)).every((k) => P.itemOf(k).enforce === 'pantalla'));
-const serverSrc = ['functions/src/auth.js', 'functions/src/index.js', 'functions/src/rondas.js'].map((f) => { try { return read(f); } catch { return ''; } }).join('\n');
+const serverSrc = ['functions/src/auth.js', 'functions/src/index.js', 'functions/src/rondas.js', 'functions/src/panico-qr.js'].map((f) => { try { return read(f); } catch { return ''; } }).join('\n');
 yes('toda funcion de una accion de reglas se usa en alguna regla o la clave la aplica el servidor', childWrappers.every((w) => used(w.fn) > 1 || serverSrc.includes(`'${w.key}'`)));
 yes('todo paraguas con funcion se usa en alguna regla o en la de una accion', rootWrappers.every((w) => used(w.fn) > 1));
 yes('las reglas ya no preguntan por el rol del usuario para dar acceso (isAdmin, isStaff...)', !/\b(isAdmin|isStaff|isGuard|isSupervisor|isAuditor)\(/.test(rules));
@@ -1232,6 +1232,19 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('Meta: el estado de la conexion trae el canal y las plantillas, y con Meta no se consulta el listado de UltraMsg', /channel: onMeta \? 'meta' : 'ultramsg', templates/.test(core) && /if \(templatesOn\(whatsapp, config\)\) return null;/.test(core) && /listMessages: \(config, options\) => \(meta\.usesMeta\(config\) \? null/.test(waSrc));
     yes('Meta: OIKOS muestra el texto de la plantilla (no editable) y manda los datos de cada residente', /id="rem-template-box"/.test(oikos) && /function remMetaMode/.test(oikos) && /function remTemplateAsText/.test(oikos) && /bridge\.one\(\{ residentId: String\(r\.id\), text, mode, \.\.\.\(remMetaMode\(\) \? \{ vars: reminderVars\(r\) \} : \{\}\) \}\)/.test(oikos) && /reminderTemplateReady\(r\) \{\s*if \(remMetaMode\(\) && !remMetaTemplate\(\)\)/.test(oikos));
     yes('Meta: el script de plantillas valida los datos y los huecos, comprueba que esten aprobadas y nunca imprime el token', /normalizeTemplate/.test(setScript) && /bodyParamCount\(tpl\.body\) !== tpl\.params\.length/.test(setScript) && /status === 'APPROVED'/.test(setScript) && !/console\.log\([^)]*metaToken/.test(setScript) && /--canal=meta/.test(setScript));
+}
+
+// La busqueda de Configuracion > Privilegios no importa acentos (el usuario escribio "panico" y no salio "QR de pánico")
+{
+    const ui = read('privilegios-ui.js');
+    const src = ui.slice(ui.indexOf('const foldText'), ui.indexOf('// ── Tarjetas por modulo ──'));
+    const matches = new Function(`${src}; return matchesSearch;`)();
+    yes('buscar privilegios no importa acentos ni mayusculas y acepta varias palabras en cualquier orden',
+        matches('QR de pánico de los vecinos', 'panico') && matches('Botón de pánico', 'PANICO boton') && matches('QR de pánico', 'qr pánico') && !matches('Reportes de garita', 'panico') && matches('lo que sea', '  '));
+    yes('las dos busquedas de la pantalla (privilegios y usuarios) la usan, y la de privilegios tambien mira la clave',
+        /matchesSearch\(`\$\{i\.label\} \$\{i\.description\} \$\{g\.title\} \$\{i\.sub \|\| ''\} \$\{i\.key\}`, filter\)/.test(ui) && /matchesSearch\(`\$\{u\.name\} /.test(ui) && !/toLowerCase\(\)\.includes\(filter\)/.test(ui));
+    const v = (f) => (read(f).match(/privilegios-ui\.js\?v=(\w+)/) || [])[1];
+    yes('privilegios-ui.js lleva la misma version en admin.html y master.html', v('admin.html') && v('admin.html') === v('master.html'));
 }
 
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);

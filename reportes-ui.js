@@ -575,6 +575,8 @@ const SisdelReportes = (() => {
             const all = Q.neighbors(opts.getUsers ? opts.getUsers() : []);
             // La entrega de claves con el QR la maneja quien ve las claves (usuarios.codigos; el servidor tambien lo exige)
             const canDeliver = can('usuarios.codigos') && !!(window.sisdelFirebase && window.sisdelFirebase.functions);
+            // Activarla o desactivarla pide ademas su privilegio (reportes.panico_entrega: solo el administrador por defecto; el servidor lo exige)
+            const canSwitch = canDeliver && can('reportes.panico_entrega');
             const fases = Q.fases(all);
             const hasFases = fases.some((f) => f);
             if (!pqState.fase || !fases.includes(pqState.fase)) pqState.fase = fases[0] || '';
@@ -629,6 +631,7 @@ const SisdelReportes = (() => {
                             <select class="form-input" id="pqDlvDays" style="padding-left:0.85rem;"><option value="1">1 día</option><option value="3">3 días</option><option value="7" selected>7 días</option><option value="15">15 días</option><option value="30">30 días</option></select></div>
                         <button type="button" class="btn btn-ghost btn-sm" id="pqDlvRefresh" style="border:1px solid var(--border-strong);">Actualizar</button>
                     </div>
+                    <p class="pq-dlv-help" id="pqDlvNoPriv" style="display:none;">Usted puede ver si está activada, pero activarla o desactivarla pide el privilegio "Activar o desactivar la entrega de claves con el QR" (Configuración > Privilegios > Reportes).</p>
                     <p class="pq-dlv-help">Mientras esté activada, la primera persona que escanee el QR de cada vecino ve su clave UNA sola vez y ese teléfono queda vinculado al botón; también en los QR que ya estén pegados en puertas o carros, así que actívela solo mientras se reparten las tarjetas. Desactivada, los QR no muestran ninguna clave. Quien ya la recibió no la vuelve a ver: para dársela otra vez a uno, use Finanzas > Residentes > Generar código botón de pánico.</p>
                 </div>` : ''}
                 <p class="rp-note warn" id="pqWarn" style="display:none;"></p>
@@ -708,7 +711,8 @@ const SisdelReportes = (() => {
                 box.classList.toggle('on', on);
                 const sw = $('pqDlvSwitch');
                 sw.setAttribute('aria-checked', on ? 'true' : 'false');
-                sw.disabled = generalBusy || !general;
+                sw.disabled = generalBusy || !general || !canSwitch;
+                sw.title = canSwitch ? '' : 'Su usuario no tiene el privilegio "Activar o desactivar la entrega de claves con el QR"';
                 $('pqDlvState').textContent = generalBusy ? 'guardando...' : !general ? (generalError ? 'no se pudo consultar' : 'consultando...') : on ? 'ACTIVADA' : 'DESACTIVADA';
                 let text = '';
                 if (!general) text = generalError;
@@ -721,7 +725,8 @@ const SisdelReportes = (() => {
                     text = `Los QR no muestran ninguna clave.${ended}${general.campaignId ? ` En la última entrega se entregaron ${general.delivered || 0}.` : ''}`;
                 }
                 $('pqDlvText').textContent = text;
-                $('pqDlvOpts').style.display = on ? 'none' : '';
+                $('pqDlvOpts').style.display = on || !canSwitch ? 'none' : '';
+                $('pqDlvNoPriv').style.display = canSwitch ? 'none' : '';
                 $('pqDlvRefresh').disabled = generalBusy;
             }
             function paintScopeCount() {
@@ -748,7 +753,7 @@ const SisdelReportes = (() => {
             function wireGeneral() {
                 if (!$('pqDelivery')) return;
                 $('pqDlvSwitch').addEventListener('click', () => {
-                    if (!general || generalBusy) return;
+                    if (!general || generalBusy || !canSwitch) return;
                     if (general.active) {
                         if (!confirm('¿Desactivar la entrega de claves?\n\nDesde ahora los QR no mostrarán ninguna clave. Las que ya se entregaron no cambian.')) return;
                         runGeneral({ action: 'generalOff' }, 'Entrega de claves desactivada: los QR ya no muestran claves.');

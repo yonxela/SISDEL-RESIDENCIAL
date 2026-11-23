@@ -285,7 +285,10 @@
                 { key: 'reportes.morosos', sub: 'Secciones', parent: 'reportes.ver', label: 'Listado de morosos a la fecha', description: 'Los vecinos en mora hoy, con su casa y los días de atraso (necesita ver el estado de pago).', requires: ['usuarios.pagos_ver'], enforce: 'pantalla' },
                 { key: 'reportes.finanzas', sub: 'Secciones', parent: 'reportes.ver', label: 'Accesos a los reportes de Finanzas', description: 'Atajos a los reportes del Sistema Financiero; cada uno sigue pidiendo su privilegio de Finanzas.', requires: ['finanzas.usar'], enforce: 'pantalla' },
                 { key: 'reportes.rondas', sub: 'Secciones', parent: 'reportes.ver', label: 'Acceso a los reportes de Rondas', description: 'Atajo al panel y al reporte semanal de RONDIN (necesita ver el panel de Rondas).', requires: ['rondas.panel_ver'], enforce: 'pantalla' },
-                { key: 'reportes.panico_qr', sub: 'Secciones', parent: 'reportes.ver', label: 'QR de pánico de los vecinos', description: 'Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código.', enforce: 'pantalla' },
+                { key: 'reportes.panico_qr', sub: 'Secciones', parent: 'reportes.ver', label: 'QR de pánico de los vecinos', description: 'Imprimir o descargar en PDF una tarjeta por vecino con su QR de pánico, su lote y su nombre, para la puerta o el carro. El QR no lleva el código de acceso: la primera vez el vecino vincula su teléfono con su código (o ve su clave una vez si la entrega de claves está activada).', enforce: 'pantalla' },
+                // El interruptor "Entrega de claves con el QR" del reporte (pedido del usuario el 2026-11-22): lo exige el servidor
+                // (panicCodeDelivery, generalOn / generalOff). Solo lo trae el administrador; a cualquier otro hay que marcarselo
+                { key: 'reportes.panico_entrega', sub: 'Secciones', parent: 'reportes.panico_qr', label: 'Activar o desactivar la entrega de claves con el QR', description: 'El interruptor de Reportes > QR de pánico: mientras está activado, el QR de cada vecino que nunca recibió su clave se la muestra una vez, también en los QR ya pegados en puertas o carros. Necesita ver las claves de acceso.', requires: ['usuarios.codigos'], sensitive: true, enforce: 'reglas', autoRoles: ['admin'] },
                 { key: 'reportes.exportar', sub: 'Exportar', parent: 'reportes.ver', label: 'Imprimir, PDF, WhatsApp y Excel', description: 'Imprimir los reportes, descargarlos en PDF, enviarlos por WhatsApp y exportarlos a Excel: saca datos del sistema.', sensitive: true, enforce: 'pantalla' }
             ]
         }
@@ -450,7 +453,7 @@
         {
             id: 'sys-admin-delegado', name: 'Administrador delegado', role: 'admin', system: true,
             description: 'Administra el día a día pero no asigna privilegios, no ve ni cambia códigos de acceso y no elimina usuarios.',
-            claves: without(adminKeys, 'usuarios.privilegios', 'usuarios.codigos', 'usuarios.eliminar')
+            claves: without(adminKeys, 'usuarios.privilegios', 'usuarios.codigos', 'usuarios.eliminar', 'reportes.panico_entrega')
         },
         {
             id: 'sys-admin-sin-finanzas', name: 'Administrador sin finanzas', role: 'admin', system: true,

@@ -634,6 +634,15 @@ console.log('\nEntrega GENERAL de claves (el interruptor de Reportes > QR de pan
     equal('al pasar los dias elegidos se apaga sola', [(await office({ action: 'generalStatus' })).active, await peek('u-sincancel')], [false, false]);
     equal('con una entrega vencida, ver el estado no da error y apagarla dice que no esta activa', (await office({ action: 'generalOff' })).ok, false);
     equal('el Master tambien la maneja (en el condominio que elige)', (await office({ action: 'generalStatus', condoId: 'c1' }, 'master', { role: 'master' })).ok, true);
+    // El interruptor tiene su privilegio (Configuracion > Privilegios > Reportes): solo lo trae el administrador
+    store.set('condominios/c1/usuarios/u-adm2', { name: 'Admin Sin Entrega', role: 'admin', privilegios: { 'reportes.panico_entrega': false } });
+    store.set('condominios/c1/usuarios/u-opc', { name: 'Operador Claves', role: 'operador', privilegios: { 'usuarios.ver': true, 'usuarios.codigos': true, 'reportes.ver': true } });
+    store.set('condominios/c1/usuarios/u-ope', { name: 'Operador Entrega', role: 'operador', privilegios: { 'usuarios.ver': true, 'usuarios.codigos': true, 'reportes.ver': true, 'reportes.panico_entrega': true } });
+    equal('sin "Activar o desactivar la entrega de claves" se ve como esta pero no se enciende ni se apaga (aunque vea las claves)', [
+        (await office({ action: 'generalStatus' }, 'u-adm2')).ok, await errOf(office({ action: 'generalOff' }, 'u-adm2')), await errOf(office({ action: 'generalOn' }, 'u-opc')), (await office({ action: 'generalStatus' }, 'u-opc')).ok
+    ], [true, 'permission-denied', 'permission-denied', true]);
+    equal('a un operador que ve las claves se le puede marcar y entonces si la maneja', [(await office({ action: 'generalOn', days: 1 }, 'u-ope')).startedByName, (await office({ action: 'generalOff' }, 'u-ope')).ok], ['Operador Entrega', true]);
+    equal('la entrega de un vecino por la oficina (OIKOS) no pide ese privilegio', (await office({ action: 'status', residentId: 'u-ana' }, 'u-adm2')).ok, true);
     // Un vecino desactivado no la recibe aunque la general este activa
     await office({ action: 'generalOn', days: 1 });
     store.set('condominios/c1/usuarios/u-sincancel', { ...store.get('condominios/c1/usuarios/u-sincancel'), active: false });
@@ -674,8 +683,14 @@ console.log('\nReglas y paginas');
     yes('activar y desactivar piden confirmar, advierten de los QR ya pegados y dicen para quien y cuantos dias',
         /runGeneral\(\{ action: 'generalOff' \}/.test(rp) && /Desactivar la entrega de claves\?/.test(rp) && /la PRIMERA persona que escanee el QR de cada vecino verá su clave una sola vez \(también en los QR que ya estén pegados/.test(rp)
         && /runGeneral\(\{ action: 'generalOn', days, \.\.\.\(list \? \{ ids: list\.map\(\(u\) => u\.id\), label: listLabel\(\) \} : \{\}\) \}/.test(rp) && /<option value="7" selected>7 días<\/option>/.test(rp));
+    yes('el interruptor se enciende solo con "Activar o desactivar la entrega de claves con el QR"; sin el se ve el estado y un aviso',
+        /const canSwitch = canDeliver && can\('reportes\.panico_entrega'\);/.test(rp) && /sw\.disabled = generalBusy \|\| !general \|\| !canSwitch;/.test(rp) && /if \(!general \|\| generalBusy \|\| !canSwitch\) return;/.test(rp) && /id="pqDlvNoPriv"/.test(rp));
+    const Pq = require('../privilegios.js');
+    yes('el privilegio esta en Configuracion > Privilegios > Reportes, debajo de QR de panico, sensible, lo exige el servidor y solo lo trae el administrador',
+        Pq.itemOf('reportes.panico_entrega').parent === 'reportes.panico_qr' && Pq.itemOf('reportes.panico_entrega').sensitive === true && Pq.itemOf('reportes.panico_entrega').enforce === 'reglas'
+        && Pq.has('admin', {}, 'reportes.panico_entrega') && !Pq.has('operador', { 'reportes.ver': true }, 'reportes.panico_entrega') && !Pq.templateById('sys-admin-delegado').claves.includes('reportes.panico_entrega'));
     yes('lo que dice el servidor (quien la activo) se pinta con textContent', /\$\('pqDlvText'\)\.textContent = text;/.test(rp) && /\$\('pqDlvState'\)\.textContent = /.test(rp));
-    yes('reportes-ui.js subio de version en admin.html', /reportes-ui\.js\?v=20261122b/.test(admin));
+    yes('reportes-ui.js subio de version en admin.html', /reportes-ui\.js\?v=20261122c/.test(admin));
     yes('el reporte avisa si el boton de panico de vecinos esta apagado en RONDIN', /SisdelRondas\.neighborPanicEnabled\(\)\.then/.test(rp) && /los QR no enviarán alertas hasta activarlo/.test(rp));
     yes('el reporte no manda nada a otro servicio para hacer el QR (sin APIs de QR externas)', !/api\.qrserver|chart\.googleapis|quickchart/i.test(rp + read('panico-qr.js')));
 }

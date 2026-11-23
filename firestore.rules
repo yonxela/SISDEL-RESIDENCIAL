@@ -167,6 +167,10 @@ service cloud.firestore {
     function pRondasPatrullaTerminar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_terminar'); }
     function pRondasPatrullaMarcar(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_marcar'); }
     function pRondasPatrullaRastrear(c) { return pRondasPatrullar(c) && childOk(c, 'rondas.patrulla_rastrear'); }
+    // Reportes del administrador
+    function pReportesVer(c) { return can(c, 'reportes.ver', ['admin']); }
+    function pReportesPanicoQr(c) { return pReportesVer(c) && childOk(c, 'reportes.panico_qr'); }
+    function pReportesPanicoEntrega(c) { return pReportesPanicoQr(c) && childAuto(c, 'reportes.panico_entrega', ['admin']); }
     // Privilegios de gerente
     function pFinanzasResidentesEliminar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_eliminar', ['admin']); }
     function pFinanzasResidentesFiniquitar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.residentes_finiquitar', ['admin']); }

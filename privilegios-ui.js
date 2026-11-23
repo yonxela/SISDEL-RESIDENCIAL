@@ -129,17 +129,27 @@ const SisdelPrivilegiosUI = (() => {
             + group('Del condominio', choices.filter((t) => t.custom));
     }
 
+    // Busqueda sin importar acentos ni mayusculas (pedido del usuario el 2026-11-22: escribio "panico" y no salio "QR de pánico"):
+    // cada palabra escrita debe estar en el texto (en cualquier orden)
+    const foldText = (t) => String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    function matchesSearch(text, search) {
+        const words = foldText(search).split(/\s+/).filter(Boolean);
+        if (!words.length) return true;
+        const hay = foldText(text);
+        return words.every((w) => hay.includes(w));
+    }
+
     // ── Tarjetas por modulo ──
     // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search, marks (false: sin etiquetas Agregado/Quitado),
     //        template (true: formulario de plantilla; las acciones optIn no se pueden marcar) }
     function renderMatrix(container, opts) {
         injectStyles();
         const defaults = PRIV.defaultsOf(opts.role);
-        const filter = String(opts.search || '').trim().toLowerCase();
+        const filter = String(opts.search || '').trim();
 
         const groups = PRIV.GROUPS.map((g) => ({
             ...g,
-            items: g.items.filter((i) => !filter || (i.label + ' ' + i.description + ' ' + g.title).toLowerCase().includes(filter))
+            items: g.items.filter((i) => !filter || matchesSearch(`${i.label} ${i.description} ${g.title} ${i.sub || ''} ${i.key}`, filter))
         })).filter((g) => g.items.length);
 
         container.innerHTML = groups.length
@@ -411,9 +421,9 @@ const SisdelPrivilegiosUI = (() => {
         const custom = (u) => Object.keys(PRIV.cleanOverrides(u.privilegios)).length > 0;
 
         function visibleUsers() {
-            const q = query.trim().toLowerCase();
+            const q = query.trim();
             return users
-                .filter((u) => !q || `${u.name} ${u.cargo || ''} ${u.casa || ''} ${SISDEL.getRoleName(u.role)}`.toLowerCase().includes(q))
+                .filter((u) => !q || matchesSearch(`${u.name} ${u.cargo || ''} ${u.casa || ''} ${SISDEL.getRoleName(u.role)}`, q))
                 .sort((a, b) => String(a.name).localeCompare(String(b.name)));
         }
 
@@ -661,5 +671,5 @@ const SisdelPrivilegiosUI = (() => {
         };
     }
 
-    return { renderMatrix, mountEditor, openEditor, mountPrivilegesTab, mountTemplatesTab, templateChoices, templateOptions, cascadeNote, esc, ICONS };
+    return { renderMatrix, mountEditor, openEditor, mountPrivilegesTab, mountTemplatesTab, templateChoices, templateOptions, cascadeNote, esc, ICONS, matchesSearch };
 })();

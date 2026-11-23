@@ -151,6 +151,7 @@
     <script src="privilegios.js?v=20261123c"></script>
     <script src="sisdel-core.js?v=20261123c"></script>
     <script src="rondas-core.js?v=20261117c"></script>
+    <script src="avisos-push.js?v=20261123c"></script>
     <script>
         // El vecino con boton de panico: al ingresar, el telefono le pide permiso para la ubicacion y se espera su respuesta antes de
         // pasar al portal (si no, el cambio de pagina se lleva la ventana del permiso). Asi las alertas de panico siempre llevan
@@ -171,6 +172,25 @@
                 }
             } catch (err) {
                 console.warn('ubicacion al ingresar:', err); // sin esto el ingreso sigue igual: el portal la vuelve a pedir
+            }
+        }
+        // Avisos en el celular al ingresar (pedido del usuario el 2026-11-23: "al ingresar la clave debe quedar todo listo para que
+        // cuando administracion mande mensaje el vecino lo reciba aunque ya haya cerrado sesion"): justo despues de tocar Ingresar
+        // (el telefono solo muestra la pregunta del permiso en respuesta a un toque) se pide «Permitir» y el telefono queda
+        // registrado; si ya lo habia permitido, se registra sin preguntar. Solo vecinos que reciben mensajes, en un telefono que puede
+        // recibir avisos (en el iPhone, garita.app abierta desde el icono de la pantalla de inicio: el portal explica como) y que no
+        // los desactivo. Se espera la respuesta hasta 20 s; si no contesta, el portal vuelve a preguntar con el primer toque.
+        async function enableNoticesAtLogin() {
+            try {
+                const logged = SISDEL.getSession();
+                if (!logged || logged.role !== 'vecino' || !SISDEL.can('mensajes.recibir') || typeof SisdelAvisos === 'undefined') return;
+                const pushCall = window.sisdelFirebase.functions.httpsCallable('pushDevice');
+                const avisos = SisdelAvisos.create({ call: (data) => pushCall(data).then((r) => r.data) });
+                if (!avisos.support().ok || avisos.isOff() || avisos.permission() === 'denied') return;
+                if (avisos.permission() !== 'granted') SISDEL.showToast('Toque «Permitir»: así le llegan al celular los mensajes de la administración, aunque cierre garita.app.', 'info');
+                await Promise.race([avisos.auto(logged.userId, { ask: true }), new Promise((resolve) => setTimeout(resolve, 20000))]);
+            } catch (err) {
+                console.warn('avisos al ingresar:', err); // sin esto el ingreso sigue igual: el portal lo completa
             }
         }
         document.addEventListener('DOMContentLoaded', async () => {
@@ -217,6 +237,8 @@
                     if (result.success) {
                         const userName = result.user ? result.user.name : 'Administrador Master';
                         SISDEL.showToast(`Bienvenido, ${userName}`, 'success');
+                        // Primero los avisos (la pregunta del permiso tiene que salir pegada al toque de Ingresar) y despues la ubicacion
+                        await enableNoticesAtLogin();
                         await askLocationAtLogin();
                         // Si venia de otro modulo (por ejemplo RONDIN) y su usuario puede entrar, vuelve ahi
                         let target = result.redirect;

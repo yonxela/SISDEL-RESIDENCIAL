@@ -214,22 +214,35 @@ const SERVER_KEY = b64u(phoneKeys().ecdh.getPublicKey());
 
     const off = fakePhone({ permission: 'granted', sub: { endpoint: 'https://fcm.googleapis.com/fcm/send/apagar', key: SERVER_KEY } });
     off.store.set(A.SYNC_KEY, JSON.stringify({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/apagar', at: Date.now() }));
-    equal('desactivar: le avisa al servidor, cancela la suscripcion y olvida el registro', [await off.api.disable(), off.calls.map((c) => [c.action, c.endpoint]), off.state.unsubscribed, off.store.has(A.SYNC_KEY)], [{ ok: true, state: 'inactivo' }, [['unregister', 'https://fcm.googleapis.com/fcm/send/apagar']], 1, false]);
+    equal('desactivar: le avisa al servidor, cancela la suscripcion y recuerda que la persona los apago', [await off.api.disable(), off.calls.map((c) => [c.action, c.endpoint]), off.state.unsubscribed, JSON.parse(off.store.get(A.SYNC_KEY)).off, off.api.isOff()], [{ ok: true, state: 'inactivo' }, [['unregister', 'https://fcm.googleapis.com/fcm/send/apagar']], 1, true, true]);
 
     const sync = (saved, user) => {
         const f = fakePhone({ permission: 'granted', sub: { endpoint: 'https://fcm.googleapis.com/fcm/send/s', key: SERVER_KEY } });
         if (saved) f.store.set(A.SYNC_KEY, JSON.stringify(saved));
         return f.api.sync(user).then((did) => [did, f.calls.map((c) => c.action)]);
     };
-    equal('al abrir el portal: si este telefono es de esta persona y paso el tiempo (o cambio la direccion), vuelve a entregar la suscripcion', [
+    // Automatico (pedido del usuario el 2026-11-23: el vecino solo pone su clave): con el permiso ya dado, el portal deja el telefono listo
+    equal('al abrir el portal con el permiso dado: completa el registro solo (sin registro, paso el tiempo, cambio la direccion o entro otra persona)', [
+        await sync(null, 'u-ana'),
         await sync({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/s', at: Date.now() - 4 * 86400000 }, 'u-ana'),
-        await sync({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/otra', at: Date.now() }, 'u-ana')
-    ], [[true, ['register']], [true, ['register']]]);
-    equal('nunca cambia de persona, nunca pide permiso y no repite si es reciente', [
+        await sync({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/otra', at: Date.now() }, 'u-ana'),
+        await sync({ userId: 'u-otra', endpoint: 'https://fcm.googleapis.com/fcm/send/s', at: Date.now() }, 'u-ana')
+    ], [[true, ['config', 'register']], [true, ['config', 'register']], [true, ['config', 'register']], [true, ['config', 'register']]]);
+    equal('no repite si es reciente y nunca enciende lo que la persona apago', [
         await sync({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/s', at: Date.now() }, 'u-ana'),
-        await sync({ userId: 'u-otra', endpoint: 'https://fcm.googleapis.com/fcm/send/s', at: 0 }, 'u-ana'),
-        await sync(null, 'u-ana')
-    ], [[false, []], [false, []], [false, []]]);
+        await sync({ off: true, at: Date.now() }, 'u-ana')
+    ], [[false, []], [false, []]]);
+    const noPerm = fakePhone();
+    equal('sin el permiso todavia, al abrir el portal NO pregunta (eso solo despues de un toque)', [await noPerm.api.sync('u-ana'), noPerm.state.asked || 0, noPerm.calls.length], [false, 0, 0]);
+    const login = fakePhone();
+    const atLogin = await login.api.auto('u-ana', { ask: true });
+    equal('al ingresar (con el toque de Ingresar): pregunta, se suscribe y registra el telefono de una vez', [atLogin, login.state.asked, login.calls.map((c) => c.action)], [{ ok: true, state: 'activo' }, 1, ['config', 'register']]);
+    const loginNo = fakePhone({ ask: 'denied' });
+    equal('si no permite, no insiste: queda bloqueado', [await loginNo.api.auto('u-ana', { ask: true }), loginNo.calls.length], [{ ok: false, state: 'bloqueado' }, 0]);
+    const offLogin = fakePhone();
+    offLogin.store.set(A.SYNC_KEY, JSON.stringify({ off: true, at: Date.now() }));
+    equal('al ingresar tampoco enciende lo que la persona apago; "Activar avisos" si (y borra la marca)', [await offLogin.api.auto('u-ana', { ask: true }), (await offLogin.api.enable('u-ana')).state, offLogin.api.isOff()], [{ ok: false, state: 'apagado' }, 'activo', false]);
+    equal('en un iPhone sin el icono no intenta nada (el portal explica como agregarlo)', await fakePhone({ ua: IPHONE_SAFARI, noPush: true }).api.auto('u-ana', { ask: true }), { ok: false, state: 'ios-instalar' });
     equal('la prueba va a ESTE telefono (su direccion)', await (async () => { const f = fakePhone({ permission: 'granted', sub: { endpoint: 'https://fcm.googleapis.com/fcm/send/prueba', key: SERVER_KEY } }); await f.api.test(); return f.calls; })(), [{ action: 'test', endpoint: 'https://fcm.googleapis.com/fcm/send/prueba' }]);
     equal('las llaves van y vuelven igual (base64 para la web)', A.bytesToB64(A.b64ToBytes(SERVER_KEY)), SERVER_KEY);
 }
@@ -292,6 +305,10 @@ console.log('\nPaginas, manifiesto, iconos, reglas y funciones');
     yes('vecino.html carga avisos-push.js y avisos-ui.js con la misma version y monta la pantalla con la funcion pushDevice', (vecino.match(/avisos-push\.js\?v=(\w+)/) || [])[1] === (vecino.match(/avisos-ui\.js\?v=(\w+)/) || [])[1] && /httpsCallable\('pushDevice'\)/.test(vecino) && /SisdelAvisosUI\.mount\(/.test(vecino));
     yes('la ventana vieja de mensajes (que usaba la marca "leido" de todos) ya no esta', !/checkUnreadMessages|msgPopupOverlay/.test(vecino));
     yes('despues de entrar desde un aviso, el login lleva a los mensajes del portal', /get\('abrir'\) === 'mensajes'\) target \+= '#mensajes'/.test(index));
+    yes('al ingresar la clave, el vecino activa los avisos de una vez (antes de la ubicacion, pegado al toque de Ingresar)', /<script src="avisos-push\.js\?v=\w+"><\/script>/.test(index) && /await enableNoticesAtLogin\(\);\s*await askLocationAtLogin\(\);/.test(index) && /logged\.role !== 'vecino' \|\| !SISDEL\.can\('mensajes\.recibir'\)/.test(index) && /avisos\.auto\(logged\.userId, \{ ask: true \}\)/.test(index));
+    yes('index.html y vecino.html cargan la misma version de avisos-push.js', (index.match(/avisos-push\.js\?v=(\w+)/) || [])[1] === (vecino.match(/avisos-push\.js\?v=(\w+)/) || [])[1]);
+    yes('en el portal, el primer toque (fuera del panico, de otras ventanas y de los campos) pregunta si todavia no se permitio', /doc\.addEventListener\('pointerup', firstTouch, true\);/.test(ui) && /#panicBtnHost, \.pb-host, input, textarea, select/.test(ui) && /avisos\.auto\(session\.userId, \{ ask: true \}\)/.test(ui));
+    yes('la invitacion no sale a quien apago los avisos', /const show = \['inactivo', 'ios-instalar', 'otro-usuario'\]\.includes\(state\) && !off/.test(ui));
     yes('la ventana de avisos tiene la X de cerrar del sistema', /<button class="btn btn-ghost btn-icon modal-close" type="button" id="avClose"/.test(ui));
     yes('lo que escribe la administracion se escapa al pintarlo (asunto, texto y quien lo manda)', /\$\{esc\(m\.subject \|\| 'Mensaje'\)\}/.test(ui) && /<p>\$\{esc\(m\.body\)\}<\/p>/.test(ui) && /esc\(m\.fromName/.test(ui));
     yes('"nuevo" es por persona y por equipo; la marca "leido" se sigue poniendo para la administracion', /SEEN_PREFIX = 'sisdel_msg_vistos_'/.test(ui) && /SISDEL\.markMessageRead\(m\.id\)/.test(ui));

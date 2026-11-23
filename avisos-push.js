@@ -2,6 +2,11 @@
 // sw-avisos.js, se suscribe con la llave publica del servidor y le entrega la suscripcion (functions/src/avisos-push.js, callable
 // pushDevice). UMD: lo carga vecino.html y las pruebas (scripts/test-avisos-push.mjs) con un navegador de mentira.
 //
+// Automatico (pedido del usuario el 2026-11-23: "el vecino lo unico que hara es abrir garita.app ... al ingresar la clave debe
+// quedar todo listo"): auto() lo usa el ingreso (index.html, justo al tocar Ingresar: el telefono solo muestra la pregunta del
+// permiso en respuesta a un toque) y el portal (sync al abrir; con el permiso ya dado no pregunta nada y registra el telefono para
+// quien entro). Nunca si la persona toco "Desactivar en este telefono" (off), hasta que los vuelva a activar.
+//
 // iPhone: los avisos de una pagina solo funcionan desde iOS 16.4 y SOLO si garita.app se agrego a la pantalla de inicio y se abre
 // desde ese icono (en una pestana de Safari o Chrome no existen). Por eso support() dice 'ios-instalar' y la pantalla explica
 // como agregarla. Android y las computadoras: en el navegador, sin instalar nada.
@@ -124,6 +129,28 @@
             return { ok: true, state: 'activo' };
         }
 
+        // La persona los desactivo en este telefono: lo automatico no los vuelve a encender
+        function isOff() { const saved = readSync(); return !!(saved && saved.off); }
+
+        // Lo automatico. ask: true = puede mostrar la pregunta del permiso (solo justo despues de un toque: Ingresar o el primer
+        // toque en el portal); sin ask solo completa lo que ya se permitio. Si ya esta registrado para esta persona hace poco, nada.
+        async function auto(userId, opts) {
+            const sup = support();
+            if (!sup.ok) return { ok: false, state: sup.reason };
+            if (isOff()) return { ok: false, state: 'apagado' };
+            const perm = permission();
+            if (perm === 'denied') return { ok: false, state: 'bloqueado' };
+            if (perm !== 'granted' && !(opts && opts.ask)) return { ok: false, state: 'inactivo' };
+            if (perm === 'granted') {
+                const saved = readSync();
+                const sub = await currentSubscription();
+                if (saved && sub && saved.userId === (userId || null) && saved.endpoint === sub.endpoint && Date.now() - (saved.at || 0) < RESYNC_MS) {
+                    return { ok: true, state: 'activo', already: true };
+                }
+            }
+            return enable(userId);
+        }
+
         async function disable() {
             const sub = await currentSubscription();
             if (sub) {
@@ -131,7 +158,8 @@
                     try { await sub.unsubscribe(); } catch (e) { /* ya no estaba */ }
                 }
             }
-            writeSync(null);
+            // Se recuerda que la persona los apago (lo automatico lo respeta); "Activar avisos" lo borra
+            writeSync({ off: true, at: Date.now() });
             return { ok: true, state: 'inactivo' };
         }
 
@@ -141,26 +169,18 @@
             return call({ action: 'test', endpoint: sub.endpoint });
         }
 
-        // Al abrir el portal: si este telefono ya tenia los avisos de ESTE usuario, vuelve a entregar la suscripcion cada pocos dias
-        // o si el navegador la cambio (asi no deja de recibir sin que nadie se entere). Nunca pide permiso ni cambia de usuario.
+        // Al abrir el portal: con el permiso ya dado, deja el telefono listo para quien entro (crea la suscripcion si falta, la vuelve a
+        // entregar cada pocos dias o si el navegador la cambio, y pasa el telefono a esta persona). Nunca pregunta ni enciende lo apagado.
         async function sync(userId) {
             try {
-                if (!support().ok || permission() !== 'granted') return false;
-                const saved = readSync();
-                if (!saved || saved.userId !== (userId || null)) return false;
-                const sub = await currentSubscription();
-                if (!sub) return false;
-                if (saved.endpoint === sub.endpoint && Date.now() - (saved.at || 0) < RESYNC_MS) return false;
-                const json = typeof sub.toJSON === 'function' ? sub.toJSON() : sub;
-                await call({ action: 'register', subscription: { endpoint: json.endpoint, keys: json.keys }, standalone: dev.standalone });
-                writeSync({ userId: userId || null, endpoint: json.endpoint, at: Date.now() });
-                return true;
+                const r = await auto(userId, { ask: false });
+                return !!(r && r.ok && !r.already);
             } catch (e) {
                 return false;
             }
         }
 
-        return { support, permission, status, enable, disable, test, sync, device: dev };
+        return { support, permission, status, enable, disable, test, sync, auto, isOff, device: dev };
     }
 
     return { create, device, b64ToBytes, bytesToB64, SYNC_KEY };

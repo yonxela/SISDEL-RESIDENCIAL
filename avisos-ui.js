@@ -233,7 +233,8 @@
 
         function paintInvite() {
             const later = readJson(laterKey, 0);
-            const show = ['inactivo', 'ios-instalar', 'otro-usuario'].includes(state) && !(later && Date.now() - later < LATER_MS);
+            const off = typeof avisos.isOff === 'function' && avisos.isOff();
+            const show = ['inactivo', 'ios-instalar', 'otro-usuario'].includes(state) && !off && !(later && Date.now() - later < LATER_MS);
             invite.hidden = !show;
             if (!show) return;
             const v = phoneView(state, avisos.device);
@@ -352,9 +353,26 @@
             if (otherModalOpen() && tries < 600) { setTimeout(() => openWhenFree(tries + 1), 1000); return; }
             open();
         }
+        // Automatico (pedido del usuario el 2026-11-23): con el permiso ya dado, sync deja el telefono listo sin preguntar; si todavia
+        // no se dio, el PRIMER toque en cualquier parte del portal muestra la pregunta del telefono («Permitir») y lo registra. Una vez
+        // por visita; nunca sobre el boton de panico, dentro de otra ventana o escribiendo en un campo, ni si la persona los apago.
+        const ASKED_KEY = 'sisdel_avisos_preguntado';
+        function firstTouch(event) {
+            const t = event.target;
+            if (busy || overlayOpen() || state !== 'inactivo' || (typeof avisos.isOff === 'function' && avisos.isOff())) return;
+            if (t && t.closest && (t.closest('#panicBtnHost, .pb-host, input, textarea, select, [contenteditable]') || t.closest('[data-av]') || (t.closest('.modal-overlay') && !overlay.contains(t)))) return;
+            try { if (root.sessionStorage.getItem(ASKED_KEY)) return; root.sessionStorage.setItem(ASKED_KEY, '1'); } catch (e) { /* sin storage: una vez por carga */ }
+            doc.removeEventListener('pointerup', firstTouch, true);
+            busy = true;
+            avisos.auto(session.userId, { ask: true })
+                .then((r) => { if (r && r.ok) SISDEL.showToast('Avisos activados: los mensajes de la administración le llegarán al celular.', 'success'); })
+                .catch(() => {})
+                .finally(() => { busy = false; refreshState(); });
+        }
+        doc.addEventListener('pointerup', firstTouch, true);
+
         const fromNotice = root.location && root.location.hash === '#mensajes';
-        avisos.sync(session.userId);
-        refreshState();
+        Promise.resolve(avisos.sync(session.userId)).finally(refreshState);
         loadMessages().then(() => {
             if (fromNotice || newCount() > 0) openWhenFree(0);
         }).catch(() => { if (fromNotice) openWhenFree(0); });

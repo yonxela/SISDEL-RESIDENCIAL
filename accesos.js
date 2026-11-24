@@ -17,7 +17,8 @@
      direction   entrada | salida
      kind        residente (el vecino mismo, por su código) | vehiculo (su placa o marbete) | visita
      via         camara (lectura de placa) | qr (código leído con la cámara del teléfono) | codigo (escrito a mano) |
-                 lista (el guardia eligió la visita en la lista de visitas del día)
+                 lista (el guardia eligió la visita en la lista de visitas del día) |
+                 lector (código leído con el lector USB de pistola, 2026-11-23)
      outcome     autorizado | aviso_mora (entró, con aviso de mora) | denegado
      userId, name, casa, fase   el vecino (en una visita, quien la autoriza)
      plate, vehicleId           la placa y el vehículo registrado, si se conoce
@@ -35,7 +36,7 @@
 
     const DIRECTIONS = ['entrada', 'salida'];
     const KINDS = ['residente', 'vehiculo', 'visita'];
-    const VIAS = ['camara', 'qr', 'codigo', 'lista'];
+    const VIAS = ['camara', 'qr', 'codigo', 'lista', 'lector'];
     const OUTCOMES = ['autorizado', 'aviso_mora', 'denegado'];
     const SOURCES = ['garita', 'camara'];
     const TIME_ZONE = 'America/Guatemala';
@@ -50,7 +51,7 @@
     const LABELS = {
         direction: { entrada: 'Entrada', salida: 'Salida' },
         kind: { residente: 'Vecino', vehiculo: 'Vehículo de vecino', visita: 'Visita' },
-        via: { camara: 'Cámara de placas', qr: 'QR', codigo: 'Código escrito', lista: 'Lista de visitas' },
+        via: { camara: 'Cámara de placas', qr: 'QR', codigo: 'Código escrito', lista: 'Lista de visitas', lector: 'Lector USB' },
         outcome: { autorizado: 'Autorizado', aviso_mora: 'Con aviso de mora', denegado: 'Denegado' },
         source: { garita: 'Garita', camara: 'Cámara' }
     };

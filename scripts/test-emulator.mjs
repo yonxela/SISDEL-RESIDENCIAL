@@ -1644,6 +1644,7 @@ async function run() {
     await allowed('accesos: registrar ingresos anota un ingreso con sus campos', () => setDoc(rref(gIng, 'accesos', 'acc-1'), accDoc('acc-1', 'u-gin')));
     await allowed('accesos: un ingreso de visita lleva la visita, su vecino y su placa', () => setDoc(rref(gIng, 'accesos', 'acc-v'), accDoc('acc-v', 'u-gin', { kind: 'visita', visitId: 'vis-hoy', visitorName: 'Roberto Herrera', visitType: 'temporal', plate: 'P-123ABC', via: 'lista' })));
     await allowed('accesos: un ingreso con aviso de mora', () => setDoc(rref(gIng, 'accesos', 'acc-m'), accDoc('acc-m', 'u-gin', { outcome: 'aviso_mora', moroso: true, kind: 'vehiculo', vehicleId: 'veh-maria-1', plate: 'P-111MOR' })));
+    await allowed('accesos: un ingreso leido con el lector USB de pistola (medio lector)', () => setDoc(rref(gIng, 'accesos', 'acc-l'), accDoc('acc-l', 'u-gin', { via: 'lector', kind: 'vehiculo', vehicleId: 'veh-ana-1', plate: 'P-987XYZ' })));
     await allowed('accesos: registrar salidas anota una salida', () => setDoc(rref(gSal, 'accesos', 'acc-2'), accDoc('acc-2', 'u-gsa', { direction: 'salida' })));
     await denied('accesos: registrar ingresos no anota salidas', () => setDoc(rref(gIng, 'accesos', 'acc-3'), accDoc('acc-3', 'u-gin', { direction: 'salida' })));
     await denied('accesos: registrar salidas no anota ingresos', () => setDoc(rref(gSal, 'accesos', 'acc-4'), accDoc('acc-4', 'u-gsa')));

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SISDEL - Panel de Garita</title>
+    <title>SISDEL - Control Garita</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
@@ -25,6 +25,145 @@
         .mbg-where { font-size: .85rem; color: #cbd5e1; font-weight: 600; margin-top: .3rem; }
         .mbg-detail { font-size: .9rem; color: #cbd5e1; line-height: 1.35; margin-top: .6rem; overflow-wrap: anywhere; }
         .mbg-name { display: block; font-weight: 700; font-size: 1.25em; color: #f8fafc; margin-top: .15rem; }
+        /* Ventana de prueba del lector de codigos USB (pedido del usuario el 2026-11-23) */
+        .lector-wait { text-align: center; padding: 1.25rem; border: 2px dashed var(--border-strong); border-radius: 12px; margin-bottom: 1rem; color: var(--text-secondary); }
+        .lector-wait strong { display: block; font-size: 1.1rem; margin-bottom: .25rem; color: var(--text-primary); }
+        .lector-row { background: var(--bg-item); border-radius: 8px; padding: .7rem .9rem; margin-bottom: .5rem; text-align: left; }
+        .lector-row .code { font-family: monospace; font-size: 1.15rem; font-weight: 700; word-break: break-all; }
+        .lector-row small { display: block; color: var(--text-muted); margin-top: .2rem; }
+        .lector-row.warn { border-left: 4px solid var(--warning); }
+        .lector-steps { text-align: left; font-size: .88rem; color: var(--text-secondary); padding-left: 1.2rem; margin: .5rem 0 0; }
+        .lector-steps li { margin-bottom: .3rem; }
+        /* Pantalla del marbete leido por el escaner manual: "Medallon de estado en relieve" (diseno 6 aprobado por el usuario el 2026-11-23).
+           Grande, centrada y encima de todo (es para el monitor de la garita); se cierra sola a los N segundos (Configuracion) */
+        .lov { position: fixed; inset: 0; z-index: 100000; display: none; align-items: center; justify-content: center; padding: 1rem; background: rgba(8, 13, 24, .84); cursor: pointer; }
+        .lov-card { position: relative; width: min(1100px, 96vw); background: #16223a; color: #f8fafc; border-radius: 22px; padding: clamp(1.2rem, 3vw, 2.4rem); display: grid; grid-template-columns: clamp(130px, 18vw, 220px) minmax(0, 1fr); gap: clamp(1rem, 3vw, 2.4rem); align-items: center; box-shadow: 10px 10px 22px rgba(0, 0, 0, .55), -6px -6px 16px rgba(80, 110, 160, .12); cursor: default; }
+        .lov-close { position: absolute; top: .5rem; right: .75rem; font-weight: 700; color: #cbd5e1; }
+        .lov-medal { width: clamp(130px, 18vw, 220px); aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; box-shadow: 0 10px 20px rgba(0, 0, 0, .55), 0 3px 0 rgba(255, 255, 255, .35) inset, 0 -6px 10px rgba(0, 0, 0, .3) inset; }
+        .lov-card.ok .lov-medal { background: linear-gradient(145deg, #5DCAA5, #0F6E56); color: #E1F5EE; }
+        .lov-card.late .lov-medal { background: linear-gradient(145deg, #E24B4A, #A32D2D); color: #FCEBEB; }
+        .lov-card.bad .lov-medal { background: linear-gradient(145deg, #7f1d1d, #3b0a0a); color: #fee2e2; }
+        .lov-icon { font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1; font-weight: 800; }
+        .lov-word { font-size: clamp(1.1rem, 2.2vw, 1.8rem); font-weight: 800; letter-spacing: 2px; margin-top: .4rem; padding: 0 .5rem; line-height: 1.1; }
+        .lov-word.long { font-size: clamp(.85rem, 1.5vw, 1.2rem); letter-spacing: 1px; }
+        .lov-name { font-size: clamp(2.2rem, 5.6vw, 4.4rem); font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; text-shadow: 0 2px 4px rgba(0, 0, 0, .6); }
+        .lov-plate { margin-top: .9rem; display: inline-block; max-width: 100%; background: #0f172a; border-radius: 10px; padding: .45rem 1.3rem; box-shadow: 0 2px 4px rgba(0, 0, 0, .7) inset, 0 1px 0 rgba(255, 255, 255, .06); font-size: clamp(1.6rem, 3.6vw, 2.8rem); font-weight: 700; letter-spacing: .18em; color: #e2e8f0; overflow-wrap: anywhere; }
+        .lov-info { margin-top: .8rem; font-size: clamp(1rem, 1.9vw, 1.5rem); color: #cbd5e1; overflow-wrap: anywhere; }
+        .lov-foot { margin-top: .8rem; display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; font-size: clamp(.9rem, 1.4vw, 1.1rem); color: #94a3b8; }
+        .lov-foot .lov-exit { border: 1px solid #475569; color: #e2e8f0; background: transparent; border-radius: 8px; padding: .35rem .9rem; font-weight: 700; cursor: pointer; }
+        .lov-foot .lov-exit[disabled] { opacity: .75; cursor: default; background: #0f172a; }
+        .lov-bar { margin-top: .7rem; height: 6px; border-radius: 99px; background: #0f172a; box-shadow: 0 1px 2px rgba(0, 0, 0, .6) inset; overflow: hidden; }
+        .lov-bar > i { display: block; height: 6px; width: 100%; border-radius: 99px; background: #5DCAA5; }
+        .lov-card.late .lov-bar > i, .lov-card.bad .lov-bar > i { background: #E24B4A; }
+        @media (max-width: 640px) { .lov-card { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; } }
+        /* Pantalla completa al mostrar el marbete (Configuracion): la tarjeta ocupa todo el monitor para verse de lejos */
+        .lov.full { padding: 0; }
+        .lov.full .lov-card { width: 100vw; min-height: 100vh; border-radius: 0; grid-template-columns: clamp(180px, 26vw, 360px) minmax(0, 1fr); box-sizing: border-box; }
+        .lov.full .lov-medal { width: clamp(180px, 26vw, 360px); }
+        .lov.full .lov-icon { font-size: clamp(3rem, 8vw, 6rem); }
+        .lov.full .lov-word { font-size: clamp(1.4rem, 3vw, 2.6rem); }
+        .lov.full .lov-name { font-size: clamp(2.6rem, 7vw, 6rem); }
+        .lov.full .lov-plate { font-size: clamp(2rem, 5vw, 4rem); }
+        .lov.full .lov-info { font-size: clamp(1.1rem, 2.4vw, 2rem); }
+        @media (max-width: 640px) { .lov.full .lov-card { grid-template-columns: minmax(0, 1fr); } }
+        /* CONTROL GARITA (diseno aprobado por el usuario el 2026-11-23): encabezado con reloj, cifras del dia, lector de marbetes, visitas,
+           ultimos accesos y el panel de Configuracion. Colores propios para el modo oscuro y el claro */
+        .cg { --cg-card: linear-gradient(180deg, #152038, #111a2d); --cg-line: #22304a; --cg-inner: #0f172a; --cg-txt: #f1f5f9; --cg-sub: #94a3b8; --cg-mut: #64748b; --cg-shadow: 0 10px 26px rgba(0, 0, 0, .45), 0 1px 0 rgba(255, 255, 255, .04) inset; --cg-field: #0b1220; --cg-btn: linear-gradient(180deg, #1d2a44, #172238); --cg-btn-line: #2b3b5a; }
+        body.light-mode .cg { --cg-card: #ffffff; --cg-line: #dbe3ee; --cg-inner: #f1f5f9; --cg-txt: #0f172a; --cg-sub: #475569; --cg-mut: #64748b; --cg-shadow: 0 6px 18px rgba(15, 23, 42, .08); --cg-field: #ffffff; --cg-btn: linear-gradient(180deg, #ffffff, #eef2f7); --cg-btn-line: #cbd5e1; }
+        .cg-card { background: var(--cg-card); border: 1px solid var(--cg-line); border-radius: 16px; box-shadow: var(--cg-shadow); color: var(--cg-txt); }
+        .cg-top { display: flex; align-items: center; gap: 1.1rem; }
+        .cg-top .brand h1 { letter-spacing: .5px; }
+        .cg-top .brand-text p { color: var(--text-secondary); }
+        .cg-clock { margin-left: auto; text-align: center; }
+        .cg-clock b { display: block; font-size: 1.9rem; font-weight: 800; letter-spacing: 1px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .cg-clock span { font-size: .75rem; color: var(--text-secondary); }
+        .cg-chips { display: flex; flex-direction: column; gap: .4rem; }
+        .cg-chip { display: inline-flex; align-items: center; gap: .5rem; font-size: .8rem; font-weight: 600; padding: .3rem .75rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--bg-item); white-space: nowrap; }
+        .cg-dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34, 197, 94, .6); animation: cg-pulse 1.8s infinite; flex: none; }
+        .cg-dot.cam { background: #38bdf8; animation: none; }
+        .cg-dot.off { background: #64748b; animation: none; }
+        .cg-dot.warn { background: #f59e0b; animation: none; }
+        @keyframes cg-pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); } 70% { box-shadow: 0 0 0 9px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+        #urgentWarnings:not(:empty) { margin-bottom: 1rem; }
+        .cg-alert { display: flex; align-items: center; gap: .75rem; padding: .65rem 1rem; border-radius: 12px; background: rgba(245, 158, 11, .09); border: 1px solid rgba(245, 158, 11, .38); color: #b45309; font-size: .9rem; }
+        body:not(.light-mode) .cg-alert { color: #fcd34d; }
+        .cg-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+        .cg-kpi { padding: .85rem 1rem; }
+        .cg-kpi small { display: block; font-size: .72rem; color: var(--cg-sub); font-weight: 700; letter-spacing: .4px; }
+        .cg-kpi b { display: block; margin-top: .2rem; font-size: 1.9rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .cg-kpi.red b { color: #ef4444; } .cg-kpi.green b { color: #16a34a; } .cg-kpi.blue b { color: #0ea5e9; }
+        .garita-columns { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 1rem; margin-bottom: 1rem; }
+        @media (max-width: 860px) { .garita-columns { grid-template-columns: minmax(0, 1fr); } }
+        .cg-sec { padding: 1.1rem 1.25rem; }
+        .cg-sec h2 { margin: 0 0 .8rem; font-size: 1.05rem; font-weight: 800; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+        .cg-cnt { font-size: .72rem; font-weight: 700; color: var(--cg-sub); background: var(--cg-inner); border: 1px solid var(--cg-line); border-radius: 999px; padding: .1rem .65rem; }
+        .cg-reader { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 1.4rem; align-items: center; }
+        @media (max-width: 640px) { .cg-reader { grid-template-columns: minmax(0, 1fr); } }
+        .cg-ring { width: 190px; height: 190px; border-radius: 50%; margin: auto; display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, #1b2a46, #0f172a 70%); color: #e0f2fe; box-shadow: 0 14px 28px rgba(0, 0, 0, .45), 0 0 0 9px rgba(56, 189, 248, .08), 0 0 0 1px #2b3b5a inset; position: relative; padding: 1rem; box-sizing: border-box; }
+        .cg-ring::before { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid rgba(56, 189, 248, .55); animation: cg-scan 2.4s ease-in-out infinite; }
+        @keyframes cg-scan { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.05); opacity: .35; } }
+        .cg-ring div { text-align: center; }
+        .cg-ring b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 1px; }
+        .cg-ring span { display: block; margin-top: .35rem; font-size: .75rem; color: #94a3b8; }
+        .cg-ring.reading::before, .cg-ring.testing::before { border-color: rgba(245, 158, 11, .7); animation-duration: .8s; }
+        .cg-ring.off::before { animation: none; border-color: rgba(100, 116, 139, .5); }
+        .cg-ring.nofocus::before { animation: none; border-color: rgba(245, 158, 11, .8); }
+        .cg-lasthead { font-size: .72rem; color: var(--cg-sub); font-weight: 700; letter-spacing: .4px; margin-bottom: .5rem; }
+        .cg-lastlist { display: flex; flex-direction: column; gap: .5rem; }
+        .cg-last { background: var(--cg-inner); border: 1px solid var(--cg-line); border-radius: 14px; padding: .7rem .9rem; display: flex; align-items: center; gap: .8rem; box-shadow: 0 2px 6px rgba(0, 0, 0, .25) inset; }
+        .cg-last.older { opacity: .78; }
+        .cg-medal { width: 52px; height: 52px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 800; font-size: .62rem; letter-spacing: .5px; text-align: center; line-height: 1.1; color: #fff; box-shadow: 0 6px 12px rgba(0, 0, 0, .4), 0 2px 0 rgba(255, 255, 255, .3) inset, 0 -4px 8px rgba(0, 0, 0, .3) inset; }
+        .cg-medal.ok { background: linear-gradient(145deg, #5DCAA5, #0F6E56); color: #E1F5EE; }
+        .cg-medal.late { background: linear-gradient(145deg, #E24B4A, #A32D2D); color: #FCEBEB; }
+        .cg-medal.bad { background: linear-gradient(145deg, #7f1d1d, #3b0a0a); color: #fee2e2; }
+        .cg-lastbody { min-width: 0; flex: 1; }
+        .cg-lastbody .nm { font-size: 1.05rem; font-weight: 800; overflow-wrap: anywhere; }
+        .cg-lastbody .mt { font-size: .78rem; color: var(--cg-sub); margin-top: .1rem; overflow-wrap: anywhere; }
+        .cg-plate { margin-left: auto; background: var(--cg-field); border-radius: 9px; padding: .3rem .8rem; font-weight: 800; letter-spacing: 3px; font-size: 1rem; box-shadow: 0 2px 4px rgba(0, 0, 0, .35) inset; white-space: nowrap; }
+        .cg-empty { color: var(--cg-sub); font-size: .85rem; margin: 0; padding: .6rem 0; }
+        .cg-status { margin: .6rem 0 0; font-size: .78rem; color: var(--cg-mut); }
+        .cg-tools { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+        .cg-tools > #sectionManual { flex: 1 1 260px; min-width: 0; }
+        .cg-input { display: flex; gap: .5rem; }
+        .cg-input input { flex: 1; min-width: 0; background: var(--cg-field); }
+        .cg-hint { margin: .75rem 0 0; font-size: .78rem; color: var(--cg-mut); }
+        .cg-list { display: flex; flex-direction: column; gap: .5rem; max-height: 440px; overflow-y: auto; }
+        .cg-row { display: flex; align-items: center; gap: .7rem; padding: .65rem .8rem; border-radius: 12px; background: var(--cg-inner); border: 1px solid var(--cg-line); flex-wrap: wrap; }
+        .cg-row .who { min-width: 0; flex: 1 1 150px; }
+        .cg-row .who b { display: block; font-size: .95rem; overflow-wrap: anywhere; }
+        .cg-row .who span { font-size: .78rem; color: var(--cg-sub); overflow-wrap: anywhere; }
+        .cg-tag { font-size: .68rem; font-weight: 800; letter-spacing: .4px; padding: .22rem .65rem; border-radius: 999px; white-space: nowrap; }
+        .cg-tag.in { background: rgba(34, 197, 94, .14); color: #16a34a; border: 1px solid rgba(34, 197, 94, .35); }
+        .cg-tag.wait { background: rgba(56, 189, 248, .12); color: #0284c7; border: 1px solid rgba(56, 189, 248, .35); }
+        .cg-tag.out { background: rgba(148, 163, 184, .14); color: var(--cg-sub); border: 1px solid rgba(148, 163, 184, .3); }
+        .cg-tag.late { background: rgba(239, 68, 68, .14); color: #dc2626; border: 1px solid rgba(239, 68, 68, .4); }
+        .cg-mini { font: inherit; font-size: .78rem; font-weight: 700; color: var(--cg-txt); background: var(--cg-btn); border: 1px solid var(--cg-btn-line); border-radius: 10px; padding: .4rem .7rem; cursor: pointer; white-space: nowrap; }
+        .cg-full { margin-bottom: 1rem; }
+        .cg-tablewrap { overflow-x: auto; }
+        .cg-table { width: 100%; border-collapse: separate; border-spacing: 0 6px; font-size: .88rem; min-width: 640px; }
+        .cg-table th { text-align: left; font-size: .7rem; color: var(--cg-sub); font-weight: 700; letter-spacing: .4px; padding: 0 .75rem; }
+        .cg-table td { background: var(--cg-inner); padding: .6rem .75rem; border-top: 1px solid var(--cg-line); border-bottom: 1px solid var(--cg-line); }
+        .cg-table td:first-child { border-left: 1px solid var(--cg-line); border-radius: 10px 0 0 10px; color: var(--cg-sub); font-variant-numeric: tabular-nums; }
+        .cg-table td:last-child { border-right: 1px solid var(--cg-line); border-radius: 0 10px 10px 0; }
+        .cg-table .dir { font-weight: 800; font-size: .72rem; letter-spacing: .4px; }
+        .cg-table .dir.in { color: #16a34a; } .cg-table .dir.out { color: var(--cg-sub); }
+        /* Configuracion de Control Garita (se guarda en la computadora de la garita) */
+        .cg-cfg h3 { margin: 0 0 .25rem; font-size: 1.15rem; font-weight: 800; }
+        .cg-cfg > p { margin: 0 0 .75rem; font-size: .85rem; color: var(--cg-sub); }
+        .cg-opt { display: flex; align-items: center; gap: .9rem; padding: .85rem 0; border-top: 1px solid var(--cg-line); flex-wrap: wrap; }
+        .cg-opt .l { flex: 1 1 220px; }
+        .cg-opt .l b { display: block; font-size: .95rem; }
+        .cg-opt .l span { font-size: .78rem; color: var(--cg-sub); }
+        .cg-sw { width: 50px; height: 28px; border-radius: 999px; background: #334155; position: relative; border: 0; cursor: pointer; box-shadow: 0 2px 4px rgba(0, 0, 0, .5) inset; flex: none; padding: 0; }
+        .cg-sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(180deg, #fff, #dbe3ee); box-shadow: 0 2px 4px rgba(0, 0, 0, .45); transition: left .15s; }
+        .cg-sw.on { background: #16a34a; }
+        .cg-sw.on::after { left: 25px; }
+        .cg-seg { display: inline-flex; background: var(--cg-field); border: 1px solid var(--cg-btn-line); border-radius: 12px; overflow: hidden; }
+        .cg-seg button { border: 0; background: transparent; font: inherit; font-size: .8rem; font-weight: 700; color: var(--cg-sub); padding: .45rem .7rem; cursor: pointer; }
+        .cg-seg button.on { background: linear-gradient(180deg, #2563eb, #1d4ed8); color: #fff; }
+        .cg-secs { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; }
+        .cg-secs input[type=number] { width: 5.5rem; padding: .45rem .5rem; text-align: center; background: var(--cg-field); color: var(--cg-txt); }
+        .cg-test { margin-top: .5rem; background: var(--cg-field); border: 1px dashed var(--cg-btn-line); border-radius: 12px; padding: .65rem .8rem; font-family: ui-monospace, Menlo, monospace; font-size: .78rem; color: #0891b2; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
         /* Fila de botones del encabezado (paneles y Salir): el texto un 30 % mas grande que antes y en negrita (pedido
            del usuario el 2026-11-18, como en admin.html). Antes: botones 1rem */
         .top-bar-actions .btn { font-weight: 700; }
@@ -34,10 +173,6 @@
             .top-bar { flex-wrap: wrap; gap: 0.75rem; }
             .top-bar-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
         }
-        /* Medios de Acceso y Visitas del Dia: dos columnas en pantalla ancha y una debajo de la otra en celular o tableta.
-           Antes eran siempre dos y en un celular la pagina media unos 590 px y se movia de lado (2026-11-18) */
-        .garita-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; }
-        @media (max-width: 860px) { .garita-columns { grid-template-columns: minmax(0, 1fr); } }
     </style>
 </head>
 
@@ -47,20 +182,25 @@
         <div class="decor-2"></div>
     </div>
 
-    <div class="page-container">
-        <header class="top-bar">
+    <div class="page-container cg">
+        <header class="top-bar cg-top">
             <div class="brand">
                 <div class="brand-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
                         stroke-linejoin="round" width="24" height="24">
-                        <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
-                        <circle cx="12" cy="10" r="3" />
+                        <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+                        <path d="M9 12l2 2 4-4" />
                     </svg>
                 </div>
                 <div class="brand-text">
-                    <h1 id="condoName">SISDEL</h1>
-                    <p>Módulo de Seguridad</p>
+                    <h1>CONTROL GARITA</h1>
+                    <p><span id="condoName">SISDEL</span> · Guardia: <span id="guardName">-</span></p>
                 </div>
+            </div>
+            <div class="cg-clock"><b id="cgClock">--:--:--</b><span id="cgDate"></span></div>
+            <div class="cg-chips">
+                <span class="cg-chip" id="chipLector" style="display:none;"><i class="cg-dot"></i><span id="chipLectorText"></span></span>
+                <span class="cg-chip" id="chipCamara" style="display:none;"><i class="cg-dot cam"></i><span id="chipCamaraText"></span></span>
             </div>
             <div class="top-bar-actions">
                 <button class="btn btn-ghost btn-icon theme-toggle" id="themeToggle" title="Cambiar Tema">
@@ -70,96 +210,144 @@
                     </svg>
                 </button>
                 <span id="panelLinks" style="display:contents;"></span>
+                <button class="btn btn-ghost btn-sm" id="btnGaritaConfig" style="display:none;">Configuración</button>
                 <button class="btn btn-ghost btn-sm" id="btnLogout">Salir</button>
             </div>
         </header>
 
         <div class="page-content">
-            <div id="urgentWarnings" style="margin-bottom:1.5rem;"></div>
+            <!-- Aviso de vecinos en mora: franja ambar discreta (privilegio garita.morosos) -->
+            <div id="urgentWarnings"></div>
 
-            <div class="stats-grid compact">
-                <div class="stat-card">
-                    <div class="stat-value" style="color:var(--success)" id="enteredCount">0</div>
-                    <div class="stat-label">Ingresos Hoy</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" style="color:var(--primary-light)" id="pendingCount">0</div>
-                    <div class="stat-label">Pendientes</div>
-                </div>
-                <div class="stat-card" id="insideCard">
-                    <div class="stat-value" style="color:var(--accent)" id="insideCount">0</div>
-                    <div class="stat-label">Visitas Dentro</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" style="color:var(--danger)" id="morososCount">0</div>
-                    <div class="stat-label">Vecinos Morosos</div>
-                </div>
+            <div class="cg-kpis">
+                <div class="cg-card cg-kpi green" id="kpiEntered"><small>INGRESOS HOY</small><b id="enteredCount">0</b></div>
+                <div class="cg-card cg-kpi" id="kpiExited"><small>SALIDAS HOY</small><b id="exitedCount">0</b></div>
+                <div class="cg-card cg-kpi blue" id="insideCard"><small>VISITAS DENTRO</small><b id="insideCount">0</b></div>
+                <div class="cg-card cg-kpi" id="kpiPending"><small>PASES POR LLEGAR</small><b id="pendingCount">0</b></div>
+                <div class="cg-card cg-kpi red" id="kpiMorosos"><small>VECINOS EN MORA</small><b id="morososCount">0</b></div>
             </div>
 
             <div class="garita-columns">
-                <!-- Scanner Section -->
-                <div id="accessMethodsContainer">
-                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">🚗 Medios de Acceso</h3>
-
-                    <div id="sectionLPR"
-                        style="display:none; font-size:0.9rem; padding:1rem; border-left:4px solid var(--accent); background:var(--bg-item); margin-bottom:1.5rem; border-radius:8px;">
-                        <strong style="color:var(--accent);">✅ LPR Habilitado:</strong> El condominio cuenta con un
-                        sistema de cámara inteligente leyendo las placas para abrir el acceso automáticamente a
-                        residentes y visitas. No es necesario operar la puerta siempre.
-                    </div>
-
-                    <div id="sectionQR" class="card"
-                        style="padding:1rem; text-align:center; margin-bottom:1.5rem; display:none;">
-                        <div id="scannerPlaceholder"
-                            style="padding:2rem; background:var(--bg-item); border-radius:12px; margin-bottom:1rem;">
-                            <div style="font-size:3rem; margin-bottom:1rem; opacity:0.5;">📷</div>
-                            <button class="btn btn-primary" id="btnStartScanner">Abrir Escáner QR</button>
+                <!-- Lector de marbetes: el escaner manual (lector USB de pistola), la camara del telefono y la busqueda manual -->
+                <div class="cg-card cg-sec" id="accessMethodsContainer">
+                    <h2>Lector de marbetes <span class="cg-cnt" id="lectorTitle" style="display:none;"></span></h2>
+                    <div id="sectionLector" class="cg-reader" style="display:none;">
+                        <div class="cg-ring" id="cgRing"><div><b id="ringTitle">LISTO PARA LEER</b><span id="ringText">Escanee el QR del marbete</span></div></div>
+                        <div>
+                            <div class="cg-lasthead">ÚLTIMAS LECTURAS</div>
+                            <div id="lastReads" class="cg-lastlist"><p class="cg-empty">Todavía no hay lecturas en esta sesión.</p></div>
+                            <p class="cg-status" id="lectorLast"></p>
                         </div>
-                        <div id="reader"
-                            style="width:100%; border-radius:12px; overflow:hidden; background:var(--bg-item); display:none;">
-                        </div>
-                        <button class="btn btn-ghost btn-sm" id="btnStopScanner"
-                            style="display:none; margin-top:1rem;">Detener Cámara</button>
                     </div>
-
-                    <div id="sectionManual" class="card" style="padding:1.5rem; display:none;">
-                        <h4 style="margin-bottom:1rem;">Búsqueda Manual</h4>
-                        <form id="formManual">
-                            <div class="input-group">
-                                <input type="text" class="form-input" id="manualCode"
-                                    placeholder="Ingrese código o DPI..." style="text-transform:uppercase;">
-                                <button type="submit" class="btn btn-primary btn-sm"
-                                    id="btnManualCheck">Verificar</button>
+                    <div class="cg-tools">
+                        <div id="sectionQR" style="display:none;">
+                            <div id="scannerPlaceholder">
+                                <button class="btn btn-primary" id="btnStartScanner">Escanear con la cámara</button>
                             </div>
-                        </form>
+                            <button class="btn btn-ghost btn-sm" id="btnStopScanner" style="display:none;">Detener Cámara</button>
+                        </div>
+                        <div id="sectionManual" style="display:none;">
+                            <form id="formManual" class="cg-input">
+                                <input type="text" class="form-input" id="manualCode" placeholder="Código, placa o DPI" aria-label="Búsqueda manual: código, placa o DPI" style="text-transform:uppercase;">
+                                <button type="submit" class="btn btn-primary btn-sm" id="btnManualCheck">Verificar</button>
+                            </form>
+                        </div>
                     </div>
+                    <div id="reader" style="width:100%; border-radius:12px; overflow:hidden; background:var(--bg-item); display:none; margin-top:1rem;"></div>
+                    <p class="cg-hint" id="lectorHint"></p>
                 </div>
 
-                <!-- Visits List Section -->
-                <div>
-                    <h3 style="margin-bottom:1rem; font-size:1.25rem;">📅 Visitas del Día</h3>
-                    <div id="todayVisitsList"></div>
+                <!-- Visitas del dia -->
+                <div class="cg-card cg-sec" id="visitsCard">
+                    <h2>Visitas del día <span class="cg-cnt" id="visitsCount">0</span></h2>
+                    <div id="todayVisitsList" class="cg-list"></div>
                 </div>
             </div>
 
-            <!-- Unified Access History (Full Width, Always visible) -->
-            <div id="historyMonitorContainer" style="margin-top:2.5rem;">
-                <h3
-                    style="margin-bottom:1rem; font-size:1.25rem; display:flex; align-items:center; gap:0.5rem;">
-                    <span class="pulse-icon"></span> Historial de Últimos Vehículos Registrados
-                </h3>
-                <div id="historyLogsList" class="card"
-                    style="padding:0; overflow:hidden; border-radius:12px; max-height:380px; overflow-y:auto;">
-                    <div style="padding:2rem; text-align:center; opacity:0.5;" id="historyEmptyState">
-                        No hay registros de ingresos para hoy.
-                    </div>
+            <!-- Ultimos accesos del dia (registro de accesos: escaner manual, camara de placas, QR, codigo y garita) -->
+            <div id="historyMonitorContainer" class="cg-card cg-sec cg-full">
+                <h2>Últimos accesos <span class="cg-cnt">Hoy</span></h2>
+                <div class="cg-tablewrap">
+                    <table class="cg-table">
+                        <thead><tr><th>HORA</th><th>MOVIMIENTO</th><th>VECINO O VISITA</th><th>LOTE</th><th>PLACA</th><th>MEDIO</th><th>ESTADO</th></tr></thead>
+                        <tbody id="historyLogsList"></tbody>
+                    </table>
                 </div>
+                <p class="cg-empty" id="historyEmptyState">No hay registros de accesos para hoy.</p>
             </div>
         </div>
 
         <footer class="app-footer">
             Software de Seguridad Residencial - SISDEL &copy; 2026
         </footer>
+    </div>
+
+    <!-- Marbete leido por el escaner manual: se muestra al instante, se cierra solo (o con Escape o un clic) y deja el ingreso registrado -->
+    <div class="lov" id="lectorOverlay" role="dialog" aria-live="assertive" aria-label="Lectura del escáner manual">
+        <div class="lov-card ok" id="lovCard">
+            <button type="button" class="btn btn-ghost btn-icon modal-close lov-close" id="lovClose" aria-label="Cerrar" title="Cerrar">&times;</button>
+            <div class="lov-medal"><span class="lov-icon" id="lovIcon"></span><span class="lov-word" id="lovWord"></span></div>
+            <div class="lov-main">
+                <div class="lov-name" id="lovName"></div>
+                <div class="lov-plate" id="lovPlate" style="display:none;"></div>
+                <div class="lov-info" id="lovInfo"></div>
+                <div class="lov-foot"><span id="lovFoot"></span><button type="button" class="lov-exit" id="lovExit" style="display:none;">Era una salida</button></div>
+                <div class="lov-bar"><i id="lovBar"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuracion de Control Garita (se guarda en esta computadora; privilegio garita.configurar) -->
+    <div class="modal-overlay" id="modalGaritaConfig" style="display:none;">
+        <div class="modal cg cg-cfg" style="max-width:580px; padding:1.75rem;">
+            <button class="btn btn-ghost btn-icon modal-close" id="btnXGaritaConfig" type="button" aria-label="Cerrar" title="Cerrar" style="position:absolute; top:0.75rem; right:0.75rem;">&times;</button>
+            <h3>Configuración de Control Garita</h3>
+            <p>Se guarda en esta computadora de la garita: no cambia nada en las demás.</p>
+            <div class="cg-opt">
+                <div class="l"><b>Escáner manual (lector de pistola)</b><span id="gcfgScannerText"></span></div>
+                <button type="button" class="cg-sw" id="gcfgScanner" role="switch" aria-checked="true" aria-label="Escáner manual"></button>
+            </div>
+            <div class="cg-opt">
+                <div class="l"><b>Tiempo del marbete en pantalla</b><span>Después vuelve a «Listo para leer» (de 3 a 30 segundos).</span></div>
+                <div class="cg-secs">
+                    <div class="cg-seg" id="gcfgSeg"><button type="button" data-s="4">4 s</button><button type="button" data-s="6">6 s</button><button type="button" data-s="8">8 s</button><button type="button" data-s="10">10 s</button><button type="button" data-s="15">15 s</button></div>
+                    <input type="number" class="form-input" id="gcfgSeconds" min="3" max="30" step="1" inputmode="numeric" aria-label="Segundos en pantalla">
+                </div>
+            </div>
+            <div class="cg-opt">
+                <div class="l"><b>Sonido al leer</b><span>Un tono agudo si está al día, dos si está en mora y uno grave si no entra.</span></div>
+                <button type="button" class="cg-sw" id="gcfgSound" role="switch" aria-checked="true" aria-label="Sonido al leer"></button>
+            </div>
+            <div class="cg-opt">
+                <div class="l"><b>Pantalla completa al mostrar el marbete</b><span>Ocupa todo el monitor para verse de lejos.</span></div>
+                <button type="button" class="cg-sw" id="gcfgFull" role="switch" aria-checked="false" aria-label="Pantalla completa"></button>
+            </div>
+            <div class="cg-opt">
+                <div class="l"><b>Probar el lector</b><span>Escanee cualquier código: se ve exactamente lo que escribe el lector, sin registrar nada.</span></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnGcfgTest" style="border:1px solid var(--border-strong);">Probar el lector</button>
+                <div class="cg-test" id="gcfgLastProbe">Todavía no se ha probado en esta sesión.</div>
+            </div>
+            <button class="btn btn-ghost" style="width:100%; margin-top:.75rem;" id="btnCloseGaritaConfig">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Modal: probar el lector de codigos USB (no registra ingresos ni salidas) -->
+    <div class="modal-overlay" id="modalLector" style="display:none;">
+        <div class="modal" style="max-width:520px; padding:2rem;">
+            <button class="btn btn-ghost btn-icon modal-close" id="btnXLector" type="button" aria-label="Cerrar" title="Cerrar" style="position:absolute; top:0.75rem; right:0.75rem;">&times;</button>
+            <h2 style="margin-bottom:.35rem;">Probar el lector de código</h2>
+            <p style="color:var(--text-secondary); font-size:.9rem; margin-bottom:1rem;">Aquí solo se prueba: no se registra ningún ingreso ni salida.</p>
+            <div class="lector-wait"><strong id="lectorWaitTitle">Esperando una lectura...</strong><span id="lectorWaitText">Pase un código por el lector: debe aparecer aquí al instante.</span></div>
+            <div id="lectorRows"></div>
+            <h4 style="margin:1rem 0 .25rem; font-size:.95rem;">Cómo conectarlo</h4>
+            <ol class="lector-steps">
+                <li>Conecte el receptor USB pequeño del lector inalámbrico (o el cable USB de la base) al equipo de la garita. No hay nada que instalar: el equipo lo ve como un teclado.</li>
+                <li>Pase un código por el lector. Si es un lector inalámbrico, déjelo cerca del receptor y cargado.</li>
+                <li>Debe aparecer arriba el código leído. Si aparece, ya funciona: cierre esta ventana: el escáner manual viene activado de entrada (se apaga y se configura en «Configuración») y basta con pasar el marbete del vecino por el lector, sin importar dónde esté el cursor.</li>
+                <li>Si no aparece nada, o dice que llegaron teclas muy despacio, el lector no está mandando el código como teclado o le falta el Enter al final: revise su configuración (el manual del lector trae el código de «Enter al final»).</li>
+            </ol>
+            <button class="btn btn-ghost" style="width:100%; margin-top:1rem;" id="btnCloseLector">Cerrar</button>
+        </div>
     </div>
 
     <!-- Modal Resultados -->
@@ -193,9 +381,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261123c"></script>
-    <script src="accesos.js?v=20261121a"></script>
-    <script src="sisdel-core.js?v=20261123c"></script>
+    <script src="privilegios.js?v=20261123d"></script>
+    <script src="accesos.js?v=20261123c"></script>
+    <script src="lector-codigos.js?v=20261123a"></script>
+    <script src="sisdel-core.js?v=20261123d"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <script src="panico-alertas.js?v=20261109f"></script>
     <script>
@@ -205,6 +394,7 @@
 
             const condoId = session.condominioId;
             document.getElementById('condoName').textContent = session.condominioName;
+            document.getElementById('guardName').textContent = session.userName || '-';
             // Nombres y mensajes los escriben otros usuarios (con privilegios menores): siempre se escapan
             const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -225,12 +415,14 @@
             const g = {
                 escanear: SISDEL.can('garita.escanear'), verificar: SISDEL.can('garita.verificar'), ingreso: SISDEL.can('garita.ingreso'), salida: SISDEL.can('garita.salida'),
                 visitasDia: SISDEL.can('garita.visitas_dia'), morosos: SISDEL.can('garita.morosos'),
+                lector: SISDEL.can('garita.lector'), configurar: SISDEL.can('garita.configurar'),
                 vivo: seesCamera && SISDEL.can('garita.vivo'), historial: seesCamera && SISDEL.can('garita.historial'),
                 mensajes: SISDEL.can('mensajes.recibir')
             };
-            if (!g.morosos) document.getElementById('morososCount').closest('.stat-card').style.display = 'none';
-            if (!g.visitasDia) document.getElementById('todayVisitsList').parentElement.style.display = 'none';
-            if (!g.historial) document.getElementById('historyMonitorContainer').style.display = 'none';
+            if (!g.morosos) document.getElementById('kpiMorosos').style.display = 'none';
+            if (!g.visitasDia) document.getElementById('visitsCard').style.display = 'none';
+            // Ultimos accesos y las cifras de ingresos y salidas del dia salen del registro de accesos (garita.historial)
+            if (!g.historial) { document.getElementById('historyMonitorContainer').style.display = 'none'; document.getElementById('kpiExited').style.display = 'none'; }
             if (!g.ingreso) document.getElementById('btnConfirmEntry').style.display = 'none';
             if (!g.salida) document.getElementById('insideCard').style.display = 'none';
 
@@ -266,13 +458,22 @@
 
             if (hasQR && g.escanear) document.getElementById('sectionQR').style.display = 'block';
             if (hasManual && g.verificar) document.getElementById('sectionManual').style.display = 'block';
-            if (hasLPR) document.getElementById('sectionLPR').style.display = 'block';
 
             if (!hasQR && !hasManual) {
-                document.getElementById('accessMethodsContainer').innerHTML += '<div class="card" style="padding:2rem; text-align:center; opacity:0.6;">Sin controles manuales configurados.</div>';
+                document.getElementById('accessMethodsContainer').insertAdjacentHTML('beforeend', '<p class="cg-empty" style="text-align:center;">Sin controles manuales configurados.</p>');
             }
 
             SISDEL.bindExitButton(document.getElementById('btnLogout'), 'garita.html');
+
+            // Reloj en vivo del encabezado (hora de Guatemala)
+            const clockEl = document.getElementById('cgClock'), dateEl = document.getElementById('cgDate');
+            const tickClock = () => {
+                const d = new Date();
+                clockEl.textContent = d.toLocaleTimeString('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                dateEl.textContent = d.toLocaleDateString('es-GT', { timeZone: 'America/Guatemala', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            };
+            tickClock();
+            setInterval(tickClock, 1000);
 
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
@@ -287,21 +488,20 @@
                 const morososList = g.morosos ? await SISDEL.getUsersByPaymentStatus(condoId, SISDEL.PAYMENT_STATUS.MOROSO) : [];
                 const morosos = morososList.length;
 
-                document.getElementById('enteredCount').textContent = entered;
+                // Ingresos y salidas de hoy salen del registro de accesos (los pone renderHistory); sin permiso para leerlo, los ingresos de visitas
+                if (!g.historial) document.getElementById('enteredCount').textContent = entered;
                 document.getElementById('pendingCount').textContent = visits.length - entered;
                 document.getElementById('insideCount').textContent = visits.filter((v) => SISDEL.isVisitInside(v)).length;
                 document.getElementById('morososCount').textContent = morosos;
 
+                // Franja ambar discreta (el medallon rojo del marbete ya dice quien esta en mora)
                 const warnings = document.getElementById('urgentWarnings');
                 if (morosos > 0) {
                     warnings.innerHTML = `
-                        <div class="card" style="border-left: 6px solid var(--danger); padding:1rem; animation:fadeIn 0.5s;">
-                            <div style="display:flex; align-items:center; gap:0.75rem;">
-                                <div style="color:var(--danger); font-weight:bold;">⚠️ ALERTA VECINOS MOROSOS:</div>
-                                <div style="font-size:0.9rem;">${morosos} viviendas tienen restricciones de acceso por falta de pago.</div>
-                            </div>
-                        </div>
-                    `;
+                        <div class="cg-alert">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+                            <span><b>${morosos} ${morosos === 1 ? 'vivienda en mora' : 'viviendas en mora'}.</b> Al leer su marbete el medallón saldrá en rojo: informar al vecino.</span>
+                        </div>`;
                 } else {
                     warnings.innerHTML = '';
                 }
@@ -310,26 +510,19 @@
             async function renderVisits() {
                 const visits = await SISDEL.getTodayVisits(condoId);
                 const list = document.getElementById('todayVisitsList');
-                if (visits.length === 0) { list.innerHTML = '<p class="text-center text-muted card" style="padding:2rem;">Sin visitas el día de hoy.</p>'; return; }
-                list.innerHTML = visits.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(v => `
-                    <div class="list-item">
-                        <div class="avatar">${esc(v.visitorName.charAt(0))}</div>
-                        <div class="item-info">
-                            <div class="item-name">${esc(v.visitorName)}</div>
-                            <div class="item-detail">
-                                <strong>Placa:</strong> ${esc(v.vehiclePlate || 'N/A')} <br>
-                                ${esc(v.visitTime || 'Todo el día')} · Casa: ${esc(v.casa || 'N/A')}
-                            </div>
-                        </div>
-                        <div>
-                            ${v.status === SISDEL.VISIT_STATUS.ENTERED
-                        ? (SISDEL.isVisitInside(v)
-                            ? `<span class="badge badge-success">Ingresó</span>${g.salida ? ` <button class="btn btn-ghost btn-sm" data-visit="${esc(v.id)}">Registrar salida</button>` : ''}`
-                            : `<span class="badge badge-info">Salió ${esc(new Date(v.exitedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>`)
-                        : `<button class="btn btn-ghost btn-sm" data-visit="${esc(v.id)}">Validar</button>`}
-                        </div>
-                    </div>
-                `).join('');
+                document.getElementById('visitsCount').textContent = visits.length;
+                if (visits.length === 0) { list.innerHTML = '<p class="cg-empty">Sin visitas el día de hoy.</p>'; return; }
+                const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+                list.innerHTML = visits.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((v) => {
+                    const entered = v.status === SISDEL.VISIT_STATUS.ENTERED;
+                    const inside = entered && SISDEL.isVisitInside(v);
+                    const tag = !entered ? '<span class="cg-tag wait">POR LLEGAR</span>'
+                        : inside ? '<span class="cg-tag in">DENTRO</span>' : `<span class="cg-tag out">SALIÓ ${esc(v.exitedAt ? hhmm(v.exitedAt) : '')}</span>`;
+                    const action = !entered ? `<button class="cg-mini" data-visit="${esc(v.id)}">Validar</button>`
+                        : inside && g.salida ? `<button class="cg-mini" data-visit="${esc(v.id)}">Registrar salida</button>` : '';
+                    const detail = `Visita a ${v.casa || 'N/A'} · ${v.vehiclePlate ? v.vehiclePlate : (v.visitTime || 'Todo el día')}`;
+                    return `<div class="cg-row"><div class="who"><b>${esc(v.visitorName)}</b><span>${esc(detail)}</span></div>${tag}${action}</div>`;
+                }).join('');
             }
 
             // El boton Validar de cada visita (el id de la base no va dentro de onclick)
@@ -359,7 +552,7 @@
                 const resident = type === 'resident' ? obj : (obj.userId ? await SISDEL.getUserById(obj.userId) : null);
                 const moroso = !!resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
                 const base = {
-                    direction, via: via || 'codigo', outcome: moroso && direction === 'entrada' ? 'aviso_mora' : 'autorizado', moroso,
+                    at: verification.at, direction, via: via || 'codigo', outcome: moroso && direction === 'entrada' ? 'aviso_mora' : 'autorizado', moroso,
                     userId: resident ? resident.id : (obj.userId || ''), name: resident ? resident.name : '',
                     casa: (type === 'visit' ? obj.casa : '') || (resident ? resident.casa : '') || '', fase: resident ? (resident.fase || '') : ''
                 };
@@ -373,7 +566,9 @@
                 } else {
                     data = { ...base, kind: 'residente', reason: `Acceso QR: ${obj.name} — Casa ${obj.casa || 'N/A'}` };
                 }
-                const saved = await SISDEL.createAccess(condoId, data);
+                let saved = await SISDEL.createAccess(condoId, data);
+                // Las reglas viejas (antes de publicar el lector) no conocen via 'lector': se anota como QR para no perder el movimiento
+                if (!saved && data.via === 'lector') saved = await SISDEL.createAccess(condoId, { ...data, via: 'qr' });
                 if (!saved) SISDEL.showToast('El movimiento se hizo, pero no se pudo guardar en el registro de accesos. Avise a la administración.', 'warning');
                 return saved;
             }
@@ -541,10 +736,16 @@
                 }
             }
 
-            document.getElementById('btnConfirmEntry').addEventListener('click', async () => {
-                if (!currentVerification) return;
-                const { obj, type } = currentVerification;
-                const verification = currentVerification;
+            const ownLogs = new Set();   // camera_logs que escribio esta garita con el escaner (placa|motivo): no son lecturas de la camara
+            // Registra un ingreso (camera_logs para el historial, la visita como ingresada y el registro de accesos). `quiet`: sin avisos
+            // en pantalla (lo usa el escaner manual, que ya lo dice en su propia tarjeta)
+            async function performEntry(verification, quiet) {
+                const { obj, type } = verification;
+                const note = (text) => { if (!quiet) SISDEL.showToast(text, 'success'); };
+                // El registro de camera_logs que escribe la propia garita al registrar con el escaner no debe levantar otra vez la pantalla
+                // grande de MOROSO / AL DIA ni el aviso de moroso de la camara (la tarjeta del escaner ya lo dijo): se anota para no
+                // confundirlo con una lectura de la camara de placas
+                const logCamera = (condo, plate, status, reason) => { if (quiet) ownLogs.add(String(plate || '').toUpperCase() + '|' + (reason || '')); return SISDEL.createCameraLog(condo, plate, status, reason); };
 
                 if (type === 'visit') {
                     await SISDEL.markVisitAsEntered(obj.id);
@@ -552,72 +753,84 @@
                     if (obj.vehiclePlate) {
                         const resident = await SISDEL.getUserById(obj.userId);
                         const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                        await SISDEL.createCameraLog(
+                        await logCamera(
                             condoId,
                             obj.vehiclePlate,
                             isMoroso ? 'Reminder' : 'Authorized',
                             `Visita: ${obj.visitorName} → Casa ${obj.casa || 'N/A'}`
                         );
                     }
-                    SISDEL.showToast('Ingreso de visita registrado', 'success');
+                    note('Ingreso de visita registrado');
 
                 } else if (type === 'vehicle') {
                     // Registrar ingreso de vehículo (marbete QR) en camera_logs
                     const resident = await SISDEL.getUserById(obj.userId);
                     const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                    await SISDEL.createCameraLog(
+                    await logCamera(
                         condoId,
                         obj.plate,
                         isMoroso ? 'Reminder' : 'Authorized',
                         `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})${resident ? ' — ' + resident.name : ''}`.trim()
                     );
-                    SISDEL.showToast('Ingreso de vehículo registrado', 'success');
+                    note('Ingreso de vehículo registrado');
 
                 } else if (type === 'resident') {
                     // Registrar ingreso de residente por código QR en camera_logs
                     const isMoroso = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
-                    await SISDEL.createCameraLog(
+                    await logCamera(
                         condoId,
                         'RESIDENTE',
                         isMoroso ? 'Reminder' : 'Authorized',
                         `Acceso QR: ${obj.name} — Casa ${esc(obj.casa || 'N/A')}`
                     );
-                    SISDEL.showToast('Ingreso de residente registrado', 'success');
+                    note('Ingreso de residente registrado');
                 }
 
                 await logAccess('entrada', verification);
+            }
+
+            document.getElementById('btnConfirmEntry').addEventListener('click', async () => {
+                if (!currentVerification) return;
+                await performEntry(currentVerification);
                 document.getElementById('modalResult').style.display = 'none';
                 await renderStats();
                 await renderVisits();
                 await renderHistory();
             });
 
+            // Registra una salida (visita o vecino) y la anota en el registro de accesos. Devuelve lo guardado o null
+            async function performExit(verification, quiet) {
+                const { obj, type } = verification;
+                const note = (text) => { if (!quiet) SISDEL.showToast(text, 'success'); };
+                let saved = null;
+                if (type === 'visit') {
+                    saved = await SISDEL.markVisitAsExited(obj.id);
+                    if (saved) note('Salida de visita registrada');
+                } else if (type === 'vehicle') {
+                    const resident = await SISDEL.getUserById(obj.userId);
+                    saved = await SISDEL.createExit(condoId, 'vehiculo', {
+                        plate: obj.plate, name: resident ? resident.name : '', casa: resident ? resident.casa : '', userId: obj.userId,
+                        reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})`.trim()
+                    });
+                    if (saved) note('Salida de vehículo registrada');
+                } else if (type === 'resident') {
+                    saved = await SISDEL.createExit(condoId, 'residente', {
+                        name: obj.name, casa: obj.casa, userId: obj.id, reason: 'Acceso QR'
+                    });
+                    if (saved) note('Salida de residente registrada');
+                }
+                if (!saved) return null;
+                await logAccess('salida', verification);
+                return saved;
+            }
+
             document.getElementById('btnRegisterExit').addEventListener('click', async () => {
                 if (!currentVerification) return;
-                const { obj, type } = currentVerification;
-                const verification = currentVerification;
                 const button = document.getElementById('btnRegisterExit');
                 button.disabled = true;
                 try {
-                    let saved = null;
-                    if (type === 'visit') {
-                        saved = await SISDEL.markVisitAsExited(obj.id);
-                        if (saved) SISDEL.showToast('Salida de visita registrada', 'success');
-                    } else if (type === 'vehicle') {
-                        const resident = await SISDEL.getUserById(obj.userId);
-                        saved = await SISDEL.createExit(condoId, 'vehiculo', {
-                            plate: obj.plate, name: resident ? resident.name : '', casa: resident ? resident.casa : '', userId: obj.userId,
-                            reason: `Marbete QR: ${obj.brand || ''} ${obj.model || ''} (${obj.color || ''})`.trim()
-                        });
-                        if (saved) SISDEL.showToast('Salida de vehículo registrada', 'success');
-                    } else if (type === 'resident') {
-                        saved = await SISDEL.createExit(condoId, 'residente', {
-                            name: obj.name, casa: obj.casa, userId: obj.id, reason: 'Acceso QR'
-                        });
-                        if (saved) SISDEL.showToast('Salida de residente registrada', 'success');
-                    }
+                    const saved = await performExit(currentVerification);
                     if (!saved) { SISDEL.showToast('No se pudo registrar la salida', 'danger'); return; }
-                    await logAccess('salida', verification);
                     document.getElementById('modalResult').style.display = 'none';
                     await renderStats();
                     await renderVisits();
@@ -633,35 +846,34 @@
             });
 
             // --- Verification Logic for Input Codes ---
-            async function processCode(code) {
-                if (!code) return;
-
-                // 1. Is it a Visit Code?
-                const visit = await SISDEL.getVisitByQR(code);
-                if (visit) {
-                    await handleAccessMatch(visit, 'visit');
-                    document.getElementById('manualCode').value = '';
-                    return;
-                }
-
-                // 2. Is it a Vehicle/Marbete Code?
-                const vehicle = await SISDEL.getVehicleByQR(code);
-                if (vehicle && vehicle.condominioId === condoId) {
-                    await handleAccessMatch(vehicle, 'vehicle');
-                    document.getElementById('manualCode').value = '';
-                    return;
-                }
+            // Que es lo que se leyo (sin tocar la pantalla): { obj, type } o null
+            async function findCode(code) {
+                // 1. Is it a Visit Code? 2. Is it a Vehicle/Marbete Code? (las dos consultas a la vez: la lectura debe verse de inmediato)
+                const [visit, vehicle] = await Promise.all([SISDEL.getVisitByQR(code), SISDEL.getVehicleByQR(code)]);
+                if (visit) return { obj: visit, type: 'visit' };
+                if (vehicle && vehicle.condominioId === condoId) return { obj: vehicle, type: 'vehicle' };
 
                 // 3. Is it a Resident Access Code? (lo valida el servidor)
                 const resident = await SISDEL.getUserByCode(code);
-                if (resident) {
-                    await handleAccessMatch(resident, 'resident');
-                    document.getElementById('manualCode').value = '';
-                    return;
-                }
+                if (resident) return { obj: resident, type: 'resident' };
+                return null;
+            }
 
+            // Verifica un codigo y muestra su resultado. `alternatives`: otras lecturas posibles (el lector de otro idioma de teclado).
+            // Devuelve que era ('visit', 'vehicle', 'resident') o null si no esta registrado
+            async function processCode(code, alternatives) {
+                if (!code) return null;
+                for (const candidate of [code].concat(alternatives || [])) {
+                    const found = await findCode(candidate);
+                    if (found) {
+                        await handleAccessMatch(found.obj, found.type);
+                        document.getElementById('manualCode').value = '';
+                        return found.type;
+                    }
+                }
                 SISDEL.showToast('El código no es válido o no pertenece a este condominio', 'error');
                 showBigStatusScreen('error', 'INVÁLIDO', 'No registrado');
+                return null;
             }
 
             // --- Manual Verification Submit ---
@@ -736,6 +948,389 @@
             btnStart.addEventListener('click', startScanner);
             btnStop.addEventListener('click', stopScanner);
 
+            // --- Escaner manual: lector de codigos USB (de pistola) ---
+            // Pedido del usuario el 2026-11-23 (lector marca BROCS): escribe el codigo como un teclado, casi siempre con Enter al final.
+            // lector-codigos.js lo reconoce en TODA la pagina (aunque no haya ninguna casilla con el foco y con la ventana del resultado
+            // abierta), sin confundirlo con alguien que escribe a mano. Viene ACTIVADO de entrada; se apaga en Configuracion (queda en esta
+            // computadora) y apagado no intercepta ni una tecla. Al leer sale la tarjeta del marbete (diseno 6) y el ingreso se registra solo.
+            const lectorAllowed = g.lector && ((hasQR && g.escanear) || (hasManual && g.verificar));
+            const $ = (id) => document.getElementById(id);
+            if (lectorAllowed && window.SisdelLector) {
+                $('sectionLector').style.display = '';
+                $('lectorTitle').style.display = '';
+                $('chipLector').style.display = '';
+                const REPEAT_MS = 3000;        // la misma lectura dentro de este tiempo no se procesa dos veces (el lector rebota o el guardia lo pasa otra vez)
+                const PREF_KEY = `sisdel_escaner_manual_${condoId}`;
+                const loadPref = () => { try { return localStorage.getItem(PREF_KEY) !== 'off'; } catch (e) { return true; } };
+                const savePref = (on) => { try { if (on) localStorage.removeItem(PREF_KEY); else localStorage.setItem(PREF_KEY, 'off'); } catch (e) { /* sin almacenamiento: vale hasta recargar */ } };
+                // Configuracion de esta computadora: tiempo del marbete en pantalla (de 3 a 30 s), sonido y pantalla completa
+                const CFG_KEY = `sisdel_garita_config_${condoId}`;
+                const SECONDS_DEFAULT = 6, SECONDS_MIN = 3, SECONDS_MAX = 30;
+                const clampSeconds = (n) => { n = Math.round(Number(n)); return Number.isFinite(n) ? Math.min(SECONDS_MAX, Math.max(SECONDS_MIN, n)) : SECONDS_DEFAULT; };
+                const loadCfg = () => { try { const c = JSON.parse(localStorage.getItem(CFG_KEY) || '{}'); return { seconds: c.seconds === undefined ? SECONDS_DEFAULT : clampSeconds(c.seconds), sound: c.sound !== false, full: c.full === true }; } catch (e) { return { seconds: SECONDS_DEFAULT, sound: true, full: false }; } };
+                const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { /* sin almacenamiento: vale hasta recargar */ } };
+                const cfg = loadCfg();
+                let scannerOn = loadPref(), reading = false, lastCode = '', lastAt = 0, queue = Promise.resolve(), testing = false;
+                const clock = (ms) => new Date(ms).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const KIND = { vehicle: 'marbete de vecino', visit: 'pase de visita', resident: 'clave de vecino' };
+                // Un lector USB escribe en la ventana que tenga el foco: si garita.app no esta al frente, las lecturas se van a otro lado sin que nadie lo note
+                const pageFocused = () => document.visibilityState !== 'hidden' && (typeof document.hasFocus !== 'function' || document.hasFocus());
+                const TITLES = {
+                    off: 'Escáner manual apagado',
+                    ready: 'Escáner manual ACTIVO',
+                    reading: 'Leyendo...',
+                    testing: 'Probando el lector (no se registra nada)',
+                    nofocus: 'Escáner activo, ventana sin foco'
+                };
+                const CHIPS = { off: 'Escáner apagado', ready: 'Lector listo', reading: 'Leyendo...', testing: 'Probando el lector', nofocus: 'Lector sin foco' };
+                const RING = {
+                    off: ['ESCÁNER APAGADO', 'Se activa en Configuración'],
+                    ready: ['LISTO PARA LEER', 'Escanee el QR del marbete'],
+                    reading: ['LEYENDO...', 'Un momento'],
+                    testing: ['PROBANDO EL LECTOR', 'No se registra nada'],
+                    nofocus: ['HAGA CLIC AQUÍ', 'La ventana no está al frente: el lector escribiría en otra']
+                };
+                const HINTS = {
+                    off: 'El escáner manual está apagado: no lee nada hasta que se active en Configuración.',
+                    ready: 'Al leer un marbete, un pase o una clave se muestra la tarjeta y queda listo para el siguiente, sin tocar ninguna casilla. Lo que se escribe en los demás campos no se toca.',
+                    testing: 'Está probando el lector: las lecturas se muestran en la ventana de prueba y no se registra ningún ingreso.',
+                    nofocus: 'El lector escribe en la ventana que esté activa y esta no lo está: haga clic en esta página para que reciba las lecturas.'
+                };
+                HINTS.reading = HINTS.ready;
+                function lectorState() { return testing ? 'testing' : !scannerOn ? 'off' : reading ? 'reading' : !pageFocused() ? 'nofocus' : 'ready'; }
+                function paintLector(detail) {
+                    const st = lectorState();
+                    for (const k of ['off', 'reading', 'testing', 'nofocus']) $('cgRing').classList.toggle(k, st === k);
+                    $('lectorTitle').textContent = TITLES[st];
+                    $('chipLectorText').textContent = CHIPS[st];
+                    $('chipLector').querySelector('.cg-dot').className = 'cg-dot' + (st === 'off' ? ' off' : st === 'nofocus' ? ' warn' : '');
+                    $('ringTitle').textContent = RING[st][0];
+                    $('ringText').textContent = RING[st][1];
+                    $('lectorHint').textContent = HINTS[st];
+                    if (detail !== undefined) $('lectorLast').textContent = detail;
+                }
+
+                // --- Sonido al leer (Web Audio, sin archivos): un tono agudo al dia, dos en mora, uno grave si no entra ---
+                let audioCtx = null;
+                function unlockAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) { audioCtx = null; } }
+                document.addEventListener('keydown', unlockAudio, true);
+                document.addEventListener('click', unlockAudio, true);
+                window.__garitaTones = [];
+                function playTone(tone) {
+                    if (!cfg.sound) return;
+                    window.__garitaTones.push(tone);
+                    if (!audioCtx) return;
+                    const plan = tone === 'late' ? [[520, 0, .14], [520, .22, .14]] : tone === 'bad' ? [[200, 0, .4]] : [[880, 0, .14]];
+                    const t0 = audioCtx.currentTime;
+                    for (const [freq, at, dur] of plan) {
+                        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+                        osc.type = 'sine'; osc.frequency.value = freq;
+                        gain.gain.setValueAtTime(0.0001, t0 + at);
+                        gain.gain.exponentialRampToValueAtTime(0.25, t0 + at + 0.01);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+                        osc.connect(gain); gain.connect(audioCtx.destination);
+                        osc.start(t0 + at); osc.stop(t0 + at + dur + 0.02);
+                    }
+                }
+
+                // --- Pantalla del marbete (diseno 6) y registro automatico ---
+                const ov = { root: $('lectorOverlay'), card: $('lovCard'), icon: $('lovIcon'), word: $('lovWord'), name: $('lovName'), plate: $('lovPlate'), info: $('lovInfo'), foot: $('lovFoot'), exit: $('lovExit'), bar: $('lovBar') };
+                let current = null;   // la tarjeta en pantalla: { code, rec, tick, timer, endsAt }
+                const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+                const faseText = (f) => f ? (/^fase\b/i.test(String(f).trim()) ? String(f).trim() : 'Fase ' + String(f).trim()) : '';
+
+                // Ultimas lecturas de esta sesion (las 3 mas recientes), con su medallon chico
+                const reads = [];
+                function paintReads() {
+                    $('lastReads').innerHTML = reads.length ? reads.map((r, i) => `<div class="cg-last${i ? ' older' : ''}"><div class="cg-medal ${esc(r.tone)}">${esc(r.short)}</div><div class="cg-lastbody"><div class="nm">${esc(r.name)}</div><div class="mt">${esc(r.info)} · ${esc(r.time)}</div></div>${r.plate ? `<span class="cg-plate">${esc(r.plate)}</span>` : ''}</div>`).join('')
+                        : '<p class="cg-empty">Todavía no hay lecturas en esta sesión.</p>';
+                }
+
+                // Lo que falta por guardar vive tambien en este equipo (localStorage): si cierran la pagina con la tarjeta abierta o falla
+                // la red, se guarda al abrir la garita otra vez. El registro de accesos no se corrige despues: se escribe UNA vez, al cerrar
+                // la tarjeta (o cuando llega otra lectura), ya con la direccion final (entrada, o salida si el guardia pulso "Era una salida").
+                const PEND_KEY = `sisdel_lector_pend_${condoId}`;
+                const pendRead = () => { try { const a = JSON.parse(localStorage.getItem(PEND_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+                const pendWrite = (a) => { try { if (a.length) localStorage.setItem(PEND_KEY, JSON.stringify(a)); else localStorage.removeItem(PEND_KEY); } catch (e) { /* sin almacenamiento */ } };
+                const pendAdd = (rec) => pendWrite(pendRead().filter((r) => r.id !== rec.id).concat(rec));
+                const pendDrop = (id) => pendWrite(pendRead().filter((r) => r.id !== id));
+                // Solo lo que hace falta para registrar (nunca claves ni datos de mas)
+                const SLIM = { vehicle: ['id', 'userId', 'plate', 'brand', 'model', 'color'], visit: ['id', 'userId', 'visitorName', 'casa', 'vehiclePlate', 'visitType', 'visitorInfo'], resident: ['id', 'name', 'casa', 'fase', 'paymentStatus'] };
+                const slim = (type, obj) => Object.fromEntries(SLIM[type].filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]));
+                const makeRec = (type, obj, direction) => ({ id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), type, obj: slim(type, obj), direction, at: new Date().toISOString() });
+
+                async function refreshAll() { try { await renderStats(); await renderVisits(); await renderHistory(); } catch (e) { /* la lectura ya se guardo */ } }
+                async function finalizeRec(rec) {
+                    const verification = { obj: rec.obj, type: rec.type, via: 'lector', at: rec.at };
+                    try {
+                        if (rec.direction === 'salida') { if (!(await performExit(verification, true))) throw new Error('No se pudo registrar la salida'); }
+                        else await performEntry(verification, true);
+                        pendDrop(rec.id);
+                    } catch (e) {
+                        console.error('Escáner manual: no se pudo guardar la lectura', e);
+                        SISDEL.showToast('No se pudo guardar una lectura del escáner. Queda pendiente y se vuelve a intentar al abrir la garita.', 'warning');
+                    }
+                }
+                let writeChain = Promise.resolve();
+                const enqueueWrite = (rec) => { writeChain = writeChain.then(() => finalizeRec(rec)).then(refreshAll).catch(() => {}); return writeChain; };
+
+                function cardText() {
+                    if (!current) return;
+                    const left = Math.max(0, Math.ceil((current.endsAt - Date.now()) / 1000));
+                    const rec = current.rec;
+                    const what = !rec ? 'No se registró nada' : rec.direction === 'salida' ? `Salida registrada ${hhmm(rec.at)}` : `Ingreso registrado ${hhmm(rec.at)}`;
+                    ov.foot.textContent = `${what} · se cierra en ${left} s`;
+                }
+                function startCountdown() {
+                    if (!current) return;
+                    clearInterval(current.tick); clearTimeout(current.timer);
+                    current.endsAt = Date.now() + cfg.seconds * 1000;
+                    ov.bar.style.transition = 'none'; ov.bar.style.width = '100%';
+                    void ov.bar.offsetWidth;
+                    ov.bar.style.transition = `width ${cfg.seconds}s linear`; ov.bar.style.width = '0%';
+                    current.tick = setInterval(cardText, 250);
+                    current.timer = setTimeout(() => closeCard(), cfg.seconds * 1000);
+                    cardText();
+                }
+                // Quita la tarjeta actual (sin ocultar la pantalla) y manda a guardar su lectura
+                function retireCard() {
+                    if (!current) return;
+                    clearInterval(current.tick); clearTimeout(current.timer);
+                    const rec = current.rec;
+                    current = null;
+                    if (rec) enqueueWrite(rec);
+                }
+                function closeCard() {
+                    if (!current) return;
+                    retireCard();
+                    ov.root.style.display = 'none';
+                    paintLector();
+                }
+                function showCard(m) {
+                    retireCard();   // otra lectura mientras se ve una: la reemplaza al instante
+                    ov.card.className = `lov-card ${m.tone}`;
+                    ov.root.classList.toggle('full', cfg.full);
+                    ov.icon.textContent = m.icon;
+                    ov.word.textContent = m.word;
+                    ov.word.classList.toggle('long', !!m.long);
+                    ov.name.textContent = m.name;
+                    ov.plate.textContent = m.plate || '';
+                    ov.plate.style.display = m.plate ? 'inline-block' : 'none';
+                    ov.info.textContent = m.info || '';
+                    ov.exit.style.display = m.canFlip ? 'inline-block' : 'none';
+                    ov.exit.disabled = false;
+                    ov.exit.textContent = 'Era una salida';
+                    ov.root.style.display = 'flex';
+                    current = { code: m.code, rec: m.rec || null };
+                    if (current.rec) pendAdd(current.rec);
+                    startCountdown();
+                    playTone(m.tone);
+                    reads.unshift({ tone: m.tone, short: m.tone === 'bad' ? 'NO' : m.word === 'VISITA AUTORIZADA' ? 'VISITA' : m.word, name: m.name, plate: m.plate || '', info: m.info || '', time: hhmm(new Date().toISOString()) });
+                    reads.length = Math.min(reads.length, 3);
+                    paintReads();
+                }
+                ov.root.addEventListener('click', (e) => { if (e.target.closest('#lovExit')) return; closeCard(); });
+                ov.exit.addEventListener('click', () => {
+                    if (!current || !current.rec) return;
+                    current.rec.direction = 'salida';
+                    pendAdd(current.rec);
+                    ov.exit.disabled = true;
+                    ov.exit.textContent = 'Marcada como salida';
+                    cardText();
+                });
+                document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && current) closeCard(); });
+
+                // Que se ve y que se registra para lo que se leyo (la misma validacion de siempre; solo cambia como se muestra)
+                async function buildModel(found, scan) {
+                    const base = { code: scan.code, rec: null, canFlip: false, plate: '', info: '' };
+                    const bad = (word, name, info, plate, long) => ({ ...base, tone: 'bad', icon: '✕', word, long: !!long, name, plate: plate || '', info });
+                    if (!found) return bad('NO REGISTRADO', 'Código no registrado', 'El código no es válido o no pertenece a este condominio.', scan.raw || scan.code, true);
+                    const { obj, type } = found;
+                    if (type === 'vehicle') {
+                        const resident = await SISDEL.getUserById(obj.userId);
+                        if (!resident || resident.active === false) return bad('NO ACTIVO', resident ? resident.name : 'Marbete sin vecino', `El vecino dueño de este marbete ${resident ? 'está desactivado' : 'ya no existe'}.`, obj.plate);
+                        const late = resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                        const where = [resident.casa, faseText(resident.fase)].filter(Boolean).join(' · ');
+                        const veh = [obj.brand, obj.model, obj.color].map((v) => String(v || '').trim()).filter(Boolean).join(' ');
+                        return { ...base, tone: late ? 'late' : 'ok', icon: late ? '!' : '✓', word: late ? 'EN MORA' : 'AL DÍA', name: resident.name, plate: obj.plate || 'SIN PLACA',
+                            info: [where, veh].filter(Boolean).join(' · ') + (late ? ' · Informar al vecino' : ''),
+                            rec: g.ingreso ? makeRec('vehicle', obj, 'entrada') : null, canFlip: !!(g.ingreso && g.salida) };
+                    }
+                    if (type === 'resident') {
+                        if (obj.active === false) return bad('NO ACTIVO', obj.name, 'Usuario desactivado por la administración.');
+                        const late = obj.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                        const where = [obj.casa, faseText(obj.fase)].filter(Boolean).join(' · ');
+                        return { ...base, tone: late ? 'late' : 'ok', icon: late ? '!' : '✓', word: late ? 'EN MORA' : 'AL DÍA', name: obj.name,
+                            info: [where, 'Clave de vecino'].filter(Boolean).join(' · ') + (late ? ' · Informar al vecino' : ''),
+                            rec: g.ingreso ? makeRec('resident', obj, 'entrada') : null, canFlip: !!(g.ingreso && g.salida) };
+                    }
+                    // Pase de visita
+                    if (SISDEL.isVisitInside(obj)) {
+                        const entered = hhmm(obj.enteredAt);
+                        return { ...base, tone: 'ok', icon: '↩', word: 'SALIDA', name: obj.visitorName, plate: obj.vehiclePlate || '',
+                            info: `Visita para ${obj.casa || 'N/A'} · ingresó a las ${entered}`, rec: g.salida ? makeRec('visit', obj, 'salida') : null };
+                    }
+                    const resident = await SISDEL.getUserById(obj.userId);
+                    const isMoroso = resident && resident.paymentStatus === SISDEL.PAYMENT_STATUS.MOROSO;
+                    // El pase vale solo su dia (o su rango si es temporal) y una sola vez; el vecino que lo dio debe estar activo
+                    const today = SISDEL.localToday();
+                    const isTemporal = obj.visitType === 'temporal' && !!obj.endDate;
+                    const dateOk = isTemporal ? (obj.visitDate <= today && today <= obj.endDate) : obj.visitDate === today;
+                    const used = !isTemporal && obj.status !== SISDEL.VISIT_STATUS.PENDING;
+                    const ownerOk = !!resident && resident.active !== false;
+                    const problem = !ownerOk ? 'El vecino que autorizó este pase no está activo.'
+                        : used ? 'Este pase ya fue utilizado.'
+                            : !dateOk ? (obj.visitDate > today ? `Este pase es para el ${SISDEL.formatDate(obj.visitDate)}.` : 'Este pase ya venció.') : '';
+                    if (problem) return bad('PASE NO VÁLIDO', obj.visitorName, problem, obj.vehiclePlate, true);
+                    if (isMoroso) return bad('DENEGADO', obj.visitorName, `El residente ${resident.name} tiene pagos pendientes: no se permite el ingreso de visitas.`, obj.vehiclePlate);
+                    return { ...base, tone: 'ok', icon: '✓', word: 'VISITA AUTORIZADA', long: true, name: obj.visitorName, plate: obj.vehiclePlate || '',
+                        info: `Visita para ${obj.casa || 'N/A'}${obj.visitorInfo ? ' · ' + obj.visitorInfo : ''}`, rec: g.ingreso ? makeRec('visit', obj, 'entrada') : null };
+                }
+
+                async function handleLectorScan(scan) {
+                    const now = Date.now();
+                    // El mismo marbete que sigue en pantalla: solo se renueva el tiempo (no se registra otro ingreso)
+                    if (current && scan.code === current.code) {
+                        startCountdown();
+                        paintLector(`Mismo código: sigue en pantalla (${scan.code}).`);
+                        return;
+                    }
+                    if (scan.code === lastCode && now - lastAt < REPEAT_MS) {
+                        paintLector(`Lectura repetida ignorada: ${scan.code} (ya se leyó a las ${clock(lastAt)}).`);
+                        SISDEL.showToast('Lectura repetida: se ignoró (ya se leyó hace un momento)', 'info');
+                        return;
+                    }
+                    lastCode = scan.code; lastAt = now;
+                    reading = true;
+                    paintLector(`Leyendo ${scan.code}...`);
+                    accessVia = 'lector';
+                    let found = null;
+                    try {
+                        for (const candidate of [scan.code].concat(scan.alternatives || [])) {
+                            found = await findCode(candidate);
+                            if (found) break;
+                        }
+                        showCard(await buildModel(found, scan));
+                    } finally {
+                        reading = false;
+                        paintLector(`Última lectura: ${scan.code} a las ${clock(now)}: ${found ? KIND[found.type] : 'no registrado'}.`);
+                    }
+                }
+                const lector = SisdelLector.attach(document, {
+                    // Apagado no intercepta nada; la ventana de prueba funciona aunque este apagado (asi se ve si el lector sirve antes de activarlo)
+                    enabled: () => scannerOn || testing,
+                    // El campo de codigo de la garita tambien recibe al lector; en cualquier otro campo (mensajes) escribe una persona
+                    allowIn: (el) => el.id === 'manualCode',
+                    // Sin esperar: dos lecturas seguidas se atienden una despues de otra
+                    onScan: (scan) => { queue = queue.then(() => handleLectorScan(scan)).catch((e) => console.error('Lector:', e)); }
+                });
+
+                // --- Configuracion de Control Garita (privilegio garita.configurar): se guarda en esta computadora ---
+                const cfgModal = $('modalGaritaConfig'), cfgSeconds = $('gcfgSeconds');
+                const setSwitch = (el, on) => { el.classList.toggle('on', on); el.setAttribute('aria-checked', on ? 'true' : 'false'); };
+                function paintConfig() {
+                    setSwitch($('gcfgScanner'), scannerOn);
+                    $('gcfgScannerText').textContent = scannerOn ? 'Activo: lee los marbetes, pases y claves en toda la página, sin importar dónde esté el cursor.' : 'Apagado: no intercepta ninguna tecla.';
+                    cfgSeconds.value = cfg.seconds;
+                    $('gcfgSeg').querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.s) === cfg.seconds));
+                    setSwitch($('gcfgSound'), cfg.sound);
+                    setSwitch($('gcfgFull'), cfg.full);
+                }
+                function setScanner(on) {
+                    scannerOn = on;
+                    savePref(on);
+                    paintLector(on ? 'Listo: pase el marbete del vecino por el lector.' : '');
+                    paintConfig();
+                    SISDEL.showToast(on ? 'Escáner manual activado' : 'Escáner manual desactivado', on ? 'success' : 'info');
+                }
+                function setSeconds(n) { cfg.seconds = clampSeconds(n); saveCfg(); paintConfig(); }
+                const closeConfig = () => { cfgModal.style.display = 'none'; };
+                if (g.configurar) {
+                    $('btnGaritaConfig').style.display = '';
+                    $('btnGaritaConfig').addEventListener('click', () => { paintConfig(); cfgModal.style.display = 'flex'; });
+                    $('btnCloseGaritaConfig').addEventListener('click', closeConfig);
+                    $('btnXGaritaConfig').addEventListener('click', closeConfig);
+                    $('gcfgScanner').addEventListener('click', () => setScanner(!scannerOn));
+                    cfgSeconds.addEventListener('change', () => { setSeconds(cfgSeconds.value); SISDEL.showToast(`El marbete queda ${cfg.seconds} s en pantalla`, 'success'); });
+                    $('gcfgSeg').addEventListener('click', (e) => { const b = e.target.closest('button[data-s]'); if (b) { setSeconds(b.dataset.s); SISDEL.showToast(`El marbete queda ${cfg.seconds} s en pantalla`, 'success'); } });
+                    $('gcfgSound').addEventListener('click', () => { cfg.sound = !cfg.sound; saveCfg(); paintConfig(); unlockAudio(); if (cfg.sound) playTone('ok'); });
+                    $('gcfgFull').addEventListener('click', () => { cfg.full = !cfg.full; saveCfg(); paintConfig(); });
+                }
+                paintConfig();
+                // Lecturas que quedaron sin guardar (se cerro la pagina o fallo la red): se guardan ahora
+                for (const rec of pendRead()) enqueueWrite(rec);
+
+                // Avisar en cuanto la ventana pierde o recupera el frente (no siempre hay un evento: tambien se revisa cada 2 s)
+                const refreshLector = () => paintLector();
+                window.addEventListener('focus', refreshLector);
+                window.addEventListener('blur', refreshLector);
+                document.addEventListener('visibilitychange', refreshLector);
+                setInterval(refreshLector, 2000);
+                paintLector('');
+
+                // Ventana de prueba: muestra lo que llega del lector sin registrar nada
+                const modalTest = document.getElementById('modalLector');
+                const rows = document.getElementById('lectorRows');
+                const waitTitle = document.getElementById('lectorWaitTitle');
+                const waitText = document.getElementById('lectorWaitText');
+                let keyLog = [], keyTimer = null;
+                function addRow(html, warn) {
+                    const div = document.createElement('div');
+                    div.className = 'lector-row' + (warn ? ' warn' : '');
+                    div.innerHTML = html;
+                    rows.insertBefore(div, rows.firstChild);
+                    while (rows.children.length > 6) rows.removeChild(rows.lastChild);
+                }
+                // Teclas que llegaron pero no parecian un lector (muy despacio, o sin Enter): se avisa para que se vea por que
+                function onTestKey(ev) {
+                    if (!testing || !ev.key || ev.key.length !== 1) return;
+                    const t = performance.now();
+                    if (keyLog.length && t - keyLog[keyLog.length - 1] > 400) keyLog = [];   // otra tanda de teclas
+                    keyLog.push(t);
+                    clearTimeout(keyTimer);
+                    keyTimer = setTimeout(() => {
+                        const n = keyLog.length;
+                        const span = keyLog[n - 1] - keyLog[0];
+                        const scanned = lector.state().last && Date.now() - lector.state().last.at < 900;
+                        keyLog = [];
+                        if (n >= 4 && !scanned) {
+                            addRow(`Llegaron ${n} teclas (${Math.round(span / Math.max(1, n - 1))} ms por letra), pero no se tomaron como una lectura.<small>Un lector manda cada letra en menos de 90 ms y termina con Enter. Si esto fue el lector, revise que esté configurado con «Enter al final».</small>`, true);
+                        }
+                    }, 700);
+                }
+                document.addEventListener('keydown', onTestKey, true);
+                function openTest() {
+                    rows.innerHTML = '';
+                    waitTitle.textContent = 'Esperando una lectura...';
+                    waitText.textContent = 'Pase un código por el lector: debe aparecer aquí al instante.';
+                    testing = true;
+                    modalTest.style.display = 'flex';
+                    paintLector();
+                    lector.test((scan) => {
+                        keyLog = [];   // estas teclas ya fueron una lectura
+                        clearTimeout(keyTimer);
+                        waitTitle.textContent = 'El lector funciona';
+                        waitText.textContent = scannerOn ? 'Pase otro código para seguir probando, o cierre esta ventana para trabajar.' : 'Pase otro código para seguir probando, o cierre esta ventana y active el escáner manual en Configuración para trabajar con el lector.';
+                        const ends = { Enter: 'termina con Enter', Tab: 'termina con Tab', ninguno: 'sin Enter (se cerró por silencio)' }[scan.endedBy] || '';
+                        const same = scan.code === scan.raw ? '' : `<small>El sistema lo entiende como: <strong>${esc(scan.code)}</strong></small>`;
+                        const odd = scan.alternatives.length ? `<small>Trae símbolos que un teclado de otro idioma cambia: se probará también como ${scan.alternatives.map((a) => '<strong>' + esc(a) + '</strong>').join(', ')}.</small>` : '';
+                        $('gcfgLastProbe').textContent = `Última prueba: ${scan.raw} · ${scan.length} caracteres · llegó en ~${Math.round(scan.avgGap * Math.max(0, scan.length - 1))} ms (${scan.avgGap} ms por letra) · ${ends}`;
+                        addRow(`<span class="code">${esc(scan.raw)}</span><small>${scan.length} letras · ${scan.avgGap} ms por letra · ${ends}</small>${same}${odd}`, scan.alternatives.length > 0);
+                    });
+                }
+                function closeTest() {
+                    testing = false;
+                    lector.test(null);
+                    clearTimeout(keyTimer);
+                    modalTest.style.display = 'none';
+                    paintLector();
+                }
+                // "Probar el lector" vive en Configuracion: cierra el panel y abre la ventana de prueba
+                $('btnGcfgTest').addEventListener('click', () => { closeConfig(); openTest(); });
+                document.getElementById('btnCloseLector').addEventListener('click', closeTest);
+                document.getElementById('btnXLector').addEventListener('click', closeTest);
+            }
+
             // Todo se carga a la vez; la pagina no espera una consulta para lanzar la siguiente
             const initialLoad = Promise.all([renderStats(), renderVisits()]);
 
@@ -743,107 +1338,37 @@
             const historyList = document.getElementById('historyLogsList');
             const historyEmpty = document.getElementById('historyEmptyState');
 
+            // Ultimos accesos del dia: la tabla sale del registro de accesos (collection accesos), con el medio por el que se llego a cada persona.
+            // De ahi salen tambien las cifras de ingresos y salidas de hoy y la ultima lectura de la camara de placas.
+            const VIA_LABEL = { lector: 'Escáner manual', camara: 'Cámara de placas', qr: 'QR', codigo: 'Código', lista: 'Garita' };
             async function renderHistory() {
+                if (!g.historial) return;
                 try {
-                    // 1. Fetch Camera/LPR Logs (Today)
-                    const cameraLogs = g.historial ? await SISDEL.getCameraLogsToday(condoId, 15) : [];
-
-                    // 2. Fetch Entered Visits (Today) y las salidas de hoy
-                    const visits = await SISDEL.getTodayVisits(condoId);
-                    const enteredVisits = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED && v.enteredAt);
-                    const exits = g.historial ? await SISDEL.getExitsToday(condoId, 15) : [];
-
-                    // 3. Merge and Sort
-                    const allEntries = [];
-
-                    if (cameraLogs) {
-                        cameraLogs.forEach(log => allEntries.push({
-                            type: 'camera',
-                            plate: log.plate,
-                            time: new Date(log.createdAt),
-                            status: log.status,
-                            reason: log.reason,
-                            id: log.id
-                        }));
+                    const A = window.SisdelAccesos;
+                    const day = A.guatemalaDay(new Date().toISOString());
+                    const fromIso = `${day}T06:00:00.000Z`;                                   // Guatemala es UTC-6 todo el ano
+                    const toIso = new Date(new Date(fromIso).getTime() + 86400000).toISOString();
+                    const rows = await SISDEL.getAccessBetween(condoId, fromIso, toIso, 2000);
+                    if (!rows) return;   // la consulta fallo: se deja lo que ya se veia
+                    document.getElementById('enteredCount').textContent = rows.filter((r) => r.direction === 'entrada').length;
+                    document.getElementById('exitedCount').textContent = rows.filter((r) => r.direction === 'salida').length;
+                    const hhmm = (iso) => new Date(iso).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' });
+                    // Camara de placas: solo se dice lo que se sabe (la ultima lectura de hoy); sin lecturas no se inventa que esta en linea
+                    const chipCam = document.getElementById('chipCamara');
+                    if (hasLPR) {
+                        const lastCam = rows.find((r) => r.source === 'camara');
+                        chipCam.style.display = '';
+                        document.getElementById('chipCamaraText').textContent = lastCam ? `Cámara de placas: última lectura ${hhmm(lastCam.at)}` : 'Cámara de placas: sin lecturas hoy';
                     }
-
-                    enteredVisits.forEach(v => allEntries.push({
-                        type: 'manual',
-                        plate: v.vehiclePlate || 'SIN PLACA',
-                        time: new Date(v.enteredAt),
-                        status: 'Authorized',
-                        reason: `Visita: ${esc(v.visitorName)}`,
-                        id: v.id
-                    }));
-
-                    // Salidas: de visitas (exitedAt) y de vecinos
-                    visits.filter(v => v.exitedAt).forEach(v => allEntries.push({
-                        type: 'exit',
-                        plate: v.vehiclePlate || 'SIN PLACA',
-                        time: new Date(v.exitedAt),
-                        status: 'Exit',
-                        reason: `Salida de visita: ${v.visitorName}`,
-                        id: `exit-${v.id}`
-                    }));
-                    exits.forEach(x => allEntries.push({
-                        type: 'exit',
-                        plate: x.plate || 'RESIDENTE',
-                        time: new Date(x.createdAt),
-                        status: 'Exit',
-                        reason: `Salida de ${x.kind === 'vehiculo' ? 'vehículo' : 'residente'}: ${x.name || ''}${x.casa ? ' — ' + x.casa : ''}`.trim(),
-                        id: x.id
-                    }));
-
-                    allEntries.sort((a, b) => b.time - a.time);
-
-                    if (allEntries.length === 0) {
-                        historyEmpty.style.display = 'block';
-                        historyList.innerHTML = '';
-                        historyList.appendChild(historyEmpty);
-                        return;
-                    }
-
+                    if (rows.length === 0) { historyList.innerHTML = ''; historyEmpty.style.display = ''; return; }
                     historyEmpty.style.display = 'none';
-                    historyList.innerHTML = allEntries.map(entry => {
-                        const timeStr = entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                        const isAuth = entry.status === 'Authorized';
-                        const isReminder = entry.status === 'Reminder';
-                        const isExit = entry.status === 'Exit';
-                        
-                        let badgeClass = 'badge-danger';
-                        let badgeText = 'DENEGADO';
-                        let bgColor = 'transparent';
-
-                        if (isExit) {
-                            badgeClass = 'badge-info';
-                            badgeText = 'SALIDA';
-                            bgColor = 'rgba(59, 130, 246, 0.05)';
-                        } else if (isAuth) {
-                            badgeClass = 'badge-success';
-                            badgeText = entry.type === 'camera' ? 'CÁMARA LPR' : 'MANUAL/QR';
-                            bgColor = 'rgba(16, 185, 129, 0.05)';
-                        } else if (isReminder) {
-                            badgeClass = 'badge-warning';
-                            badgeText = 'RECORDATORIO';
-                            bgColor = 'rgba(245, 158, 11, 0.1)';
-                        }
-
-                        return `
-                            <div class="list-item" style="padding: 1rem; border-bottom: 1px solid var(--border-color); background: ${bgColor}; margin-bottom: 0; border-radius: 0; border: none; border-bottom: 1px solid var(--border-subtle);">
-                                <div style="flex:1;">
-                                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                        <strong style="font-size:1.1rem; letter-spacing:1px; color: ${isReminder ? '#f59e0b' : 'var(--primary-light)'};">${esc(entry.plate)}</strong>
-                                        <span style="font-size:0.75rem; opacity:0.6;">${timeStr}</span>
-                                    </div>
-                                    <div style="font-size:0.85rem; margin-top:0.25rem;">
-                                        <span class="badge ${badgeClass}" style="font-size:0.7rem;">
-                                            ${badgeText}
-                                        </span>
-                                        <span style="margin-left:0.5rem; opacity:0.8;">${esc(entry.reason || '')}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                    historyList.innerHTML = rows.slice(0, 30).map((r) => {
+                        const isIn = r.direction === 'entrada';
+                        const who = r.kind === 'visita' ? `<b>${esc(r.visitorName || 'Visita')}</b> <span style="color:var(--cg-sub);">(visita)</span>` : `<b>${esc(r.name || (r.kind === 'vehiculo' ? 'Vehículo' : 'Residente'))}</b>`;
+                        const state = r.outcome === 'denegado' ? '<span class="cg-tag late">DENEGADO</span>'
+                            : !isIn ? '<span class="cg-tag out">SALIÓ</span>'
+                                : r.outcome === 'aviso_mora' ? '<span class="cg-tag late">EN MORA</span>' : '<span class="cg-tag in">AL DÍA</span>';
+                        return `<tr><td>${esc(hhmm(r.at))}</td><td><span class="dir ${isIn ? 'in' : 'out'}">${isIn ? 'ENTRADA' : 'SALIDA'}</span></td><td>${who}</td><td>${esc(r.casa || '')}</td><td>${esc(r.plate || '')}</td><td>${esc(VIA_LABEL[r.via] || r.via || '')}</td><td>${state}</td></tr>`;
                     }).join('');
                 } catch (e) {
                     console.error("Error rendering history:", e);
@@ -856,6 +1381,10 @@
                 SISDEL.subscribeCameraLogs(condoId, (log) => {
                     // Refresh history
                     renderHistory();
+
+                    // Lo que escribio esta misma garita con el escaner: ya se vio en su tarjeta, sin pantalla grande ni aviso de moroso
+                    const ownKey = log.plate + '|' + (log.reason || '');
+                    if (ownLogs.has(ownKey)) { ownLogs.delete(ownKey); renderStats(); renderVisits(); return; }
 
                     if (log.status === 'Authorized') {
                         SISDEL.showToast(`Acceso Abierto: ${esc(log.plate)}`, 'success');

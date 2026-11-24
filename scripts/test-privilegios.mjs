@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 161 privilegios: 33 paraguas y 128 acciones', [P.KEYS.length, roots.length, kids.length], [161, 33, 128]);
+equal('hay 163 privilegios: 33 paraguas y 130 acciones', [P.KEYS.length, roots.length, kids.length], [163, 33, 130]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -205,6 +205,12 @@ yes('el master lo tiene todo', P.KEYS.every((k) => P.has('master', undefined, k)
 // Destinos del login: iguales a los de siempre
 equal('admin va a admin.html', P.landing('admin', {}), 'admin.html');
 equal('policia va a garita.html', P.landing('policia', {}), 'garita.html');
+// Control Garita (2026-11-23): el escaner manual (lector de pistola) y su configuracion cuelgan de operar la garita
+yes('Control Garita: usar el escaner manual y configurar Control Garita son acciones de operar la garita, de pantalla (se guardan en la computadora de la garita)', ['garita.lector', 'garita.configurar'].every((k) => P.itemOf(k).parent === 'garita.operar' && P.itemOf(k).enforce === 'pantalla' && !P.itemOf(k).sensitive));
+yes('quien opera la garita (guardia, administrador) las trae por defecto y no pierde nada al publicarlas', ['policia', 'admin'].every((r) => keysOn(r).includes('garita.lector') && keysOn(r).includes('garita.configurar')));
+yes('se pueden quitar una por una sin quitar la otra ni la garita', (() => { const on = keysOn('policia', { 'garita.lector': false }); return !on.includes('garita.lector') && on.includes('garita.configurar') && on.includes('garita.operar'); })());
+yes('sin entrar a la garita no valen (un paraguas apagado apaga sus acciones)', !keysOn('policia', { 'garita.operar': false, 'garita.lector': true }).includes('garita.lector'));
+yes('el garitero de plantilla trae las dos', ['garita.lector', 'garita.configurar'].every((k) => P.templateById('sys-garitero').claves.includes(k)));
 equal('supervisor va a rondin/', P.landing('supervisor', {}), 'rondin/');
 equal('auditor va a auditor.html', P.landing('auditor', {}), 'auditor.html');
 equal('vecino va a vecino.html', P.landing('vecino', {}), 'vecino.html');
@@ -221,9 +227,9 @@ const withKids = (...list) => list.flatMap((k) => [k, ...P.descendantsOf(k)]);
 equal('toOverrides del operador son sus paraguas (las acciones vienen con el)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true });
 equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true });
 equal('toOverrides guarda una accion apagada como false', P.toOverrides('operador', ['usuarios.ver', 'garita.operar', 'mensajes.recibir']),
-    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false, 'garita.lector': false, 'garita.configurar': false });
 equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false, 'mensajes.recibir': true }),
-    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false });
+    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false, 'garita.lector': false, 'garita.configurar': false });
 {
     const wanted = new Set();
     P.toggle(wanted, 'usuarios.ver', true, { children: true });
@@ -479,9 +485,9 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         // La garita en celular (2026-11-18): Medios de Acceso y Visitas del Dia iban siempre en dos columnas y la pagina
         // media unos 590 px en un telefono de 390 (se movia de lado)
         const garitaHtml = read('garita.html');
-        yes('garita.html: Medios de Acceso y Visitas del Dia van una debajo de la otra en celular y tableta (la pagina no se sale de lado)',
-            /<div class="garita-columns">\s*<!-- Scanner Section -->/.test(garitaHtml)
-            && /\.garita-columns \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/.test(garitaHtml)
+        yes('garita.html (Control Garita): el lector de marbetes y las visitas del dia van una debajo de la otra en celular y tableta (la pagina no se sale de lado)',
+            /<div class="garita-columns">\s*<!-- Lector de marbetes/.test(garitaHtml)
+            && /\.garita-columns \{ display: grid; grid-template-columns: minmax\(0, 1\.55fr\) minmax\(0, 1fr\);/.test(garitaHtml)
             && /@media \(max-width: 860px\) \{ \.garita-columns \{ grid-template-columns: minmax\(0, 1fr\); \} \}/.test(garitaHtml)
             && !/grid-template-columns: 1fr 1fr/.test(garitaHtml));
     }
@@ -799,7 +805,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('garita.html ofrece Registrar Salida solo con el privilegio y confirma antes', /id="btnRegisterExit"/.test(garita) && /salida: SISDEL\.can\('garita\.salida'\)/.test(garita) && /btnExit\.style\.display = g\.salida/.test(garita));
     yes('la visita dentro se reconoce por su ingreso y su salida (un acceso temporal puede volver a entrar)', /function isVisitInside\(visit\)/.test(core) && /exitedAt < visit\.enteredAt/.test(core));
     yes('el nucleo guarda la salida de una visita en la propia visita y la de un vecino en salidas', /updateVisit\(visitId, \{ exitedAt: nowIso\(\) \}\)/.test(core) && /exits: 'salidas'/.test(core) && /createExit, getExitsBetween, getExitsToday/.test(core));
-    yes('el historial de la garita muestra las salidas', /badgeText = 'SALIDA'/.test(garita) && /getExitsToday/.test(garita));
+    yes('los ultimos accesos de la garita (Control Garita) muestran entradas y salidas del registro de accesos, y solo con garita.historial', /<span class="dir \$\{isIn \? 'in' : 'out'\}">\$\{isIn \? 'ENTRADA' : 'SALIDA'\}<\/span>/.test(garita) && /getAccessBetween\(condoId/.test(garita) && /if \(!g\.historial\) return;/.test(garita));
     yes('las reglas tienen el bloque de salidas y la salida de visitas', /match \/salidas\/\{exitId\}/.test(read('firestore.rules')) && /pGaritaSalida\(condoId\) && onlyChanges\(\['exitedAt'\]\)/.test(read('firestore.rules')));
     // Boton Copiar: avisa en el propio boton (palomita verde, o cruz roja si no pudo copiar) y despues se restaura
     yes('el boton Copiar cambia a una palomita y luego vuelve a lo de antes', /function flashCopied\(button, copied\)/.test(core) && /points="20 6 9 17 4 12"/.test(core) && /copyText\(button\.getAttribute\('data-copy'\), 'Código copiado'\)\.then\(\(copied\) => flashCopied\(button, copied\)\)/.test(core) && /button\.innerHTML = before\.html;/.test(core) && /button\.style\.color = before\.color;/.test(core));

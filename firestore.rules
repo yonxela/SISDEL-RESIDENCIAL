@@ -475,7 +475,7 @@ service cloud.firestore {
             && d.keys().hasAll(['id', 'condominioId', 'at', 'day', 'direction', 'kind', 'via', 'outcome', 'moroso', 'source', 'guardId'])
             && d.id == accessId && d.condominioId == condoId && d.source == 'garita' && d.guardId == request.auth.uid
             && d.direction in ['entrada', 'salida'] && d.kind in ['residente', 'vehiculo', 'visita']
-            && d.via in ['camara', 'qr', 'codigo', 'lista'] && d.outcome in ['autorizado', 'aviso_mora', 'denegado']
+            && d.via in ['camara', 'qr', 'codigo', 'lista', 'lector'] && d.outcome in ['autorizado', 'aviso_mora', 'denegado']
             && d.moroso is bool && d.at is string && d.at.size() == 24 && d.day is string && d.day.size() == 10
             && accessText(d, 'userId', 128) && accessText(d, 'vehicleId', 128) && accessText(d, 'visitId', 128)
             && accessText(d, 'name', 300) && accessText(d, 'visitorName', 300) && accessText(d, 'reason', 300) && accessText(d, 'guardName', 300)

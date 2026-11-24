@@ -25,6 +25,7 @@ const yes = (name, value) => equal(name, !!value, true);
 
 console.log('\nEl modulo');
 equal('functions/src/accesos.js es identico a accesos.js', read('functions/src/accesos.js'), read('accesos.js'));
+equal('el medio "lector" (lector USB de pistola) es uno de los medios y se llama "Lector USB"', [A.VIAS.includes('lector'), A.label('via', 'lector'), A.build({ id: 'l1', condominioId: 'c1', direction: 'entrada', kind: 'vehiculo', via: 'lector', source: 'garita', at: '2026-11-23T15:00:00.000Z' }).via], [true, 'Lector USB', 'lector']);
 const base = { id: 'a1', condominioId: 'c1', direction: 'entrada', kind: 'residente', via: 'qr', source: 'garita' };
 equal('un registro minimo lleva sus campos fijos y nada de mas', A.build({ ...base, at: '2026-11-20T15:00:00.000Z' }), { id: 'a1', condominioId: 'c1', at: '2026-11-20T15:00:00.000Z', day: '2026-11-20', direction: 'entrada', kind: 'residente', via: 'qr', outcome: 'autorizado', moroso: false, source: 'garita' });
 equal('el dia es el de Guatemala (UTC-6), no el de Greenwich: 21:00 en Guatemala todavia es el mismo dia', [A.guatemalaDay('2026-11-21T03:00:00.000Z'), A.guatemalaDay('2026-11-21T05:59:59.000Z'), A.guatemalaDay('2026-11-21T06:00:00.000Z')], ['2026-11-20', '2026-11-20', '2026-11-21']);

@@ -1341,8 +1341,27 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     const matches = new Function(`${src}; return matchesSearch;`)();
     yes('buscar privilegios no importa acentos ni mayusculas y acepta varias palabras en cualquier orden',
         matches('QR de pánico de los vecinos', 'panico') && matches('Botón de pánico', 'PANICO boton') && matches('QR de pánico', 'qr pánico') && !matches('Reportes de garita', 'panico') && matches('lo que sea', '  '));
-    yes('las dos busquedas de la pantalla (privilegios y usuarios) la usan, y la de privilegios tambien mira la clave',
-        /matchesSearch\(`\$\{i\.label\} \$\{i\.description\} \$\{g\.title\} \$\{i\.sub \|\| ''\} \$\{i\.key\}`, filter\)/.test(ui) && /matchesSearch\(`\$\{u\.name\} /.test(ui) && !/toLowerCase\(\)\.includes\(filter\)/.test(ui));
+    yes('la busqueda de usuarios la usa y la de privilegios usa searchScore (nombre, tarjeta, subgrupo, clave y descripcion)',
+        /searchScore\(i, g\.title, filter\)/.test(ui) && /foldText\(`\$\{groupTitle\} \$\{item\.sub \|\| ''\} \$\{item\.key\}`\)/.test(ui) && /matchesSearch\(`\$\{u\.name\} /.test(ui) && !/toLowerCase\(\)\.includes\(filter\)/.test(ui));
+    // Pedido del usuario el 2026-11-24: escribio "marbete" y "Reporte de marbetes por fase" quedaba en la septima tarjeta
+    const helpers = new Function(`${ui.slice(ui.indexOf('function esc('), ui.indexOf('function injectStyles'))}${ui.slice(ui.indexOf('const foldText'), ui.indexOf('// Lleva la pantalla al privilegio buscado'))}; return { searchScore, markSearch };`)();
+    const ranked = (q) => {
+        const out = [];
+        P.GROUPS.forEach((g) => g.items.forEach((i) => { const s = helpers.searchScore(i, g.title, q); if (s > 0) out.push({ key: i.key, s }); }));
+        return out.sort((a, b) => b.s - a.s).map((x) => x.key);
+    };
+    yes('"marbete" pone primero los que lo tienen en el nombre: el reporte de marbetes entre los dos primeros, antes de los que solo lo mencionan en la descripcion',
+        ranked('marbete').slice(0, 2).includes('finanzas.reportes_marbetes') && ranked('marbete').indexOf('finanzas.reportes_marbetes') < ranked('marbete').indexOf('vehiculos.ver'));
+    yes('"reporte marbete" deja solo ese privilegio, y sin acentos ni mayusculas "PANICO qr" encuentra el QR de panico de primero',
+        ranked('reporte marbete').length === 1 && ranked('reporte marbete')[0] === 'finanzas.reportes_marbetes' && ranked('PANICO qr')[0] === 'reportes.panico_qr');
+    yes('cada palabra tiene que estar en algun lado (como antes) y sin busqueda no hay puntaje',
+        ranked('marbete inexistentezz').length === 0 && helpers.searchScore(P.itemOf('vehiculos.ver'), 'Visitas', '  ') === 0);
+    yes('lo buscado se resalta sin importar acentos y el resto queda escapado',
+        helpers.markSearch('QR de pánico <b>', 'PANICO') === 'QR de <mark class="pv-hit">pánico</mark> &lt;b&gt;' && helpers.markSearch('Reporte de marbetes', 'marbete') === 'Reporte de <mark class="pv-hit">marbete</mark>s');
+    yes('las tarjetas se ordenan por el que mejor coincide, arriba sale "Ir directo a" con los mejores y Enter lleva al primero',
+        /groups = groups\.slice\(\)\.sort\(\(a, b\) => b\.best - a\.best \|\| a\.order - b\.order\)/.test(ui) && /class="pv-jump" data-jump=/.test(ui)
+        && /container\.dataset\.firstMatch = /.test(ui) && (ui.match(/if \(matrix\.dataset\.firstMatch\) jumpToPrivilege\(matrix, matrix\.dataset\.firstMatch\)/g) || []).length === 2
+        && /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/.test(ui) && /ranked\.length === 1\) container\._pvJumpTimer = setTimeout/.test(ui));
     const v = (f) => (read(f).match(/privilegios-ui\.js\?v=(\w+)/) || [])[1];
     yes('privilegios-ui.js lleva la misma version en admin.html y master.html', v('admin.html') && v('admin.html') === v('master.html'));
 }

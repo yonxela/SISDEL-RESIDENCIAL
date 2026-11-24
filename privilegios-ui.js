@@ -70,6 +70,16 @@ const SisdelPrivilegiosUI = (() => {
         .pv-tag.sens { background:var(--warning-bg); color:var(--warning); }
         .pv-tag.added { background:var(--info-bg); color:var(--info); }
         .pv-tag.removed { background:var(--warning-bg); color:var(--warning); }
+        /* Busqueda: los que mejor coinciden arriba, para ir directo a ellos; lo buscado resaltado; el elegido parpadea al llegar */
+        .pv-results { display:flex; flex-wrap:wrap; align-items:center; gap:0.45rem; margin:-0.3rem 0 0.9rem; padding:0.6rem 0.75rem; background:var(--info-bg); border:1px solid var(--border-strong); border-radius:var(--radius-md); }
+        .pv-results-n { font-size:0.78rem; font-weight:700; color:var(--text-secondary); }
+        .pv-results-tip { font-size:0.72rem; color:var(--text-muted); margin-left:auto; }
+        .pv-jump { display:inline-flex; flex-direction:column; align-items:flex-start; gap:1px; padding:0.35rem 0.65rem; border-radius:var(--radius-md); border:1px solid var(--primary); background:var(--bg-surface-solid); color:var(--text-primary); font:inherit; font-size:0.8rem; font-weight:700; cursor:pointer; text-align:left; }
+        .pv-jump:hover { background:var(--bg-item); }
+        .pv-jump small { font-size:0.66rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; }
+        mark.pv-hit { background:rgba(250,204,21,0.38); color:inherit; border-radius:3px; padding:0 1px; }
+        .pv-row.pv-flash { animation:pvFlash 1.8s ease-out; }
+        @keyframes pvFlash { 0%, 35% { box-shadow:0 0 0 3px var(--primary); background:var(--info-bg); } 100% { box-shadow:0 0 0 0 transparent; } }
         .pv-modal { max-width:1000px !important; width:calc(100% - 2rem); max-height:92vh; padding:0 !important; display:flex; flex-direction:column; overflow:hidden; }
         .pv-modal-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.1rem 1.4rem; border-bottom:1px solid var(--border-strong); }
         .pv-modal-head h3 { margin:0; font-size:1.1rem; }
@@ -139,6 +149,63 @@ const SisdelPrivilegiosUI = (() => {
         return words.every((w) => hay.includes(w));
     }
 
+    // Que tan bien coincide un privilegio con lo buscado; 0 = no coincide (pedido del usuario el 2026-11-24: escribio "marbete" y
+    // el que buscaba, "Reporte de marbetes por fase", quedaba en la septima tarjeta, abajo de todo, detras de los que solo
+    // mencionan el marbete en su descripcion). Cada palabra escrita debe estar en algun lado, como siempre, pero cuenta mas en el
+    // nombre (y mas si una palabra del nombre empieza con ella) que en la tarjeta, el grupo, la clave o la descripcion.
+    function searchScore(item, groupTitle, search) {
+        const words = foldText(search).split(/\s+/).filter(Boolean);
+        if (!words.length) return 0;
+        const label = foldText(item.label);
+        const labelWords = label.split(/[^a-z0-9]+/).filter(Boolean);
+        const where = foldText(`${groupTitle} ${item.sub || ''} ${item.key}`);
+        const desc = foldText(item.description);
+        let score = 0;
+        for (const w of words) {
+            if (labelWords.some((lw) => lw.startsWith(w))) score += 4;
+            else if (label.includes(w)) score += 3;
+            else if (where.includes(w)) score += 2;
+            else if (desc.includes(w)) score += 1;
+            else return 0;
+        }
+        return score;
+    }
+
+    // El texto escapado con lo buscado resaltado (<mark>), sin importar acentos ni mayusculas
+    function markSearch(text, search) {
+        const raw = [...String(text == null ? '' : text)];
+        const words = foldText(search).split(/\s+/).filter(Boolean);
+        if (!words.length) return esc(raw.join(''));
+        let folded = '';
+        const owner = [];
+        raw.forEach((c, i) => { for (const f of foldText(c)) { folded += f; owner.push(i); } });
+        const hit = raw.map(() => false);
+        words.forEach((w) => {
+            for (let at = folded.indexOf(w); at >= 0; at = folded.indexOf(w, at + w.length)) {
+                for (let k = at; k < at + w.length; k++) hit[owner[k]] = true;
+            }
+        });
+        let out = '';
+        raw.forEach((c, i) => {
+            if (hit[i] && (i === 0 || !hit[i - 1])) out += '<mark class="pv-hit">';
+            out += esc(c);
+            if (hit[i] && (i === raw.length - 1 || !hit[i + 1])) out += '</mark>';
+        });
+        return out;
+    }
+
+    // Lleva la pantalla al privilegio buscado: lo centra, lo resalta un momento y le pone el foco (asi Espacio o Enter lo marcan)
+    function jumpToPrivilege(container, key) {
+        const row = [...container.querySelectorAll('.pv-row')].find((r) => r.dataset.key === key);
+        if (!row) return false;
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.remove('pv-flash');
+        void row.offsetWidth;
+        row.classList.add('pv-flash');
+        try { row.focus({ preventScroll: true }); } catch (e) { /* sin foco */ }
+        return true;
+    }
+
     // ── Tarjetas por modulo ──
     // opts: { role, set (Set de claves activas), onChange(set, cascade), disabled, search, marks (false: sin etiquetas Agregado/Quitado),
     //        template (true: formulario de plantilla; las acciones optIn no se pueden marcar) }
@@ -146,14 +213,30 @@ const SisdelPrivilegiosUI = (() => {
         injectStyles();
         const defaults = PRIV.defaultsOf(opts.role);
         const filter = String(opts.search || '').trim();
-
-        const groups = PRIV.GROUPS.map((g) => ({
-            ...g,
-            items: g.items.filter((i) => !filter || matchesSearch(`${i.label} ${i.description} ${g.title} ${i.sub || ''} ${i.key}`, filter))
-        })).filter((g) => g.items.length);
+        // Con busqueda: solo lo que coincide, y las tarjetas con el que mejor coincide primero (dentro de cada tarjeta, el orden de
+        // siempre, para no romper los subgrupos)
+        const scoreOf = new Map();
+        let groups = PRIV.GROUPS.map((g, order) => {
+            const items = g.items.filter((i) => {
+                if (!filter) return true;
+                const score = searchScore(i, g.title, filter);
+                if (score > 0) scoreOf.set(i.key, { score, group: g.title, label: i.label });
+                return score > 0;
+            });
+            return { ...g, items, order, best: Math.max(0, ...items.map((i) => (scoreOf.get(i.key) || { score: 0 }).score)) };
+        }).filter((g) => g.items.length);
+        if (filter) groups = groups.slice().sort((a, b) => b.best - a.best || a.order - b.order);
+        // Los que mejor coinciden, para ir directo a ellos (y Enter en la busqueda lleva al primero)
+        const ranked = filter ? groups.flatMap((g) => g.items).filter((i) => scoreOf.has(i.key))
+            .sort((a, b) => scoreOf.get(b.key).score - scoreOf.get(a.key).score) : [];
+        container.dataset.firstMatch = ranked.length ? ranked[0].key : '';
+        const hl = (text) => (filter ? markSearch(text, filter) : esc(text));
+        const results = filter && ranked.length
+            ? `<div class="pv-results"><span class="pv-results-n">${ranked.length === 1 ? '1 privilegio coincide' : `${ranked.length} privilegios coinciden`}. Ir directo a:</span>${ranked.slice(0, 6).map((i) => `<button type="button" class="pv-jump" data-jump="${esc(i.key)}"><span>${hl(i.label)}</span><small>${esc(scoreOf.get(i.key).group)}</small></button>`).join('')}${ranked.length > 6 ? `<span class="pv-results-n">y ${ranked.length - 6} más abajo</span>` : ''}<span class="pv-results-tip">Enter lleva al primero.</span></div>`
+            : '';
 
         container.innerHTML = groups.length
-            ? `<div class="pv-cards">${groups.map((g) => {
+            ? `${results}<div class="pv-cards">${groups.map((g) => {
                 const full = PRIV.GROUPS.find((x) => x.id === g.id);
                 // Los privilegios que su rol no puede tener (onlyRoles) no cuentan ni se activan
                 const usable = full.items.filter((i) => PRIV.allowedFor(i.key, opts.role));
@@ -185,14 +268,21 @@ const SisdelPrivilegiosUI = (() => {
                         return `${subHeading}<button type="button" class="pv-row${on ? ' is-on' : ''}${state}${i.parent ? ' pv-child' : ''}" data-key="${i.key}" ${opts.disabled || locked ? 'disabled' : ''} aria-pressed="${on}" ${i.depth > 1 ? `style="margin-left:${(i.depth - 1) * 1.1}rem;"` : ''}>
                             ${on ? ICONS.on : ICONS.off}
                             <span style="flex:1; min-width:0;">
-                                <span class="pv-label">${esc(i.label)}${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${optTag}${tag}${lockTag}</span>
-                                <span class="pv-desc">${esc(i.description)}</span>
+                                <span class="pv-label"><span>${hl(i.label)}</span>${i.sensitive ? '<span class="pv-tag sens">Sensible</span>' : ''}${optTag}${tag}${lockTag}</span>
+                                <span class="pv-desc">${hl(i.description)}</span>
                             </span>
                         </button>`;
                     }).join('')}</div>
                 </section>`;
             }).join('')}</div>`
             : '<p class="text-center text-muted" style="padding:1.5rem;">Ningún privilegio coincide con la búsqueda.</p>';
+
+        container.querySelectorAll('.pv-jump').forEach((button) => {
+            button.addEventListener('click', () => jumpToPrivilege(container, button.dataset.jump));
+        });
+        // Si solo uno coincide, la pantalla va sola a el cuando se deja de escribir
+        clearTimeout(container._pvJumpTimer);
+        if (filter && ranked.length === 1) container._pvJumpTimer = setTimeout(() => jumpToPrivilege(container, ranked[0].key), 700);
 
         container.querySelectorAll('.pv-row').forEach((button) => {
             button.addEventListener('click', () => {
@@ -297,6 +387,12 @@ const SisdelPrivilegiosUI = (() => {
                 <button type="button" class="pv-btn" data-act="saveTemplate" title="Guardar los privilegios marcados como plantilla del condominio">Guardar como plantilla</button>
                 <button type="button" class="pv-btn danger" data-act="delTemplate" style="display:none;">Eliminar plantilla</button>`}`;
             bar.querySelector('[data-ref=search]').addEventListener('input', (e) => { search = e.target.value; draw(); });
+            // Enter lleva al privilegio que mejor coincide
+            bar.querySelector('[data-ref=search]').addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                if (matrix.dataset.firstMatch) jumpToPrivilege(matrix, matrix.dataset.firstMatch);
+            });
         }
 
         root.addEventListener('click', async (event) => {
@@ -590,6 +686,11 @@ const SisdelPrivilegiosUI = (() => {
             }
 
             root.querySelector('[data-ref=search]').addEventListener('input', (e) => { search = e.target.value; draw(); });
+            root.querySelector('[data-ref=search]').addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                if (matrix.dataset.firstMatch) jumpToPrivilege(matrix, matrix.dataset.firstMatch);
+            });
             root.addEventListener('input', (event) => {
                 const field = event.target.dataset.f;
                 if (field === 'name' || field === 'description') { form[field] = event.target.value; refresh(); }

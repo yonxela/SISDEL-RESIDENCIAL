@@ -127,6 +127,8 @@
         const doc = root.document;
         const canReceive = SISDEL.can('mensajes.recibir');
         if (!canReceive) return null;
+        // Avisos al celular apagados (SisdelAvisos.ENABLED, 2026-11-24): la campana solo muestra los mensajes; nada de permisos
+        const pushOn = o.enabled !== undefined ? !!o.enabled : avisos.enabled !== false;
 
         const style = doc.createElement('style');
         style.id = 'avisos-ui-css';
@@ -138,8 +140,8 @@
         bell.type = 'button';
         bell.id = 'btnAvisos';
         bell.className = 'btn btn-ghost btn-icon av-bell';
-        bell.title = 'Mensajes y avisos';
-        bell.setAttribute('aria-label', 'Mensajes y avisos');
+        bell.title = pushOn ? 'Mensajes y avisos' : 'Mensajes';
+        bell.setAttribute('aria-label', pushOn ? 'Mensajes y avisos' : 'Mensajes');
         bell.innerHTML = ICON_BELL + '<span class="av-bell-dot" id="avBellDot" hidden></span>';
         const actions = doc.querySelector('.top-bar-actions');
         if (actions) actions.insertBefore(bell, actions.firstChild);
@@ -160,11 +162,11 @@
         overlay.innerHTML = `
             <div class="modal" role="dialog" aria-modal="true" aria-labelledby="avTitle">
                 <div class="modal-header">
-                    <h3 id="avTitle">Mensajes y avisos</h3>
+                    <h3 id="avTitle">${pushOn ? 'Mensajes y avisos' : 'Mensajes de la administración'}</h3>
                     <button class="btn btn-ghost btn-icon modal-close" type="button" id="avClose" aria-label="Cerrar">&times;</button>
                 </div>
                 <section class="av-phone" id="avPhone"><p>Revisando este teléfono...</p></section>
-                <h4 class="av-sub">Mensajes de la administración</h4>
+                <h4 class="av-sub"${pushOn ? '' : ' hidden'}>Mensajes de la administración</h4>
                 <div id="avList"><p class="av-empty">Cargando...</p></div>
                 <div class="av-actions"><button type="button" class="btn btn-primary" id="avOk">Entendido</button></div>
             </div>`;
@@ -200,7 +202,8 @@
             const dot = $('avBellDot');
             dot.hidden = n === 0;
             dot.textContent = n > 9 ? '9+' : String(n);
-            bell.title = n ? `Mensajes y avisos (${n} nuevo${n === 1 ? '' : 's'})` : 'Mensajes y avisos';
+            const base = pushOn ? 'Mensajes y avisos' : 'Mensajes';
+            bell.title = n ? `${base} (${n} nuevo${n === 1 ? '' : 's'})` : base;
         }
 
         function paintList() {
@@ -220,6 +223,7 @@
 
         function paintPhone() {
             const box = $('avPhone');
+            if (!pushOn) { box.hidden = true; return; }
             if (state === 'cargando') { box.className = 'av-phone'; box.innerHTML = '<p>Revisando este teléfono...</p>'; return; }
             const v = phoneView(state, avisos.device);
             box.className = 'av-phone' + (v.cls ? ' ' + v.cls : '');
@@ -232,6 +236,7 @@
         }
 
         function paintInvite() {
+            if (!pushOn) { invite.hidden = true; return; }
             const later = readJson(laterKey, 0);
             const off = typeof avisos.isOff === 'function' && avisos.isOff();
             const show = ['inactivo', 'ios-instalar', 'otro-usuario'].includes(state) && !off && !(later && Date.now() - later < LATER_MS);
@@ -369,10 +374,11 @@
                 .catch(() => {})
                 .finally(() => { busy = false; refreshState(); });
         }
-        doc.addEventListener('pointerup', firstTouch, true);
+        if (pushOn) doc.addEventListener('pointerup', firstTouch, true);
 
         const fromNotice = root.location && root.location.hash === '#mensajes';
-        Promise.resolve(avisos.sync(session.userId)).finally(refreshState);
+        if (pushOn) Promise.resolve(avisos.sync(session.userId)).finally(refreshState);
+        else { state = 'apagado'; paint(); if (typeof avisos.retire === 'function') Promise.resolve(avisos.retire()).catch(() => {}); }
         loadMessages().then(() => {
             if (fromNotice || newCount() > 0) openWhenFree(0);
         }).catch(() => { if (fromNotice) openWhenFree(0); });

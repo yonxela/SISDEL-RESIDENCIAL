@@ -374,6 +374,28 @@ console.log('\nMensajes de Finanzas por garita.app (un mensaje por residente)');
     yes('Administracion > Mensajes muestra el resumen del envio de Finanzas (a cuantos y el resultado en los celulares)', /m\.toRole === 'varios' \? `\$\{Number\(m\.recipients\) \|\| 0\} vecinos, cada uno con su mensaje/.test(read('admin.html')));
 }
 
+console.log('\nApagados por ahora (2026-11-24: "no es practico, solo va a poner mas engorroso el uso de la aplicacion")');
+{
+    const A2 = require('../avisos-push.js');
+    equal('el interruptor de los avisos al celular esta apagado (para retomarlos: true en avisos-push.js)', [A2.ENABLED, A2.create({ call: async () => ({}) }).enabled], [false, false]);
+    const sub = fakePhone({ permission: 'granted', sub: { endpoint: 'https://fcm.googleapis.com/fcm/send/vieja', key: SERVER_KEY } });
+    sub.store.set(A2.SYNC_KEY, JSON.stringify({ userId: 'u-ana', endpoint: 'https://fcm.googleapis.com/fcm/send/vieja', at: Date.now() }));
+    equal('un telefono que los activo antes se da de baja solo (servidor y navegador), sin preguntar', [await sub.api.retire(), sub.calls.map((c) => [c.action, c.endpoint]), sub.state.unsubscribed, sub.store.has(A2.SYNC_KEY), sub.state.asked || 0], [true, [['unregister', 'https://fcm.googleapis.com/fcm/send/vieja']], 1, false, 0]);
+    const none = fakePhone();
+    equal('sin suscripcion no hace nada', [await none.api.retire(), none.calls.length], [false, 0]);
+    const index = read('index.html');
+    const ui = read('avisos-ui.js');
+    const admin = read('admin.html');
+    const fin = read('finanzas.html');
+    const oikos = read('finanzas/index.html');
+    yes('al ingresar NO se pregunta nada mientras esten apagados', /if \(typeof SisdelAvisos === 'undefined' \|\| !SisdelAvisos\.ENABLED\) return;/.test(index));
+    yes('el portal: sin el recuadro del telefono, sin invitacion, sin el primer toque, sin sync; da de baja el telefono', /if \(!pushOn\) \{ box\.hidden = true; return; \}/.test(ui) && /if \(!pushOn\) \{ invite\.hidden = true; return; \}/.test(ui) && /if \(pushOn\) doc\.addEventListener\('pointerup', firstTouch, true\);/.test(ui) && /if \(pushOn\) Promise\.resolve\(avisos\.sync\(session\.userId\)\)/.test(ui) && /avisos\.retire\(\)/.test(ui));
+    yes('la campana sigue: los mensajes de la administracion (y los de Finanzas) se ven al entrar', /SisdelAvisosUI\.mount\(/.test(read('vecino.html')) && /'Mensajes de la administración'/.test(ui));
+    yes('administracion: sin la casilla del celular ni sus lineas, y los mensajes salen con push: false', /const AVISOS_CELULAR = typeof SisdelAvisos !== 'undefined' && SisdelAvisos\.ENABLED === true;/.test(admin) && /if \(pushBox\) pushBox\.hidden = true;/.test(admin) && /if \(!AVISOS_CELULAR\) return '';/.test(admin) && /const push = AVISOS_CELULAR && document\.getElementById\('msgPush'\)\.checked;/.test(admin) && /<script src="avisos-push\.js\?v=\w+"><\/script>/.test(admin));
+    yes('Finanzas: "Enviar por garita.app" sigue, sin hablar del celular (el puente dice si los avisos estan encendidos)', /push: typeof SisdelAvisos !== 'undefined' && SisdelAvisos\.ENABLED === true,/.test(fin) && /<script src="avisos-push\.js\?v=\w+"><\/script>/.test(fin) && /id="rem-garita-help">A cada residente le llega <b>su<\/b> mensaje en garita\.app: lo ve en la campana de Mensajes al entrar\./.test(oikos) && /if \(!garitaPush\(\)\) \{ remGaritaUsers = null; paintRemGarita\(\); return; \}/.test(oikos));
+    yes('todas las paginas cargan la misma version de avisos-push.js', new Set(['index.html', 'vecino.html', 'admin.html', 'finanzas.html'].map((f) => (read(f).match(/avisos-push\.js\?v=(\w+)/) || [])[1])).size === 1);
+}
+
 console.log(`\nResultado: ${passed} correctas, ${failures.length} fallas`);
 if (failures.length) failures.forEach((f) => console.log(`  - ${f}`));
 process.exit(failures.length ? 1 : 0);

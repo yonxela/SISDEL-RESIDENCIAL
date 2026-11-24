@@ -151,7 +151,7 @@
     <script src="privilegios.js?v=20261123d"></script>
     <script src="sisdel-core.js?v=20261123d"></script>
     <script src="rondas-core.js?v=20261117c"></script>
-    <script src="avisos-push.js?v=20261123c"></script>
+    <script src="avisos-push.js?v=20261124a"></script>
     <script>
         // El vecino con boton de panico: al ingresar, el telefono le pide permiso para la ubicacion y se espera su respuesta antes de
         // pasar al portal (si no, el cambio de pagina se lleva la ventana del permiso). Asi las alertas de panico siempre llevan
@@ -183,7 +183,9 @@
         async function enableNoticesAtLogin() {
             try {
                 const logged = SISDEL.getSession();
-                if (!logged || logged.role !== 'vecino' || !SISDEL.can('mensajes.recibir') || typeof SisdelAvisos === 'undefined') return;
+                // Apagado por ahora (SisdelAvisos.ENABLED, 2026-11-24): el ingreso no pregunta nada
+                if (typeof SisdelAvisos === 'undefined' || !SisdelAvisos.ENABLED) return;
+                if (!logged || logged.role !== 'vecino' || !SISDEL.can('mensajes.recibir')) return;
                 const pushCall = window.sisdelFirebase.functions.httpsCallable('pushDevice');
                 const avisos = SisdelAvisos.create({ call: (data) => pushCall(data).then((r) => r.data) });
                 if (!avisos.support().ok || avisos.isOff() || avisos.permission() === 'denied') return;

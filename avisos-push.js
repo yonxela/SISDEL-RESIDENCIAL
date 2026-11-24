@@ -15,6 +15,11 @@
     else root.SisdelAvisos = factory();
 }(typeof self !== 'undefined' ? self : this, function () {
     const SYNC_KEY = 'sisdel_avisos_tel';
+    // INTERRUPTOR de los avisos al celular (2026-11-24, pedido del usuario: "quitar las opciones de notificacion para el vecino, no es
+    // practico, solo va a poner mas engorroso el uso de la aplicacion... tal vez mas adelante lo retomamos"). Apagado: el ingreso no
+    // pide el permiso, el portal no muestra nada de avisos (solo la campana con los mensajes) y da de baja el telefono que los tenia,
+    // y Administracion y Finanzas no ofrecen el aviso al celular. Para retomarlo: true (el servidor no cambia).
+    const ENABLED = false;
     const RESYNC_MS = 3 * 24 * 60 * 60 * 1000;
 
     function b64ToBytes(b64) {
@@ -180,8 +185,23 @@
             }
         }
 
-        return { support, permission, status, enable, disable, test, sync, auto, isOff, device: dev };
+        // Con los avisos apagados: si este telefono quedo suscrito (los activo antes de apagarlos), se da de baja en el servidor y en el
+        // navegador, sin preguntar ni avisar; asi deja de recibir. No deja la marca "off" (al retomarlos, lo automatico vuelve a correr)
+        async function retire() {
+            try {
+                const sub = await currentSubscription();
+                if (!sub) return false;
+                try { await call({ action: 'unregister', endpoint: sub.endpoint }); } catch (e) { /* sin conexion: se da de baja aqui igual */ }
+                try { await sub.unsubscribe(); } catch (e) { /* ya no estaba */ }
+                writeSync(null);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        return { support, permission, status, enable, disable, test, sync, auto, isOff, retire, enabled: ENABLED, device: dev };
     }
 
-    return { create, device, b64ToBytes, bytesToB64, SYNC_KEY };
+    return { create, device, b64ToBytes, bytesToB64, SYNC_KEY, ENABLED };
 }));

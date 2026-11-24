@@ -1178,7 +1178,7 @@
             <div id="rem-garita" class="hidden mb-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-900/10 p-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="button" id="rem-garita-send" onclick="sendRemindersGarita()" class="px-4 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow transition"><i class="fas fa-bell mr-1.5"></i><span id="rem-garita-label">Enviar por garita.app</span></button>
-                    <span class="text-xs text-slate-600 dark:text-slate-300">A cada residente le llega <b>su</b> mensaje en garita.app (la campana de Mensajes) y, si activó los avisos en su celular, le salta en el teléfono. No usa WhatsApp ni pide teléfono.</span>
+                    <span class="text-xs text-slate-600 dark:text-slate-300" id="rem-garita-help">A cada residente le llega <b>su</b> mensaje en garita.app: lo ve en la campana de Mensajes al entrar. No usa WhatsApp ni pide teléfono.</span>
                 </div>
                 <p id="rem-garita-info" class="hidden text-xs text-slate-600 dark:text-slate-300 mt-2"></p>
                 <p id="rem-garita-result" class="hidden text-xs mt-2 rounded-lg px-3 py-2 bg-indigo-100/70 dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-100"></p>
@@ -6783,9 +6783,14 @@
                 if (remGaritaLast) result.textContent = remGaritaLast;
             }
         }
+        // Avisos al celular encendidos en SISDEL (SisdelAvisos.ENABLED, que pasa finanzas.html): apagados, no se habla del celular
+        function garitaPush() { const b = garitaBridge(); return !!(b && b.push); }
         async function loadRemGaritaInfo() {
             const bridge = garitaBridge();
             if (!bridge) return;
+            const help = document.getElementById('rem-garita-help');
+            if (help && garitaPush()) help.innerHTML = 'A cada residente le llega <b>su</b> mensaje en garita.app (la campana de Mensajes) y, si activó los avisos en su celular, le salta en el teléfono. No usa WhatsApp ni pide teléfono.';
+            if (!garitaPush()) { remGaritaUsers = null; paintRemGarita(); return; }
             const r = await bridge.summary();
             remGaritaUsers = r && r.ok ? Number(r.users) || 0 : null;
             paintRemGarita();
@@ -6801,7 +6806,8 @@
             const first = list[0];
             const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
             const who = currentRemFilter === 'seleccion' ? `a los ${items.length} residentes que seleccionó` : remScopeWho(items.length);
-            if (!confirm(`Se enviará por garita.app ${who}.\n\nA cada uno le llega SU mensaje en la campana de Mensajes de garita.app y, si activó los avisos en su celular, le salta en el teléfono. No usa WhatsApp.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`)) return;
+            const where = garitaPush() ? 'en la campana de Mensajes de garita.app y, si activó los avisos en su celular, le salta en el teléfono' : 'en la campana de Mensajes de garita.app: lo ve al entrar';
+            if (!confirm(`Se enviará por garita.app ${who}.\n\nA cada uno le llega SU mensaje ${where}. No usa WhatsApp.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Enviar?`)) return;
             remGaritaBusy = true;
             remGaritaLast = null;
             paintRemGarita();
@@ -6812,7 +6818,8 @@
             const out = (skipped.noExiste || 0) + (skipped.inactivo || 0) + (skipped.sinPermiso || 0) + (skipped.invalidos || 0);
             const push = result.push || {};
             remGaritaLast = `Enviado por garita.app a ${result.sent} residente(s). ` +
-                (push.users ? `Le saltó en el celular a ${push.users} (${push.sent} teléfono(s)). ` : 'Nadie de esta lista tiene todavía los avisos activados en su celular: lo verán al entrar a garita.app. ') +
+                (!garitaPush() ? 'Lo verán en la campana de Mensajes al entrar a garita.app. '
+                    : push.users ? `Le saltó en el celular a ${push.users} (${push.sent} teléfono(s)). ` : 'Nadie de esta lista tiene todavía los avisos activados en su celular: lo verán al entrar a garita.app. ') +
                 (out ? `${out} no se enviaron (no existen en garita.app, están inactivos o no reciben mensajes).` : '');
             showToast(`Enviado por garita.app a ${result.sent} residente(s).`);
             remSelected.clear();

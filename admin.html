@@ -390,6 +390,7 @@
     <script src="reportes-ui.js?v=20261122d"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="actualizaciones-ui.js?v=20261123a"></script>
+    <script src="avisos-push.js?v=20261124a"></script>
     <script src="rondas-core.js?v=20261117c"></script>
     <!-- Configuracion > Boton de panico: el modulo de los avisos (el mismo del servidor) y la pestana -->
     <script src="panico-avisos.js?v=20261122a"></script>
@@ -1014,10 +1015,19 @@
                 }
             }
 
-            // Avisos en el celular: que paso con el aviso de cada mensaje y cuantos tienen los avisos activados
+            // Avisos en el celular: que paso con el aviso de cada mensaje y cuantos tienen los avisos activados. Apagados por ahora
+            // (SisdelAvisos.ENABLED en avisos-push.js, 2026-11-24): sin la casilla, sin estas lineas y los mensajes salen con push: false
+            const AVISOS_CELULAR = typeof SisdelAvisos !== 'undefined' && SisdelAvisos.ENABLED === true;
+            if (!AVISOS_CELULAR) {
+                const pushBox = document.querySelector('label[for="msgPush"]');
+                if (pushBox) pushBox.hidden = true;
+                const pushInfo = document.getElementById('msgPushInfo');
+                if (pushInfo) pushInfo.hidden = true;
+            }
             let pushRefresh = null;
             const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
             function pushLine(m) {
+                if (!AVISOS_CELULAR) return '';
                 const r = m.pushResult;
                 let text = '';
                 // El resumen de un envio de Finanzas (toRole 'varios') lleva push: false pero su propio resultado
@@ -1036,7 +1046,7 @@
             }
             async function paintPushInfo() {
                 const info = document.getElementById('msgPushInfo');
-                if (!caps.enviar || !info) return;
+                if (!AVISOS_CELULAR || !caps.enviar || !info) return;
                 try {
                     const r = (await window.sisdelFirebase.functions.httpsCallable('pushDevice')({ action: 'summary' })).data || {};
                     const by = r.byRole || {};
@@ -1074,7 +1084,7 @@
                 const body = document.getElementById('msgBody').value;
                 const adminName = document.getElementById('adminName').textContent || 'Administración';
 
-                const push = document.getElementById('msgPush').checked;
+                const push = AVISOS_CELULAR && document.getElementById('msgPush').checked;
                 const msg = await SISDEL.createMessage(condoId, adminName, target, subject, body, { push });
                 if (msg) {
                     SISDEL.showToast('✅ Mensaje enviado exitosamente', 'success');

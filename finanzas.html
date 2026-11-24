@@ -136,6 +136,7 @@
     <script src="finanzas-bloqueo.js?v=20261123a"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
+    <script src="avisos-push.js?v=20261124a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
@@ -217,6 +218,8 @@
             if (session.role === 'master' || SISDEL.can('finanzas.residentes_contactar')) {
                 const garita = callServer('residentMessages');
                 window.sisdelGaritaMensajes = {
+                    // Avisos al celular encendidos (SisdelAvisos.ENABLED): si no, OIKOS no habla del celular
+                    push: typeof SisdelAvisos !== 'undefined' && SisdelAvisos.ENABLED === true,
                     summary: () => garita({ action: 'summary', condoId }),
                     send: ({ mode, template, items }) => garita({ action: 'send', condoId, mode, template, items })
                 };

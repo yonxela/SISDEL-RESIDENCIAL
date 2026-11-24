@@ -427,19 +427,28 @@ seed();
 {
     // Tope de telefonos por vecino (con el codigo vigente)
     const phones = [];
-    for (let i = 0; i < 20; i++) { phones.push((await link('c1', 'u-maria', 'VM102')).secret); store.get(devicePathOf('c1', phones[i])).createdAt = `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`; }
+    for (let i = 0; i < 5; i++) { phones.push((await link('c1', 'u-maria', 'VM102')).secret); store.get(devicePathOf('c1', phones[i])).createdAt = `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`; }
     const liveCount = () => [...store.entries()].filter(([k, v]) => k.startsWith('condominios/c1/panico_dispositivos/') && v.userId === 'u-maria' && !v.revokedAt).length;
-    equal('un vecino tiene hasta 20 telefonos vinculados a la vez', liveCount(), 20);
+    equal('un vecino tiene hasta 5 telefonos vinculados a la vez (los de su casa; pedido del usuario el 2026-11-24)', liveCount(), 5);
     // Quien tiene su codigo nunca se queda sin poder vincular: el telefono que lleva mas tiempo sin usarse se reemplaza (un telefono que
     // olvida su clave se vincula de nuevo y deja el vinculo viejo huerfano)
     const extra = await link('c1', 'u-maria', 'VM102');
-    equal('el telefono 21 se vincula y reemplaza al mas viejo sin uso: siguen 20', [extra.ok, liveCount()], [true, 20]);
+    equal('el sexto telefono se vincula (con el codigo) y suelta al mas viejo sin uso: siguen 5, y el telefono lo sabe', [extra.ok, liveCount(), extra.replaced], [true, 5, 1]);
     equal('el reemplazado deja de servir (hay que vincularlo de nuevo) y queda anotado', [(await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[0] })).relink, store.get(devicePathOf('c1', phones[0])).revokedBy], [true, 'reemplazado']);
+    equal('el telefono soltado dice por que (el boton admite 5) y como volver', /se vincularon otros teléfonos de este vecino y el botón admite 5/.test((await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[0] })).error), true);
     equal('los demas siguen sirviendo', [(await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[1] })).ok, (await device({ action: 'check', c: 'c1', v: 'u-maria', secret: extra.secret })).ok], [true, true]);
     // Uno que se uso hace poco no se reemplaza aunque sea de los primeros en vincularse
     store.get(devicePathOf('c1', phones[1])).lastUsedAt = '2026-11-19T00:00:00.000Z';
     const again = await link('c1', 'u-maria', 'VM102');
-    equal('al siguiente se reemplaza el mas viejo SIN USO (el que se uso hace poco se queda)', [again.ok, !!store.get(devicePathOf('c1', phones[1])).revokedAt, !!store.get(devicePathOf('c1', phones[2])).revokedAt, liveCount()], [true, false, true, 20]);
+    equal('al siguiente se reemplaza el mas viejo SIN USO (el que se uso hace poco se queda)', [again.ok, !!store.get(devicePathOf('c1', phones[1])).revokedAt, !!store.get(devicePathOf('c1', phones[2])).revokedAt, liveCount()], [true, false, true, 5]);
+    // Abrir el boton tambien cuenta como uso: un familiar que nunca envio una alerta pero lo abre no se suelta
+    const seen = await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[3] });
+    const seenAt = store.get(devicePathOf('c1', phones[3])).lastSeenAt;
+    equal('abrir el boton anota cuando se vio el telefono', [seen.ok, typeof seenAt], [true, 'string']);
+    await device({ action: 'check', c: 'c1', v: 'u-maria', secret: phones[3] });
+    equal('y no lo vuelve a anotar en cada apertura (cada 12 horas como mucho)', store.get(devicePathOf('c1', phones[3])).lastSeenAt, seenAt);
+    const third = await link('c1', 'u-maria', 'VM102');
+    equal('el que se abrio hace poco no se suelta: se suelta el que lleva mas tiempo sin abrirse', [third.ok, !!store.get(devicePathOf('c1', phones[3])).revokedAt, !!store.get(devicePathOf('c1', phones[4])).revokedAt, liveCount()], [true, false, true, 5]);
 }
 
 console.log('\nEntregar la clave con el QR (la oficina la activa; el vecino la ve una sola vez)');

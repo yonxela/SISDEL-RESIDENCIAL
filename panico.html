@@ -412,6 +412,8 @@
                     paintWho();
                     showNext();
                     if (!kept) $('pqStepLink').hidden = false;
+                    // SISDEL: el boton admite 5 telefonos por vecino; con este se solto el que llevaba mas tiempo sin usarse
+                    if (res.replaced) status('Teléfono vinculado. Este vecino ya tenía 5 teléfonos vinculados (el máximo): se desvinculó el que llevaba más tiempo sin usarse.', true);
                 } catch (err) {
                     console.error(err);
                     linkMessage('No hay conexión con el servidor. Revise su internet e intente de nuevo.', true);

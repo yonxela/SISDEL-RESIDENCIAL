@@ -26,7 +26,11 @@ const LINK_IP_LIMIT = { max: 30, windowMs: 15 * 60 * 1000 };
 const LINK_USER_LIMIT = { max: 5, windowMs: 15 * 60 * 1000 };
 // Contra un telefono o un programa que se queda enviando alertas sin parar (el portal no tiene tope: es generoso)
 const ALERT_LIMIT = { max: 10, windowMs: 10 * 60 * 1000 };
-const MAX_DEVICES = 20;
+// Telefonos vinculados a la vez por vecino (pedido del usuario el 2026-11-24: "hasta 5 familiares de la misma casa nada mas";
+// antes 20). Siempre con el codigo de acceso del vecino; el sexto suelta al que lleva mas tiempo sin usarse (createDeviceLink)
+const MAX_DEVICES = 5;
+// Cada cuanto se anota que un telefono abrio el boton (lastSeenAt): asi el que se usa no se suelta aunque nunca haya enviado una alerta
+const SEEN_EVERY_MS = 12 * 3600 * 1000;
 const OPEN_ALERT_MS = 6 * 3600 * 1000; // una alerta sin resolver se muestra al volver a escanear durante 6 horas
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SECRET_RE = /^[A-Za-z0-9_-]{40,64}$/;
@@ -139,14 +143,15 @@ const linkPanicDevice = onCall(async (request) => {
     const problem = neighborProblem(neighbor);
     if (problem) { log('not_allowed'); return { ok: false, error: problem }; }
 
-    const secret = await createDeviceLink({ condoId, userId, code, request, log });
+    const { secret, replaced } = await createDeviceLink({ condoId, userId, code, request, log });
     log('ok');
-    return { ok: true, secret, ...info(neighbor), alert: null };
+    return { ok: true, secret, ...(replaced ? { replaced } : {}), ...info(neighbor), alert: null };
 });
 
 const userAgentOf = (request) => String((request && request.rawRequest && request.rawRequest.headers && request.rawRequest.headers['user-agent']) || '').slice(0, 200);
 
-// Vincula un telefono nuevo al QR del vecino (con su codigo vigente) y devuelve la clave al azar que se queda en el telefono
+// Vincula un telefono nuevo al QR del vecino (con su codigo vigente). Devuelve { secret: la clave al azar que se queda en el
+// telefono, replaced: cuantos telefonos se soltaron para dejarle lugar }
 async function createDeviceLink({ condoId, userId, code, request, log, via = 'codigo', secret = crypto.randomBytes(32).toString('base64url') }) {
     const codeHash = sha256(code);
     const devices = await db.collection(`condominios/${condoId}/panico_dispositivos`).where('userId', '==', userId).get();
@@ -155,15 +160,20 @@ async function createDeviceLink({ condoId, userId, code, request, log, via = 'co
         // A quien tiene su codigo NUNCA se le niega el boton: se reemplaza el telefono que lleva mas tiempo sin usarse. Un telefono que
         // olvida su clave (el iPhone borra lo que guarda una pagina sin uso en una semana) se vincula de nuevo y deja el vinculo viejo
         // huerfano: con un tope que negara, esos huerfanos acabarian dejando al vecino sin poder vincular su telefono
-        const lastUse = (d) => String(d.data().lastUsedAt || d.data().createdAt || '');
+        // "Sin usarse" = lo ultimo entre la ultima alerta, la ultima vez que abrio el boton y cuando se vinculo
+        const lastUse = (d) => [d.data().lastUsedAt, d.data().lastSeenAt, d.data().createdAt].map((x) => String(x || '')).sort().pop();
         const oldest = live.sort((x, y) => lastUse(x).localeCompare(lastUse(y))).slice(0, live.length - MAX_DEVICES + 1);
         await Promise.all(oldest.map((d) => d.ref.update({ revokedAt: nowIso(), revokedBy: 'reemplazado' })));
         log('replaced', { count: oldest.length });
+        await db.doc(devicePath(condoId, secret)).create({
+            userId, condominioId: condoId, codeHash, createdAt: nowIso(), lastUsedAt: null, userAgent: userAgentOf(request), via
+        });
+        return { secret, replaced: oldest.length };
     }
     await db.doc(devicePath(condoId, secret)).create({
         userId, condominioId: condoId, codeHash, createdAt: nowIso(), lastUsedAt: null, userAgent: userAgentOf(request), via
     });
-    return secret;
+    return { secret, replaced: 0 };
 }
 
 // Lo que hace un telefono vinculado: comprobar el vinculo ('check'), enviar la alerta ('alert'), ver como va ('status'),
@@ -182,6 +192,10 @@ const panicDevice = onCall(async (request) => {
     const devRef = db.doc(devicePath(condoId, secret));
     const devSnap = await devRef.get();
     const device = devSnap.exists ? devSnap.data() : null;
+    if (device && device.userId === userId && device.revokedBy === 'reemplazado') {
+        log('replaced');
+        return { ...relink, error: `Este teléfono se desvinculó porque se vincularon otros teléfonos de este vecino y el botón admite ${MAX_DEVICES}. Vincúlelo de nuevo con el código de acceso: se soltará el que lleve más tiempo sin usarse.` };
+    }
     if (!device || device.userId !== userId || device.revokedAt) { log('not_linked'); return relink; }
     if (action === 'unlink') {
         await devRef.update({ revokedAt: nowIso(), revokedBy: 'telefono' });
@@ -198,6 +212,7 @@ const panicDevice = onCall(async (request) => {
     if (problem) { log('not_allowed'); return { ok: false, error: problem }; }
 
     if (action === 'check') {
+        if (!(Date.parse(device.lastSeenAt || '') > Date.now() - SEEN_EVERY_MS)) await devRef.update({ lastSeenAt: nowIso() }).catch(() => {});
         const open = await latestOpenAlert(condoId, userId);
         return { ok: true, ...info(neighbor), alert: open ? publicAlert(open) : null };
     }
@@ -526,9 +541,10 @@ const panicCodeReveal = onCall(async (request) => {
     // El telefono que la vio queda vinculado al boton. Si el vecino todavia no puede usarlo (el panico de vecinos apagado en RONDIN,
     // sin el privilegio), el vinculo queda listo para cuando pueda y la pagina dice por que no sale el boton (problem)
     let linked = '';
-    if (!linkedHash) linked = await createDeviceLink({ condoId, userId, code, request, log, via: 'entrega', secret: newSecret });
+    let replaced = 0;
+    if (!linkedHash) ({ secret: linked, replaced } = await createDeviceLink({ condoId, userId, code, request, log, via: 'entrega', secret: newSecret }));
     log('ok', { linked: !!(linked || linkedHash) });
-    return { ok: true, code, ...(linked ? { secret: linked } : {}), ...info(neighbor), problem, alert: null };
+    return { ok: true, code, ...(linked ? { secret: linked } : {}), ...(replaced ? { replaced } : {}), ...info(neighbor), problem, alert: null };
 });
 
 module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, _test: { cleanPos, neighborProblem, deliveryState, deviceKind, campaignCovers, deliverable } };

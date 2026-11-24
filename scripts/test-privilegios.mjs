@@ -211,6 +211,11 @@ yes('quien opera la garita (guardia, administrador) las trae por defecto y no pi
 yes('se pueden quitar una por una sin quitar la otra ni la garita', (() => { const on = keysOn('policia', { 'garita.lector': false }); return !on.includes('garita.lector') && on.includes('garita.configurar') && on.includes('garita.operar'); })());
 yes('sin entrar a la garita no valen (un paraguas apagado apaga sus acciones)', !keysOn('policia', { 'garita.operar': false, 'garita.lector': true }).includes('garita.lector'));
 yes('el garitero de plantilla trae las dos', ['garita.lector', 'garita.configurar'].every((k) => P.templateById('sys-garitero').claves.includes(k)));
+// El aviso de morosos de Control Garita lo trae por defecto solo el administrador (pedido del usuario el 2026-11-24: "eliminar ese dato en garita en clave de guardias")
+yes('Control Garita: el aviso de morosos (cifra y franja) lo trae por defecto solo el administrador; el guardia y el operador lo reciben solo si se les marca, y se le puede quitar al administrador', keysOn('admin').includes('garita.morosos') && !keysOn('policia').includes('garita.morosos') && !keysOn('operador', { 'garita.operar': true }).includes('garita.morosos') && keysOn('policia', { 'garita.morosos': true }).includes('garita.morosos') && !keysOn('admin', { 'garita.morosos': false }).includes('garita.morosos'));
+yes('en Configuracion > Privilegios dice "Se habilita aparte" para el guardia y no para el administrador', P.explicitFor('garita.morosos', 'policia') === true && P.explicitFor('garita.morosos', 'operador') === true && P.explicitFor('garita.morosos', 'admin') === false);
+yes('ni la plantilla del garitero ni quitar y volver a marcar todo se lo dan a un guardia, y el guardia conserva todo lo demas de la garita', (() => { const t = P.templateKeys(P.templateById('sys-garitero'), 'policia'); return !t.includes('garita.morosos') && ['garita.operar', 'garita.lector', 'garita.configurar', 'garita.historial', 'garita.visitas_dia'].every((k) => t.includes(k)); })());
+yes('el medallon rojo EN MORA al leer un marbete no depende de ese privilegio', (() => { const g = fs.readFileSync(new URL('../garita.html', import.meta.url), 'utf8'); return /tone: late \? 'late' : 'ok'|const late = resident\.paymentStatus === SISDEL\.PAYMENT_STATUS\.MOROSO/.test(g) && !/g\.morosos[^\n]*late/.test(g); })());
 equal('supervisor va a rondin/', P.landing('supervisor', {}), 'rondin/');
 equal('auditor va a auditor.html', P.landing('auditor', {}), 'auditor.html');
 equal('vecino va a vecino.html', P.landing('vecino', {}), 'vecino.html');
@@ -224,12 +229,12 @@ equal('lo demas no cambia al quitar uno', P.has('admin', { 'finanzas.usar': fals
 equal('toOverrides guarda solo las diferencias', P.toOverrides('admin', keysOn('admin').filter((k) => k !== 'finanzas.usar')), { 'finanzas.usar': false });
 equal('toOverrides de un conjunto igual al rol es vacio', P.toOverrides('policia', keysOn('policia')), {});
 const withKids = (...list) => list.flatMap((k) => [k, ...P.descendantsOf(k)]);
-equal('toOverrides del operador son sus paraguas (las acciones vienen con el)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true });
-equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true });
+equal('toOverrides del operador son sus paraguas (las acciones vienen con el, salvo el aviso de morosos, que solo trae el administrador y se guarda como true)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true, 'garita.morosos': true });
+equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true, 'garita.morosos': true });
 equal('toOverrides guarda una accion apagada como false', P.toOverrides('operador', ['usuarios.ver', 'garita.operar', 'mensajes.recibir']),
-    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false, 'garita.lector': false, 'garita.configurar': false });
+    { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.lector': false, 'garita.configurar': false });
 equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false, 'mensajes.recibir': true }),
-    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.morosos': false, 'garita.lector': false, 'garita.configurar': false });
+    { 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.lector': false, 'garita.configurar': false });
 {
     const wanted = new Set();
     P.toggle(wanted, 'usuarios.ver', true, { children: true });
@@ -245,7 +250,7 @@ yes('ida y vuelta de cada plantilla del sistema: las diferencias reproducen exac
 equal('cleanOverrides descarta claves ajenas y valores que no son booleanos', P.cleanOverrides({ 'garita.operar': false, otra: true, 'usuarios.ver': 1 }), { 'garita.operar': false });
 
 // toOverrides acepta un Set (el editor de privilegios le pasa un Set: un error aqui borraba los privilegios al guardar)
-equal('toOverrides con un Set', P.toOverrides('operador', new Set(withKids('usuarios.ver', 'garita.operar', 'mensajes.recibir'))), { 'usuarios.ver': true, 'garita.operar': true });
+equal('toOverrides con un Set', P.toOverrides('operador', new Set(withKids('usuarios.ver', 'garita.operar', 'mensajes.recibir'))), { 'usuarios.ver': true, 'garita.operar': true, 'garita.morosos': true });
 equal('toOverrides con un Set igual al rol es vacio', P.toOverrides('policia', new Set(keysOn('policia'))), {});
 equal('toOverrides con Set, arreglo y mapa dan lo mismo', [P.toOverrides('auditor', new Set(['usuarios.ver'])), P.toOverrides('auditor', { 'usuarios.ver': true })], [P.toOverrides('auditor', ['usuarios.ver']), P.toOverrides('auditor', ['usuarios.ver'])]);
 equal('toOverrides no guarda acciones de un paraguas que no se muestra', P.toOverrides('operador', ['rondas.panel_ver', 'mensajes.recibir']), {});

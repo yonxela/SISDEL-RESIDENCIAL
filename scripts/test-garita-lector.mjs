@@ -78,6 +78,9 @@ async function run() {
         const chips = await page.evaluate(`({ lastReads: document.getElementById('lastReads').innerText, tablaVacia: getComputedStyle(document.getElementById('historyEmptyState')).display !== 'none', camara: getComputedStyle(document.getElementById('chipCamara')).display !== 'none' ? document.getElementById('chipCamaraText').textContent : '' })`);
         record('antes de leer: sin lecturas, sin accesos y la camara dice lo que sabe (no inventa que esta en linea)', /Todavía no hay lecturas/.test(chips.lastReads) && chips.tablaVacia && !/en línea/i.test(chips.camara), JSON.stringify(chips));
 
+        const moraGuard = await page.evaluate(`(() => { const cards = [...document.querySelectorAll('.cg-kpi')].filter((c) => getComputedStyle(c).display !== 'none'); const box = document.querySelector('.cg-kpis').getBoundingClientRect(); const sum = cards.reduce((t, c) => t + c.getBoundingClientRect().width, 0); const gap = parseFloat(getComputedStyle(document.querySelector('.cg-kpis')).columnGap) || 0; return { kpi: getComputedStyle(document.getElementById('kpiMorosos')).display !== 'none', strip: !!document.querySelector('#urgentWarnings .cg-alert'), n: cards.length, fills: Math.abs(sum + gap * (cards.length - 1) - box.width) < 3 }; })()`);
+        record('el guardia NO ve la cifra "Vecinos en mora" ni la franja de aviso (garita.morosos solo la trae el administrador) y las cifras que quedan llenan la fila sin dejar un hueco', !moraGuard.kpi && !moraGuard.strip && moraGuard.n === 4 && moraGuard.fills, JSON.stringify(moraGuard));
+
         console.log('\nConfiguracion: tiempo del marbete en pantalla');
         await page.evaluate(`document.getElementById('btnGaritaConfig').click()`);
         await page.waitFor(`getComputedStyle(document.getElementById('modalGaritaConfig')).display !== 'none'`, 'la configuracion', 10000);
@@ -352,6 +355,18 @@ async function run() {
         });
         record('un guardia con el lector pero sin garita.ingreso ni garita.configurar: lee y ve la tarjeta, pero dice que no se registro nada, sin "Era una salida" y sin boton de Configuracion', soloLee.seen.lector === true && soloLee.seen.config === false && /No se registró nada/.test(soloLee.card2.foot) && soloLee.card2.exit === false, JSON.stringify(soloLee));
         equal('y no se escribio ningun acceso', (await all()).length, before);
+
+        console.log('\nEl aviso de morosos: el administrador si, el guardia solo si se le marca');
+        const conMora = await asGuard({ 'garita.morosos': true }, async (lim) => lim.evaluate(`({ kpi: ${vis('kpiMorosos')}, n: document.getElementById('morososCount').textContent, strip: (document.querySelector('#urgentWarnings .cg-alert') || {}).textContent || '' })`));
+        record('si el administrador le marca "Ver el aviso de morosos" a un guardia, ve la cifra y la franja ambar', conMora.kpi && conMora.n === '1' && /1 vivienda en mora/.test(conMora.strip), JSON.stringify(conMora));
+        const adm = await newPage({ stepTimeoutMs: 60000 });
+        await adm.login(BASE, 'VF100');
+        await adm.goto(`${BASE}/garita.html`);
+        await adm.waitFor(`document.getElementById('condoName') && document.getElementById('condoName').textContent === 'Villa Ferrer' && document.getElementById('morososCount')`, 'Control Garita del administrador', 30000);
+        await sleep(1500);
+        const admMora = await adm.evaluate(`({ kpi: ${vis('kpiMorosos')}, strip: (document.querySelector('#urgentWarnings .cg-alert') || {}).textContent || '' })`);
+        record('el administrador ve la cifra y la franja de mora por defecto', admMora.kpi && /1 vivienda en mora/.test(admMora.strip), JSON.stringify(admMora));
+        await adm.close();
 
         console.log('\nEl administrador lo ve en su reporte');
         const lectorRows = (await all()).filter((r) => r.via === 'lector').length;

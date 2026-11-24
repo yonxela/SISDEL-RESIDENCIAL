@@ -117,7 +117,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `garita.ingreso` | Registrar ingresos. Confirmar el ingreso de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
 | `garita.salida` | Registrar salidas. Confirmar la salida de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
 | `garita.visitas_dia` | Ver las visitas del día. La lista de visitas esperadas hoy, con su botón Validar. | los de su paraguas | Pantalla |
-| `garita.morosos` | Ver el aviso de morosos. El recuento de vecinos morosos y la alerta de restricción de acceso. | los de su paraguas | Pantalla |
+| `garita.morosos` | Ver el aviso de morosos. La cifra de vecinos en mora y la franja de aviso de Control Garita. Solo el administrador la trae por defecto: al guardia se le marca a mano. El medallón rojo «EN MORA» al leer un marbete sale siempre. | los de su paraguas | Pantalla |
 | `garita.lector` | Usar el escáner manual (lector de pistola). Leer marbetes, pases de visita y claves con un lector de códigos USB, sin tocar la pantalla: muestra el marbete y registra el ingreso solo. | los de su paraguas | Pantalla |
 | `garita.configurar` | Configurar Control Garita. El botón Configuración de Control Garita: escáner manual, tiempo del marbete en pantalla, sonido y pantalla completa (se guarda en la computadora de la garita). | los de su paraguas | Pantalla |
 | `garita.camara` | Ver el historial de la cámara. Consultar los accesos y lecturas de la cámara de placas. | `admin`, `policia`, `auditor` | Reglas |

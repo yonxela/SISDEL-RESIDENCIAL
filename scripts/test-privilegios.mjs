@@ -428,6 +428,20 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         // SISDEL es una constante global de sisdel-core.js, no cuelga de window: con window.SISDEL la pestana no arrancaba en admin.html
         yes('boton de panico: usa la constante SISDEL del nucleo (no window.SISDEL a secas)', /const S = typeof SISDEL !== 'undefined' \? SISDEL : window\.SISDEL;/.test(ui));
         yes('boton de panico: lo escrito se pinta como texto, nunca como HTML', !/innerHTML\s*=(?!\s*''\s*;)/.test(ui) && /textContent/.test(ui));
+        // Simulacro del boton de panico (pedido del usuario el 2026-11-23): probarlo sin escribirle a los familiares
+        {
+            const vecino = read('vecino.html'); const qrPage = read('panico.html'); const core = read('rondas-core.js');
+            const banner = read('panico-alertas.js'); const rondin = read('rondin/js/sisdel-api.js'); const qrFn = read('functions/src/panico-qr.js');
+            yes('simulacro: el vecino y el QR tienen su boton, avisan antes que no llega a los familiares y no traban el boton grande', /id="btnPanicDrill"/.test(vecino) && /firePanic\(true\)/.test(vecino) && /if \(alert\.simulacro === true\) \{ showDrill\(alert\); return; \}/.test(vecino)
+                && /id="pqDrill"/.test(qrPage) && /action: 'alert', simulacro: true/.test(qrPage) && /if \(a\.simulacro === true\) \{ showDrill\(a\); return; \}/.test(qrPage)
+                && [vecino, qrPage].every((h) => /NO se avisará a sus contactos de emergencia ni a la PNC/.test(h)));
+            yes('simulacro: la alerta lleva simulacro: true (portal y QR) y el servidor la cuenta con su tope del dia', /\.\.\.\(simulacro === true \? \{ simulacro: true \} : \{\}\)/.test(core) && /\.\.\.\(data\.simulacro === true \? \{ simulacro: true \} : \{\}\)/.test(qrFn)
+                && /if \(isDrill\(alert\)\) \{\s*const slot = await takeDrillSlot\(condoRef, alert\);/.test(rondas));
+            yes('simulacro: la garita lo ve en azul y marcado como prueba; RONDIN lo marca y no despacha drones', /\.pan-item\.drill \{ background: #1d4ed8; animation: none; \}/.test(banner) && /SIMULACRO DE PÁNICO · PRUEBA, NO ES UNA EMERGENCIA/.test(banner)
+                && /if \(!drill\) dispatchDrone\(p, 'NEIGHBOR'\);/.test(rondin) && /if \(!drill\) dispatchDrone\(p, 'GUARD'\);/.test(rondin));
+            yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261123a'))
+                && ['garita.html', 'admin.html'].every((f) => read(f).includes('panico-alertas.js?v=20261123a')));
+        }
         yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
         yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));
         yes('boton de panico: el interruptor de los vecinos pide su propio privilegio y escribe como RONDIN', /S\.can\('rondas\.ajustes_panicovecinos'\)/.test(ui) && /company_id: condoId, neighbor_panic_enabled: next \? 1 : 0/.test(ui));

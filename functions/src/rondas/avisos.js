@@ -111,8 +111,64 @@
         ].filter((l, i, a) => l !== '' || (a[i - 1] !== '' && i > 0)));
     }
 
+    // ── Simulacro (pedido del usuario el 2026-11-23: los vecinos van a probar el boton y cada prueba escribia, desde el numero del
+    // condominio, a sus 5 familiares: contactos nuevos que WhatsApp castiga). La alerta trae simulacro: true y el aviso dice en la
+    // primera linea que NO es una emergencia. Al vecino le llega una copia para que vea que su boton funciona y a quien avisaria.
+    const DRILL_TITLE = 'SIMULACRO - NO ES UNA EMERGENCIA';
+    // Tope de simulacros CON WhatsApp por dia de Guatemala: por condominio y por vecino (los demas quedan en la pantalla de la garita,
+    // sin WhatsApp): asi las pruebas se reparten en varios dias y el numero no manda rafagas
+    const DRILL_LIMITS = { perDay: 20, perUser: 2 };
+    function isDrill(alert) { return !!alert && alert.simulacro === true; }
+    // A quienes se avisaria en una emergencia real (sin nombres): "3 contactos de emergencia, la PNC y la administracion"
+    function drillWould(familyCount, cfg, staffCount) {
+        const c = cleanConfig(cfg);
+        const parts = [];
+        if (familyCount > 0) parts.push(`${familyCount} ${familyCount === 1 ? 'contacto' : 'contactos'} de emergencia`);
+        if (c.phones.some((p) => p.kind === 'pnc')) parts.push('la PNC');
+        if (c.phones.some((p) => p.kind === 'otro')) parts.push('los demas telefonos del condominio');
+        if (c.notifyStaff && staffCount > 0) parts.push('la administracion');
+        return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}` : (parts[0] || '');
+    }
+    // A la central y la garita: los mismos datos de una alerta (para comprobar el GPS y el mapa), marcado como simulacro
+    function drillStaffMessage(alert, condoName, would, cfg) {
+        const c = cleanConfig(cfg);
+        const who = alert.source === 'guardia' ? 'GUARDIA' : 'VECINO';
+        return tidy([
+            `*${DRILL_TITLE}*`,
+            `_Prueba del boton de panico (${who}) - SISDEL_`,
+            '',
+            `Nombre: *${alert.userName}*`,
+            `Condominio: ${condoName}`,
+            alert.casa ? `Lugar: ${alert.casa}` : '',
+            alert.phone ? `Tel: ${alert.phone}` : '',
+            placeLine(alert),
+            mapsLink(alert),
+            '',
+            'No hay que ir al lugar. Marquela como atendida en la pantalla de la garita para completar la prueba.',
+            would ? `En una emergencia real tambien se avisaria a: ${would}.` : '',
+            '',
+            `_${c.signature || 'Central SISDEL'}_`
+        ]);
+    }
+    // Al propio vecino: su boton funciona, si llevo el GPS y a quien avisaria de verdad
+    function drillOwnMessage(alert, condoName, would, cfg) {
+        const c = cleanConfig(cfg);
+        return tidy([
+            `*${DRILL_TITLE}*`,
+            '',
+            `${alert.userName ? alert.userName + ', su' : 'Su'} boton de panico funciona: este aviso de prueba le llego a la garita de ${condoName}.`,
+            alert.lat != null ? 'Llevo su ubicacion GPS:' : 'No llevo su ubicacion: active la ubicacion del telefono para que una alerta real diga donde esta.',
+            mapsLink(alert),
+            '',
+            would ? `En una emergencia real tambien se avisaria a: ${would}.` : 'Registre sus contactos de emergencia para que tambien los avisen en una emergencia real.',
+            '',
+            `_${c.signature || 'Central de Monitoreo SISDEL'}_`
+        ]);
+    }
+
     // A quien avisar: la central de SISDEL, los telefonos configurados del condominio (garita, PNC...), el personal que atiende
     // alertas (si el condominio no lo quito) y los familiares (solo si es un vecino). Sin repetidos. [{ nombre, telefono, mensaje }]
+    // Un simulacro (alert.simulacro), solo la central, las garitas y el propio vecino.
     function recipientsFor({ alert, condoName, contacts = [], staff = [], central = '', config }) {
         const c = cleanConfig(config);
         const out = [];
@@ -124,6 +180,16 @@
             out.push({ nombre, telefono, mensaje });
         };
         const family = alert.source === 'vecino' ? contacts.filter((x) => normalizePhone(x.phone)) : [];
+        // SIMULACRO: solo la central, las garitas del condominio y el propio vecino; nunca la PNC, otros telefonos, el personal ni
+        // los familiares (cada familiar es un contacto nuevo para el numero del condominio: es lo que hace que WhatsApp lo restrinja)
+        if (isDrill(alert)) {
+            const would = drillWould(family.length, c, staff.length);
+            const forStaff = drillStaffMessage(alert, condoName, would, c);
+            add('Central SISDEL', central, forStaff);
+            c.phones.filter((p) => p.kind === 'garita').forEach((p) => add(p.name, p.phone, forStaff));
+            if (alert.phone) add(alert.userName || 'Vecino', alert.phone, drillOwnMessage(alert, condoName, would, c));
+            return out;
+        }
         const notified = family.map((x) => x.name || x.phone);
         const forStaff = staffMessage(alert, condoName, notified, c);
         add('Central SISDEL', central, forStaff);
@@ -143,5 +209,5 @@
         return ['*PRUEBA - NO ES UNA EMERGENCIA*', '', `Asi le llegaran las alertas de panico de ${condoName}:`, '', staffMessage(sampleAlert('vecino'), condoName, ['Familiar de ejemplo'], cfg)].join('\n');
     }
 
-    return { normalizePhone, cleanConfig, familyMessage, staffMessage, recipientsFor, sampleAlert, testMessage, MAX_PHONES, KINDS, KIND_LABEL, LIMITS, DEFAULT_FAMILY_NOTE };
+    return { normalizePhone, cleanConfig, familyMessage, staffMessage, recipientsFor, sampleAlert, testMessage, isDrill, drillWould, drillStaffMessage, drillOwnMessage, MAX_PHONES, KINDS, KIND_LABEL, LIMITS, DEFAULT_FAMILY_NOTE, DRILL_TITLE, DRILL_LIMITS };
 });

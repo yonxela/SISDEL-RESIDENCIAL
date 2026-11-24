@@ -257,7 +257,7 @@
                 const prepare = () => {
                     if (!ready) {
                         ready = (async () => {
-                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261117c', 'reportes-ui.js?v=20261122d']) await loadScript(src);
+                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261123a', 'reportes-ui.js?v=20261122d']) await loadScript(src);
                             if (typeof SisdelRondas !== 'undefined' && SisdelRondas.init) SisdelRondas.init(session);
                             users = await SISDEL.getUsers(condoId);
                         })().catch((error) => { ready = null; throw error; });

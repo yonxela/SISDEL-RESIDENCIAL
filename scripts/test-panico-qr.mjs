@@ -381,6 +381,15 @@ let secretAna = '';
         (await device({ action: 'cancel', c: 'c1', v: 'u-ana', secret: secretAna, alertId: 'ajena' })).ok,
         store.get('condominios/c1/alertas_panico/ajena').status
     ], [false, false, 'ACTIVE']);
+    // Simulacro desde el QR (prueba del boton, 2026-11-23): queda marcado y el telefono ve cuantos avisos de prueba salieron
+    const drill = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna, simulacro: true, lat: 14.6, lng: -90.5 });
+    const drillPath = `condominios/c1/alertas_panico/${drill.alert.id}`;
+    equal('un simulacro desde el QR queda marcado y el telefono sabe que es un simulacro', [drill.ok, store.get(drillPath).simulacro, drill.alert.simulacro, drill.alert.whatsapp], [true, true, true, undefined]);
+    store.set(drillPath, { ...store.get(drillPath), whatsapp: { sent: true, reason: '', recipients: [{ nombre: 'Central SISDEL', exito: true }, { nombre: 'Nombre u-ana', exito: true }, { nombre: 'Garita', exito: false }] } });
+    const drillStatus = await device({ action: 'status', c: 'c1', v: 'u-ana', secret: secretAna, alertId: drill.alert.id });
+    equal('ve cuantos avisos de prueba salieron, sin los telefonos ni los nombres', drillStatus.alert.whatsapp, { done: true, sent: 2, reason: '' });
+    const notDrill = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna, simulacro: 'si' });
+    equal('solo simulacro: true cuenta (cualquier otra cosa es una alerta de verdad)', [store.get(`condominios/c1/alertas_panico/${notDrill.alert.id}`).simulacro, notDrill.alert.simulacro], [undefined, undefined]);
     // Tope de alertas (un telefono o programa que se queda enviando)
     let last = null;
     for (let i = 0; i < 9; i++) last = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna });

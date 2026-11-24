@@ -728,6 +728,31 @@ async function run() {
     await denied('el auditor no atiende alertas', () => updateDoc(rref(auditor, 'alertas_panico', 'pan-g'), { status: 'ATTENDED', attendedBy: 'u-sofia' }));
     await allowed('el auditor ve las alertas', () => getDocs(rcol(auditor, 'alertas_panico')));
 
+    // Simulacro (prueba del boton, 2026-11-23): solo la central, la garita y el propio vecino; nunca el personal ni los familiares.
+    // Con un tope por dia de Guatemala: el dia se toma de createdAt, uno distinto en cada corrida (el contador no se borra al sembrar)
+    {
+        const drillDay = new Date(Date.UTC(2031, 0, 1) + (Date.now() % 3000) * 86400000).toISOString().slice(0, 10);
+        const drillAt = (n) => `${drillDay}T18:0${n}:00.000Z`;
+        await allowed('el vecino hace un simulacro del boton', () => setDoc(rref(ana, 'alertas_panico', 'pan-s1'), panico('pan-s1', { simulacro: true, createdAt: drillAt(1) })));
+        await waitFor('el simulacro solo avisa a la central y al propio vecino (ni personal ni familiares)', async () => {
+            const w = (await getDoc(rref(admin, 'alertas_panico', 'pan-s1'))).data().whatsapp;
+            if (!w) return false;
+            const names = w.recipients.map((r) => r.nombre);
+            return w.simulacro === true && w.sent === true && names.includes('Central SISDEL') && names.includes('Ana García')
+                && !names.includes('Samuel Ortiz') && !names.includes('Luis García') && !names.includes('Marta García');
+        });
+        await allowed('un segundo simulacro el mismo dia', () => setDoc(rref(ana, 'alertas_panico', 'pan-s2'), panico('pan-s2', { simulacro: true, createdAt: drillAt(2) })));
+        await waitFor('el segundo tambien sale por WhatsApp', async () => { const w = (await getDoc(rref(admin, 'alertas_panico', 'pan-s2'))).data().whatsapp; return !!w && w.sent === true; });
+        await allowed('un tercer simulacro el mismo dia se guarda', () => setDoc(rref(ana, 'alertas_panico', 'pan-s3'), panico('pan-s3', { simulacro: true, createdAt: drillAt(3) })));
+        await waitFor('el tercero del mismo vecino ya no sale por WhatsApp (tope de 2 por dia) y dice por que', async () => {
+            const w = (await getDoc(rref(admin, 'alertas_panico', 'pan-s3'))).data().whatsapp;
+            return !!w && w.sent === false && w.simulacro === true && /Hoy ya hizo 2 simulacros/.test(w.reason) && !w.recipients;
+        });
+        await allowed('el vecino ve como salio su simulacro', () => getDoc(rref(ana, 'alertas_panico', 'pan-s3')));
+        await denied('nadie lee ni escribe el contador de simulacros desde el navegador', () => getDoc(rref(admin, 'panico_simulacros', drillDay)));
+        await allowed('el vecino termina su simulacro', () => updateDoc(rref(ana, 'alertas_panico', 'pan-s1'), { status: 'CANCELLED', cancelledAt: ts() }));
+    }
+
     // ───────── Configuracion > Boton de panico (admin.html): telefonos de la garita y la PNC y los textos del aviso ─────────
     console.log('\nConfiguracion del boton de panico');
     {

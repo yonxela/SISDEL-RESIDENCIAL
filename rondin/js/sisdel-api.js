@@ -1073,7 +1073,7 @@
     on('GET', '/api/neighbors/panic-events', async () => (await panicsOf('vecino')).map((pe) => ({
         id: pe.id, neighbor_id: pe.userId, company_id: condoId(), latitude: pe.lat, longitude: pe.lng,
         status: pe.status === 'ATTENDED' ? 'ACTIVE' : pe.status, resolved_by: pe.resolvedBy || null, resolved_at: sqlFromIso(pe.resolvedAt),
-        notes: pe.notes || null, created_at: sqlFromIso(pe.createdAt), neighbor_name: pe.userName, neighbor_phone: pe.phone, document_id: ''
+        notes: pe.notes || null, created_at: sqlFromIso(pe.createdAt), neighbor_name: (pe.simulacro === true ? 'SIMULACRO (prueba) - ' : '') + (pe.userName || ''), neighbor_phone: pe.phone, document_id: ''
     })));
     // Vista de panico del vecino de RONDIN: el vecino ya entro con su codigo de SISDEL
     async function neighborSelf() {
@@ -1216,14 +1216,16 @@
                     // El documento lo escribe el vecino o el guardia y RONDIN lo pinta con innerHTML: se escapa y se tipa aqui
                     const esc = (x) => String(x == null ? '' : x).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
                     const num = (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
-                    const p = { ...raw, userName: esc(raw.userName), casa: esc(raw.casa), phone: esc(raw.phone), lat: num(raw.lat), lng: num(raw.lng) };
+                    // Un simulacro (prueba del boton, 2026-11-23) se ve marcado en el nombre y NO despacha drones
+                    const drill = raw.simulacro === true;
+                    const p = { ...raw, userName: (drill ? 'SIMULACRO (prueba) - ' : '') + esc(raw.userName), casa: esc(raw.casa), phone: esc(raw.phone), lat: num(raw.lat), lng: num(raw.lng) };
                     const mapsUrl = p.lat != null && p.lng != null ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null;
                     if (p.source === 'vecino') {
                         socket.fire('alert:panic', { type: 'neighbor_panic', neighbor: { id: p.userId, name: p.userName, phone: p.phone, document_id: '' }, guard: { id: p.userId, name: `${p.userName}${p.casa ? ' (' + p.casa + ')' : ''}` }, company_name: esc((session() || {}).condominioName || ''), latitude: p.lat, longitude: p.lng, timestamp: p.createdAt, mapsUrl, familiares: [] });
-                        dispatchDrone(p, 'NEIGHBOR');
+                        if (!drill) dispatchDrone(p, 'NEIGHBOR');
                     } else {
                         socket.fire('alert:panic', { panic: guardPanicOut(p), guard: { id: p.userId, name: p.userName }, latitude: p.lat, longitude: p.lng, timestamp: p.createdAt, mapsUrl });
-                        dispatchDrone(p, 'GUARD');
+                        if (!drill) dispatchDrone(p, 'GUARD');
                     }
                 });
             }

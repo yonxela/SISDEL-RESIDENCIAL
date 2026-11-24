@@ -80,7 +80,13 @@ function info({ condo, user }) {
 }
 
 function publicAlert(a) {
-    return { id: a.id, status: a.status, createdAt: a.createdAt || '', attendedByName: a.status === 'ATTENDED' ? (a.attendedByName || '') : '', hasLocation: a.lat != null };
+    const out = { id: a.id, status: a.status, createdAt: a.createdAt || '', attendedByName: a.status === 'ATTENDED' ? (a.attendedByName || '') : '', hasLocation: a.lat != null };
+    // Un simulacro dice tambien como salieron sus avisos de prueba (cuantos y, si no salieron, por que); nunca los telefonos
+    if (a.simulacro === true) {
+        out.simulacro = true;
+        if (a.whatsapp) out.whatsapp = { done: true, sent: (a.whatsapp.recipients || []).filter((r) => r.exito).length, reason: String(a.whatsapp.reason || '').slice(0, 200) };
+    }
+    return out;
 }
 
 // El codigo con que se vinculo el telefono sigue siendo un codigo vigente del vecino (si se lo cambiaron, hay que volver a vincular)
@@ -208,11 +214,13 @@ const panicDevice = onCall(async (request) => {
         const alert = {
             id: ref.id, condominioId: condoId, source: 'vecino', userId, userName: user.name || '',
             casa: user.casa || '', phone: user.phone || '', ...cleanPos(data),
-            status: 'ACTIVE', createdAt: nowIso(), via: 'qr'
+            status: 'ACTIVE', createdAt: nowIso(), via: 'qr',
+            // Simulacro (prueba del boton): solo la central, la garita y el propio vecino; nunca sus familiares (rondas/avisos.js)
+            ...(data.simulacro === true ? { simulacro: true } : {})
         };
         await ref.set(alert);
         await devRef.update({ lastUsedAt: alert.createdAt });
-        log('ok', { alertId: ref.id, gps: alert.lat != null });
+        log('ok', { alertId: ref.id, gps: alert.lat != null, simulacro: alert.simulacro === true });
         return { ok: true, ...info(neighbor), alert: publicAlert(alert) };
     }
 

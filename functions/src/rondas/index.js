@@ -3,10 +3,35 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
-const { recipientsFor, cleanConfig } = require('./avisos');
+const { recipientsFor, cleanConfig, isDrill, DRILL_LIMITS } = require('./avisos');
 const whatsapp = require('./whatsapp');
 const { cleanAll } = require('./mantenimiento');
 const privilegios = require('../privilegios');
+
+// Dia de Guatemala (UTC-6) de una fecha ISO
+const gtDay = (iso) => {
+    const t = Date.parse(iso || '');
+    return new Date((Number.isFinite(t) ? t : Date.now()) - 6 * 3600000).toISOString().slice(0, 10);
+};
+// SIMULACRO (pedido del usuario el 2026-11-23): toma un lugar del tope del dia (por condominio y por vecino) en
+// condominios/{c}/panico_simulacros/{AAAA-MM-DD} (solo el servidor; las reglas no lo dejan leer ni escribir). { ok } o { ok: false, reason }
+async function takeDrillSlot(condoRef, alert) {
+    const ref = condoRef.collection('panico_simulacros').doc(gtDay(alert.createdAt));
+    const userId = String(alert.userId || 'sin-usuario');
+    return db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const day = snap.exists ? snap.data() : {};
+        const users = day.users || {};
+        if ((day.count || 0) >= DRILL_LIMITS.perDay) {
+            return { ok: false, reason: `Hoy ya se hicieron ${DRILL_LIMITS.perDay} simulacros con WhatsApp en el condominio: este quedo solo en la pantalla de la garita` };
+        }
+        if ((users[userId] || 0) >= DRILL_LIMITS.perUser) {
+            return { ok: false, reason: `Hoy ya hizo ${DRILL_LIMITS.perUser} simulacros con WhatsApp: este quedo solo en la pantalla de la garita` };
+        }
+        tx.set(ref, { count: (day.count || 0) + 1, users: { ...users, [userId]: (users[userId] || 0) + 1 }, updatedAt: new Date().toISOString() }, { merge: true });
+        return { ok: true };
+    });
+}
 
 // Alerta de panico nueva: WhatsApp a la central, a los telefonos que configuro el condominio (garita, PNC...), al personal del
 // condominio y, si es un vecino, a sus contactos de emergencia. El resultado queda en la alerta. Los textos y los telefonos salen de
@@ -20,6 +45,16 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         await event.data.ref.update({ whatsapp: { sent: false, reason: 'WhatsApp sin configurar', at: new Date().toISOString() } });
         logger.warn('panico: WhatsApp sin configurar', { condoId: event.params.condoId, alertId: event.params.alertId });
         return;
+    }
+    // Un simulacro solo avisa a la central, las garitas y el propio vecino (avisos.js), y como mucho DRILL_LIMITS por dia: pasado
+    // el tope la prueba igual se ve en la pantalla de la garita, sin WhatsApp
+    if (isDrill(alert)) {
+        const slot = await takeDrillSlot(condoRef, alert);
+        if (!slot.ok) {
+            await event.data.ref.update({ whatsapp: { sent: false, simulacro: true, reason: slot.reason, at: new Date().toISOString() } });
+            logger.info('panico: simulacro sin WhatsApp (tope del dia)', { condoId: event.params.condoId, alertId: event.params.alertId });
+            return;
+        }
     }
 
     const [condoSnap, contactsSnap, staffSnap, panicCfgSnap] = await Promise.all([
@@ -48,9 +83,12 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         results.push({ nombre: r.nombre, canal: canal || 'NINGUNO', exito: !!canal });
     }
     await event.data.ref.update({
-        whatsapp: { sent: results.some((r) => r.exito), recipients: results, at: new Date().toISOString(), reason: recipients.length ? '' : 'Sin destinatarios' }
+        whatsapp: {
+            sent: results.some((r) => r.exito), recipients: results, at: new Date().toISOString(), reason: recipients.length ? '' : 'Sin destinatarios',
+            ...(isDrill(alert) ? { simulacro: true } : {})
+        }
     });
-    logger.info('panico: avisos enviados', { condoId: event.params.condoId, alertId: event.params.alertId, enviados: results.filter((r) => r.exito).length, total: results.length });
+    logger.info(isDrill(alert) ? 'panico: simulacro, avisos enviados' : 'panico: avisos enviados', { condoId: event.params.condoId, alertId: event.params.alertId, enviados: results.filter((r) => r.exito).length, total: results.length });
 });
 
 // Todos los dias a las 03:00: cierra turnos y rondas olvidados y borra posiciones de mas de 30 dias

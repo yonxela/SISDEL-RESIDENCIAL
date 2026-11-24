@@ -84,6 +84,25 @@ console.log('\nConfiguracion del boton de panico (Configuracion > Boton de panic
     equal('los mensajes configurados no llevan emojis del sistema', [staffMsg, famMsg, test].every((m) => !/[\u{1F300}-\u{1FAFF}]/u.test(m.replace(/Diríjase|García/g, ''))), true);
 }
 
+console.log('\nSimulacro (prueba del boton sin avisar a los familiares)');
+{
+    const drill = { ...vecino, simulacro: true };
+    const cfg = { phones: [{ kind: 'garita', name: 'Garita principal', phone: '4444-0001' }, { kind: 'garita', name: 'Garita 2', phone: '4444-0002' }, { kind: 'pnc', name: 'PNC', phone: '4444-0110' }, { kind: 'otro', name: 'Otro', phone: '4444-0999' }] };
+    const base = { alert: drill, condoName: 'Villa Ferrer', central: '50243093379', contacts: [{ name: 'Luis', phone: '5555-1111' }, { name: 'Marta', phone: '5555-2222' }], staff: [{ name: 'Fernando', phone: '5555-1234' }], config: cfg };
+    const r = A.recipientsFor(base);
+    equal('simulacro: solo la central, las garitas y el propio vecino (ni PNC, ni otros, ni personal, ni familiares)', r.map((x) => x.nombre), ['Central SISDEL', 'Garita principal', 'Garita 2', 'Ana García']);
+    equal('el aviso dice primero que es un simulacro y no una emergencia, a la garita y al vecino', r.every((x) => x.mensaje.startsWith('*SIMULACRO - NO ES UNA EMERGENCIA*')), true);
+    equal('a la garita le llegan los datos de una alerta (lote, telefono, GPS y mapa) y que no hay que ir', [/Lugar: Casa 12/, /Tel: 5555-5678/, /GPS: 14\.54200/, /maps\.google\.com/, /No hay que ir al lugar/].every((re) => re.test(r[1].mensaje)), true);
+    equal('dice a quienes se avisaria en una emergencia real, sin nombres', /En una emergencia real tambien se avisaria a: 2 contactos de emergencia, la PNC, los demas telefonos del condominio y la administracion\./.test(r[1].mensaje) && !/Luis|Marta/.test(r[1].mensaje), true);
+    equal('al vecino: su boton funciona y llevo su ubicacion', /su boton de panico funciona/.test(r[3].mensaje) && /Llevo su ubicacion GPS/.test(r[3].mensaje), true);
+    const noGps = A.recipientsFor({ ...base, alert: { ...drill, lat: null, lng: null } });
+    equal('sin GPS el vecino se entera de que debe activar la ubicacion', /No llevo su ubicacion: active la ubicacion/.test(noGps[3].mensaje), true);
+    equal('sin telefono del vecino no hay copia para el', A.recipientsFor({ ...base, alert: { ...drill, phone: '' } }).map((x) => x.nombre), ['Central SISDEL', 'Garita principal', 'Garita 2']);
+    equal('sin familiares ni nada mas que avisar, le sugiere registrarlos', /Registre sus contactos de emergencia/.test(A.recipientsFor({ ...base, contacts: [], staff: [], config: { phones: [] } })[1].mensaje), true);
+    equal('una alerta de verdad no cambia (simulacro solo si viene en true)', A.recipientsFor({ ...base, alert: { ...vecino, simulacro: 'si' } }).map((x) => x.nombre), A.recipientsFor({ ...base, alert: vecino }).map((x) => x.nombre));
+    equal('el tope del dia: 20 simulacros con WhatsApp por condominio y 2 por vecino', A.DRILL_LIMITS, { perDay: 20, perUser: 2 });
+}
+
 console.log('\nLimpieza diaria (formato de RONDIN: fechas AAAA-MM-DD HH:MM:SS en UTC)');
 const now = Date.parse('2026-11-08T12:00:00Z');
 const h = (n) => M.sqlTime(now - n * 3600 * 1000);

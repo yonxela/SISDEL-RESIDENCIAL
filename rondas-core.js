@@ -145,13 +145,16 @@ const SisdelRondas = (() => {
     function mapsLink(lat, lng) { return `https://www.google.com/maps?q=${lat},${lng}`; }
 
     // ── Alertas de panico ──
-    async function raisePanic({ source, pos, casa, phone }) {
+    // simulacro: true = prueba del boton (pedido del usuario el 2026-11-23): el servidor solo avisa a la central, la garita y al propio
+    // vecino, nunca a sus familiares (functions/src/rondas/avisos.js), y la garita la ve marcada como SIMULACRO (panico-alertas.js)
+    async function raisePanic({ source, pos, casa, phone, simulacro }) {
         const ref = col('alertas_panico').doc();
         const data = {
             id: ref.id, condominioId: condoId, source, userId: uid(), userName: session.userName || '',
             casa: casa || session.userCasa || '', phone: phone || '',
             lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null,
-            status: 'ACTIVE', createdAt: nowIso()
+            status: 'ACTIVE', createdAt: nowIso(),
+            ...(simulacro === true ? { simulacro: true } : {})
         };
         await ref.set(data);
         return data;

@@ -15,6 +15,10 @@ const SisdelPanico = (() => {
             border-radius: 12px; background: #b91c1c; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.4); font-family: inherit; }
         .pan-item.active { animation: panPulse 1.2s ease-in-out infinite; }
         .pan-item.attended { background: #92400e; }
+        /* Simulacro (prueba del boton, 2026-11-23): en azul y sin latir; dice que NO es una emergencia */
+        .pan-item.drill { background: #1d4ed8; animation: none; }
+        .pan-item.drill.attended { background: #1e3a8a; }
+        .pan-item.drill button.solid { color: #1d4ed8; }
         .pan-item .pan-text { flex: 1; min-width: 200px; font-size: 0.9rem; line-height: 1.35; }
         .pan-item .pan-title { font-weight: 800; letter-spacing: 0.04em; font-size: 0.95rem; }
         .pan-item a, .pan-item button { font: inherit; font-size: 0.8rem; font-weight: 700; color: #fff; text-decoration: none; cursor: pointer;
@@ -79,26 +83,29 @@ const SisdelPanico = (() => {
         function render() {
             bar.classList.toggle('min', minimized && alerts.length > 0);
             if (minimized && alerts.length) {
-                const active = alerts.filter((a) => a.status === 'ACTIVE').length;
-                bar.innerHTML = `<button class="pan-pill" data-expand="1">${alerts.length} alerta(s) de pánico${active ? ` · ${active} sin atender` : ''}</button>`;
+                const real = alerts.filter((a) => a.simulacro !== true);
+                const drills = alerts.length - real.length;
+                const active = real.filter((a) => a.status === 'ACTIVE').length;
+                bar.innerHTML = `<button class="pan-pill" data-expand="1">${real.length ? `${real.length} alerta(s) de pánico${active ? ` · ${active} sin atender` : ''}` : ''}${real.length && drills ? ' · ' : ''}${drills ? `${drills} simulacro(s)` : ''}</button>`;
                 return;
             }
             bar.innerHTML = (alerts.length ? '<button class="pan-pill pan-min" data-minimize="1">Minimizar</button>' : '') + alerts.map((a) => {
                 const who = a.source === 'guardia' ? `Guardia: ${esc(a.userName)}` : `Vecino: ${esc(a.userName)}${a.casa ? ' · ' + esc(a.casa) : ''}`;
                 const phone = a.phone ? ` · Tel. <a href="tel:${esc(a.phone)}" style="border:none;padding:0;background:none;text-decoration:underline;">${esc(a.phone)}</a>` : '';
                 const map = (typeof a.lat === 'number' && typeof a.lng === 'number') ? `<a href="${esc(SisdelRondas.mapsLink(a.lat, a.lng))}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span style="font-size:0.75rem;opacity:0.85;">Sin GPS</span>';
-                const state = a.status === 'ATTENDED' ? ` · Atendida por ${esc(a.attendedByName || '')}` : '';
+                const drill = a.simulacro === true;
+                const state = a.status === 'ATTENDED' ? ` · ${drill ? 'Recibido' : 'Atendida'} por ${esc(a.attendedByName || '')}` : '';
                 return `
-                <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}" role="alert">
+                <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}${drill ? ' drill' : ''}" role="alert">
                     ${ICON_ALERT}
                     <div class="pan-text">
-                        <div class="pan-title">ALERTA DE PÁNICO</div>
+                        <div class="pan-title">${drill ? 'SIMULACRO DE PÁNICO · PRUEBA, NO ES UNA EMERGENCIA' : 'ALERTA DE PÁNICO'}</div>
                         <div>${who}${phone}</div>
-                        <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}</div>
+                        <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}${drill ? ' · No hay que ir al lugar: márquelo como recibido para completar la prueba' : ''}</div>
                     </div>
                     ${map}
-                    ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">Atender</button>` : ''}
-                    ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}">Resolver</button>` : ''}
+                    ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">${drill ? 'Marcar recibido' : 'Atender'}</button>` : ''}
+                    ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}" data-drill="${drill ? '1' : ''}">${drill ? 'Cerrar simulacro' : 'Resolver'}</button>` : ''}
                 </div>`;
             }).join('');
         }
@@ -111,7 +118,7 @@ const SisdelPanico = (() => {
             try {
                 if (attend) { attend.disabled = true; await SisdelRondas.attendPanic(attend.dataset.attend); }
                 if (resolve) {
-                    const notes = prompt('¿Qué pasó? (queda en el registro)');
+                    const notes = prompt('¿Qué pasó? (queda en el registro)', resolve.dataset.drill ? 'Simulacro: el botón funcionó' : '');
                     if (notes === null) return;
                     resolve.disabled = true;
                     await SisdelRondas.resolvePanic(resolve.dataset.resolve, notes);

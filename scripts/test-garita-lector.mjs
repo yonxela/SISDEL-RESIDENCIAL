@@ -33,6 +33,8 @@ async function run() {
     // Ana al dia y Maria morosa: el seed lo deja asi, pero otra prueba pudo cambiarlo
     await usersRef.doc('u-ana').update({ paymentStatus: 'al_dia' });
     await usersRef.doc('u-maria').update({ paymentStatus: 'moroso' });
+    // El pase de visita del seed (vis-hoy) lo pudo usar otra prueba (test-garita-accesos corre antes en `npm run test:navegador`): se deja como pendiente
+    await db.collection(`condominios/${CONDO}/visitas`).doc('vis-hoy').update({ status: 'pending', enteredAt: null, exitedAt: FieldValue.delete() });
 
     const { newPage, close } = await launch(args.chrome);
     try {

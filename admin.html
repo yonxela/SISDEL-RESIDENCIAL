@@ -384,7 +384,7 @@
     <script src="accesos.js?v=20261123c"></script>
     <script src="sisdel-core.js?v=20261124a"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
-    <script src="privilegios-ui.js?v=20261124a"></script>
+    <script src="privilegios-ui.js?v=20261124b"></script>
     <script src="reportes-export.js?v=20261115a"></script>
     <script src="panico-qr.js?v=20261122a"></script>
     <script src="reportes-ui.js?v=20261122d"></script>
@@ -648,6 +648,7 @@
                 paintUsers(document.getElementById('usersList'), filtered);
                 renderConfigUsers();
                 if (privTab) privTab.setUsers(allUsers);
+                if (tplTab) tplTab.setUsers(allUsers);
             }
 
             // --- Modal Actions ---
@@ -1130,6 +1131,9 @@
                 await ensureTemplates();
                 tplTab = SisdelPrivilegiosUI.mountTemplatesTab(document.getElementById('cfgPlantillas'), {
                     condominioId: condoId, templates: customTemplates, canManage: caps.privilegios,
+                    users: allUsersCache, currentUserId: session.userId,
+                    // Aplicar una plantilla a un usuario desde la pestana Plantillas: se refresca la lista (y la pestana Privilegios)
+                    onApplied: async () => { await renderStats(); await renderUsers(); },
                     onChanged: (list) => { customTemplates = list; if (privTab) privTab.setTemplates(list); }
                 });
             }

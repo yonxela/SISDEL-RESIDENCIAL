@@ -1366,6 +1366,35 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     yes('privilegios-ui.js lleva la misma version en admin.html y master.html', v('admin.html') && v('admin.html') === v('master.html'));
 }
 
+// Pedido del usuario el 2026-11-24: en la pestana Plantillas eligio la plantilla para Lourdes y "Guardar plantilla" estaba
+// apagado (no habia cambios en la plantilla) y no habia como darsela a nadie: ahora "Aplicar esta plantilla a"
+console.log('\nPlantillas: aplicar una plantilla a un usuario');
+{
+    const ui = read('privilegios-ui.js');
+    const admin = read('admin.html');
+    yes('la pestana Plantillas ofrece "Aplicar esta plantilla a" con una plantilla guardada y el privilegio de asignar privilegios',
+        /const canApply = canManage && !!tpl\.id;/.test(ui) && /<label for="pvApplyUser">Aplicar esta plantilla a<\/label>/.test(ui) && /data-act="apply">Aplicar y guardar<\/button>/.test(ui) && /\$\{applyBlock\}/.test(ui));
+    yes('solo a usuarios del rol de la plantilla, nunca a uno mismo ni al Master (nadie cambia sus propios privilegios)',
+        /users\.filter\(\(u\) => u\.role === form\.role && u\.id !== options\.currentUserId && u\.id !== 'master'\)/.test(ui));
+    yes('aplica lo que la plantilla da a ESE rol (templateKeys con su rol, sin lo que el rol no puede tener), confirma y guarda con setUserAccess',
+        /PRIV\.templateKeys\(\{ \.\.\.tpl, claves: tpl\.claves \|\| \[\] \}, user\.role\)\.filter\(\(k\) => PRIV\.allowedFor\(k, user\.role\)\)/.test(ui)
+        && /if \(!confirm\(`¿Aplicar la plantilla/.test(ui) && /SISDEL\.setUserAccess\(user\.id, \{ privilegios: PRIV\.toOverrides\(user\.role, keys\) \}\)/.test(ui)
+        && /ya tiene exactamente los privilegios de esta plantilla/.test(ui));
+    yes('con cambios sin guardar en la plantilla no se aplica (primero se guarda) y la nota lo dice',
+        /if \(applyButton\) applyButton\.disabled = changed;/.test(ui) && /Guarde primero los cambios de la plantilla para aplicarla\./.test(ui));
+    yes('admin.html le pasa los usuarios, quien es y que refrescar, y le entrega la lista nueva al cambiar',
+        /users: allUsersCache, currentUserId: session\.userId,/.test(admin) && /onApplied: async \(\) => \{ await renderStats\(\); await renderUsers\(\); \}/.test(admin)
+        && /if \(tplTab\) tplTab\.setUsers\(allUsers\);/.test(admin) && /setUsers\(next\) \{\s*users = next \|\| \[\];/.test(ui));
+    // Lo que se guarda reproduce EXACTAMENTE la plantilla para ese rol (cada plantilla del sistema y cada rol que puede recibirla)
+    let exact = true;
+    for (const tpl of P.TEMPLATES) for (const role of P.ROLES) {
+        const keys = P.templateKeys(tpl, role).filter((k) => P.allowedFor(k, role));
+        const eff = P.effective(role, P.toOverrides(role, keys));
+        if (P.KEYS.some((k) => !!eff[k] !== keys.includes(k))) { exact = false; console.log('    distinto:', tpl.id, role); }
+    }
+    yes('lo que se guarda al aplicar da exactamente los privilegios de la plantilla (todas las plantillas del sistema, todos los roles)', exact);
+}
+
 // ───────── Portal del vecino con pestañas y actualizacion de datos (2026-11-23) ─────────
 console.log('\nPortal del vecino: pestañas y actualizacion de datos');
 {

@@ -79,6 +79,11 @@ const SisdelPrivilegiosUI = (() => {
         .pv-jump small { font-size:0.66rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; }
         mark.pv-hit { background:rgba(250,204,21,0.38); color:inherit; border-radius:3px; padding:0 1px; }
         .pv-row.pv-flash { animation:pvFlash 1.8s ease-out; }
+        /* Plantillas: aplicar la plantilla a un usuario */
+        .pv-apply { display:flex; flex-wrap:wrap; align-items:center; gap:0.6rem; margin-bottom:1rem; padding:0.75rem 0.9rem; border:1px solid var(--primary); border-radius:var(--radius-md); background:var(--info-bg); }
+        .pv-apply label { font-size:0.85rem; font-weight:700; color:var(--text-primary); }
+        .pv-apply select { flex:1; min-width:220px; width:auto; }
+        .pv-apply-note, .pv-apply-none { flex-basis:100%; font-size:0.75rem; color:var(--text-muted); }
         @keyframes pvFlash { 0%, 35% { box-shadow:0 0 0 3px var(--primary); background:var(--info-bg); } 100% { box-shadow:0 0 0 0 transparent; } }
         .pv-modal { max-width:1000px !important; width:calc(100% - 2rem); max-height:92vh; padding:0 !important; display:flex; flex-direction:column; overflow:hidden; }
         .pv-modal-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.1rem 1.4rem; border-bottom:1px solid var(--border-strong); }
@@ -598,6 +603,9 @@ const SisdelPrivilegiosUI = (() => {
         injectStyles();
         const canManage = !!options.canManage;
         let own = options.templates || [];
+        // Usuarios del condominio, para "Aplicar a un usuario" (pedido del usuario el 2026-11-24: abrio su plantilla aqui para
+        // darsela a LOURDES y "Guardar plantilla" estaba apagado: ese boton guarda cambios a la plantilla, no la asigna a nadie)
+        let users = options.users || [];
         let selectedId = null; // id de plantilla o 'new'
         let dirty = () => false;
 
@@ -645,12 +653,27 @@ const SisdelPrivilegiosUI = (() => {
             const baseline = snap();
             dirty = () => !readOnly && snap() !== baseline;
             let search = '';
+            // A quien se le puede aplicar desde aqui: usuarios del mismo rol que la plantilla, menos uno mismo (nadie cambia sus
+            // propios privilegios) y el Master; para otro rol esta el editor de Privilegios
+            const canApply = canManage && !!tpl.id;
+            const targets = canApply ? users.filter((u) => u.role === form.role && u.id !== options.currentUserId && u.id !== 'master')
+                .sort((a, b) => String(a.name).localeCompare(String(b.name))) : [];
+            const applyBlock = canApply ? `
+                <div class="pv-apply">
+                    <label for="pvApplyUser">Aplicar esta plantilla a</label>
+                    ${targets.length
+                        ? `<select class="pv-input" id="pvApplyUser" data-ref="applyUser"><option value="">Elegir usuario: ${esc(PRIV.ROLE_LABELS[form.role] || form.role)}…</option>${targets.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}${u.cargo ? ' · ' + esc(u.cargo) : ''}${u.active === false ? ' · inactivo' : ''}</option>`).join('')}</select>
+                           <button type="button" class="pv-btn primary" data-act="apply">Aplicar y guardar</button>`
+                        : `<span class="pv-apply-none">No hay usuarios con el rol ${esc(PRIV.ROLE_LABELS[form.role] || form.role)}. Para otro rol, use la pestaña Privilegios.</span>`}
+                    <span class="pv-apply-note" data-ref="applyNote">Cambia los privilegios de esa persona por los de la plantilla y los guarda.</span>
+                </div>` : '';
 
             main.innerHTML = `
                 <div class="pv-form">
                     <div class="pv-note ${readOnly ? 'warn' : ''}">${tpl.system
                         ? 'Plantilla del sistema: solo se puede ver. Use "Duplicar" para crear una propia a partir de ella.'
-                        : (readOnly ? 'Usted puede ver las plantillas, pero no cambiarlas.' : 'Una plantilla es un conjunto completo de privilegios que se aplica al crear un usuario o desde el editor de privilegios.')}</div>
+                        : (readOnly ? 'Usted puede ver las plantillas, pero no cambiarlas.' : 'Una plantilla es un conjunto completo de privilegios. "Guardar plantilla" guarda los cambios a la plantilla; para dársela a una persona use "Aplicar esta plantilla a" (aquí abajo), o elíjala al crear un usuario o en la pestaña Privilegios.')}</div>
+                    ${applyBlock}
                     <div class="pv-fields">
                         <label>Nombre<input class="pv-input" data-f="name" maxlength="60" ${readOnly ? 'disabled' : ''} value="${esc(form.name)}" placeholder="Ej. Secretaria de turno noche"></label>
                         <label>Rol sugerido<select class="pv-input" data-f="role" ${readOnly ? 'disabled' : ''}>${PRIV.ROLES.map((r) => `<option value="${r}" ${r === form.role ? 'selected' : ''}>${esc(PRIV.ROLE_LABELS[r])}</option>`).join('')}</select></label>
@@ -674,11 +697,16 @@ const SisdelPrivilegiosUI = (() => {
             const saveButton = root.querySelector('[data-act=save]');
             const discardButton = root.querySelector('[data-act=discard]');
 
+            const applyButton = root.querySelector('[data-act=apply]');
+            const applyNote = root.querySelector('[data-ref=applyNote]');
             function refresh(note) {
                 const changed = dirty();
                 status.innerHTML = `${set.size} privilegios${changed ? ' · <span class="dirty">cambios sin guardar</span>' : ''}${note ? ' · ' + esc(note) : ''}`;
                 if (saveButton) saveButton.disabled = !changed && !!tpl.id;
                 if (discardButton) discardButton.disabled = !changed;
+                // Se aplica la plantilla guardada: con cambios sin guardar, primero hay que guardarla
+                if (applyButton) applyButton.disabled = changed;
+                if (applyNote) applyNote.textContent = changed ? 'Guarde primero los cambios de la plantilla para aplicarla.' : 'Cambia los privilegios de esa persona por los de la plantilla y los guarda.';
             }
             function draw(note) {
                 renderMatrix(matrix, { role: form.role, set, disabled: readOnly, search, marks: false, template: true, onChange: (_s, change) => draw(cascadeNote(change)) });
@@ -709,6 +737,26 @@ const SisdelPrivilegiosUI = (() => {
                 if (kind === 'all') { PRIV.KEYS.filter((k) => PRIV.allowedFor(k, form.role) && !PRIV.handOnly(k, form.role)).forEach((k) => set.add(k)); draw(); }
                 else if (kind === 'none') { set.clear(); draw(); }
                 else if (kind === 'discard') { mountForm(tpl); }
+                else if (kind === 'apply') {
+                    const user = users.find((u) => u.id === (root.querySelector('[data-ref=applyUser]') || {}).value);
+                    if (!user) { SISDEL.showToast('Elija a qué usuario aplicar la plantilla', 'warning'); return; }
+                    const keys = PRIV.templateKeys({ ...tpl, claves: tpl.claves || [] }, user.role).filter((k) => PRIV.allowedFor(k, user.role));
+                    const now = PRIV.effective(user.role, user.privilegios);
+                    const changes = PRIV.KEYS.filter((k) => !!now[k] !== keys.includes(k)).length;
+                    if (!changes) { SISDEL.showToast(`${user.name} ya tiene exactamente los privilegios de esta plantilla`, 'info'); return; }
+                    if (!confirm(`¿Aplicar la plantilla "${tpl.name}" a ${user.name}?\n\nSus privilegios pasan a ser los de la plantilla: ${keys.length} privilegios (${changes} cambio${changes === 1 ? '' : 's'}). Se guarda al instante y se aplica la próxima vez que abra una pantalla.`)) return;
+                    applyButton.disabled = true;
+                    applyButton.textContent = 'Aplicando…';
+                    const ok = await SISDEL.setUserAccess(user.id, { privilegios: PRIV.toOverrides(user.role, keys) });
+                    applyButton.textContent = 'Aplicar y guardar';
+                    applyButton.disabled = false;
+                    if (ok) {
+                        SISDEL.showToast(`Plantilla "${tpl.name}" aplicada a ${user.name}`, 'success');
+                        if (options.onApplied) await options.onApplied(user);
+                    } else {
+                        SISDEL.showToast('No se pudieron guardar los privilegios', 'error');
+                    }
+                }
                 else if (kind === 'duplicate') {
                     selectedId = 'new'; drawList();
                     mountForm({ name: `${tpl.name} (copia)`, role: tpl.role, description: tpl.description, claves: tpl.claves, system: false });
@@ -768,6 +816,11 @@ const SisdelPrivilegiosUI = (() => {
         select(null, true);
         return {
             setTemplates(next) { own = next || []; drawList(); },
+            // Lista nueva de usuarios: si se esta viendo una plantilla sin cambios, se vuelve a pintar con la lista al dia
+            setUsers(next) {
+                users = next || [];
+                if (selectedId && selectedId !== 'new' && !dirty()) { const tpl = find(selectedId); if (tpl) mountForm(tpl); }
+            },
             isDirty: () => dirty()
         };
     }

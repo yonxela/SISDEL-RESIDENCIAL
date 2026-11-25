@@ -126,6 +126,7 @@ service cloud.firestore {
     function pVecinoContactos(c) { return can(c, 'vecino.contactos', ['vecino']); }
     function pPanicoActivar(c) { return can(c, 'panico.activar', ['vecino', 'policia', 'supervisor']); }
     function pPanicoCancelar(c) { return pPanicoActivar(c) && childOk(c, 'panico.cancelar'); }
+    function pVecinoConfigurar(c) { return can(c, 'vecino.configurar', ['admin']); }
     // Alertas de pánico
     function pPanicoVer(c) { return can(c, 'panico.ver', ['admin', 'policia', 'supervisor', 'auditor']); }
     function pPanicoContactos(c) { return pPanicoVer(c) && childOk(c, 'panico.contactos'); }
@@ -215,6 +216,12 @@ service cloud.firestore {
     }
     function onlyChanges(fields) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+    // Interruptor del condominio para lo que hace el vecino al entrar con su clave (Configuracion > Panel del vecino):
+    // sin el documento o sin el campo, encendido; solo un false lo apaga
+    function vecinoOpcion(condoId, opcion) {
+      let path = /databases/$(database)/documents/condominios/$(condoId)/vecino_config/general;
+      return !exists(path) || get(path).data.get(opcion, true) != false;
     }
 
     // Quien puede crear un usuario de ese rol. Con usuarios.crear solo se registran vecinos: un guardia lo crea quien
@@ -387,9 +394,12 @@ service cloud.firestore {
       }
 
       match /visitas/{visitId} {
-        // Un acceso temporal (varios dias) es un privilegio aparte del vecino (vecino.temporal)
+        // Un acceso temporal (varios dias) es un privilegio aparte del vecino (vecino.temporal). Ademas, el condominio puede
+        // apagar para TODOS los vecinos los pases y los accesos temporales (Configuracion > Panel del vecino, vecino_config/general):
+        // apagado, el vecino no crea ni cambia pases aunque tenga el privilegio (si puede cancelarlos). La oficina no se ve afectada.
         function residentVisitOk(c) {
-          return request.resource.data.get('visitType', null) != 'temporal' || pVecinoTemporal(c);
+          return vecinoOpcion(c, 'visitas')
+            && (request.resource.data.get('visitType', null) != 'temporal' || (pVecinoTemporal(c) && vecinoOpcion(c, 'temporal')));
         }
         allow read: if isMaster()
           || pVisitasVer(condoId)
@@ -777,6 +787,30 @@ service cloud.firestore {
         }
         allow read: if docId == 'general' && (isMaster() || pPanicoConfigurar(condoId));
         allow create, update: if pPanicoConfigurar(condoId) && panicConfigOk();
+        allow delete: if false;
+      }
+
+      // ── Panel del vecino (Configuracion > Panel del vecino de admin.html, vecino-config.js; pedido del usuario el 2026-11-24): lo que
+      // TODOS los vecinos del condominio pueden hacer al entrar con su clave: ver y descargar su marbete (marbete), generar pases de
+      // visita (visitas) y accesos temporales (temporal). Sin el documento, o sin el campo, esta encendido (como antes). La lee
+      // cualquier miembro del condominio (el portal del vecino la necesita) y la escribe quien tiene vecino.configurar. Un solo
+      // documento ('general'), no se borra y cada cambio queda en la bitacora (auditVecinoConfig). Los pases los hacen cumplir
+      // estas reglas (vecinoOpcion en visitas); el marbete es de pantalla (vecino.html).
+      match /vecino_config/{docId} {
+        function vecinoConfigOk() {
+          let d = request.resource.data;
+          return docId == 'general'
+            && d.keys().hasOnly(['marbete', 'visitas', 'temporal', 'marbeteNote', 'visitasNote', 'updatedAt', 'updatedBy'])
+            && d.get('marbete', true) is bool && d.get('visitas', true) is bool && d.get('temporal', true) is bool
+            && d.get('marbeteNote', '') is string && d.get('marbeteNote', '').size() <= 200
+            && d.get('visitasNote', '') is string && d.get('visitasNote', '').size() <= 200
+            && d.get('updatedAt', '') is string && d.get('updatedAt', '').size() <= 40
+            && d.get('updatedBy', {}) is map && d.get('updatedBy', {}).keys().hasOnly(['id', 'name'])
+            && d.get('updatedBy', {}).get('id', '') == request.auth.uid
+            && d.get('updatedBy', {}).get('name', '') is string && d.get('updatedBy', {}).get('name', '').size() <= 120;
+        }
+        allow read: if docId == 'general' && (isMaster() || isMember(condoId));
+        allow create, update: if pVecinoConfigurar(condoId) && vecinoConfigOk();
         allow delete: if false;
       }
 

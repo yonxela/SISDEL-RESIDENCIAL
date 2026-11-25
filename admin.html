@@ -203,6 +203,7 @@
                     <button class="tab" data-cfg="privilegios">Privilegios</button>
                     <button class="tab" data-cfg="plantillas">Plantillas</button>
                     <button class="tab" data-cfg="panico">Botón de pánico</button>
+                    <button class="tab" data-cfg="vecino">Panel del vecino</button>
                 </div>
                 <section id="cfgUsuarios">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; gap:1rem; flex-wrap:wrap;">
@@ -234,6 +235,8 @@
                 <section id="cfgPlantillas" style="display:none;"></section>
                 <!-- Boton de panico: telefonos de la garita y la PNC que reciben cada alerta y los textos del aviso (panico-config-ui.js) -->
                 <section id="cfgPanico" style="display:none;"></section>
+                <!-- Panel del vecino: encender o apagar para todos los vecinos su marbete y sus pases de visita (vecino-config-ui.js) -->
+                <section id="cfgVecino" style="display:none;"></section>
             </div>
         </div>
 
@@ -380,9 +383,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261124a"></script>
+    <script src="privilegios.js?v=20261124b"></script>
     <script src="accesos.js?v=20261123c"></script>
-    <script src="sisdel-core.js?v=20261124a"></script>
+    <script src="sisdel-core.js?v=20261124b"></script>
     <script src="sisdel-busqueda.js?v=20261115a"></script>
     <script src="privilegios-ui.js?v=20261124b"></script>
     <script src="reportes-export.js?v=20261115a"></script>
@@ -395,6 +398,8 @@
     <!-- Configuracion > Boton de panico: el modulo de los avisos (el mismo del servidor) y la pestana -->
     <script src="panico-avisos.js?v=20261123a"></script>
     <script src="panico-config-ui.js?v=20261122a"></script>
+    <script src="vecino-config.js?v=20261124a"></script>
+    <script src="vecino-config-ui.js?v=20261124a"></script>
     <script src="panico-alertas.js?v=20261123a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1098,11 +1103,12 @@
 
             // ── Configuración: Usuarios, Privilegios y Plantillas (estructura del módulo de MULTISYS) ──
             // Quien no tiene ningún privilegio usuarios.* no ve el botón; con solo usuarios.ver todo es de solo lectura
-            const canConfig = SISDEL.canAny(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios', 'panico.configurar']);
+            const canConfig = SISDEL.canAny(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios', 'panico.configurar', 'vecino.configurar']);
             const btnConfig = document.getElementById('btnConfig');
             btnConfig.style.display = canConfig ? '' : 'none';
-            const cfgAllowed = { usuarios: SISDEL.can('usuarios.ver'), privilegios: SISDEL.can('usuarios.ver'), plantillas: SISDEL.canAny(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios']), panico: SISDEL.can('panico.configurar') };
+            const cfgAllowed = { usuarios: SISDEL.can('usuarios.ver'), privilegios: SISDEL.can('usuarios.ver'), plantillas: SISDEL.canAny(['usuarios.panel', 'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.eliminar', 'usuarios.codigos', 'usuarios.privilegios']), panico: SISDEL.can('panico.configurar'), vecino: SISDEL.can('vecino.configurar') };
             let panicTab = null;
+            let vecinoTab = null;
             let cfgOpen = false;
             let cfgTab = 'usuarios';
             let tplTab = null;
@@ -1114,7 +1120,7 @@
             document.getElementById('cfgSearch').addEventListener('input', (e) => { cfgQuery = e.target.value; renderConfigUsers(); });
             document.getElementById('cfgRole').addEventListener('change', (e) => { cfgRole = e.target.value; renderConfigUsers(); });
 
-            const unsaved = () => (privTab && privTab.isDirty()) || (tplTab && tplTab.isDirty()) || (panicTab && panicTab.isDirty());
+            const unsaved = () => (privTab && privTab.isDirty()) || (tplTab && tplTab.isDirty()) || (panicTab && panicTab.isDirty()) || (vecinoTab && vecinoTab.isDirty());
             async function ensureTemplates() {
                 if (caps.privilegios) customTemplates = await SISDEL.getPrivilegeTemplates(condoId);
             }
@@ -1139,7 +1145,7 @@
             }
 
             async function showConfigTab(tab) {
-                if (!cfgAllowed[tab]) tab = ['usuarios', 'privilegios', 'plantillas', 'panico'].find((t) => cfgAllowed[t]) || 'plantillas';
+                if (!cfgAllowed[tab]) tab = ['usuarios', 'privilegios', 'plantillas', 'panico', 'vecino'].find((t) => cfgAllowed[t]) || 'plantillas';
                 cfgTab = tab;
                 document.querySelectorAll('#configTabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.cfg === tab));
                 document.getElementById('cfgUsuarios').style.display = tab === 'usuarios' ? '' : 'none';
@@ -1147,6 +1153,8 @@
                 document.getElementById('cfgPlantillas').style.display = tab === 'plantillas' ? '' : 'none';
                 document.getElementById('cfgPanico').style.display = tab === 'panico' ? '' : 'none';
                 if (tab === 'panico' && !panicTab) panicTab = SisdelPanicoConfigUI.mount(document.getElementById('cfgPanico'), { condominioId: condoId, session, condoName: session.condominioName });
+                document.getElementById('cfgVecino').style.display = tab === 'vecino' ? '' : 'none';
+                if (tab === 'vecino' && !vecinoTab) vecinoTab = SisdelVecinoConfigUI.mount(document.getElementById('cfgVecino'), { condominioId: condoId, session });
                 if (tab === 'usuarios') renderConfigUsers();
                 if (tab === 'privilegios' && !privTab) await mountPrivTab();
                 if (tab === 'plantillas' && !tplTab) await mountTplTab();
@@ -1201,7 +1209,7 @@
 
             // La vista vive en la dirección (#configuracion/privilegios): se puede abrir, recargar y volver atrás
             async function applyHash() {
-                const match = /^#configuracion(?:\/(usuarios|privilegios|plantillas|panico))?$/.exec(location.hash);
+                const match = /^#configuracion(?:\/(usuarios|privilegios|plantillas|panico|vecino))?$/.exec(location.hash);
                 const reportMatch = /^#reportes(?:\/([a-z-]+))?$/.exec(location.hash);
                 if (match && canConfig) {
                     showConfigView(true);

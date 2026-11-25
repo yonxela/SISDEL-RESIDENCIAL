@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-163 privilegios: 33 paraguas y 130 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+164 privilegios: 34 paraguas y 130 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -139,6 +139,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `vecino.contactos` | Editar sus contactos de emergencia. Los familiares a quienes avisa su botón de pánico. | `vecino` | Reglas |
 | `panico.activar` | Usar el botón de pánico. Enviar una alerta de pánico a la garita y a la administración. | `vecino`, `policia`, `supervisor` | Reglas |
 | `panico.cancelar` | Cancelar su alerta. El vecino anula su alerta de pánico mientras siga activa. | los de su paraguas | Reglas |
+| `vecino.configurar` | Encender o apagar el marbete y los pases de visita del vecino **(sensible)**. Configuración > Panel del vecino: decide, para todos los vecinos del condominio, si al entrar con su clave pueden ver y descargar el marbete de sus vehículos y si pueden generar pases de visita (y accesos temporales). Apagado vale aunque el vecino tenga el privilegio. Solo un administrador o un operador puede tenerlo. | `admin` | Reglas |
 
 ### Alertas de pánico
 

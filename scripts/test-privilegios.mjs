@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 163 privilegios: 33 paraguas y 130 acciones', [P.KEYS.length, roots.length, kids.length], [163, 33, 130]);
+equal('hay 164 privilegios: 34 paraguas y 130 acciones', [P.KEYS.length, roots.length, kids.length], [164, 34, 130]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -414,7 +414,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('las pestanas del panel y las de Configuracion no se mezclan', !/querySelectorAll\('\.tab'\)/.test(admin) && (admin.match(/querySelectorAll\('#mainTabs \.tab'\)/g) || []).length === 2);
     const shown = (admin.match(/SISDEL\.canAny\(\[('usuarios\.[a-z]+'(?:, )?)+\]\)/) || [''])[0].match(/usuarios\.[a-z]+/g) || [];
     equal('el boton Configuracion lo ve quien tenga algun paraguas usuarios.* (las acciones cuelgan de ellos)', sorted(shown), sorted(P.ITEMS.filter((i) => i.key.startsWith('usuarios.') && !i.parent).map((i) => i.key)));
-    yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\|panico\)\)\?\$/.test(admin) && /hashchange/.test(admin));
+    yes('la vista se abre por direccion (#configuracion/pestana)', /#configuracion\(\?:\\\/\(usuarios\|privilegios\|plantillas\|panico\|vecino\)\)\?\$/.test(admin) && /hashchange/.test(admin));
     {
         // Configuracion > Boton de panico (pedido del usuario el 2026-11-20): telefonos de la garita y la PNC y los textos del aviso
         const ui = read('panico-config-ui.js');
@@ -425,7 +425,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         const def = P.ITEMS.find((i) => i.key === 'panico.configurar');
         yes('boton de panico: privilegio propio del administrador, sensible y en las reglas', !!def && !def.parent && JSON.stringify(def.roles) === '["admin"]' && def.sensitive === true && def.enforce === 'reglas');
         yes('boton de panico: la pestana existe, se abre con su privilegio y con #configuracion/panico', /data-cfg="panico">Botón de pánico</.test(admin) && /<section id="cfgPanico"/.test(admin)
-            && /panico: SISDEL\.can\('panico\.configurar'\)/.test(admin) && /'usuarios\.privilegios', 'panico\.configurar'\]\);/.test(admin));
+            && /panico: SISDEL\.can\('panico\.configurar'\)/.test(admin) && /'usuarios\.privilegios', 'panico\.configurar', 'vecino\.configurar'\]\);/.test(admin));
         yes('boton de panico: la pagina carga el modulo de los avisos y la pestana', /<script src="panico-avisos\.js\?v=\d{8}[a-z]"><\/script>/.test(admin) && /<script src="panico-config-ui\.js\?v=\d{8}[a-z]"><\/script>/.test(admin)
             && admin.indexOf('panico-avisos.js?v=') < admin.indexOf('panico-config-ui.js?v='));
         yes('boton de panico: salir con cambios sin guardar pregunta (como Privilegios y Plantillas)', /\(panicTab && panicTab\.isDirty\(\)\)/.test(admin));
@@ -1350,8 +1350,8 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
         P.GROUPS.forEach((g) => g.items.forEach((i) => { const s = helpers.searchScore(i, g.title, q); if (s > 0) out.push({ key: i.key, s }); }));
         return out.sort((a, b) => b.s - a.s).map((x) => x.key);
     };
-    yes('"marbete" pone primero los que lo tienen en el nombre: el reporte de marbetes entre los dos primeros, antes de los que solo lo mencionan en la descripcion',
-        ranked('marbete').slice(0, 2).includes('finanzas.reportes_marbetes') && ranked('marbete').indexOf('finanzas.reportes_marbetes') < ranked('marbete').indexOf('vehiculos.ver'));
+    yes('"marbete" pone primero los que lo tienen en el nombre: el reporte de marbetes entre los tres primeros, antes de los que solo lo mencionan en la descripcion',
+        ranked('marbete').slice(0, 3).includes('finanzas.reportes_marbetes') && ranked('marbete').indexOf('finanzas.reportes_marbetes') < ranked('marbete').indexOf('vehiculos.ver'));
     yes('"reporte marbete" deja solo ese privilegio, y sin acentos ni mayusculas "PANICO qr" encuentra el QR de panico de primero',
         ranked('reporte marbete').length === 1 && ranked('reporte marbete')[0] === 'finanzas.reportes_marbetes' && ranked('PANICO qr')[0] === 'reportes.panico_qr');
     yes('cada palabra tiene que estar en algun lado (como antes) y sin busqueda no hay puntaje',
@@ -1393,6 +1393,54 @@ console.log('\nPlantillas: aplicar una plantilla a un usuario');
         if (P.KEYS.some((k) => !!eff[k] !== keys.includes(k))) { exact = false; console.log('    distinto:', tpl.id, role); }
     }
     yes('lo que se guarda al aplicar da exactamente los privilegios de la plantilla (todas las plantillas del sistema, todos los roles)', exact);
+}
+
+// ───────── Panel del vecino: marbete y pases encendidos o apagados para todos (2026-11-24) ─────────
+// Pedido del usuario: "cuando el vecino entra con su clave el puede generar su marbete y gestionar sus visitas, eso es lo que
+// necesito que este en configuracion para activar o desactivar"
+console.log('\nPanel del vecino: marbete y pases para todos los vecinos');
+{
+    const { createRequire } = await import('node:module');
+    const C = createRequire(import.meta.url)('../vecino-config.js');
+    const admin = read('admin.html'); const vecino = read('vecino.html'); const ui = read('vecino-config-ui.js'); const rules = read('firestore.rules');
+    const def = P.itemOf('vecino.configurar');
+    yes('privilegio propio (paraguas) del administrador, sensible, de reglas y solo para administrador u operador',
+        !!def && !def.parent && JSON.stringify(def.roles) === '["admin"]' && JSON.stringify(def.onlyRoles) === '["admin","operador"]' && def.sensitive === true && def.enforce === 'reglas'
+        && P.has('admin', {}, 'vecino.configurar') && !P.has('operador', {}, 'vecino.configurar') && P.has('operador', { 'vecino.configurar': true }, 'vecino.configurar') && !P.allowedFor('vecino.configurar', 'vecino'));
+    yes('sin documento o sin el campo, todo encendido (como antes); solo un false apaga',
+        JSON.stringify(C.clean(null)) === JSON.stringify(C.DEFAULTS) && C.clean({ marbete: 0, visitas: 'no' }).marbete === true && C.clean({ marbete: false }).marbete === false && C.clean({ visitas: false }).temporal === true);
+    yes('sin pases no hay accesos temporales; el mensaje propio manda y en blanco va el de siempre',
+        C.effective({ visitas: false, temporal: true }).temporal === false && C.effective({ temporal: false }).visitas === true && C.effective({ temporal: false }).temporal === false
+        && C.noteFor({}, 'marbete') === C.DEFAULT_NOTES.marbete && C.noteFor({ visitasNote: '  Llame a la oficina\n ' }, 'visitas') === 'Llame a la oficina' && C.clean({ marbeteNote: 'x'.repeat(500) }).marbeteNote.length === C.NOTE_MAX);
+    const doc = C.toDoc({ marbete: false, visitas: true, extra: 1 }, { id: 'u1', name: 'Ana' }, '2026-11-24T00:00:00.000Z');
+    yes('el documento que se guarda trae solo las claves que piden las reglas, con quien lo guardo',
+        JSON.stringify(Object.keys(doc).sort()) === JSON.stringify(['marbete', 'marbeteNote', 'temporal', 'updatedAt', 'updatedBy', 'visitas', 'visitasNote'])
+        && doc.updatedBy.id === 'u1' && doc.marbete === false && /d\.keys\(\)\.hasOnly\(\['marbete', 'visitas', 'temporal', 'marbeteNote', 'visitasNote', 'updatedAt', 'updatedBy'\]\)/.test(rules));
+    yes('reglas: la lee cualquier miembro (el portal la necesita), la escribe vecino.configurar, no se borra',
+        /match \/vecino_config\/\{docId\}/.test(rules) && /allow read: if docId == 'general' && \(isMaster\(\) \|\| isMember\(condoId\)\);\s*allow create, update: if pVecinoConfigurar\(condoId\) && vecinoConfigOk\(\);\s*allow delete: if false;/.test(rules)
+        && /get\('updatedBy', \{\}\)\.get\('id', ''\) == request\.auth\.uid/.test(rules));
+    yes('reglas: con los pases apagados el vecino no crea ni cambia pases (ni temporales con temporal apagado); la oficina no cambia',
+        /function vecinoOpcion\(condoId, opcion\) \{\s*let path = \/databases\/\$\(database\)\/documents\/condominios\/\$\(condoId\)\/vecino_config\/general;\s*return !exists\(path\) \|\| get\(path\)\.data\.get\(opcion, true\) != false;/.test(rules)
+        && /return vecinoOpcion\(c, 'visitas'\)\s*&& \(request\.resource\.data\.get\('visitType', null\) != 'temporal' \|\| \(pVecinoTemporal\(c\) && vecinoOpcion\(c, 'temporal'\)\)\);/.test(rules)
+        && /\|\| pVisitasCrear\(condoId\)\s*\|\| \(isResident\(condoId\) && pVecinoVisitas\(condoId\) && willOwn\(condoId\) && residentVisitOk\(condoId\)\);/.test(rules));
+    yes('admin.html: la pestana "Panel del vecino" sale con su privilegio, se abre con #configuracion/vecino y avisa si queda un mensaje sin guardar',
+        /data-cfg="vecino">Panel del vecino</.test(admin) && /<section id="cfgVecino"/.test(admin) && /vecino: SISDEL\.can\('vecino\.configurar'\) \};/.test(admin)
+        && /SisdelVecinoConfigUI\.mount\(document\.getElementById\('cfgVecino'\), \{ condominioId: condoId, session \}\)/.test(admin) && /\(vecinoTab && vecinoTab\.isDirty\(\)\)/.test(admin)
+        && /<script src="vecino-config\.js\?v=\d{8}[a-z]"><\/script>\s*<script src="vecino-config-ui\.js\?v=\d{8}[a-z]"><\/script>/.test(admin));
+    yes('la pestana: interruptores (role=switch) que guardan al instante con confirmacion, y lo escrito se pinta como texto',
+        (ui.match(/role: 'switch'/g) || []).length === 1 && /makeSwitch\('vcfMarbete'/.test(ui) && /makeSwitch\('vcfVisitas'/.test(ui) && /makeSwitch\('vcfTemporal'/.test(ui)
+        && /if \(!confirm\(QUESTIONS\[option\]\[on \? 1 : 0\]\)\) return;/.test(ui) && /C\(\)\.save\(db, condoId, next, who\)/.test(ui) && !/innerHTML\s*=(?!\s*''\s*;)/.test(ui)
+        && /const S = typeof SISDEL !== 'undefined' \? SISDEL : window\.SISDEL;/.test(ui));
+    const v = (f, name) => (read(f).match(new RegExp(name.replace('.', '\\.') + '\\?v=(\\w+)')) || [])[1];
+    yes('vecino.html y admin.html cargan vecino-config.js con la misma version', v('admin.html', 'vecino-config.js') && v('admin.html', 'vecino-config.js') === v('vecino.html', 'vecino-config.js'));
+    yes('vecino.html: los privilegios de siempre y ENCIMA el interruptor del condominio (sin el, el marbete no se muestra)',
+        /const privVisits = SISDEL\.can\('vecino\.visitas'\);/.test(vecino) && /const privMarbete = SISDEL\.can\('vecino\.marbete'\);/.test(vecino) && /let canMarbete = false;/.test(vecino)
+        && /canVisits = privVisits && cfg\.visitas;/.test(vecino) && /canTemporal = privTemporal && cfg\.temporal && canVisits;/.test(vecino)
+        && /canMarbete = privMarbete && portalCfg !== null && !portalFailed && cfg\.marbete;/.test(vecino) && /SisdelVecinoConfig\.read\(window\.sisdelFirebase\.db, session\.condominioId\)/.test(vecino));
+    yes('vecino.html: apagado no hay boton ni codigo (sin marbete tampoco se ve su codigo) y se le dice por que',
+        /if \(!canMarbete\) return;/.test(vecino) && /\$\{canMarbete \? ` · Marbete: <strong>\$\{escHtml\(v\.marbeteCode\)\}<\/strong>` : ''\}/.test(vecino)
+        && /if \(!canVisits\) list\.querySelectorAll\('\[onclick\^="repeatVisit"\]'\)/.test(vecino) && /id="portalNotice"/.test(vecino) && /id="marbeteOffNote"/.test(vecino)
+        && /SisdelVecinoConfig\.noteFor\(portalCfg, 'visitas'\)/.test(vecino) && /p\.append\(b, document\.createTextNode\(text\)\)/.test(vecino));
 }
 
 // ───────── Portal del vecino con pestañas y actualizacion de datos (2026-11-23) ─────────

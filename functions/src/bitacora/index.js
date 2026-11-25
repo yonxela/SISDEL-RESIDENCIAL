@@ -80,5 +80,7 @@ module.exports = {
     auditBankMovements: audit('finanzas_bancos_movs'),
     // Configuracion del boton de panico: telefonos de la garita y la PNC y textos del aviso
     auditPanicConfig: audit('panico_config'),
+    // Panel del vecino: marbete y pases de visita encendidos o apagados para todos los vecinos (Configuracion > Panel del vecino)
+    auditVecinoConfig: audit('vecino_config'),
     record, AUDITED
 };

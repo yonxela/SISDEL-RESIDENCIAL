@@ -1727,6 +1727,42 @@ async function run() {
     await allowed('vecino: sin "temporales" si registra una visita de un dia', () => setDoc(rref(v34, 'visitas', 'vis-v34'), visitaVecino('u-v34', 'vis-v34')));
     await denied('vecino: sin "temporales" no registra un acceso temporal', () => setDoc(rref(v34, 'visitas', 'vis-v34b'), visitaVecino('u-v34', 'vis-v34b', { visitType: 'temporal', endDate: localDate(5) })));
     await allowed('vecino: de siempre registra un acceso temporal', () => setDoc(rref(ana, 'visitas', 'vis-ana-temp'), visitaVecino('u-ana', 'vis-ana-temp', { visitType: 'temporal', endDate: localDate(5) })));
+
+    // Panel del vecino (Configuracion > Panel del vecino, 2026-11-24): el condominio enciende o apaga para TODOS los vecinos el
+    // marbete y los pases de visita. Los pases los hacen cumplir las reglas (vecinoOpcion); el marbete es de pantalla
+    console.log('\nPanel del vecino: marbete y pases para todos');
+    {
+        const pcRef = (c, id = 'general') => rref(c, 'vecino_config', id);
+        const pc = (c, extra = {}) => ({ marbete: true, visitas: true, temporal: true, marbeteNote: '', visitasNote: '', updatedAt: new Date().toISOString(), updatedBy: { id: c.auth.currentUser.uid, name: 'Prueba' }, ...extra });
+        await allowed('panel del vecino: el vecino lee la configuracion (su portal la necesita), aunque todavia no exista', () => getDoc(pcRef(ana)));
+        await denied('panel del vecino: el vecino no la cambia', () => setDoc(pcRef(ana), pc(ana, { visitas: true })));
+        await denied('panel del vecino: el supervisor no la cambia', () => setDoc(pcRef(sup), pc(sup)));
+        await denied('panel del vecino: el auditor no la cambia', () => setDoc(pcRef(auditor), pc(auditor)));
+        await denied('panel del vecino: no se guarda a nombre de otro', () => setDoc(pcRef(admin), pc(admin, { updatedBy: { id: 'u-otro', name: 'Otro' } })));
+        await denied('panel del vecino: no admite campos de mas', () => setDoc(pcRef(admin), pc(admin, { garita: false })));
+        await denied('panel del vecino: los interruptores son si o no', () => setDoc(pcRef(admin), pc(admin, { visitas: 'no' })));
+        await denied('panel del vecino: el mensaje tiene su largo', () => setDoc(pcRef(admin), pc(admin, { visitasNote: 'x'.repeat(201) })));
+        await denied('panel del vecino: un solo documento (general)', () => setDoc(pcRef(admin, 'otro'), pc(admin)));
+        await allowed('panel del vecino: un pase de antes de apagar', () => setDoc(rref(ana, 'visitas', 'vis-ana-off'), visitaVecino('u-ana', 'vis-ana-off')));
+        await allowed('panel del vecino: el administrador apaga los pases de visita', () => setDoc(pcRef(admin), pc(admin, { visitas: false, visitasNote: 'Llame a la oficina' })));
+        await denied('panel del vecino: con los pases apagados el vecino no genera un pase', () => setDoc(rref(ana, 'visitas', 'vis-ana-off2'), visitaVecino('u-ana', 'vis-ana-off2')));
+        await denied('panel del vecino: ni cambia uno que ya tenia', () => updateDoc(rref(ana, 'visitas', 'vis-ana-off'), { visitorName: 'Otra visita' }));
+        await allowed('panel del vecino: la oficina si genera el pase de un vecino', () => setDoc(rref(admin, 'visitas', 'vis-ofi-off'), visitaVecino('u-ana', 'vis-ofi-off')));
+        await allowed('panel del vecino: el vecino si cancela su pase', () => deleteDoc(rref(ana, 'visitas', 'vis-ana-off')));
+        await allowed('panel del vecino: el administrador enciende los pases y apaga los accesos temporales', () => setDoc(pcRef(admin), pc(admin, { temporal: false })));
+        await allowed('panel del vecino: el vecino vuelve a generar pases de un dia', () => setDoc(rref(ana, 'visitas', 'vis-ana-on'), visitaVecino('u-ana', 'vis-ana-on')));
+        await denied('panel del vecino: con los temporales apagados no genera un acceso temporal', () => setDoc(rref(ana, 'visitas', 'vis-ana-t2'), visitaVecino('u-ana', 'vis-ana-t2', { visitType: 'temporal', endDate: localDate(5) })));
+        await denied('panel del vecino: ni convierte un pase en temporal', () => updateDoc(rref(ana, 'visitas', 'vis-ana-on'), { visitType: 'temporal', endDate: localDate(5) }));
+        await allowed('panel del vecino: el administrador apaga el marbete (solo se guarda: lo aplica el portal)', () => setDoc(pcRef(admin), pc(admin, { marbete: false })));
+        equal('panel del vecino: el vecino lee lo que apago la administracion', ((await getDoc(pcRef(ana))).data() || {}).marbete, false);
+        await denied('panel del vecino: no se borra', () => deleteDoc(pcRef(admin)));
+        await allowed('panel del vecino: queda todo encendido otra vez', () => setDoc(pcRef(admin), pc(admin)));
+        await allowed('panel del vecino: encendido, el vecino genera accesos temporales como siempre', () => setDoc(rref(ana, 'visitas', 'vis-ana-t3'), visitaVecino('u-ana', 'vis-ana-t3', { visitType: 'temporal', endDate: localDate(5) })));
+        await waitFor('panel del vecino: cada cambio queda en la bitacora', async () => {
+            const snap = await getDocs(query(rcol(admin, 'bitacora'), where('collection', '==', 'vecino_config')));
+            return snap.docs.filter((d) => d.data().docId === 'general').length >= 2;
+        });
+    }
     await denied('vecino: sin "contactos" no guarda sus contactos de emergencia', () => setDoc(rref(v35, 'emergencia', 'u-v35'), { userId: 'u-v35', contacts: [] }));
     await allowed('vecino: de siempre guarda sus contactos de emergencia', () => setDoc(rref(ana, 'emergencia', 'u-ana'), { userId: 'u-ana', contacts: [] }));
     await setDoc(rref(v36, 'vehiculos', 'veh-v36'), vehNuevo('veh-v36', 'u-v36'));

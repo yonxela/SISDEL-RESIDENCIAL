@@ -32,7 +32,7 @@ const { testPanicNotice } = require('./src/panico-config');
 // aunque tenga garita.app cerrado; Finanzas manda a cada residente su mensaje por garita.app (src/avisos-push.js)
 const { pushDevice, onMessagePush, residentMessages } = require('./src/avisos-push');
 // Bitacora: rastro de cada cambio a usuarios, vehiculos y Sistema Financiero (ver src/bitacora.js)
-const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig } = require('./src/bitacora');
+const { auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig, auditVecinoConfig } = require('./src/bitacora');
 
 module.exports = {
     login, verifyAccessCode, confirmOwnCode, deleteCondominio, renameCondominio, renameAdmin, setFavoriteBank, anprWebhook,
@@ -41,5 +41,5 @@ module.exports = {
     onFinanceMovement, onFinanceSettings, dailyFinance,
     onPanicCreated, dailyRondas, linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, testPanicNotice,
     pushDevice, onMessagePush, residentMessages,
-    auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig
+    auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig, auditVecinoConfig
 };

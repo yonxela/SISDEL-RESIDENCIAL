@@ -149,7 +149,10 @@
                 { key: 'vecino.ficha', sub: 'Mis datos', label: 'Ver y editar su ficha', description: 'En su panel, el vecino ve su ficha (casa, fase, contacto, propietario y agua del lote) y con el botón Editar cambia su teléfono, su correo y los datos del propietario (nombre, NIT, dirección y DPI). No cambia su nombre, su casa, el agua ni lo que se le cobra.', roles: ['vecino'], enforce: 'reglas' },
                 { key: 'vecino.contactos', sub: 'Emergencia', label: 'Editar sus contactos de emergencia', description: 'Los familiares a quienes avisa su botón de pánico.', roles: ['vecino'], enforce: 'reglas' },
                 { key: 'panico.activar', sub: 'Emergencia', label: 'Usar el botón de pánico', description: 'Enviar una alerta de pánico a la garita y a la administración.', roles: ['vecino', 'policia', 'supervisor'], enforce: 'reglas' },
-                { key: 'panico.cancelar', sub: 'Emergencia', parent: 'panico.activar', label: 'Cancelar su alerta', description: 'El vecino anula su alerta de pánico mientras siga activa.', enforce: 'reglas' }
+                { key: 'panico.cancelar', sub: 'Emergencia', parent: 'panico.activar', label: 'Cancelar su alerta', description: 'El vecino anula su alerta de pánico mientras siga activa.', enforce: 'reglas' },
+                // Pedido del usuario el 2026-11-24: encender o apagar, para TODOS los vecinos del condominio, lo que el vecino hace al entrar
+                // con su clave (su marbete y los pases de sus visitas). Configuracion > Panel del vecino (vecino-config-ui.js)
+                { key: 'vecino.configurar', sub: 'Configurar (para todos los vecinos)', label: 'Encender o apagar el marbete y los pases de visita del vecino', description: 'Configuración > Panel del vecino: decide, para todos los vecinos del condominio, si al entrar con su clave pueden ver y descargar el marbete de sus vehículos y si pueden generar pases de visita (y accesos temporales). Apagado vale aunque el vecino tenga el privilegio. Solo un administrador o un operador puede tenerlo.', roles: ['admin'], onlyRoles: ['admin', 'operador'], sensitive: true, enforce: 'reglas' }
             ]
         },
         {

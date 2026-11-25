@@ -17,6 +17,10 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
+        /* Lo que la administracion apago para todos los vecinos (Configuracion > Panel del vecino) */
+        .portal-notice { margin: 0 0 1.25rem; padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.12); color: var(--text-primary); font-size: 0.9rem; line-height: 1.45; }
+        .portal-notice p { margin: 0; }
+        .portal-notice p + p { margin-top: 0.35rem; }
         /* Boton de panico: ahora en la pestana Seguridad, centrado y grande (antes arriba a la derecha de la bienvenida). El boton
            (el circulo que se llena al mantenerlo presionado, igual que en el QR de panico) lo pone panico-boton.js */
         .panic-top { display: none; flex-direction: column; align-items: center; gap: 0.75rem; margin: 0.5rem 0 1rem; text-align: center; }
@@ -175,7 +179,7 @@
 
             <!-- VISITAS: visitas con codigo QR, marbetes y el historial -->
             <section class="vec-panel" id="panelVisitas" role="tabpanel" aria-labelledby="tabBtnVisitas" hidden>
-            <div class="stats-grid">
+            <div class="stats-grid" id="visitasCards">
                 <div class="stat-card" style="cursor:pointer;" id="cardNewVisit">
                     <div class="stat-value" style="color:var(--primary-light)">+</div>
                     <div class="stat-label">Registrar Visita</div>
@@ -183,10 +187,12 @@
                 </div>
                 <div class="stat-card" style="cursor:pointer;" id="cardNewVehicle">
                     <div class="stat-value" style="color:var(--accent)">🚗</div>
-                    <div class="stat-label">Mi Marbete</div>
-                    <p class="text-xs text-muted" style="margin-top:0.5rem;">Solicite o vea su pase vehicular</p>
+                    <div class="stat-label" id="cardVehicleLabel">Mi Marbete</div>
+                    <p class="text-xs text-muted" style="margin-top:0.5rem;" id="cardVehicleText">Solicite o vea su pase vehicular</p>
                 </div>
             </div>
+            <!-- Lo que la administracion apago para todos los vecinos (Configuracion > Panel del vecino): se dice aqui -->
+            <div id="portalNotice" class="portal-notice" style="display:none;" role="status"></div>
 
             <h3 style="margin-bottom:1.25rem; font-size:1.25rem;">📋 Mis Visitas Recientes</h3>
             <div id="visitasList"></div>
@@ -314,10 +320,11 @@
     <div class="modal-overlay" id="modalMarbete" style="display:none;">
         <div class="modal" style="max-width:450px;">
             <div class="modal-header">
-                <h3>🚗 Mis Pases Vehiculares</h3>
+                <h3 id="marbeteModalTitle">🚗 Mis Pases Vehiculares</h3>
                 <button class="btn btn-ghost btn-icon modal-close" id="btnCloseMarbete">&times;</button>
             </div>
             <div style="padding:1.5rem;">
+                <p id="marbeteOffNote" class="portal-notice" style="display:none; margin-bottom:1rem;"></p>
                 <div id="vehicleList" style="margin-bottom:1.5rem;"></div>
 
                 <div style="border-top:1px solid var(--border-subtle); padding-top:1rem;">
@@ -388,10 +395,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261124a"></script>
-    <script src="sisdel-core.js?v=20261124a"></script>
+    <script src="privilegios.js?v=20261124b"></script>
+    <script src="sisdel-core.js?v=20261124b"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261123a"></script>
+    <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
     <script src="avisos-push.js?v=20261124a"></script>
@@ -401,22 +409,74 @@
             const session = await SISDEL.requireAuth([SISDEL.ROLES.VECINO], 'vecino.html');
             if (!session) return;
 
-            // Lo que el administrador le permite a este vecino (las reglas de Firestore exigen lo mismo)
-            const canVisits = SISDEL.can('vecino.visitas');
+            // Lo que el administrador le permite a este vecino (las reglas de Firestore exigen lo mismo). Encima, el condominio puede
+            // apagar para TODOS los vecinos el marbete y los pases (Configuracion > Panel del vecino, vecino-config.js): ver applyPortal
+            const privVisits = SISDEL.can('vecino.visitas');
+            let canVisits = privVisits;
             const canVehicles = SISDEL.can('vecino.vehiculos');
             const canPanic = SISDEL.can('panico.activar');
             // Cada accion del panel es un privilegio (vecino.*, panico.*): se oculta lo que el administrador no le dio
-            const canTemporal = SISDEL.can('vecino.temporal');
+            const privTemporal = SISDEL.can('vecino.temporal');
+            let canTemporal = privTemporal;
             const canShare = SISDEL.can('vecino.compartir');
             const canHistory = SISDEL.can('vecino.historial');
             const canRemoveVehicle = SISDEL.can('vecino.vehiculos_quitar');
-            const canMarbete = SISDEL.can('vecino.marbete');
+            const privMarbete = SISDEL.can('vecino.marbete');
+            // El marbete no se muestra hasta saber si el condominio lo tiene encendido (es solo de pantalla: no hay otra barrera)
+            let canMarbete = false;
             const canContacts = SISDEL.can('vecino.contactos');
             const canCancelPanic = SISDEL.can('panico.cancelar');
-            if (!canVisits) document.getElementById('cardNewVisit').style.display = 'none';
-            if (!canVehicles && !canMarbete) document.getElementById('cardNewVehicle').style.display = 'none';
             if (!canVehicles) document.getElementById('vehicleForm').parentElement.style.display = 'none';
-            if (!canTemporal) document.getElementById('vExtended').closest('div').style.display = 'none';
+
+            // Interruptores del condominio (vecino_config/general): null = todavia no se sabe. Se leen sin detener el portal (el boton
+            // de panico no espera); los pases los hacen cumplir tambien las reglas, el marbete solo esta pantalla
+            let portalCfg = null;
+            let portalFailed = false;
+            function applyPortal() {
+                const cfg = SisdelVecinoConfig.effective(portalCfg || {});
+                canVisits = privVisits && cfg.visitas;
+                canTemporal = privTemporal && cfg.temporal && canVisits;
+                canMarbete = privMarbete && portalCfg !== null && !portalFailed && cfg.marbete;
+                document.getElementById('cardNewVisit').style.display = canVisits ? '' : 'none';
+                document.getElementById('cardNewVehicle').style.display = canVehicles || canMarbete ? '' : 'none';
+                // Mientras llega la configuracion los nombres quedan como siempre (sin saltar de uno a otro)
+                const marbeteLabels = canMarbete || (portalCfg === null && !portalFailed && privMarbete);
+                document.getElementById('cardVehicleLabel').textContent = marbeteLabels ? 'Mi Marbete' : 'Mis Vehículos';
+                document.getElementById('cardVehicleText').textContent = marbeteLabels ? 'Solicite o vea su pase vehicular' : 'Registre sus vehículos';
+                document.getElementById('marbeteModalTitle').textContent = marbeteLabels ? '🚗 Mis Pases Vehiculares' : '🚗 Mis Vehículos';
+                document.getElementById('visitasCards').style.display = canVisits || canVehicles || canMarbete ? '' : 'none';
+                document.getElementById('vExtended').closest('div').style.display = canTemporal ? '' : 'none';
+                if (!canTemporal) { document.getElementById('vExtended').checked = false; document.getElementById('extendedOptions').style.display = 'none'; }
+                if (!canVisits) document.getElementById('modalNewVisit').style.display = 'none';
+                // Solo se le dice lo que el tendria por su usuario y la administracion apago
+                const notes = [];
+                if (portalCfg !== null && privVisits && !cfg.visitas) notes.push(['Pases de visita', SisdelVecinoConfig.noteFor(portalCfg, 'visitas')]);
+                if (portalCfg !== null && privMarbete && !cfg.marbete) notes.push(['Marbete', SisdelVecinoConfig.noteFor(portalCfg, 'marbete')]);
+                if (portalFailed && privMarbete) notes.push(['Marbete', 'No se pudo revisar si el marbete está disponible. Vuelva a abrir la página.']);
+                const box = document.getElementById('portalNotice');
+                box.replaceChildren(...notes.map(([title, text]) => { const p = document.createElement('p'); const b = document.createElement('strong'); b.textContent = title + ': '; p.append(b, document.createTextNode(text)); return p; }));
+                box.style.display = notes.length ? '' : 'none';
+                const offNote = document.getElementById('marbeteOffNote');
+                const marbeteNote = privMarbete && !canMarbete && (portalFailed || portalCfg !== null) ? (portalFailed ? 'No se pudo revisar si el marbete está disponible. Vuelva a abrir la página.' : SisdelVecinoConfig.noteFor(portalCfg, 'marbete')) : '';
+                offNote.textContent = marbeteNote;
+                offNote.style.display = marbeteNote ? '' : 'none';
+            }
+            applyPortal();
+            async function loadPortal(tries) {
+                try {
+                    portalCfg = (await SisdelVecinoConfig.read(window.sisdelFirebase.db, session.condominioId)).config;
+                    portalFailed = false;
+                } catch (error) {
+                    if (tries > 1) { setTimeout(() => loadPortal(tries - 1), 2000); return; }
+                    console.error('vecino-config', error);
+                    portalFailed = true;
+                }
+                applyPortal();
+                // Lo que ya se pinto con los valores de antes se vuelve a pintar
+                if (document.getElementById('modalMarbete').style.display === 'flex') renderVehicles();
+                if (canHistory && !canVisits) renderVisits();
+            }
+            loadPortal(2);
             if (!canShare) document.getElementById('btnWhatsApp').parentElement.style.display = 'none';
             if (!canContacts) document.getElementById('btnContacts').style.display = 'none';
             if (!canHistory) {
@@ -858,12 +918,14 @@
                         </div>
                     </div>
                 `}).join('');
+                if (!canVisits) list.querySelectorAll('[onclick^="repeatVisit"]').forEach((b) => b.remove());
             }
 
             // --- New Visit Handler ---
             const modalNewVisit = document.getElementById('modalNewVisit');
 
             window.repeatVisit = async function (visitId) {
+                if (!canVisits) return;
                 const visits = await SISDEL.getVisitsByUser(session.userId);
                 const v = visits.find(x => x.id === visitId);
                 if (!v) return;
@@ -879,6 +941,7 @@
             };
 
             document.getElementById('cardNewVisit').addEventListener('click', () => {
+                if (!canVisits) return;
                 document.getElementById('visitForm').reset();
                 document.getElementById('vDate').value = SISDEL.localToday();
                 document.getElementById('extendedOptions').style.display = 'none';
@@ -959,7 +1022,7 @@
                     <div class="list-item" style="background:var(--bg-item);">
                         <div class="item-info">
                             <div class="item-name">${escHtml(v.plate)} · ${escHtml(v.brand)}</div>
-                            <div class="item-detail">${v.color} · Marbete: <strong>${v.marbeteCode}</strong></div>
+                            <div class="item-detail">${escHtml(v.color)}${canMarbete ? ` · Marbete: <strong>${escHtml(v.marbeteCode)}</strong>` : ''}</div>
                         </div>
                         <div style="display:flex; gap:0.5rem; align-items:center;">
                             <button class="btn btn-ghost btn-icon btn-sm" onclick="showQR('${v.id}', 'vehicle')" title="Ver Marbete/QR">
@@ -1016,6 +1079,7 @@
                     detailText = `Visita para ${session.userCasa}. Válido: ${SISDEL.formatDate(v_obj.visitDate)}`;
                     typeLabel = 'INVITACIÓN DIGITAL';
                 } else {
+                    if (!canMarbete) return;
                     const vehicles = await SISDEL.getVehicles(session.userId);
                     const v_obj = vehicles.find(veh => veh.id === id);
                     if (!v_obj) return;

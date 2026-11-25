@@ -663,7 +663,8 @@ const SisdelPrivilegiosUI = (() => {
                     <label for="pvApplyUser">Aplicar esta plantilla a</label>
                     ${targets.length
                         ? `<select class="pv-input" id="pvApplyUser" data-ref="applyUser"><option value="">Elegir usuario: ${esc(PRIV.ROLE_LABELS[form.role] || form.role)}…</option>${targets.map((u) => `<option value="${esc(u.id)}">${esc(u.name)}${u.cargo ? ' · ' + esc(u.cargo) : ''}${u.active === false ? ' · inactivo' : ''}</option>`).join('')}</select>
-                           <button type="button" class="pv-btn primary" data-act="apply">Aplicar y guardar</button>`
+                           <button type="button" class="pv-btn primary" data-act="apply">Aplicar y guardar</button>${targets.length > 1 ? `
+                           <button type="button" class="pv-btn" data-act="applyAll" title="Aplica la plantilla a cada ${esc(PRIV.ROLE_LABELS[form.role] || form.role)} del condominio (menos usted)">Aplicar a todos (${targets.length})</button>` : ''}`
                         : `<span class="pv-apply-none">No hay usuarios con el rol ${esc(PRIV.ROLE_LABELS[form.role] || form.role)}. Para otro rol, use la pestaña Privilegios.</span>`}
                     <span class="pv-apply-note" data-ref="applyNote">Cambia los privilegios de esa persona por los de la plantilla y los guarda.</span>
                 </div>` : '';
@@ -698,6 +699,7 @@ const SisdelPrivilegiosUI = (() => {
             const discardButton = root.querySelector('[data-act=discard]');
 
             const applyButton = root.querySelector('[data-act=apply]');
+            const applyAllButton = root.querySelector('[data-act=applyAll]');
             const applyNote = root.querySelector('[data-ref=applyNote]');
             function refresh(note) {
                 const changed = dirty();
@@ -706,6 +708,7 @@ const SisdelPrivilegiosUI = (() => {
                 if (discardButton) discardButton.disabled = !changed;
                 // Se aplica la plantilla guardada: con cambios sin guardar, primero hay que guardarla
                 if (applyButton) applyButton.disabled = changed;
+                if (applyAllButton) applyAllButton.disabled = changed;
                 if (applyNote) applyNote.textContent = changed ? 'Guarde primero los cambios de la plantilla para aplicarla.' : 'Cambia los privilegios de esa persona por los de la plantilla y los guarda.';
             }
             function draw(note) {
@@ -748,6 +751,7 @@ const SisdelPrivilegiosUI = (() => {
                     applyButton.disabled = true;
                     applyButton.textContent = 'Aplicando…';
                     const ok = await SISDEL.setUserAccess(user.id, { privilegios: PRIV.toOverrides(user.role, keys) });
+                    if (ok) user.privilegios = PRIV.toOverrides(user.role, keys);
                     applyButton.textContent = 'Aplicar y guardar';
                     applyButton.disabled = false;
                     if (ok) {
@@ -756,6 +760,38 @@ const SisdelPrivilegiosUI = (() => {
                     } else {
                         SISDEL.showToast('No se pudieron guardar los privilegios', 'error');
                     }
+                }
+                else if (kind === 'applyAll') {
+                    // A todos los usuarios de ese rol de una vez (pedido del usuario el 2026-11-25: asignar la plantilla de la Central de
+                    // Monitoreo a los usuarios de garita). Los que ya la tienen no se tocan; uno por uno, igual que "Aplicar y guardar"
+                    const plan = targets.map((u) => {
+                        const keys = PRIV.templateKeys({ ...tpl, claves: tpl.claves || [] }, u.role).filter((k) => PRIV.allowedFor(k, u.role));
+                        const now = PRIV.effective(u.role, u.privilegios);
+                        return { user: u, keys, changes: PRIV.KEYS.filter((k) => !!now[k] !== keys.includes(k)).length };
+                    });
+                    const pending = plan.filter((x) => x.changes > 0);
+                    const roleLabel = PRIV.ROLE_LABELS[form.role] || form.role;
+                    if (!pending.length) { SISDEL.showToast(`Todos (${plan.length}) ya tienen exactamente los privilegios de esta plantilla`, 'info'); return; }
+                    const names = pending.slice(0, 15).map((x) => `• ${x.user.name}${x.user.active === false ? ' (inactivo)' : ''}`).join('\n') + (pending.length > 15 ? `\n… y ${pending.length - 15} más` : '');
+                    const same = plan.length - pending.length;
+                    if (!confirm(`¿Aplicar la plantilla "${tpl.name}" a ${pending.length} ${pending.length === 1 ? 'usuario' : 'usuarios'} (${roleLabel})?\n\n${names}${same ? `\n\n${same} ya la ${same === 1 ? 'tiene' : 'tienen'} y no se toca${same === 1 ? '' : 'n'}.` : ''}\n\nSus privilegios pasan a ser los de la plantilla. Se guarda al instante y se aplica la próxima vez que cada uno abra una pantalla.`)) return;
+                    applyAllButton.disabled = true;
+                    if (applyButton) applyButton.disabled = true;
+                    let ok = 0;
+                    const failed = [];
+                    for (let i = 0; i < pending.length; i++) {
+                        applyAllButton.textContent = `Aplicando ${i + 1} de ${pending.length}…`;
+                        const x = pending[i];
+                        const privilegios = PRIV.toOverrides(x.user.role, x.keys);
+                        // Lo guardado queda tambien en la lista de esta pestana: otro "Aplicar a todos" ya no lo repite
+                        if (await SISDEL.setUserAccess(x.user.id, { privilegios })) { ok++; x.user.privilegios = privilegios; } else failed.push(x.user.name);
+                    }
+                    applyAllButton.textContent = `Aplicar a todos (${targets.length})`;
+                    applyAllButton.disabled = false;
+                    if (applyButton) applyButton.disabled = false;
+                    if (failed.length) SISDEL.showToast(`Plantilla "${tpl.name}" aplicada a ${ok}; no se pudo con ${failed.join(', ')}`, 'error');
+                    else SISDEL.showToast(`Plantilla "${tpl.name}" aplicada a ${ok} ${ok === 1 ? 'usuario' : 'usuarios'}${same ? ` (${same} ya la tenía${same === 1 ? '' : 'n'})` : ''}`, 'success');
+                    if (ok && options.onApplied) await options.onApplied(null);
                 }
                 else if (kind === 'duplicate') {
                     selectedId = 'new'; drawList();

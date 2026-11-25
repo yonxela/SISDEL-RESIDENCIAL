@@ -385,6 +385,7 @@
     const tree = (...keys) => keys.flatMap((k) => [k, ...bulkDescendantsOf(k)]);
     const adminKeys = ITEMS.filter((i) => i.defaultRoles.includes('admin')).map((i) => i.key);
     const vecinoKeys = ITEMS.filter((i) => i.defaultRoles.includes('vecino')).map((i) => i.key);
+    const policiaKeys = ITEMS.filter((i) => i.defaultRoles.includes('policia')).map((i) => i.key);
     const without = (list, ...drop) => list.filter((k) => !drop.includes(k) && !drop.some((d) => ancestorsOf(k).includes(d)));
     const TEMPLATES = [
         {
@@ -416,6 +417,16 @@
             id: 'sys-garitero', name: 'Garitero (solo garita)', role: 'operador', system: true,
             description: 'Opera la garita y atiende alertas, sin acceso a rondas ni a la administración.',
             claves: ['usuarios.ver', ...tree('visitas.ver'), 'mensajes.recibir', ...tree('garita.operar', 'garita.camara'), ...tree('panico.ver', 'panico.atender')]
+        },
+        {
+            // Pedido del usuario el 2026-11-25 ("crear plantilla en Control de Monitoreo sin el boton de Rondas para asignar a usuarios
+            // de garita"): los usuarios de garita son guardias (rol policia) y el Garitero de arriba es de operador, que la pestana
+            // Plantillas no deja aplicar a un guardia. Es lo que trae el guardia SIN rondas: sin el boton "Rondas" del encabezado ni el
+            // acceso a RONDIN, y sin "Usar el boton de panico", que el guardia solo tiene dentro de RONDIN. Lo demas de la Central de
+            // Monitoreo queda igual (lector, ingresos y salidas, visitas, camara, su configuracion y las alertas de panico)
+            id: 'sys-central-monitoreo', name: 'Central de Monitoreo (guardia, sin rondas)', role: 'policia', system: true,
+            description: 'El guardia de la garita: opera la Central de Monitoreo (lector de marbetes, ingresos y salidas, visitas del día y cámara) y atiende las alertas de pánico, sin el botón Rondas ni el acceso a RONDIN.',
+            claves: without(policiaKeys, 'rondas.ver', 'rondas.patrullar', 'panico.activar')
         },
         {
             id: 'sys-consulta', name: 'Consulta (solo lectura)', role: 'operador', system: true,

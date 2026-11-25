@@ -340,6 +340,19 @@ yes('el auditor financiero no escribe nada', P.templateById('sys-auditor-financi
     yes('un vecino sin la plantilla no abre ningun panel de reportes', P.pagesFor('vecino', {}).map((p) => p.page).join() === 'vecino.html');
 }
 yes('la plantilla de vigilancia de consulta no administra ni patrulla', P.templateById('sys-vigilancia-consulta').claves.every((k) => !/(gestionar|patrullar|_crear|_editar|_eliminar|_atender|_resolver|_operar|_registrar|_asignar)/.test(k)));
+// Central de Monitoreo sin rondas (pedido del usuario el 2026-11-25): la plantilla de los guardias de la garita
+{
+    const cm = P.templateById('sys-central-monitoreo');
+    const keys = P.templateKeys(cm, 'policia');
+    const ov = P.toOverrides('policia', keys);
+    const guard = P.KEYS.filter((k) => P.effective('policia', {})[k]);
+    yes('Central de Monitoreo: es una plantilla del rol guardia (asi se aplica a los usuarios de garita)', !!cm && cm.role === 'policia' && cm.system === true);
+    equal('Central de Monitoreo: es lo del guardia sin rondas ni el boton de panico (que el guardia solo tiene dentro de RONDIN)', keys, guard.filter((k) => !k.startsWith('rondas.') && !k.startsWith('panico.activar') && k !== 'panico.cancelar'));
+    equal('Central de Monitoreo: guarda solo las dos diferencias con el guardia de siempre', ov, { 'panico.activar': false, 'rondas.patrullar': false });
+    equal('Central de Monitoreo: solo abre la Central de Monitoreo (sin el boton Rondas ni RONDIN)', [P.pagesFor('policia', ov).map((p) => p.page), P.landing('policia', ov)], [['garita.html'], 'garita.html']);
+    yes('Central de Monitoreo: conserva toda la garita y las alertas de panico', ['garita.operar', 'garita.lector', 'garita.configurar', 'garita.ingreso', 'garita.salida', 'garita.camara', 'garita.historial', 'visitas.ver', 'panico.ver', 'panico.avisos', 'panico.atender', 'panico.resolver'].every((k) => keys.includes(k)));
+    yes('Central de Monitoreo: el guardia de siempre (sin plantilla) sigue con Rondas', P.pagesFor('policia', {}).some((p) => p.page === 'rondin/'));
+}
 yes('los ids de las plantillas no se repiten', new Set(P.TEMPLATES.map((t) => t.id)).size === P.TEMPLATES.length);
 yes('cada plantilla cumple sus dependencias', P.TEMPLATES.every((t) => t.claves.every((k) => (P.itemOf(k).requires || []).every((r) => t.claves.includes(r)))));
 yes('toda plantilla de operador deja entrar a alguna pagina', P.TEMPLATES.filter((t) => t.role === 'operador').every((t) => P.landing('operador', P.toOverrides('operador', t.claves))));
@@ -531,6 +544,8 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('la ventana del escudo usa el mismo editor en linea', /const editor = mountEditor\(overlay\.querySelector/.test(ui));
     yes('Marcar todos y Limpiar en el editor y en las plantillas', (ui.match(/data-act="all">Marcar todos/g) || []).length >= 2 && (ui.match(/data-act="none">Limpiar/g) || []).length >= 2);
     yes('las plantillas del sistema son de solo lectura y se duplican', /Duplicar como plantilla propia/.test(ui) && /Plantillas del sistema|Plantilla del sistema: solo se puede ver/.test(ui));
+    yes('plantillas: "Aplicar a todos" aplica la plantilla a cada usuario de su rol (menos uno mismo), salta a quien ya la tiene y la deja guardada en la lista', /data-act="applyAll"/.test(ui) && /kind === 'applyAll'/.test(ui)
+        && /const pending = plan\.filter\(\(x\) => x\.changes > 0\);/.test(ui) && /x\.user\.privilegios = privilegios;/.test(ui) && /if \(applyAllButton\) applyAllButton\.disabled = changed;/.test(ui));
     yes('privilegios-ui.js sube de version en admin.html y master.html por igual', (() => {
         const a = admin.match(/privilegios-ui\.js\?v=(\w+)/); const m = read('master.html').match(/privilegios-ui\.js\?v=(\w+)/);
         return a && m && a[1] === m[1];

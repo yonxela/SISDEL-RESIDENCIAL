@@ -393,10 +393,10 @@
     <script src="accesos.js?v=20261123c"></script>
     <script src="lector-codigos.js?v=20261123a"></script>
     <script src="sisdel-core.js?v=20261125a"></script>
-    <script src="rondas-core.js?v=20261124a"></script>
+    <script src="rondas-core.js?v=20261125a"></script>
     <script src="sirena.js?v=20261125a"></script>
     <script src="audio-panico.js?v=20261124a"></script>
-    <script src="panico-alertas.js?v=20261125a"></script>
+    <script src="panico-alertas.js?v=20261125b"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'garita.html');
@@ -487,9 +487,11 @@
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
             // Sin la franja ni la cifra de vecinos en mora (pedido del usuario el 2026-11-25): el medallon rojo "EN MORA" del marbete leido sigue
+            // autoReceiveTests: la prueba del vecino ("todo sin novedad") no suena; esta pantalla la recibe sola (el vecino ve que llego
+            // a la garita) y la cierra sola a los 2 minutos
             const panicOn = SISDEL.can('panico.ver') && SISDEL.can('panico.avisos');
             if (panicOn) SisdelPanico.watch({
-                canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender'), soundButton: false
+                canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender'), soundButton: false, autoReceiveTests: true
             });
 
             // ── Sirena siempre encendida (pedido del usuario el 2026-11-25: "el boton de sonar sirena debe permanecer encendido todo el tiempo") ──

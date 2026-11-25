@@ -114,7 +114,9 @@
     // ── Simulacro (pedido del usuario el 2026-11-23: los vecinos van a probar el boton y cada prueba escribia, desde el numero del
     // condominio, a sus 5 familiares: contactos nuevos que WhatsApp castiga). La alerta trae simulacro: true y el aviso dice en la
     // primera linea que NO es una emergencia. Al vecino le llega una copia para que vea que su boton funciona y a quien avisaria.
-    const DRILL_TITLE = 'SIMULACRO - NO ES UNA EMERGENCIA';
+    // Desde el 2026-11-25 es la "Prueba: todo sin novedad" (pedido del usuario): manda la ubicacion y los datos, sin sirena, y la
+    // pantalla de la garita la recibe sola (panico-alertas.js, panico-prueba.js)
+    const DRILL_TITLE = 'PRUEBA - TODO SIN NOVEDAD (no es una emergencia)';
     // Tope de simulacros CON WhatsApp por dia de Guatemala: por condominio y por vecino (los demas quedan en la pantalla de la garita,
     // sin WhatsApp): asi las pruebas se reparten en varios dias y el numero no manda rafagas
     const DRILL_LIMITS = { perDay: 20, perUser: 2 };
@@ -135,7 +137,7 @@
         const who = alert.source === 'guardia' ? 'GUARDIA' : 'VECINO';
         return tidy([
             `*${DRILL_TITLE}*`,
-            `_Prueba del boton de panico (${who}) - SISDEL_`,
+            `_Prueba del boton de panico (${who}): todo sin novedad - SISDEL_`,
             '',
             `Nombre: *${alert.userName}*`,
             `Condominio: ${condoName}`,
@@ -144,7 +146,7 @@
             placeLine(alert),
             mapsLink(alert),
             '',
-            'No hay que ir al lugar. Marquela como atendida en la pantalla de la garita para completar la prueba.',
+            'No hay que ir al lugar: el vecino esta comprobando que su boton funciona. La pantalla de la garita la recibe sola.',
             would ? `En una emergencia real tambien se avisaria a: ${would}.` : '',
             '',
             `_${c.signature || 'Central SISDEL'}_`
@@ -156,7 +158,7 @@
         return tidy([
             `*${DRILL_TITLE}*`,
             '',
-            `${alert.userName ? alert.userName + ', su' : 'Su'} boton de panico funciona: este aviso de prueba le llego a la garita de ${condoName}.`,
+            `${alert.userName ? alert.userName + ', su' : 'Su'} boton de panico funciona: esta prueba (todo sin novedad) le llego a la garita de ${condoName}.`,
             alert.lat != null ? 'Llevo su ubicacion GPS:' : 'No llevo su ubicacion: active la ubicacion del telefono para que una alerta real diga donde esta.',
             mapsLink(alert),
             '',

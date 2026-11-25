@@ -391,6 +391,15 @@ let secretAna = '';
     store.set(drillPath, { ...store.get(drillPath), whatsapp: { sent: true, reason: '', recipients: [{ nombre: 'Central SISDEL', exito: true }, { nombre: 'Nombre u-ana', exito: true }, { nombre: 'Garita', exito: false }] } });
     const drillStatus = await device({ action: 'status', c: 'c1', v: 'u-ana', secret: secretAna, alertId: drill.alert.id });
     equal('ve cuantos avisos de prueba salieron, sin los telefonos ni los nombres', drillStatus.alert.whatsapp, { done: true, sent: 2, reason: '' });
+    // Prueba "todo sin novedad" (2026-11-25): el telefono sabe cuando y quien la recibio en la garita (aunque despues la cierren) y
+    // la precision del GPS, para mostrar punto por punto que funciono (panico-prueba.js)
+    equal('antes de que la garita la reciba: sin recepcion', [drillStatus.alert.receivedAt, drillStatus.alert.receivedBy], ['', '']);
+    store.set(drillPath, { ...store.get(drillPath), status: 'ATTENDED', attendedAt: '2026-11-25T14:00:03.000Z', attendedByName: 'Garita norte', accuracy: 18.6 });
+    const got = (await device({ action: 'status', c: 'c1', v: 'u-ana', secret: secretAna, alertId: drill.alert.id })).alert;
+    equal('recibida por la pantalla de la garita: cuando, quien y la precision del GPS', [got.receivedAt, got.receivedBy, got.accuracy], ['2026-11-25T14:00:03.000Z', 'Garita norte', 19]);
+    store.set(drillPath, { ...store.get(drillPath), status: 'RESOLVED', resolvedAt: '2026-11-25T14:02:03.000Z', resolvedByName: 'Garita norte' });
+    const closed = (await device({ action: 'status', c: 'c1', v: 'u-ana', secret: secretAna, alertId: drill.alert.id })).alert;
+    equal('cerrada sola despues, la recepcion se queda', [closed.status, closed.receivedAt, closed.receivedBy], ['RESOLVED', '2026-11-25T14:00:03.000Z', 'Garita norte']);
     const notDrill = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna, simulacro: 'si' });
     equal('solo simulacro: true cuenta (cualquier otra cosa es una alerta de verdad)', [store.get(`condominios/c1/alertas_panico/${notDrill.alert.id}`).simulacro, notDrill.alert.simulacro], [undefined, undefined]);
     // Avisos de la casa (2026-11-24): otro telefono de Ana activa los avisos; cuando Ana envia una alerta, le llega a el y no al que la envio

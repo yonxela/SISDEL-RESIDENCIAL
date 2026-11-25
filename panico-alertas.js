@@ -4,7 +4,10 @@
    Barra roja fija arriba con cada alerta sin resolver (vecinos y guardias),
    SIRENA DE ALERTA MAXIMA (pedido del usuario el 2026-11-24): suena sin parar,
    con la pantalla destellando en rojo, mientras haya una alerta real sin atender;
-   se calla al atenderla (o con "Silenciar"). Un simulacro suena solo 4 segundos.
+   se calla al atenderla (o con "Silenciar").
+   PRUEBA DEL VECINO, "TODO SIN NOVEDAD" (la alerta con simulacro: true; pedido del usuario el
+   2026-11-25): en verde, SIN sirena ni destello, y con { autoReceiveTests } (la garita) esta
+   pantalla la recibe sola y la cierra sola a los 2 minutos (panico-prueba.js: lo que ve el vecino).
    La usan garita.html (Control Garita), admin.html y finanzas.html (OIKOS);
    RONDIN tiene su propia alarma de panico.
    AUDIO (2026-11-24): "Escuchar / Hablar" en cada alerta de un vecino llama al
@@ -14,6 +17,8 @@
    ═══════════════════════════════════════════════════════════════ */
 
 const SisdelPanico = (() => {
+    // La prueba del vecino lleva un escudo con palomita (no el triangulo de alerta): no es una emergencia
+    const ICON_TEST = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>';
     const ICON_ALERT = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
     const CSS = `
         .pan-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 3000; display: flex; flex-direction: column; gap: 4px; padding: 6px; pointer-events: none; }
@@ -21,10 +26,10 @@ const SisdelPanico = (() => {
             border-radius: 12px; background: #b91c1c; color: #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.4); font-family: inherit; }
         .pan-item.active { animation: panPulse 1.2s ease-in-out infinite; }
         .pan-item.attended { background: #92400e; }
-        /* Simulacro (prueba del boton, 2026-11-23): en azul y sin latir; dice que NO es una emergencia */
-        .pan-item.drill { background: #1d4ed8; animation: none; }
-        .pan-item.drill.attended { background: #1e3a8a; }
-        .pan-item.drill button.solid { color: #1d4ed8; }
+        /* Prueba del vecino, "todo sin novedad" (2026-11-25; antes simulacro en azul): en verde y sin latir; dice que NO es una emergencia */
+        .pan-item.drill { background: #047857; animation: none; }
+        .pan-item.drill.attended { background: #065f46; }
+        .pan-item.drill button.solid { color: #047857; }
         .pan-item .pan-text { flex: 1; min-width: 200px; font-size: 0.9rem; line-height: 1.35; }
         .pan-item .pan-title { font-weight: 800; letter-spacing: 0.04em; font-size: 0.95rem; }
         .pan-item a, .pan-item button { font: inherit; font-size: 0.8rem; font-weight: 700; color: #fff; text-decoration: none; cursor: pointer;
@@ -70,7 +75,14 @@ const SisdelPanico = (() => {
     const stopSiren = () => S.stop();
     const beep = () => S.beep();
 
-    // Empieza a escuchar las alertas. options: { canResolve, readOnly, onChange(alerts) }
+    // Prueba del vecino: la nota que deja esta pantalla al recibirla sola y la de cuando la cierra. Son las de panico-prueba.js (una
+    // prueba exige que sean iguales: el vecino ve "automatico" por esa nota)
+    const AUTO_RECEIVED_NOTE = 'Prueba recibida automáticamente por la pantalla de la garita: todo sin novedad.';
+    const AUTO_CLOSE_NOTE = 'Prueba del vecino: la recibió la pantalla de la garita, todo sin novedad. Se cerró sola.';
+    const AUTO_CLOSE_MS = 120000;
+
+    // Empieza a escuchar las alertas. options: { canResolve, readOnly, autoReceiveTests (la garita: recibe y cierra sola cada prueba
+    // del vecino), onChange(alerts) }
     function watch(options = {}) {
         if (!document.getElementById('pan-style')) {
             const style = document.createElement('style');
@@ -83,15 +95,13 @@ const SisdelPanico = (() => {
         document.body.appendChild(bar);
         const seen = new Set();
         let alerts = [];
-        let first = true;
         let minimized = false;
 
         // ── Sirena de alerta maxima ──
-        // Suena mientras haya una alerta REAL sin atender que no se silencio; un simulacro, solo DRILL_SIREN_MS. Con la sirena, la
-        // pantalla destella en rojo, el titulo de la pestana parpadea (se ve aunque la pestana no este al frente) y vibra (Android)
-        const DRILL_SIREN_MS = 4000;
+        // Suena mientras haya una alerta REAL sin atender que no se silencio; una prueba del vecino (simulacro) NUNCA suena (antes 4
+        // segundos). Con la sirena, la pantalla destella en rojo, el titulo de la pestana parpadea (se ve aunque la pestana no este al
+        // frente) y vibra (Android)
         const silenced = new Set();
-        let drillUntil = 0;
         let ownSiren = false;
         const flash = document.createElement('div');
         flash.className = 'pan-flash';
@@ -102,12 +112,12 @@ const SisdelPanico = (() => {
         let shake = null;
         function sirenWanted() {
             const real = alerts.some((a) => a.simulacro !== true && a.status === 'ACTIVE' && !silenced.has(a.id));
-            return { real, drill: Date.now() < drillUntil };
+            return { real };
         }
         function updateSiren() {
             const want = sirenWanted();
-            // Solo calla la sirena que encendio el aviso (no la de "Probar la sirena" de la Central de Monitoreo)
-            if (want.real || want.drill) { startSiren(); ownSiren = true; } else if (ownSiren) { stopSiren(); ownSiren = false; }
+            // Solo calla la sirena que encendio el aviso (no la de "Probar la sirena" de la Central de Monitoreo). La prueba del vecino nunca suena
+            if (want.real) { startSiren(); ownSiren = true; } else if (ownSiren) { stopSiren(); ownSiren = false; }
             flash.hidden = !want.real;
             if (want.real && !blink) {
                 let on = false;
@@ -194,7 +204,7 @@ const SisdelPanico = (() => {
                 const real = alerts.filter((a) => a.simulacro !== true);
                 const drills = alerts.length - real.length;
                 const active = real.filter((a) => a.status === 'ACTIVE').length;
-                bar.innerHTML = `<button class="pan-pill" data-expand="1">${real.length ? `${real.length} alerta(s) de pánico${active ? ` · ${active} sin atender` : ''}` : ''}${real.length && drills ? ' · ' : ''}${drills ? `${drills} simulacro(s)` : ''}</button>`;
+                bar.innerHTML = `<button class="pan-pill" data-expand="1">${real.length ? `${real.length} alerta(s) de pánico${active ? ` · ${active} sin atender` : ''}` : ''}${real.length && drills ? ' · ' : ''}${drills ? `${drills} prueba(s) sin novedad` : ''}</button>`;
                 return;
             }
             bar.innerHTML = (alerts.length ? '<button class="pan-pill pan-min" data-minimize="1">Minimizar</button>' : '') + alerts.map((a) => {
@@ -202,20 +212,20 @@ const SisdelPanico = (() => {
                 const phone = a.phone ? ` · Tel. <a href="tel:${esc(a.phone)}" style="border:none;padding:0;background:none;text-decoration:underline;">${esc(a.phone)}</a>` : '';
                 const map = (typeof a.lat === 'number' && typeof a.lng === 'number') ? `<a href="${esc(SisdelRondas.mapsLink(a.lat, a.lng))}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span style="font-size:0.75rem;opacity:0.85;">Sin GPS</span>';
                 const drill = a.simulacro === true;
-                const state = a.status === 'ATTENDED' ? ` · ${drill ? 'Recibido' : 'Atendida'} por ${esc(a.attendedByName || '')}` : '';
+                const state = a.status === 'ATTENDED' ? ` · ${drill ? (a.notes === AUTO_RECEIVED_NOTE ? 'Recibida automáticamente por la pantalla de' : 'Recibida por') : 'Atendida por'} ${esc(a.attendedByName || '')}` : '';
                 return `
-                <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}${drill ? ' drill' : ''}" role="alert">
-                    ${ICON_ALERT}
+                <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}${drill ? ' drill' : ''}" role="${drill ? 'status' : 'alert'}">
+                    ${drill ? ICON_TEST : ICON_ALERT}
                     <div class="pan-text">
-                        <div class="pan-title">${drill ? 'SIMULACRO DE PÁNICO · PRUEBA, NO ES UNA EMERGENCIA' : 'ALERTA DE PÁNICO'}</div>
+                        <div class="pan-title">${drill ? 'PRUEBA DEL VECINO · TODO SIN NOVEDAD' : 'ALERTA DE PÁNICO'}</div>
                         <div>${who}${phone}</div>
-                        <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}${drill ? ' · No hay que ir al lugar: márquelo como recibido para completar la prueba' : ''}</div>
+                        <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}${drill ? ' · No es una emergencia: no hay que ir al lugar. El vecino está comprobando que su botón funciona.' : ''}</div>
                     </div>
                     ${map}
                     ${a.status === 'ACTIVE' && !drill && !silenced.has(a.id) ? `<button class="pan-mute" data-mute="${esc(a.id)}" title="Calla la sirena de esta alerta (la alerta sigue en pantalla)">Silenciar</button>` : ''}
                     ${canCall && a.source === 'vecino' ? `<button data-call="${esc(a.id)}" title="Llama al teléfono del vecino por internet: escucha lo que pasa y puede hablarle (contesta solo si tiene abierta la página del botón)">Escuchar / Hablar</button>` : ''}
-                    ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">${drill ? 'Marcar recibido' : 'Atender'}</button>` : ''}
-                    ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}" data-drill="${drill ? '1' : ''}">${drill ? 'Cerrar simulacro' : 'Resolver'}</button>` : ''}
+                    ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">${drill ? 'Marcar recibida' : 'Atender'}</button>` : ''}
+                    ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}" data-drill="${drill ? '1' : ''}">${drill ? 'Cerrar prueba' : 'Resolver'}</button>` : ''}
                 </div>`;
             }).join('');
         }
@@ -232,7 +242,7 @@ const SisdelPanico = (() => {
             try {
                 if (attend) { attend.disabled = true; await SisdelRondas.attendPanic(attend.dataset.attend); }
                 if (resolve) {
-                    const notes = prompt('¿Qué pasó? (queda en el registro)', resolve.dataset.drill ? 'Simulacro: el botón funcionó' : '');
+                    const notes = prompt('¿Qué pasó? (queda en el registro)', resolve.dataset.drill ? 'Prueba del vecino: todo sin novedad' : '');
                     if (notes === null) return;
                     resolve.disabled = true;
                     await SisdelRondas.resolvePanic(resolve.dataset.resolve, notes);
@@ -243,27 +253,47 @@ const SisdelPanico = (() => {
             }
         });
 
+        // ── Prueba del vecino en la garita: esta pantalla la recibe sola (el vecino ve que llego) y la cierra sola a los 2 minutos ──
+        const autoTests = !!options.autoReceiveTests && !options.readOnly;
+        const autoTried = new Set();
+        const closeTimers = new Map();
+        function handleTests(list) {
+            if (!autoTests) return;
+            list.filter((a) => a.simulacro === true).forEach((a) => {
+                if (a.status === 'ACTIVE' && !autoTried.has(a.id)) {
+                    autoTried.add(a.id);
+                    SisdelRondas.attendPanic(a.id, AUTO_RECEIVED_NOTE).catch((e) => console.warn('prueba del vecino', e && (e.code || e.message)));
+                }
+                if (a.status === 'ATTENDED' && options.canResolve && !closeTimers.has(a.id)) {
+                    const wait = Math.max(0, (Date.parse(a.attendedAt || '') || Date.now()) + AUTO_CLOSE_MS - Date.now());
+                    closeTimers.set(a.id, setTimeout(() => {
+                        const cur = alerts.find((x) => x.id === a.id);
+                        if (cur && cur.status === 'ATTENDED' && cur.simulacro === true) {
+                            SisdelRondas.resolvePanic(a.id, AUTO_CLOSE_NOTE).catch((e) => console.warn('prueba del vecino', e && (e.code || e.message)));
+                        }
+                    }, wait));
+                }
+            });
+        }
+
         const unsubscribe = SisdelRondas.subscribeActivePanics((list) => {
-            const fresh = list.filter((a) => a.status === 'ACTIVE' && !seen.has(a.id));
+            // Una prueba del vecino no abre la barra minimizada (no es una emergencia); una alerta real nueva, siempre
+            const fresh = list.filter((a) => a.status === 'ACTIVE' && !seen.has(a.id) && a.simulacro !== true);
             list.forEach((a) => seen.add(a.id));
             alerts = list;
             if (fresh.length) minimized = false; // una alerta nueva siempre se muestra completa
-            // Un simulacro nuevo suena unos segundos; una alerta real suena hasta que se atienda (updateSiren). Al abrir la pagina con
+            // Una alerta real suena hasta que se atienda (updateSiren); una prueba del vecino nunca suena. Al abrir la pagina con
             // alertas reales activas tambien suena (las que se silenciaron en esta pagina siguen calladas)
-            if (fresh.some((a) => a.simulacro === true) && (!first || fresh.length)) {
-                drillUntil = Date.now() + DRILL_SIREN_MS;
-                setTimeout(updateSiren, DRILL_SIREN_MS + 100);
-            }
             render();
             updateSiren();
-            first = false;
+            handleTests(list);
             if (options.onChange) options.onChange(list);
         }, (error) => console.error('Alertas de panico:', error));
 
         // Refresca el "hace N min"
         const timer = setInterval(render, 30000);
         return () => {
-            unsubscribe(); clearInterval(timer); alerts = []; drillUntil = 0; updateSiren(); stopSiren(); closeCall();
+            unsubscribe(); clearInterval(timer); alerts = []; closeTimers.forEach((t) => clearTimeout(t)); closeTimers.clear(); updateSiren(); stopSiren(); closeCall();
             offReady(); bar.remove(); flash.remove(); if (soundBtn) soundBtn.remove();
         };
     }

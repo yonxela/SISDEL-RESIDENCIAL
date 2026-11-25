@@ -145,8 +145,9 @@ const SisdelRondas = (() => {
     function mapsLink(lat, lng) { return `https://www.google.com/maps?q=${lat},${lng}`; }
 
     // ── Alertas de panico ──
-    // simulacro: true = prueba del boton (pedido del usuario el 2026-11-23): el servidor solo avisa a la central, la garita y al propio
-    // vecino, nunca a sus familiares (functions/src/rondas/avisos.js), y la garita la ve marcada como SIMULACRO (panico-alertas.js)
+    // simulacro: true = prueba del boton, "todo sin novedad" (pedidos del usuario el 2026-11-23 y 2026-11-25): el servidor solo avisa a
+    // la central, la garita y al propio vecino, nunca a sus familiares (functions/src/rondas/avisos.js); la garita la ve en verde, sin
+    // sirena, y su pantalla la recibe sola (panico-alertas.js, panico-prueba.js)
     async function raisePanic({ source, pos, casa, phone, simulacro }) {
         const ref = col('alertas_panico').doc();
         const data = {
@@ -169,8 +170,10 @@ const SisdelRondas = (() => {
         return col('alertas_panico').doc(id).onSnapshot((snap) => onChange(snap.exists ? { ...snap.data(), id: snap.id } : null), onError);
     }
 
-    async function attendPanic(id) {
-        await col('alertas_panico').doc(id).update({ status: 'ATTENDED', attendedBy: uid(), attendedByName: session.userName || '', attendedAt: nowIso() });
+    // notes: la pantalla de la garita que recibe sola una prueba del vecino deja dicho que fue automatico (panico-prueba.js); las
+    // reglas ya dejan escribir notes a quien atiende
+    async function attendPanic(id, notes) {
+        await col('alertas_panico').doc(id).update({ status: 'ATTENDED', attendedBy: uid(), attendedByName: session.userName || '', attendedAt: nowIso(), ...(notes ? { notes } : {}) });
     }
 
     async function resolvePanic(id, notes) {

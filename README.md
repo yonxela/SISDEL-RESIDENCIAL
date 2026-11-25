@@ -426,6 +426,7 @@ Los códigos de acceso no se guardan dentro del usuario. Así un guardia o un ve
 | `rondin/` | SISDEL RONDÍN con su diseño; `rondin/js/sisdel-api.js` lo conecta con la base de SISDEL. |
 | `rondas-core.js`, `panico-alertas.js` | Botón de pánico del vecino y alertas de pánico en garita y admin. |
 | `panico-boton.js` | El botón de pánico de mantener presionado (círculo que se llena; al terminar dice ALERTA ENVIADA), el mismo en el portal del vecino y en el QR de pánico. |
+| `panico-prueba.js` | La prueba del botón de pánico, "Prueba: todo sin novedad": lo que ve el vecino punto por punto (llegó, su ubicación, la recibió la pantalla de la garita, el WhatsApp) y "funciona al 100 %"; en el portal del vecino y en el QR de pánico. |
 | `sisdel-actualizaciones.js` | Actualización de datos de los vecinos (lógica pura, UMD): limpia, compara y valida el lote, teléfono, correo, NIT y DPI que el vecino escribe en su portal, arma la solicitud y calcula lo que se aplica. Lo cargan `vecino.html` y `admin.html`. |
 | `actualizaciones-ui.js` | La lista de la administración (`admin.html`): solicitudes de los vecinos por revisar, comparación "en el sistema / escribió el vecino", aplicar con la clave del administrador (la verifica el servidor), rechazar con motivo, imprimir, PDF y Excel. |
 | `gps-ayuda.js` | Botón "Activar ubicación" y la ayuda para activarla según el teléfono (portal del vecino y QR de pánico). |

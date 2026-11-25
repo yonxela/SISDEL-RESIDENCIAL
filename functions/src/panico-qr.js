@@ -109,10 +109,15 @@ function publicAlert(a, deviceId) {
             if (typeof a.lat === 'number' && typeof a.lng === 'number') out.mapUrl = `https://maps.google.com/?q=${a.lat},${a.lng}`;
         }
     }
-    // Un simulacro dice tambien como salieron sus avisos de prueba (cuantos y, si no salieron, por que); nunca los telefonos
+    // Una prueba ("todo sin novedad", simulacro) dice tambien como salieron sus avisos de prueba (cuantos y, si no salieron, por que;
+    // nunca los telefonos), cuando y quien la recibio en la garita (se queda aunque despues la cierren) y la precision del GPS: con
+    // eso panico-prueba.js le muestra al vecino, punto por punto, que su boton funciona
     if (a.simulacro === true) {
         out.simulacro = true;
         if (a.whatsapp) out.whatsapp = { done: true, sent: (a.whatsapp.recipients || []).filter((r) => r.exito).length, reason: String(a.whatsapp.reason || '').slice(0, 200) };
+        out.receivedAt = String(a.attendedAt || (a.status === 'RESOLVED' ? a.resolvedAt || '' : '')).slice(0, 40);
+        out.receivedBy = String(a.attendedByName || (a.status === 'RESOLVED' ? a.resolvedByName || '' : '')).slice(0, 80);
+        if (typeof a.accuracy === 'number' && Number.isFinite(a.accuracy)) out.accuracy = Math.round(a.accuracy);
     }
     return out;
 }

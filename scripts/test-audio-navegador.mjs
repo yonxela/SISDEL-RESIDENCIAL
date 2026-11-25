@@ -60,7 +60,12 @@ try {
     await waitFor('el portal del vecino abre con el boton de panico listo', () => vecino.evaluate(`!!document.getElementById('btnPanicDrill') && getComputedStyle(document.getElementById('panicCard')).display !== 'none'`));
     await sleep(1500);
     await vecino.evaluate(`(() => { document.querySelectorAll('.modal-overlay').forEach((m) => { m.style.display = 'none'; }); window.confirm = () => true; document.getElementById('btnPanicDrill').click(); })()`);
-    await waitFor('el vecino envia un simulacro (se puede probar el audio con el)', () => vecino.evaluate(`/SIMULACRO ENVIADO/.test(document.getElementById('panicStatus').innerText)`));
+    await waitFor('el vecino envia la prueba "todo sin novedad" (se puede probar el audio con ella)', () => vecino.evaluate(`/PRUEBA ENVIADA|TODO SIN NOVEDAD/.test(document.getElementById('panicStatus').innerText)`));
+    // La prueba (2026-11-25): en la garita en verde y SIN sirena; la pantalla de la garita la recibe sola y el vecino lo ve punto por punto
+    await waitFor('la garita ve la prueba en verde, sin sirena', () => garita.evaluate(`/PRUEBA DEL VECINO · TODO SIN NOVEDAD/.test(document.querySelector('.pan-bar').innerText) && !!document.querySelector('.pan-item.drill') && !SisdelSirena.playing() && document.querySelector('.pan-flash').hidden`));
+    await waitFor('la pantalla de la garita la recibe sola y el vecino lo ve', () => vecino.evaluate(`(() => { const t = document.getElementById('panicStatus').innerText; return /La pantalla de la garita la recibió/.test(t) && /Llevó su ubicación GPS \\(±15 m\\)/.test(t) && /no sonó ninguna sirena/.test(t); })()`), 30000);
+    equal('la garita la marca como recibida automaticamente', await garita.evaluate(`/Recibida automáticamente por la pantalla de/.test(document.querySelector('.pan-bar').innerText)`), true);
+    equal('la prueba nunca hizo sonar la sirena de la garita', await garita.evaluate(`SisdelSirena.playing()`), false);
     const callBtn = await waitFor('en la garita aparece "Escuchar / Hablar" en la alerta del vecino', () => garita.evaluate(`(() => { const b = [...document.querySelectorAll('[data-call]')].pop(); return b ? b.dataset.call : null; })()`));
     await garita.evaluate(`document.querySelector('[data-call="${callBtn}"]').click()`);
     await waitFor('la garita llama: el telefono del vecino contesta solo y quedan en linea', () => vecino.evaluate(`/está en línea: le escucha/.test(document.getElementById('panicAudioText').textContent)`), 60000);

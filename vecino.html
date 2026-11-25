@@ -75,9 +75,13 @@
         #datosForm .form-input:disabled { opacity: 0.6; }
         /* El boton de la ubicacion del celular (.panic-loc: casilla vacia, chequesito verde o rojo) lo pinta gps-ayuda.js */
         .panic-status { margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-size: 0.9rem; }
-        /* El simulacro (prueba del boton) va en azul: no es una emergencia */
-        .panic-status.drill { background: var(--info-bg); border: 1px solid var(--info); }
-        .panic-drill-btn { border: 1px dashed var(--border-strong); }
+        /* La prueba del boton ("todo sin novedad", panico-prueba.js) va en verde: no es una emergencia */
+        .panic-status.drill { background: var(--success-bg); border: 1px solid var(--success); }
+        .panic-drill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; max-width: 20rem;
+            padding: 0.7rem 1rem; border: 2px solid var(--success); border-radius: 999px; background: var(--success-bg); color: var(--success);
+            font: inherit; font-size: 0.95rem; font-weight: 800; cursor: pointer; }
+        .panic-drill-btn:disabled { opacity: 0.6; cursor: wait; }
+        .panic-drill-btn svg { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
         /* Audio con la garita */
         .panic-audio { align-self: stretch; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
         .panic-drill-note { margin: -0.25rem 0 0; max-width: 26rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
@@ -170,12 +174,14 @@
                     <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
                     <div id="panicBtnHost" title="Avisa a la garita, la administración y sus contactos de emergencia"></div>
                     <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false" style="display:none;"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
-                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
-                    <!-- SISDEL: simulacro (pedido del usuario el 2026-11-23): probar el boton sin avisar a los familiares. El servidor solo avisa a
-                         la central, la garita y al propio vecino, con un tope por dia (functions/src/rondas/avisos.js) -->
-                    <button class="btn btn-ghost btn-sm panic-drill-btn" id="btnPanicDrill" type="button">Hacer un simulacro (prueba)</button>
-                    <p class="panic-drill-note">El simulacro llega a la garita marcado como prueba y a su propio WhatsApp. No avisa a sus contactos de emergencia.</p>
+                    <!-- SISDEL: prueba "todo sin novedad" (pedidos del usuario el 2026-11-23 y 2026-11-25; antes "Hacer un simulacro", debajo
+                         de los contactos): manda su ubicacion y sus datos a la garita marcados como prueba, sin sirena; el servidor solo avisa a la
+                         central, la garita y al propio vecino, con un tope por dia (functions/src/rondas/avisos.js). El resultado, punto por
+                         punto, lo pinta panico-prueba.js -->
+                    <button class="panic-drill-btn" id="btnPanicDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
+                    <p class="panic-drill-note" id="panicDrillNote"></p>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
+                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
                     <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
                          contesta solo; la garita escucha y puede hablarle -->
                     <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
@@ -403,11 +409,12 @@
     <script src="privilegios.js?v=20261125a"></script>
     <script src="sisdel-core.js?v=20261125a"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
-    <script src="rondas-core.js?v=20261124a"></script>
+    <script src="rondas-core.js?v=20261125a"></script>
     <script src="audio-panico.js?v=20261124a"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
+    <script src="panico-prueba.js?v=20261125a"></script>
     <script src="avisos-push.js?v=20261124a"></script>
     <script src="avisos-ui.js?v=20261124a"></script>
     <script>
@@ -764,37 +771,27 @@
                 RESOLVED: 'Su alerta fue resuelta.',
                 CANCELLED: 'Usted canceló la alerta.'
             };
-            // Un simulacro: lo que dice y como salieron sus avisos de prueba por WhatsApp (el servidor lo anota en la alerta)
-            const DRILL_HEAD = { ACTIVE: 'SIMULACRO ENVIADO', ATTENDED: 'SIMULACRO RECIBIDO EN LA GARITA', RESOLVED: 'SIMULACRO TERMINADO', CANCELLED: 'SIMULACRO TERMINADO' };
-            const DRILL_BODY = {
-                ACTIVE: 'Es una prueba: la garita la ve marcada como SIMULACRO. No se avisó a sus contactos de emergencia.',
-                ATTENDED: 'La garita recibió su simulacro: su botón de pánico funciona.',
-                RESOLVED: 'La garita cerró el simulacro.',
-                CANCELLED: 'Usted terminó el simulacro.'
-            };
-            function drillWhatsAppText(w) {
-                if (!w) return 'Enviando los avisos de prueba por WhatsApp...';
-                const sent = (w.recipients || []).filter((r) => r.exito).length;
-                if (sent) return `Avisos de prueba por WhatsApp: ${sent} ${sent === 1 ? 'enviado' : 'enviados'}. Solo van a la central, a la garita y a su propio número.`;
-                return `Sin avisos por WhatsApp${w.reason ? ': ' + w.reason : ''}. La garita igual lo ve en su pantalla.`;
-            }
+            // La prueba "todo sin novedad": el resultado punto por punto (llego, llevo la ubicacion, la recibio la pantalla de la garita,
+            // salio el WhatsApp), lo pinta panico-prueba.js. No traba el boton grande: si de verdad hay una emergencia, se puede usar de
+            // inmediato. Mientras falte algo se vuelve a pintar (los "esperando..." pasan a aviso pasado el minuto y medio)
+            document.getElementById('panicDrillNote').textContent = SisdelPanicoPrueba.NOTE;
+            let drillShown = null;
+            let drillTimer = null;
             function showDrill(alert) {
-                // El simulacro no traba el boton grande: si de verdad hay una emergencia, se puede usar de inmediato
+                drillShown = alert;
+                clearTimeout(drillTimer);
                 panicStatus.style.display = 'block';
                 panicStatus.classList.add('drill');
-                const who = alert.status === 'ATTENDED' && alert.attendedByName ? ` Lo marcó ${escHtml(alert.attendedByName)}.` : '';
-                panicStatus.innerHTML = `<strong style="font-size:1.05rem;letter-spacing:0.04em;">${escHtml(DRILL_HEAD[alert.status] || alert.status)}</strong>
-                    <div style="margin-top:0.25rem;">${escHtml(DRILL_BODY[alert.status] || '')}${who}</div>
-                    <div style="margin-top:0.25rem;">${escHtml(drillWhatsAppText(alert.whatsapp))}</div>
-                    <div class="text-xs text-muted" style="margin-top:0.25rem;">${escHtml(SISDEL.formatDateTime(alert.createdAt))}${alert.lat == null ? ' · sin ubicación GPS: active la ubicación para que una alerta real diga dónde está' : ' · con ubicación GPS'}</div>
-                    ${alert.status === 'ACTIVE' && canCancelPanic ? '<button class="btn btn-ghost btn-sm" id="btnCancelPanic" type="button" style="margin-top:0.5rem;">Terminar el simulacro</button>' : ''}`;
-                const cancel = document.getElementById('btnCancelPanic');
-                if (cancel) cancel.addEventListener('click', async () => { await SisdelRondas.cancelPanic(alert.id); });
-                if (['RESOLVED', 'CANCELLED'].includes(alert.status)) setTimeout(() => { panicStatus.style.display = 'none'; }, 15000);
+                const r = SisdelPanicoPrueba.render(panicStatus, alert, {
+                    onCancel: canCancelPanic ? async () => { try { await SisdelRondas.cancelPanic(alert.id); } catch (e) { SISDEL.showToast('No se pudo terminar la prueba', 'error'); } } : null,
+                    onClose: () => { drillShown = null; clearTimeout(drillTimer); panicStatus.style.display = 'none'; }
+                });
+                if (r.state === 'wait') drillTimer = setTimeout(() => { if (drillShown && drillShown.id === alert.id) showDrill(drillShown); }, 15000);
             }
             function showPanic(alert) {
                 if (!alert) { panicStatus.style.display = 'none'; panicButton.setState('ready'); return; }
                 if (alert.simulacro === true) { showDrill(alert); return; }
+                drillShown = null; clearTimeout(drillTimer);
                 panicStatus.classList.remove('drill');
                 // Enviada y atendida bloquean el boton 30 segundos (contados desde que se creo la alerta); cancelada o resuelta lo liberan
                 panicButton.setState(SisdelPanicoBoton.stateForAlert(alert.status), alert.id, Date.parse(alert.createdAt));
@@ -848,7 +845,7 @@
                     drillBtn.disabled = true;
                     panicStatus.classList.add('drill');
                     panicStatus.style.display = 'block';
-                    panicStatus.textContent = 'Enviando el simulacro...';
+                    panicStatus.textContent = 'Enviando la prueba (sin sirena)...';
                 }
                 try {
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
@@ -872,7 +869,7 @@
                     console.error(e);
                     panicStatus.style.display = 'block';
                     if (simulacro) {
-                        panicStatus.textContent = 'No se pudo enviar el simulacro. Revise su conexión y vuelva a intentarlo.';
+                        panicStatus.textContent = 'No se pudo enviar la prueba: su teléfono no llegó al sistema. Revise su conexión (internet o datos) y vuelva a intentarlo.';
                         return;
                     }
                     panicStatus.classList.remove('drill');
@@ -883,7 +880,7 @@
                 }
             }
             document.getElementById('btnPanicDrill').addEventListener('click', () => {
-                if (!confirm('SIMULACRO DEL BOTÓN DE PÁNICO\n\nSe enviará una alerta de PRUEBA, marcada como simulacro, a la garita y a la central, y una copia a su propio WhatsApp para que vea que funciona.\n\nNO se avisará a sus contactos de emergencia ni a la PNC.\n\n¿Hacer el simulacro?')) return;
+                if (!confirm(SisdelPanicoPrueba.CONFIRM)) return;
                 firePanic(true);
             });
             // Si ya tiene una alerta reciente sin resolver, se muestra su estado

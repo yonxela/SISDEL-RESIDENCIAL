@@ -458,11 +458,24 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             const banner = read('panico-alertas.js'); const rondin = read('rondin/js/sisdel-api.js'); const qrFn = read('functions/src/panico-qr.js');
             yes('simulacro: el vecino y el QR tienen su boton, avisan antes que no llega a los familiares y no traban el boton grande', /id="btnPanicDrill"/.test(vecino) && /firePanic\(true\)/.test(vecino) && /if \(alert\.simulacro === true\) \{ showDrill\(alert\); return; \}/.test(vecino)
                 && /id="pqDrill"/.test(qrPage) && /action: 'alert', simulacro: true/.test(qrPage) && /if \(a\.simulacro === true\) \{ showDrill\(a\); return; \}/.test(qrPage)
-                && [vecino, qrPage].every((h) => /NO se avisará a sus contactos de emergencia ni a la PNC/.test(h)));
+                && [vecino, qrPage].every((h) => /if \(!confirm\(SisdelPanicoPrueba\.CONFIRM\)\) return;/.test(h)) && /NO se avisa a sus contactos de emergencia ni a la PNC/.test(read('panico-prueba.js')));
             yes('simulacro: la alerta lleva simulacro: true (portal y QR) y el servidor la cuenta con su tope del dia', /\.\.\.\(simulacro === true \? \{ simulacro: true \} : \{\}\)/.test(core) && /\.\.\.\(data\.simulacro === true \? \{ simulacro: true \} : \{\}\)/.test(qrFn)
                 && /if \(isDrill\(alert\)\) \{\s*const slot = await takeDrillSlot\(condoRef, alert\);/.test(rondas));
-            yes('simulacro: la garita lo ve en azul y marcado como prueba; RONDIN lo marca y no despacha drones', /\.pan-item\.drill \{ background: #1d4ed8; animation: none; \}/.test(banner) && /SIMULACRO DE PÁNICO · PRUEBA, NO ES UNA EMERGENCIA/.test(banner)
-                && /if \(!drill\) dispatchDrone\(p, 'NEIGHBOR'\);/.test(rondin) && /if \(!drill\) dispatchDrone\(p, 'GUARD'\);/.test(rondin));
+            yes('prueba (todo sin novedad): la garita la ve en verde y marcada como prueba; RONDIN no la anuncia (no suena su sirena) ni despacha drones', /\.pan-item\.drill \{ background: #047857; animation: none; \}/.test(banner) && /PRUEBA DEL VECINO · TODO SIN NOVEDAD/.test(banner)
+                && /const drill = raw\.simulacro === true;\s*if \(drill\) return;/.test(rondin) && /if \(!drill\) dispatchDrone\(p, 'NEIGHBOR'\);/.test(rondin) && /if \(!drill\) dispatchDrone\(p, 'GUARD'\);/.test(rondin));
+            // Prueba "todo sin novedad" (pedido del usuario el 2026-11-25): justo debajo del boton de panico, sin sirena, la pantalla de la
+            // garita la recibe y la cierra sola, y el vecino ve punto por punto que funciono (panico-prueba.js)
+            const prueba = read('panico-prueba.js'); const garitaPage = read('garita.html');
+            const order = (h, ids) => ids.every((id, i) => i === 0 || h.indexOf(`id="${ids[i - 1]}"`) < h.indexOf(`id="${id}"`));
+            yes('prueba: el boton va justo debajo del boton de panico (portal: despues de la ubicacion y antes de los contactos; QR: antes del estado)', order(vecino, ['panicBtnHost', 'panicGps', 'btnPanicDrill', 'panicStatus', 'btnContacts'])
+                && order(qrPage, ['panicBtnHost', 'pqNoGps', 'pqDrill', 'panicStatus']) && [vecino, qrPage].every((h) => />Prueba: todo sin novedad</.test(h)));
+            yes('prueba: el portal y el QR cargan panico-prueba.js con la misma version y pintan el resultado con el', [vecino, qrPage].every((h) => h.includes('panico-prueba.js?v=20261125a') && /SisdelPanicoPrueba\.render\(panicStatus,/.test(h)));
+            yes('prueba: no suena ninguna sirena (ni unos segundos): solo una alerta real sin atender', !/DRILL_SIREN_MS|drillUntil|want\.drill/.test(banner) && /if \(want\.real\) \{ startSiren\(\); ownSiren = true; \}/.test(banner));
+            yes('prueba: solo la pantalla de la garita la recibe y la cierra sola, con las mismas notas que lee el vecino', /autoReceiveTests: true/.test(garitaPage) && !/autoReceiveTests/.test(read('admin.html')) && !/autoReceiveTests/.test(read('finanzas.html'))
+                && /SisdelRondas\.attendPanic\(a\.id, AUTO_RECEIVED_NOTE\)/.test(banner) && /SisdelRondas\.resolvePanic\(a\.id, AUTO_CLOSE_NOTE\)/.test(banner)
+                && ['AUTO_RECEIVED_NOTE', 'AUTO_CLOSE_NOTE'].every((k) => { const v = (txt) => (txt.match(new RegExp(`const ${k} = '([^']*)'`)) || [])[1]; return !!v(banner) && v(banner) === v(prueba); })
+                && /async function attendPanic\(id, notes\)/.test(core));
+            yes('prueba: el QR sabe cuando y quien la recibio en la garita y la precision del GPS', /out\.receivedAt = /.test(qrFn) && /out\.receivedBy = /.test(qrFn) && /out\.accuracy = Math\.round\(a\.accuracy\)/.test(qrFn));
             // Sirena de alerta maxima, avisos de la casa y audio de doble via (2026-11-24)
             const sirena = read('sirena.js'); const audio = read('audio-panico.js'); const sw = read('sw-avisos.js'); const fin = read('finanzas.html'); const fnIndex = read('functions/index.js');
             // Central de Monitoreo (2026-11-25): la sirena siempre encendida y a la vista
@@ -478,8 +491,8 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
                 && manifestCentral.start_url === '/garita.html' && manifestCentral.display === 'standalone' && manifestCentral.icons.some((i) => i.sizes === '512x512')
                 && /navigator\.wakeLock\.request\('screen'\)/.test(central) && /document\.addEventListener\('visibilitychange', keepScreenOn\)/.test(central));
             yes('la pagina de la garita se llama Central de Monitoreo en el encabezado y en los botones de los demas paneles', /<h1>CENTRAL DE MONITOREO<\/h1>/.test(central) && P.PAGES.find((p) => p.page === 'garita.html').label === 'Monitoreo');
-            yes('sirena: suena sin parar mientras haya una alerta real sin atender, con destello; el simulacro solo unos segundos; se puede silenciar', /function sirenWanted\(\)/.test(banner) && /a\.simulacro !== true && a\.status === 'ACTIVE' && !silenced\.has\(a\.id\)/.test(banner)
-                && /const DRILL_SIREN_MS = 4000;/.test(banner) && /data-mute=/.test(banner) && /class="pan-flash"|className = 'pan-flash'/.test(banner) && /const SisdelSirena = \(\(\) => \{/.test(sirena) && /function start\(\)/.test(sirena));
+            yes('sirena: suena sin parar mientras haya una alerta real sin atender, con destello; la prueba del vecino no suena; se puede silenciar', /function sirenWanted\(\)/.test(banner) && /a\.simulacro !== true && a\.status === 'ACTIVE' && !silenced\.has\(a\.id\)/.test(banner)
+                && /data-mute=/.test(banner) && /class="pan-flash"|className = 'pan-flash'/.test(banner) && /const SisdelSirena = \(\(\) => \{/.test(sirena) && /function start\(\)/.test(sirena));
             yes('sirena: tambien en OIKOS, con los mismos privilegios que el panel', /SISDEL\.can\('panico\.ver'\) && SISDEL\.can\('panico\.avisos'\)\) \{\s*SisdelRondas\.init\(session\);\s*SisdelPanico\.watch\(/.test(fin));
             yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261125a'))
                 && ['garita.html', 'admin.html', 'finanzas.html', 'panico.html', 'vecino.html'].every((f) => read(f).includes('audio-panico.js?v=20261124a')));
@@ -488,8 +501,8 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
                 && /if \(!simulacro && typeof SisdelAudioPanico !== 'undefined'\) SisdelAudioPanico\.prepareMic\(\);/.test(vecino) && /panicAudio/.test(fnIndex) && /stream\.getAudioTracks\(\)\.forEach\(\(t\) => \{ t\.enabled = false; \}\)/.test(audio));
             yes('avisos de la casa: el QR los activa con su propio registro (alcance /panico) y el aviso de panico se queda hasta tocarlo y abre el boton', /register\('sw-avisos\.js', \{ scope: '\.\/panico' \}\)/.test(qrPage) && /if \(p\.kind === 'panico'\) options\.vibrate/.test(sw)
                 && /event\.notification\.data\.kind === 'panico'/.test(sw) && /if \(a\.mine === false && a\.simulacro !== true\) \{ showHouse\(a\); return; \}/.test(qrPage));
-            yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261124a'))
-                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125a')));
+            yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261125a'))
+                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125b')));
         }
         yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
         yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));

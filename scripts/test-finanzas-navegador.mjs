@@ -1687,6 +1687,67 @@ async function run() {
         equal('al bajar hasta Guardar la X queda fija arriba a la derecha de la ventana', xOut, { scrolled: true, flush: true, inside: true, title: 'Editar Residente' });
         await oikos(`closeModal('modal-resident')`);
 
+        console.log('\nGestionar visita (menu de cada residente)');
+        // El pase de visita de un vecino desde OIKOS: el mismo que valida la garita (qrCode VIS..., una sola vez y su dia). Se prueba la ventana,
+        // el pase con su QR, Imprimir, el PDF, WhatsApp, la lista del vecino y cancelar una pendiente
+        await oikos(`(() => { window.confirm = () => true; navigate('residents'); return true; })()`);
+        record('el menu "Más opciones" trae "Gestionar visita" (solo con el puente de visitas)', await oikos(`!!document.querySelector('#residents-table-body button[onclick="openVisitModal(this.dataset.id)"][data-id="u-ana"]') && !!visitBridge()`));
+        await oikos(`openVisitModal('u-ana')`);
+        await waitFor('la lista de visitas de Ana', async () => oikos(`!/Cargando/.test(document.getElementById('vsm-list').textContent) && document.getElementById('vsm-list').textContent.length > 0`));
+        const vs0 = await oikos(`({ open: !document.getElementById('modal-visita').classList.contains('hidden-section'), info: document.getElementById('vsm-info').textContent, date: document.getElementById('vsm-date').value, min: document.getElementById('vsm-date').min, today: vsmToday(), pass: document.getElementById('vsm-pass').classList.contains('hidden'), actions: document.getElementById('vsm-actions').classList.contains('hidden') })`);
+        record('la ventana abre con el vecino, la fecha de hoy (no se puede elegir una pasada) y sin pase todavia', vs0.open && /Ana García/.test(vs0.info) && vs0.date === vs0.today && vs0.min === vs0.today && vs0.pass && vs0.actions, JSON.stringify(vs0));
+        await oikos(`(() => { document.getElementById('vsm-name').value = ''; return vsmCreate(); })()`);
+        equal('sin nombre no se crea nada', (await db.collection(`condominios/${CONDO}/visitas`).where('visitorName', '==', 'Carlos Prueba').get()).size, 0);
+        await oikos(`(() => { document.getElementById('vsm-name').value = 'Carlos Prueba'; document.getElementById('vsm-plate').value = 'p-555zzz'; document.getElementById('vsm-note').value = 'Entrega de <b>muebles</b>'; document.getElementById('vsm-time').value = '14:30'; return vsmCreate(); })()`);
+        await waitFor('el pase con su QR', async () => oikos(`!!document.querySelector('#vsm-pass .vsp .vsp-qr svg') && !document.getElementById('vsm-actions').classList.contains('hidden')`));
+        const created = (await db.collection(`condominios/${CONDO}/visitas`).where('visitorName', '==', 'Carlos Prueba').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        const cv = created[0] || {};
+        record('la visita queda a nombre de Ana, con el codigo del pase (el que lee la garita), su fecha, hora y placa, pendiente', created.length === 1 && cv.userId === 'u-ana' && /^VIS[A-Z0-9]+$/.test(cv.qrCode || '') && cv.status === 'pending' && cv.vehiclePlate === 'P-555ZZZ' && cv.visitTime === '14:30:00' && cv.visitDate === (await oikos(`vsmToday()`)) && cv.condominioId === CONDO && /\S/.test(cv.casa || ''), JSON.stringify(cv));
+        const pass = await oikos(`({ name: document.querySelector('#vsm-pass .vsp-name').textContent, code: document.querySelector('#vsm-pass .vsp-code').textContent, escaped: document.querySelector('#vsm-pass').innerHTML.includes('Entrega de &lt;b&gt;muebles&lt;/b&gt;'), raw: Array.from(document.querySelectorAll('#vsm-pass b')).some((b) => b.textContent === 'muebles') })`);
+        record('el pase muestra el visitante, su codigo y el QR, y lo que se escribe se escapa (no entra HTML)', pass.name === 'Carlos Prueba' && pass.code === cv.qrCode && pass.escaped === true && pass.raw === false, JSON.stringify(pass));
+        const list1 = await oikos(`document.getElementById('vsm-list').innerText`);
+        record('la lista del vecino ya trae la visita, por llegar, con "Ver pase" y "Cancelar"', /Carlos Prueba/.test(list1) && /POR LLEGAR/.test(list1) && /Ver pase/.test(list1) && /Cancelar/.test(list1), list1);
+        const vsOut = await oikos(`(async () => {
+            const out = {};
+            const savedOpen = window.open;
+            let html = '';
+            window.open = () => ({ document: { write: (h) => { html += h; }, open() { html = ''; }, close() {} }, print() {} });
+            await vsmPrint();
+            out.print = { name: html.includes('Carlos Prueba'), qr: (html.match(/<svg/g) || []).length >= 1, code: html.includes(${JSON.stringify(cv.qrCode)}), page: html.includes('@page{size:100mm 150mm') };
+            const Orig = window.jspdf.jsPDF;
+            const pdf = { saved: '', size: null, texts: [] };
+            window.jspdf.jsPDF = function () { const d = new (Function.prototype.bind.apply(Orig, [null].concat(Array.from(arguments))))(); const t = d.text.bind(d); d.text = function (x) { pdf.texts.push(Array.isArray(x) ? x.join(' ') : String(x)); return t.apply(null, arguments); }; d.save = function (n) { pdf.saved = n; pdf.size = [d.internal.pageSize.getWidth(), d.internal.pageSize.getHeight()]; }; return d; };
+            await vsmDownloadPdf();
+            window.jspdf.jsPDF = Orig;
+            out.pdf = { saved: pdf.saved, size: pdf.size, name: pdf.texts.includes('Carlos Prueba'), code: pdf.texts.includes(${JSON.stringify(cv.qrCode)}) };
+            const savedCan = Object.getOwnPropertyDescriptor(navigator, 'canShare');
+            Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });
+            const savedClick = HTMLAnchorElement.prototype.click;
+            const downloads = [];
+            HTMLAnchorElement.prototype.click = function () { downloads.push(this.download); };
+            let url = '';
+            window.open = (u) => { url = String(u); return {}; };
+            await vsmWhatsApp();
+            out.wa = { downloads: downloads.slice(), url: url.slice(0, 40), text: decodeURIComponent((url.split('text=')[1] || '').replace(/\\+/g, ' ')) };
+            HTMLAnchorElement.prototype.click = savedClick;
+            if (savedCan) Object.defineProperty(navigator, 'canShare', savedCan); else delete navigator.canShare;
+            window.open = savedOpen;
+            return out;
+        })()`);
+        record('Imprimir abre el pase (100 x 150 mm) con el visitante, el QR y el codigo', vsOut.print.name && vsOut.print.qr && vsOut.print.code && vsOut.print.page, JSON.stringify(vsOut.print));
+        record('Descargar PDF genera una hoja de 100 x 150 mm con el visitante y el codigo', /Pase.*Carlos/i.test(vsOut.pdf.saved) && Math.round(vsOut.pdf.size[0]) === 100 && Math.round(vsOut.pdf.size[1]) === 150 && vsOut.pdf.name && vsOut.pdf.code, JSON.stringify(vsOut.pdf));
+        record('WhatsApp en la computadora descarga el PDF y abre el chat de Ana con el codigo y las indicaciones para su visitante', vsOut.wa.downloads.length === 1 && /wa\.me|whatsapp/.test(vsOut.wa.url) && vsOut.wa.text.includes(cv.qrCode) && /Carlos Prueba/.test(vsOut.wa.text) && /garita/.test(vsOut.wa.text), JSON.stringify(vsOut.wa));
+        // El pase que crea OIKOS lo valida la garita como cualquier otro (el mismo getVisitByQR): codigo y fecha de hoy
+        const byQr = await db.collection(`condominios/${CONDO}/visitas`).where('qrCode', '==', cv.qrCode).get();
+        record('y la garita lo encuentra por su codigo (mismo pase que el del portal del vecino)', byQr.size === 1 && byQr.docs[0].data().visitorName === 'Carlos Prueba');
+        await oikos(`vsmCancel(${JSON.stringify(cv.id)})`);
+        await waitFor('que se cancele la visita', async () => (await db.collection(`condominios/${CONDO}/visitas`).where('visitorName', '==', 'Carlos Prueba').get()).size === 0);
+        record('"Cancelar" borra la visita pendiente y la quita de la lista y del pase', await oikos(`!/Carlos Prueba/.test(document.getElementById('vsm-list').innerText) && document.getElementById('vsm-pass').classList.contains('hidden')`));
+        // Sin el privilegio de crear visitas no hay puente (ni la opcion del menu); con el, Cancelar pide ademas visitas.eliminar
+        const noBridge = await oikos(`(() => { const saved = window.parent.sisdelResidentVisits; window.parent.sisdelResidentVisits = null; renderResidents(); const hidden = !document.querySelector('#residents-table-body button[onclick^="openVisitModal("]'); window.parent.sisdelResidentVisits = saved; renderResidents(); return hidden && !!document.querySelector('#residents-table-body button[onclick^="openVisitModal("]'); })()`);
+        record('sin el puente (sin visitas.crear) la opcion no sale en el menu, y vuelve a salir con el', noBridge === true);
+        await oikos(`closeModal('modal-visita')`);
+
         console.log('\nResidentes: dos menus por residente y el codigo del boton de panico');
         const pmOut = await oikos(`(async () => {
             navigate('residents'); renderResidents();
@@ -1706,7 +1767,7 @@ async function run() {
         })()`);
         equal('cada residente trae tres puntos, el lapiz y tres puntos', pmOut.botones, ['Estado de cuenta y mensajes', 'Editar', 'Más opciones']);
         equal('izquierda: estado de cuenta y mensajes (con Enviar clave de acceso: el administrador ve las claves); derecha: lo demas, con Generar codigo boton de panico', [pmOut.izq, pmOut.der],
-            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Enviar clave de acceso', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
+            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Enviar clave de acceso', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Gestionar visita', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
         equal('el boton de la izquierda abre solo su menu', pmOut.soloIzq, [true, false]);
         equal('el codigo del boton de panico: la tarjeta del vecino con su QR y el enlace con su condominio y su id (sin codigo de acceso)',
             [pmOut.modal.abierta, pmOut.modal.url, pmOut.modal.qr, /BOTÓN DE PÁNICO/.test(pmOut.modal.tarjeta), /Ana García/.test(pmOut.modal.tarjeta), pmOut.modal.botones], [true, `${BASE}/panico.html?c=${CONDO}&v=u-ana`, 1, true, true, [false, false, false, false]]);

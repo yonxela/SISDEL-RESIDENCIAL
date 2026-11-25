@@ -129,11 +129,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261124c"></script>
-    <script src="sisdel-core.js?v=20261124c"></script>
+    <script src="privilegios.js?v=20261124d"></script>
+    <script src="sisdel-core.js?v=20261124d"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261124a"></script>
-    <script src="finanzas-bloqueo.js?v=20261124a"></script>
+    <script src="finanzas-sync.js?v=20261124b"></script>
+    <script src="finanzas-bloqueo.js?v=20261124b"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script src="avisos-push.js?v=20261124a"></script>
@@ -557,6 +557,37 @@
                     },
                     // Quita un vehiculo (el mismo deleteVehicle de siempre); true si se borro
                     async remove(vehicleId) { return SISDEL.deleteVehicle(String(vehicleId)); }
+                };
+            }
+
+            // Visitas de un residente (menu de cada residente de OIKOS, "Gestionar visita"; pedido del usuario el 2026-11-24): OIKOS las lee y
+            // las crea por window.parent.sisdelResidentVisits. Solo con el reporte de marbetes (a quien lo usa se le ofrece), poder ver y crear
+            // visitas y ver residentes: las reglas de la coleccion visitas tambien lo exigen (visitas.ver, visitas.crear y, para cancelar una
+            // pendiente, visitas.eliminar). Es el mismo pase que valida la garita (qrCode, vale solo su dia y una vez).
+            window.sisdelResidentVisits = null;
+            if (SISDEL.can('visitas.ver') && SISDEL.can('visitas.crear') && SISDEL.can('finanzas.reportes_marbetes') && SISDEL.can('finanzas.residentes_ver')) {
+                const visitsRef = () => window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('visitas');
+                const cleanText = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+                window.sisdelResidentVisits = {
+                    can: { remove: SISDEL.can('visitas.eliminar') },
+                    // Las visitas de un vecino (todas; OIKOS muestra las de hoy y las proximas). Si la lectura falla se avisa
+                    async list(userId) {
+                        const snap = await visitsRef().where('userId', '==', String(userId)).get();
+                        return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                    },
+                    // Crea el pase de visita de ese vecino (el mismo createVisit del portal del vecino); devuelve la visita o null
+                    async create(v) {
+                        const name = cleanText(v.name, 80);
+                        const date = /^\d{4}-\d{2}-\d{2}$/.test(String(v.date || '')) ? String(v.date) : '';
+                        if (!v.userId || name.length < 2 || !date) return null;
+                        const time = /^\d{2}:\d{2}$/.test(String(v.time || '')) ? String(v.time) : '';
+                        return SISDEL.createVisit(condoId, String(v.userId), name, cleanText(v.info, 200), cleanText(v.plate, 15), date, time, cleanText(v.casa, 40));
+                    },
+                    // Cancela (borra) una visita; true si se borro
+                    async remove(visitId) {
+                        try { await visitsRef().doc(String(visitId)).delete(); return true; }
+                        catch (error) { console.warn('Sistema Financiero: no se pudo cancelar la visita', error && error.code); return false; }
+                    }
                 };
             }
 

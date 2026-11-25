@@ -1468,6 +1468,30 @@
             </div>
         </div>
     </div>
+    <!-- SISDEL: Gestionar visita (menu de cada residente; pedido del usuario el 2026-11-24): el pase de visita de ese vecino con su QR (el que valida la garita), Imprimir, PDF y WhatsApp, y sus visitas de hoy y las proximas -->
+    <div id="modal-visita" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[92vh] flex flex-col">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fas fa-user-clock text-teal-600 dark:text-teal-300"></i></div><div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Gestionar visita</h3><p class="text-sm text-slate-500 dark:text-slate-400 truncate" id="vsm-info">Residente</p></div><button type="button" onclick="closeModal('modal-visita')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div id="vsm-body" class="overflow-y-auto flex-1 min-h-0">
+                <form id="vsm-form" onsubmit="vsmCreate(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="sm:col-span-2"><label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="vsm-name">Nombre del visitante *</label><input type="text" id="vsm-name" maxlength="80" autocomplete="off" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm"></div>
+                    <div><label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="vsm-date">Fecha de la visita *</label><input type="date" id="vsm-date" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm"></div>
+                    <div><label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="vsm-time">Hora (opcional)</label><input type="time" id="vsm-time" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm"></div>
+                    <div><label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="vsm-plate">Placa del vehículo (opcional)</label><input type="text" id="vsm-plate" maxlength="15" autocomplete="off" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm uppercase"></div>
+                    <div><label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="vsm-note">Asunto (opcional)</label><input type="text" id="vsm-note" maxlength="200" autocomplete="off" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm"></div>
+                    <div class="sm:col-span-2 flex justify-end"><button type="submit" id="vsm-create" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50"><i class="fas fa-ticket mr-1"></i>Crear pase de visita</button></div>
+                </form>
+                <div id="vsm-pass" class="hidden mt-4"></div>
+                <h4 class="mt-5 mb-2 text-xs font-bold text-slate-400 uppercase">Visitas de este vecino (hoy y próximas) <span id="vsm-count" class="ml-1 font-semibold normal-case"></span></h4>
+                <div id="vsm-list"></div>
+            </div>
+            <div id="vsm-actions" class="hidden mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
+                <button type="button" id="vsm-print" onclick="vsmPrint()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-print mr-1"></i>Imprimir pase</button>
+                <button type="button" id="vsm-pdf" onclick="vsmDownloadPdf()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-file-pdf mr-1"></i>Descargar PDF</button>
+                <button type="button" id="vsm-wa" onclick="vsmWhatsApp()" class="px-4 py-2 bg-[#25D366] hover:bg-[#1DA851] text-white rounded-lg font-semibold text-sm transition" title="En el celular comparte el PDF; en la computadora lo descarga y abre su WhatsApp con el mensaje para el vecino"><i class="fab fa-whatsapp mr-1"></i>Enviar por WhatsApp</button>
+            </div>
+        </div>
+    </div>
     <!-- SISDEL: Generar codigo boton de panico (menu de cada residente): la tarjeta con su QR, con Imprimir, Descargar PDF, Copiar enlace y Enviar por WhatsApp -->
     <div id="modal-panico-qr" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-6 max-h-[92vh] flex flex-col">
@@ -4608,6 +4632,7 @@
                             <div class="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Más opciones</div>
                             <button onclick="openResidentFeeMonths('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400"><i class="fas fa-calendar-check w-5"></i> Cargar cuotas por mes</button>
                             <button onclick="openMarbete(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-violet-700 dark:text-violet-300"><i class="fas fa-id-card w-5"></i> Generar marbete</button>
+                            ${visitBridge() ? `<button onclick="openVisitModal(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-teal-700 dark:text-teal-300"><i class="fas fa-user-clock w-5"></i> Gestionar visita</button>` : ''}
                             <button onclick="openPanicQr(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-rose-50 dark:hover:bg-slate-700 text-rose-600 dark:text-rose-400"><i class="fas fa-triangle-exclamation w-5"></i> Generar código botón de pánico</button>
                             ${closed
                                 ? `<button onclick="reactivateResident('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 dark:hover:bg-slate-700 text-emerald-600"><i class="fas fa-user-check w-5"></i> Reactivar residente</button>`
@@ -5161,7 +5186,7 @@
             const saveText = document.getElementById('res-veh-save-text'); if (saveText) saveText.textContent = adding ? 'Agregar vehículo' : 'Guardar cambios';
             const cancel = document.getElementById('res-veh-cancel'); if (cancel) cancel.classList.toggle('hidden', adding);
             const save = document.getElementById('res-veh-save'); if (save) save.disabled = resVehBusy || resVehLoading;
-            if (note && form && form.classList.contains('hidden')) note.textContent += ' Su usuario no puede registrar vehículos.';
+            if (note && form && form.classList.contains('hidden')) note.textContent += ' Su usuario no puede registrar vehículos: pídale al administrador el privilegio «Registrar vehículos» (Configuración > Privilegios; se marca solo si tiene el reporte de marbetes).';
         }
         function resVehKey(event) {
             if (event.key === 'Enter') { event.preventDefault(); resVehSave(); }   // Enter agrega el vehiculo, no guarda el residente
@@ -5192,7 +5217,7 @@
             const plate = resVehNorm(get('res-veh-plate'));
             const data = { plate, brand: get('res-veh-brand'), model: get('res-veh-model'), color: get('res-veh-color') };
             const own = resVehEditing;
-            if (own === null && !resVehCan('create')) { showToast('Su usuario no puede registrar vehículos.'); return; }
+            if (own === null && !resVehCan('create')) { showToast('Su usuario no puede registrar vehículos: pídale al administrador el privilegio «Registrar vehículos».'); return; }
             if (own !== null && editing && !resVehCan('edit')) { showToast('Su usuario no puede editar vehículos.'); return; }
             if (plate.length < 3) { showToast('Escriba la placa del vehículo (mínimo 3 letras o números).'); const el = document.getElementById('res-veh-plate'); if (el) el.focus(); return; }
             // La misma placa dos veces en este vecino no tiene sentido
@@ -10187,6 +10212,248 @@
             setTimeout(() => URL.revokeObjectURL(url), 1500);
             if (openMyWhatsApp(x.r.contact, text)) showToast('Se descargó el PDF del marbete y se abrió WhatsApp con el mensaje para ' + (x.r.name || 'el residente') + ': adjunte el PDF (el clip) y pulse Enviar.');
             else showToast('Se descargó el PDF del marbete (' + name + '): envíelo por WhatsApp.');
+        }
+
+        // ========== Gestionar visita (menu de cada residente; pedido del usuario el 2026-11-24) ==========
+        // El pase de visita de ese vecino: el mismo que crea el portal del vecino y valida la garita (qrCode: vale solo su dia y una sola
+        // vez). Llega por window.parent.sisdelResidentVisits de finanzas.html, que solo existe con el reporte de marbetes y poder ver y
+        // crear visitas (las reglas de la coleccion visitas tambien lo exigen); cancelar una pendiente pide ademas visitas.eliminar.
+        var vsmResidentId = null, vsmPass = null, vsmVisits = [], vsmBusy = false;
+        function vsmEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+        function visitBridge() {
+            try { return window.parent && window.parent !== window && window.parent.sisdelResidentVisits ? window.parent.sisdelResidentVisits : null; } catch (e) { return null; }
+        }
+        function vsmToday() { return localDayKey(new Date().toISOString()); }
+        function vsmDateText(d) {
+            try { return new Date(String(d) + 'T12:00:00').toLocaleDateString('es-GT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return String(d || ''); }
+        }
+        function vsmTimeText(t) { return String(t || '').slice(0, 5); }
+        function openVisitModal(residentId) {
+            const r = marbeteResidentOf(residentId);
+            if (!visitBridge() || !r) return;
+            vsmResidentId = String(r.id); vsmPass = null; vsmVisits = []; vsmBusy = false;
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
+            document.getElementById('vsm-info').textContent = [r.unit, r.name].filter(Boolean).join(' · ');
+            ['vsm-name', 'vsm-plate', 'vsm-note', 'vsm-time'].forEach(id => { document.getElementById(id).value = ''; });
+            const d = document.getElementById('vsm-date');
+            d.value = vsmToday(); d.min = vsmToday();
+            document.getElementById('vsm-create').disabled = false;
+            // La libreria del QR se carga ya: asi Imprimir, PDF y WhatsApp salen en respuesta al clic
+            loadMarbeteQrLib().then(() => { if (vsmPass) vsmPaintPass(); }).catch(() => { /* queda el codigo escrito */ });
+            vsmPaintPass();
+            openModal('modal-visita');
+            vsmLoad();
+        }
+        async function vsmLoad() {
+            const bridge = visitBridge(), id = vsmResidentId;
+            const list = document.getElementById('vsm-list');
+            if (!bridge || !list) return;
+            list.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-400 py-3"><i class="fas fa-spinner fa-spin mr-1"></i>Cargando las visitas...</p>';
+            try {
+                const rows = await bridge.list(id);
+                if (id !== vsmResidentId) return;   // se abrio otro vecino mientras tanto
+                vsmVisits = rows || [];
+                vsmPaintList();
+            } catch (e) {
+                if (id === vsmResidentId) list.innerHTML = '<p class="text-sm font-semibold text-rose-600 py-3">No se pudieron leer las visitas de este vecino. Cierre la ventana e intente de nuevo.</p>';
+            }
+        }
+        function vsmUpcoming() {
+            const today = vsmToday();
+            return vsmVisits.filter(v => String(v.visitDate || '') >= today)
+                .sort((a, b) => (String(a.visitDate || '') + String(a.visitTime || '')).localeCompare(String(b.visitDate || '') + String(b.visitTime || '')));
+        }
+        function vsmPaintList() {
+            const list = document.getElementById('vsm-list');
+            const count = document.getElementById('vsm-count');
+            if (!list) return;
+            const rows = vsmUpcoming();
+            if (count) count.textContent = rows.length ? '(' + rows.length + ')' : '';
+            if (!rows.length) { list.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-400 py-3">Este vecino no tiene visitas para hoy ni próximas.</p>'; return; }
+            const bridge = visitBridge();
+            const canRemove = !!(bridge && bridge.can && bridge.can.remove);
+            list.innerHTML = rows.map(v => {
+                const entered = String(v.status || '') === 'entered';
+                const inside = entered && !(v.exitedAt && String(v.exitedAt) >= String(v.enteredAt || ''));
+                const tag = !entered ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">POR LLEGAR</span>'
+                    : inside ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">DENTRO</span>'
+                        : '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">SALIÓ</span>';
+                const when = vsmDateText(v.visitDate) + (v.visitTime ? ' · ' + vsmTimeText(v.visitTime) : '');
+                return '<div class="flex flex-wrap items-center gap-2 px-3 py-2 mb-2 rounded-lg border border-slate-200 dark:border-slate-600">'
+                    + '<div class="min-w-0 flex-1"><p class="font-semibold text-sm dark:text-white truncate">' + vsmEsc(v.visitorName) + '</p>'
+                    + '<p class="text-xs text-slate-500 dark:text-slate-400">' + vsmEsc(when) + (v.vehiclePlate ? ' · ' + vsmEsc(v.vehiclePlate) : '') + (v.visitorInfo ? ' · ' + vsmEsc(v.visitorInfo) : '') + '</p></div>'
+                    + tag
+                    + '<button type="button" onclick="vsmShow(this.dataset.id)" data-id="' + vsmEsc(v.id) + '" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-100 transition">Ver pase</button>'
+                    + (canRemove && !entered ? '<button type="button" onclick="vsmCancel(this.dataset.id)" data-id="' + vsmEsc(v.id) + '" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 transition">Cancelar</button>' : '')
+                    + '</div>';
+            }).join('');
+        }
+        async function vsmCreate(event) {
+            if (event) event.preventDefault();
+            const bridge = visitBridge(), r = marbeteResidentOf(vsmResidentId);
+            if (!bridge || !r || vsmBusy) return;
+            const val = id => String(document.getElementById(id).value || '').trim();
+            const name = val('vsm-name'), date = val('vsm-date');
+            if (name.length < 2) { showToast('Escriba el nombre del visitante.'); document.getElementById('vsm-name').focus(); return; }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < vsmToday()) { showToast('Elija la fecha de la visita: hoy o un día próximo.'); document.getElementById('vsm-date').focus(); return; }
+            vsmBusy = true;
+            const btn = document.getElementById('vsm-create'); btn.disabled = true;
+            try {
+                const visit = await bridge.create({ userId: r.id, name: name, info: val('vsm-note'), plate: val('vsm-plate'), date: date, time: val('vsm-time'), casa: r.unit || '' });
+                if (!visit) { showToast('No se pudo crear el pase de visita. Revise su privilegio «Crear visitas» o la conexión.'); return; }
+                vsmPass = visit;
+                vsmVisits.push(visit);
+                ['vsm-name', 'vsm-plate', 'vsm-note', 'vsm-time'].forEach(id => { document.getElementById(id).value = ''; });
+                vsmPaintPass(); vsmPaintList();
+                showToast('Pase de visita creado para ' + visit.visitorName + '. Ya puede imprimirlo o enviarlo.');
+            } finally { vsmBusy = false; btn.disabled = false; }
+        }
+        function vsmShow(visitId) {
+            const v = vsmVisits.find(x => String(x.id) === String(visitId));
+            if (!v) return;
+            vsmPass = v; vsmPaintPass();
+            const el = document.getElementById('vsm-pass'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+        }
+        async function vsmCancel(visitId) {
+            const bridge = visitBridge();
+            const v = vsmVisits.find(x => String(x.id) === String(visitId));
+            if (!bridge || !v || String(v.status || '') === 'entered') return;
+            if (!confirm('¿Cancelar la visita de ' + v.visitorName + ' (' + vsmDateText(v.visitDate) + ')? El pase con su código QR dejará de valer y no se puede deshacer.')) return;
+            if (!(await bridge.remove(v.id))) { showToast('No se pudo cancelar la visita: su usuario necesita el privilegio «Borrar visitas».'); return; }
+            vsmVisits = vsmVisits.filter(x => x !== v);
+            if (vsmPass && String(vsmPass.id) === String(v.id)) vsmPass = null;
+            vsmPaintPass(); vsmPaintList();
+            showToast('Visita cancelada.');
+        }
+        // El pase (la misma tarjeta en pantalla y en la impresion); todo lo que se escribe se escapa y el QR lleva solo el codigo del pase
+        function vsmPassHtml(v, r, lib) {
+            const s = Store.get('settings') || {};
+            const qr = lib && v.qrCode ? marbeteQrSvg(lib, v.qrCode) : '';
+            const when = vsmDateText(v.visitDate) + (v.visitTime ? ', ' + vsmTimeText(v.visitTime) : '');
+            return '<div class="vsp"><div class="vsp-band">PASE DE VISITA</div><div class="vsp-body">'
+                + '<div class="vsp-name">' + vsmEsc(v.visitorName) + '</div>'
+                + '<div class="vsp-line">Visita a: <b>' + vsmEsc([r.unit, r.name].filter(Boolean).join(' · ')) + '</b>' + (s.name ? ' · ' + vsmEsc(s.name) : '') + '</div>'
+                + '<div class="vsp-line">' + vsmEsc(when) + '</div>'
+                + (v.vehiclePlate ? '<div class="vsp-line">Placa: <b>' + vsmEsc(v.vehiclePlate) + '</b></div>' : '')
+                + (v.visitorInfo ? '<div class="vsp-line">' + vsmEsc(v.visitorInfo) + '</div>' : '')
+                + '<div class="vsp-qr">' + (qr || '<span style="font-size:.8rem;color:#64748b">QR no disponible: use el código</span>') + '</div>'
+                + '<div class="vsp-code">' + vsmEsc(v.qrCode) + '</div>'
+                + '<div class="vsp-note">Muestre este código QR en la garita. Vale solo el día indicado y una sola vez.</div>'
+                + '</div></div>';
+        }
+        const VSP_CSS = '.vsp{width:260px;border-radius:16px;overflow:hidden;background:#fff;color:#0f172a;text-align:center;box-shadow:0 0 0 1px #cbd5e1;font-family:Inter,Segoe UI,Arial,sans-serif}'
+            + '.vsp-band{background:#0f766e;color:#fff;font-weight:800;letter-spacing:.08em;padding:12px 8px;font-size:1.05rem}'
+            + '.vsp-body{padding:14px 16px 18px}.vsp-name{font-size:1.25rem;font-weight:800;line-height:1.15;overflow-wrap:anywhere}'
+            + '.vsp-line{font-size:.85rem;color:#334155;margin-top:6px;overflow-wrap:anywhere}'
+            + '.vsp-qr{width:170px;height:170px;margin:14px auto 8px;padding:6px;border:1px solid #e2e8f0;border-radius:10px;display:flex;align-items:center;justify-content:center;box-sizing:border-box}.vsp-qr svg{width:100%;height:100%}'
+            + '.vsp-code{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:.85rem;letter-spacing:.06em;overflow-wrap:anywhere}'
+            + '.vsp-note{font-size:.7rem;color:#64748b;margin-top:8px}';
+        function vsmPaintPass() {
+            const box = document.getElementById('vsm-pass');
+            const actions = document.getElementById('vsm-actions');
+            const r = marbeteResidentOf(vsmResidentId);
+            if (!box) return;
+            if (!vsmPass || !r) { box.classList.add('hidden'); box.innerHTML = ''; if (actions) actions.classList.add('hidden'); return; }
+            const lib = typeof window.qrcode === 'function' ? window.qrcode : null;
+            box.classList.remove('hidden');
+            box.innerHTML = '<style>' + VSP_CSS + '#vsm-pass .vsp{margin:0 auto}</style>' + vsmPassHtml(vsmPass, r, lib);
+            if (actions) actions.classList.remove('hidden');
+        }
+        function vsmReady() {
+            const r = marbeteResidentOf(vsmResidentId);
+            if (!vsmPass || !r) { alert('Cree o elija primero el pase de la visita.'); return null; }
+            return { r: r, v: vsmPass };
+        }
+        function vsmFileName(x) { return SisdelReportesOikos.slug('Pase de visita ' + [x.r.unit, x.v.visitorName].filter(Boolean).join(' ')) + '.pdf'; }
+        async function vsmPrint() {
+            const x = vsmReady();
+            if (!x) return;
+            const w = window.open('', '_blank', 'width=520,height=720');
+            if (!w) { alert('El navegador bloqueó la ventana de impresión. Habilita popups para este sitio.'); return; }
+            w.document.write('<p style="font-family:sans-serif;padding:20px">Preparando el pase...</p>');
+            let lib = null;
+            try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
+            w.document.open();
+            w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Pase de visita</title><style>@page{size:100mm 150mm;margin:6mm}body{margin:0;display:flex;justify-content:center}' + VSP_CSS + '</style></head><body>' + vsmPassHtml(x.v, x.r, lib) + '</body></html>');
+            w.document.close();
+            setTimeout(() => { try { w.print(); } catch (e) { /* la ventana se cerro */ } }, 400);
+        }
+        // El PDF del pase (jsPDF): 100 x 150 mm; el QR se dibuja con rectangulos (nitido a cualquier tamano). La fuente es Latin-1
+        async function vsmPdfDoc() {
+            const x = vsmReady();
+            if (!x) return null;
+            if (!window.jspdf || !window.jspdf.jsPDF) { alert('La librería de PDF aún se está cargando. Probá en 2 segundos.'); return null; }
+            let lib = null;
+            try { lib = await loadMarbeteQrLib(); } catch (e) { lib = null; }
+            const txt = (val) => (typeof SisdelReportExport !== 'undefined' ? SisdelReportExport.latin1(String(val == null ? '' : val)) : String(val == null ? '' : val));
+            const s = Store.get('settings') || {};
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 150] });
+            const W = 100, cx = 50;
+            doc.setFillColor(15, 118, 110); doc.rect(0, 0, W, 22, 'F');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(255, 255, 255);
+            doc.text('PASE DE VISITA', cx, 13.5, { align: 'center' });
+            doc.setTextColor(15, 23, 42); doc.setFontSize(15);
+            const nameLines = doc.splitTextToSize(txt(x.v.visitorName), W - 16).slice(0, 2);
+            doc.text(nameLines, cx, 33, { align: 'center' });
+            let y = 33 + nameLines.length * 6.2 + 1;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(71, 85, 105);
+            const line = (t) => { doc.splitTextToSize(txt(t), W - 14).slice(0, 2).forEach(l => { doc.text(l, cx, y, { align: 'center' }); y += 4.6; }); };
+            line('Visita a: ' + [x.r.unit, x.r.name].filter(Boolean).join(' - ') + (s.name ? ' - ' + s.name : ''));
+            line(vsmDateText(x.v.visitDate) + (x.v.visitTime ? ', ' + vsmTimeText(x.v.visitTime) : ''));
+            if (x.v.vehiclePlate) line('Placa: ' + x.v.vehiclePlate);
+            if (x.v.visitorInfo) line(x.v.visitorInfo);
+            const box = 46, qx = cx - box / 2, qy = Math.max(y + 2, 70);
+            doc.setDrawColor(203, 213, 225); doc.setFillColor(255, 255, 255);
+            doc.roundedRect(qx, qy, box, box, 3, 3, 'FD');
+            if (lib && x.v.qrCode) {
+                const m = marbeteQrRuns(lib, x.v.qrCode);
+                const inner = box - 4, mod = inner / (m.size + 2), ox = qx + 2 + mod, oy = qy + 2 + mod;
+                doc.setFillColor(15, 23, 42);
+                m.runs.forEach(t => doc.rect(ox + t[0] * mod, oy + t[1] * mod, t[2] * mod + 0.02, mod + 0.02, 'F'));
+            }
+            doc.setFont('courier', 'bold'); doc.setFontSize(10); doc.setTextColor(15, 23, 42);
+            doc.text(txt(x.v.qrCode), cx, qy + box + 6, { align: 'center' });
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(100, 116, 139);
+            doc.text('Muestre este codigo QR en la garita. Vale solo el dia indicado y una sola vez.', cx, 144, { align: 'center', maxWidth: W - 12 });
+            return { doc: doc, x: x };
+        }
+        async function vsmDownloadPdf() {
+            const out = await vsmPdfDoc();
+            if (!out) return;
+            out.doc.save(vsmFileName(out.x));
+            showToast('PDF del pase descargado.');
+        }
+        function vsmWhatsAppText(r, v) {
+            const s = Store.get('settings') || {};
+            const when = vsmDateText(v.visitDate) + (v.visitTime ? ', ' + vsmTimeText(v.visitTime) : '');
+            return ['Hola ' + (r.name || '') + ',', 'le enviamos el pase de visita de ' + (v.visitorName || '') + (s.name ? ' para ' + s.name : '') + ':',
+                '- Fecha: ' + when + (v.vehiclePlate ? '. Placa: ' + v.vehiclePlate : ''), '- Código: ' + (v.qrCode || ''),
+                'Compártalo con su visitante: debe mostrar el código QR en la garita. Vale solo el día indicado y una sola vez. También lo encuentra en garita.app, en la pestaña Visitas.'].join('\n');
+        }
+        async function vsmWhatsApp() {
+            const out = await vsmPdfDoc();
+            if (!out) return;
+            const text = vsmWhatsAppText(out.x.r, out.x.v);
+            const name = vsmFileName(out.x);
+            const blob = out.doc.output('blob');
+            let file = null;
+            try { file = new File([blob], name, { type: 'application/pdf' }); } catch (e) { file = null; }
+            if (file && navigator.canShare && navigator.share) {
+                let canShare = false;
+                try { canShare = navigator.canShare({ files: [file] }); } catch (e) { canShare = false; }
+                if (canShare) {
+                    try { await navigator.share({ files: [file], title: 'Pase de visita ' + (out.x.v.visitorName || ''), text: text }); showToast('Pase compartido. Si eligió WhatsApp, el PDF va adjunto.'); return; }
+                    catch (e) { if (e && e.name === 'AbortError') return; }
+                }
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+            if (openMyWhatsApp(out.x.r.contact, text)) showToast('Se descargó el PDF del pase y se abrió WhatsApp con el mensaje para ' + (out.x.r.name || 'el vecino') + ': adjunte el PDF (el clip) y pulse Enviar.');
+            else showToast('Se descargó el PDF del pase (' + name + '): envíelo por WhatsApp.');
         }
 
         // ========== REPORTS (mensual del dashboard, distinto al módulo nuevo) ==========

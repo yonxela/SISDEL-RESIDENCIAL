@@ -111,6 +111,11 @@
         [/^openMarbete\(/, ['reportes_marbetes']],
         [/^(printResidentMarbete|downloadResidentMarbetePDF)\(/, ['reportes_exportar']],
         [/^sendResidentMarbeteWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
+        // "Gestionar visita" del menu de cada residente (pedido del usuario el 2026-11-24): se ofrece a quien puede generar marbetes (y el puente
+        // del padre solo existe con visitas.ver y visitas.crear); imprimir y PDF piden exportar y WhatsApp, exportar o contactar, como el marbete
+        [/^(openVisitModal|vsmCreate|vsmShow|vsmCancel)\(/, ['reportes_marbetes']],
+        [/^(vsmPrint|vsmDownloadPdf)\(/, ['reportes_exportar']],
+        [/^vsmWhatsApp\(/, ['reportes_exportar', 'residentes_contactar']],
         // Generar codigo boton de panico (menu de cada residente): la tarjeta del QR, su enlace y mandarselo por WhatsApp (el privilegio de
         // contactar residentes)
         [/^(openPanicQr|panicQrSetSize|panicQrSetPaper|panicQrCopyLink|printPanicQr|downloadPanicQrPDF|sendPanicQrWhatsApp|panicDeliveryArm|panicDeliveryCancel|panicDeliveryLoad)\(/, ['residentes_contactar']],
@@ -184,10 +189,10 @@
         [['reportes_gastos'], ['#rep-tab-expense-cat']],
         [['reportes_libro'], ['#rep-tab-account-statement', '#acc-moves-note button[onclick="openMovementsReport()"]']],
         [['reportes_descuentos'], ['#rep-tab-mora-discounts', '#disc-report-link']],
-        [['reportes_marbetes'], ['#rep-tab-marbetes', 'button[onclick^="openMarbete("]', '#modal-marbete']],
+        [['reportes_marbetes'], ['#rep-tab-marbetes', 'button[onclick^="openMarbete("]', '#modal-marbete', 'button[onclick^="openVisitModal("]', '#modal-visita']],
         [['reportes_visitas'], ['#rep-tab-visitas', '#rep-visitas-filters']],
-        [['reportes_exportar'], ['#mbm-print', '#mbm-pdf']],
-        [['reportes_exportar', 'residentes_contactar'], ['#mbm-wa']],
+        [['reportes_exportar'], ['#mbm-print', '#mbm-pdf', '#vsm-print', '#vsm-pdf']],
+        [['reportes_exportar', 'residentes_contactar'], ['#mbm-wa', '#vsm-wa']],
         [['residentes_editar'], ['#mbm-add-plate']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],

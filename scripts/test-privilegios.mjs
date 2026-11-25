@@ -481,7 +481,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             // Central de Monitoreo (2026-11-25): la sirena siempre encendida y a la vista
             const central = read('garita.html');
             const manifestCentral = JSON.parse(read('manifest-monitoreo.webmanifest'));
-            yes('Central de Monitoreo: el indicador de la sirena va siempre en el encabezado (verde activa, rojo parpadeando apagada) y reemplaza el boton flotante', /id="chipSirena"/.test(central) && /\.cg-chip\.siren-off \{/.test(central) && /'Sirena activa' : 'Sirena apagada: toque aquí'/.test(central)
+            yes('Central de Monitoreo: el indicador de la sirena va siempre en el encabezado (verde activa, rojo parpadeando apagada) y reemplaza el boton flotante', /id="chipSirena"/.test(central) && /\.cg-chip\.siren-off \{/.test(central) && /'Sirena activa' : can \? 'Sirena apagada: toque aquí'/.test(central)
                 && /soundButton: false/.test(central) && /options\.soundButton === false \? null/.test(banner));
             yes('la sirena se arma sola: al abrir (si el navegador lo deja), con el primer toque o tecla, y se reanuda si el equipo la suspende', /S\.arm\(\);/.test(banner) && /function arm\(\) \{ wake\(\); \}/.test(sirena)
                 && /window\.addEventListener\('focus', revive\)/.test(sirena) && /act\.hasBeenActive/.test(sirena) && /ctx\.onstatechange = notify/.test(sirena));
@@ -490,11 +490,14 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             yes('la central se puede instalar como aplicacion (Chrome deja sonar sin toque a una aplicacion instalada) y su pantalla no se apaga sola', /<link rel="manifest" href="manifest-monitoreo\.webmanifest">/.test(central)
                 && manifestCentral.start_url === '/garita.html' && manifestCentral.display === 'standalone' && manifestCentral.icons.some((i) => i.sizes === '512x512')
                 && /navigator\.wakeLock\.request\('screen'\)/.test(central) && /document\.addEventListener\('visibilitychange', keepScreenOn\)/.test(central));
+            yes('Central de Monitoreo: activar la sirena es OBLIGATORIO: mientras no pueda sonar, la pantalla "ACTIVE LA SIRENA" tapa la central (la alerta queda encima) y su boton la activa y la prueba', /id="sirenGate"/.test(central) && /ACTIVAR LA SIRENA/.test(central)
+                && /\.siren-gate \{ position: fixed; inset: 0; z-index: 2998;/.test(central) && /document\.getElementById\('sirenGate'\)\.hidden = on \|\| !can \|\| Date\.now\(\) < gateFrom;/.test(central) && /SisdelSirena\.test\(1500\)/.test(central));
+            yes('en el iPhone la sirena suena aunque el telefono este en silencio: sesion de reproduccion y un audio casi mudo en bucle', /navigator\.audioSession\.type = 'playback'/.test(sirena) && /keeper\.loop = true;/.test(sirena) && /const IS_IOS = /.test(sirena) && /playbackSession\(\);/.test(sirena));
             yes('la pagina de la garita se llama Central de Monitoreo en el encabezado y en los botones de los demas paneles', /<h1>CENTRAL DE MONITOREO<\/h1>/.test(central) && P.PAGES.find((p) => p.page === 'garita.html').label === 'Monitoreo');
             yes('sirena: suena sin parar mientras haya una alerta real sin atender, con destello; la prueba del vecino no suena; se puede silenciar', /function sirenWanted\(\)/.test(banner) && /a\.simulacro !== true && a\.status === 'ACTIVE' && !silenced\.has\(a\.id\)/.test(banner)
                 && /data-mute=/.test(banner) && /class="pan-flash"|className = 'pan-flash'/.test(banner) && /const SisdelSirena = \(\(\) => \{/.test(sirena) && /function start\(\)/.test(sirena));
             yes('sirena: tambien en OIKOS, con los mismos privilegios que el panel', /SISDEL\.can\('panico\.ver'\) && SISDEL\.can\('panico\.avisos'\)\) \{\s*SisdelRondas\.init\(session\);\s*SisdelPanico\.watch\(/.test(fin));
-            yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261125a'))
+            yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261125b'))
                 && ['garita.html', 'admin.html', 'finanzas.html', 'panico.html', 'vecino.html'].every((f) => read(f).includes('audio-panico.js?v=20261125a')));
             yes('audio: la garita llama ("Escuchar / Hablar") y solo el telefono que envio la alerta contesta solo', /data-call="\$\{esc\(a\.id\)\}"/.test(banner) && /SisdelAudioPanico\.callNeighbor\(/.test(banner)
                 && /SisdelAudioPanico\.answerCalls\(/.test(vecino) && /SisdelAudioPanico\.answerCalls\(/.test(qrPage) && /a\.mine === true && \['ACTIVE', 'ATTENDED'\]\.includes\(a\.status\)/.test(qrPage)

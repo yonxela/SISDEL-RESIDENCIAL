@@ -93,6 +93,17 @@
         body.light-mode .cg-chip.siren-off { color: #b91c1c; }
         .cg-dot.red { background: #ef4444; animation: none; }
         @keyframes cg-blink { 50% { background: rgba(239, 68, 68, .34); } }
+        /* Activar la sirena es OBLIGATORIO en la Central de Monitoreo (pedido del usuario el 2026-11-25: "la sirena no debe ser una
+           opcion, debe ser obligado activarla"): mientras no suene, esta pantalla tapa la central (la barra roja de una alerta queda encima) */
+        .siren-gate { position: fixed; inset: 0; z-index: 2998; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(2, 6, 23, .93); }
+        .siren-gate[hidden] { display: none; }
+        .siren-gate-box { width: min(480px, 100%); box-sizing: border-box; text-align: center; padding: 1.6rem 1.4rem; border-radius: 18px; border: 2px solid #ef4444; background: #111827; color: #f8fafc; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); }
+        .siren-gate-box svg { color: #f87171; }
+        .siren-gate-box h2 { margin: .6rem 0 .5rem; font-size: 1.45rem; font-weight: 900; letter-spacing: .5px; }
+        .siren-gate-box p { margin: 0 0 1rem; color: #cbd5e1; font-size: .95rem; line-height: 1.45; }
+        .siren-gate-box button { width: 100%; padding: 1.05rem 1rem; border: 0; border-radius: 14px; background: #dc2626; color: #fff; font: inherit; font-size: 1.25rem; font-weight: 900; letter-spacing: .5px; cursor: pointer; animation: cg-gate 1.2s ease-in-out infinite; }
+        @keyframes cg-gate { 50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, .28); } }
+        .siren-gate-box .tip { margin: .9rem 0 0; font-size: .82rem; color: #94a3b8; }
         .cg-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
         .cg-kpi { padding: .85rem 1rem; }
         .cg-kpi small { display: block; font-size: .72rem; color: var(--cg-sub); font-weight: 700; letter-spacing: .4px; }
@@ -300,6 +311,17 @@
         </div>
     </div>
 
+    <!-- Activar la sirena: obligatorio para quien recibe las alertas de panico (panico.ver y panico.avisos) -->
+    <div class="siren-gate" id="sirenGate" hidden role="dialog" aria-modal="true" aria-labelledby="sirenGateTitle">
+        <div class="siren-gate-box">
+            <svg width="54" height="54" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 21h14v-3H5z"/><path d="M12 2v2M3.5 6.5l1.5 1M20.5 6.5l-1.5 1M2 12h2M20 12h2"/></svg>
+            <h2 id="sirenGateTitle">ACTIVE LA SIRENA</h2>
+            <p>La Central de Monitoreo no se puede usar sin la sirena de alertas de pánico. El navegador exige un toque para dejarla sonar.</p>
+            <button type="button" id="btnSirenGate">ACTIVAR LA SIRENA</button>
+            <p class="tip" id="sirenGateTip">Sonará un momento para comprobarla. Suba el volumen del equipo.</p>
+        </div>
+    </div>
+
     <!-- Configuracion de la Central de Monitoreo (se guarda en esta computadora; privilegio garita.configurar) -->
     <div class="modal-overlay" id="modalGaritaConfig" style="display:none;">
         <div class="modal cg cg-cfg" style="max-width:580px; padding:1.75rem;">
@@ -394,7 +416,7 @@
     <script src="lector-codigos.js?v=20261123a"></script>
     <script src="sisdel-core.js?v=20261125a"></script>
     <script src="rondas-core.js?v=20261125a"></script>
-    <script src="sirena.js?v=20261125a"></script>
+    <script src="sirena.js?v=20261125b"></script>
     <script src="audio-panico.js?v=20261125a"></script>
     <script src="panico-alertas.js?v=20261125b"></script>
     <script>
@@ -503,14 +525,20 @@
             let installPrompt = null;
             window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; paintSiren(); });
             window.addEventListener('appinstalled', () => { installPrompt = null; SISDEL.showToast('Instalada: ábrala desde su ícono y la sirena quedará activa desde que se abre', 'success'); paintSiren(); });
+            // Mientras la sirena no pueda sonar, la pantalla "ACTIVE LA SIRENA" tapa la central: activarla es obligatorio (2026-11-25).
+            // Se espera un momento al abrir: instalada como aplicacion, la sirena queda activa sola y la pantalla ni aparece
+            const gateFrom = Date.now() + 900;
             function paintSiren() {
                 if (!panicOn) return;
+                const can = SisdelSirena.supported();
                 const on = SisdelSirena.ready();
                 const chip = document.getElementById('chipSirena');
                 chip.style.display = '';
                 chip.classList.toggle('siren-off', !on);
                 chip.querySelector('.cg-dot').className = 'cg-dot' + (on ? '' : ' red');
-                document.getElementById('chipSirenaText').textContent = on ? 'Sirena activa' : 'Sirena apagada: toque aquí';
+                document.getElementById('chipSirenaText').textContent = on ? 'Sirena activa' : can ? 'Sirena apagada: toque aquí' : 'Este navegador no puede sonar la sirena';
+                // Un navegador sin sonido no se bloquea (no podria activarse nunca): queda el aviso rojo del encabezado
+                document.getElementById('sirenGate').hidden = on || !can || Date.now() < gateFrom;
                 chip.title = on ? 'La sirena sonará sin parar en cuanto llegue una alerta de pánico.' : 'El navegador no deja sonar nada hasta tocar la página: toque aquí para activar la sirena.';
                 // En Configuracion: como esta, probarla e instalar la central para que suene sin ningun toque
                 document.getElementById('gcfgSirenaBox').style.display = '';
@@ -523,6 +551,19 @@
                 else inst.textContent = 'Para que la sirena quede activa desde que se abre, sin tocar nada, instale la central como aplicación: en Chrome, el ícono de instalar a la derecha de la dirección (o menú ⋮ > Transmitir, guardar y compartir > Instalar). Después ábrala siempre desde su ícono.';
             }
             if (panicOn) {
+                // ACTIVAR LA SIRENA: el toque la deja sonar y suena un momento para comprobarla (si ya hay una alerta, sigue sonando)
+                document.getElementById('btnSirenGate').addEventListener('click', () => {
+                    SisdelSirena.wake();
+                    setTimeout(() => {
+                        if (SisdelSirena.ready()) {
+                            if (SisdelSirena.test(1500)) SISDEL.showToast('Sirena activada: así sonará cada alerta de pánico', 'success');
+                        } else {
+                            document.getElementById('sirenGateTip').textContent = 'El navegador todavía no deja sonar: toque otra vez el botón. Si sigue, recargue la página.';
+                        }
+                        paintSiren();
+                    }, 350);
+                });
+                setTimeout(paintSiren, gateFrom - Date.now() + 50);
                 document.getElementById('chipSirena').addEventListener('click', () => {
                     if (SisdelSirena.ready()) SISDEL.showToast('La sirena está activa: sonará en cuanto llegue una alerta de pánico', 'success');
                     else SisdelSirena.wake();

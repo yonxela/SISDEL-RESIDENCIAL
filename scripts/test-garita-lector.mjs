@@ -81,6 +81,9 @@ async function run() {
         const moraGuard = await page.evaluate(`(() => { const cards = [...document.querySelectorAll('.cg-kpi')].filter((c) => getComputedStyle(c).display !== 'none'); const box = document.querySelector('.cg-kpis').getBoundingClientRect(); const sum = cards.reduce((t, c) => t + c.getBoundingClientRect().width, 0); const gap = parseFloat(getComputedStyle(document.querySelector('.cg-kpis')).columnGap) || 0; return { kpi: !!document.getElementById('kpiMorosos'), strip: !!document.getElementById('urgentWarnings') || /viviendas? en mora/.test(document.body.innerText), siren: getComputedStyle(document.getElementById('chipSirena')).display !== 'none' ? document.getElementById('chipSirenaText').textContent : '', n: cards.length, fills: Math.abs(sum + gap * (cards.length - 1) - box.width) < 3 }; })()`);
         record('ya no hay cifra "Vecinos en mora" ni franja amarilla (se quitaron el 2026-11-25) y las cifras que quedan llenan la fila sin dejar un hueco', !moraGuard.kpi && !moraGuard.strip && moraGuard.n === 4 && moraGuard.fills, JSON.stringify(moraGuard));
         record('la sirena de alertas de panico se ve siempre en el encabezado (activa o "toque aqui")', /^Sirena (activa|apagada: toque aquí)$/.test(moraGuard.siren), JSON.stringify(moraGuard));
+        // Activar la sirena es obligatorio (2026-11-25): la pantalla "ACTIVE LA SIRENA" esta exactamente cuando la sirena no puede sonar
+        const gate = await page.evaluate(`({ shown: !document.getElementById('sirenGate').hidden, text: document.getElementById('sirenGate').innerText, chip: document.getElementById('chipSirenaText').textContent })`);
+        record('la pantalla "ACTIVE LA SIRENA" tapa la central justo cuando la sirena no puede sonar (sin toque todavia)', gate.shown === /apagada/.test(gate.chip) && (!gate.shown || /ACTIVAR LA SIRENA/.test(gate.text)), JSON.stringify(gate));
 
         console.log('\nConfiguracion: tiempo del marbete en pantalla');
         await page.evaluate(`document.getElementById('btnGaritaConfig').click()`);
@@ -100,6 +103,7 @@ async function run() {
         await burst('MARTEST1', 0);
         await waitName('Ana García');
         const shown = Date.now() - t0;
+        record('la lectura del escaner (teclas reales) activa la sirena: la pantalla obligatoria se va y el encabezado dice "Sirena activa"', await page.evaluate(`document.getElementById('sirenGate').hidden && document.getElementById('chipSirenaText').textContent === 'Sirena activa'`));
         let ov = await overlay();
         record('la tarjeta del marbete sale al instante: medallon AL DIA en verde, nombre grande y la placa', ov.tone === 'ok' && ov.word === 'AL DÍA' && ov.plate === 'P-987XYZ' && /Ingreso registrado/.test(ov.foot) && /se cierra en [123] s/.test(ov.foot), JSON.stringify(ov));
         record('sin la ventana de verificacion ni la pantalla grande de MOROSO / AL DIA de antes', !ov.modalResult && !ov.bigStatus, JSON.stringify(ov));

@@ -24,8 +24,40 @@ const SisdelSirena = (() => {
         lastReady = now;
         listeners.forEach((f) => { try { f(now); } catch { /* nada */ } });
     }
+    const supported = () => !!(window.AudioContext || window.webkitAudioContext);
+    // iPhone y iPad (tambien Chrome en iPhone: es el mismo motor). El sonido de una pagina (Web Audio) obedece al interruptor de
+    // SILENCIO del telefono: el usuario lo tenia en silencio el 2026-11-25 y la sirena no sono. Se pide la sesion de audio de
+    // "reproduccion" (navigator.audioSession, iOS 17) y, por si no existe, se deja sonando un audio casi mudo: con un audio de la
+    // pagina en curso, iOS pone toda la pagina en modo reproduccion y la sirena suena aunque el telefono este en silencio
+    const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let keeper = null;
+    function silentWavUrl() {
+        const n = 8000; // 1 s a 8 kHz, 8 bits: valores 128/129 (no se oye)
+        const buf = new ArrayBuffer(44 + n);
+        const v = new DataView(buf);
+        const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+        str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE'); str(12, 'fmt '); v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+        v.setUint16(32, 1, true); v.setUint16(34, 8, true); str(36, 'data'); v.setUint32(40, n, true);
+        for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + (i & 1));
+        return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+    }
+    function playbackSession() {
+        try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch { /* sin la API */ }
+        if (!IS_IOS) return;
+        try {
+            if (!keeper) {
+                keeper = document.createElement('audio');
+                keeper.loop = true;
+                keeper.setAttribute('playsinline', '');
+                keeper.src = silentWavUrl();
+            }
+            if (keeper.paused) { const p = keeper.play(); if (p && p.catch) p.catch(() => {}); }
+        } catch { /* sin audio */ }
+    }
     function wake() {
         try {
+            playbackSession();
             if (!ctx) {
                 ctx = new (window.AudioContext || window.webkitAudioContext)();
                 ctx.onstatechange = notify; // el telefono lo suspende o lo reanuda solo (llamada, pantalla)
@@ -111,5 +143,5 @@ const SisdelSirena = (() => {
             osc.stop(t + 1.05);
         } catch { /* sin audio */ }
     }
-    return { wake, arm, ready, start, stop, test, playing, onReady, beep };
+    return { supported, wake, arm, ready, start, stop, test, playing, onReady, beep };
 })();

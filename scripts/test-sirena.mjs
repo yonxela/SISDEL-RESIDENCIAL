@@ -18,8 +18,9 @@ function equal(name, actual, expected) {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // Carga una sirena nueva con su propio AudioContext de mentira. gesture: si el navegador deja reanudar el audio (hubo un toque)
-function load() {
-    const counts = { created: 0, started: 0, stopped: 0, contexts: 0 };
+// ios: un iPhone de mentira (navigator.userAgent, audioSession y un <audio> que cuenta sus play())
+function load({ ios = false } = {}) {
+    const counts = { created: 0, started: 0, stopped: 0, contexts: 0, keeperPlays: 0, keepers: 0 };
     const env = { gesture: false };
     class FakeContext {
         constructor() { counts.contexts++; counts.ctx = this; this.state = env.gesture ? 'running' : 'suspended'; this.currentTime = 0; this.destination = {}; this.onstatechange = null; }
@@ -38,15 +39,19 @@ function load() {
     }
     const context = {
         window: { AudioContext: FakeContext, addEventListener() {} },
-        document: { hidden: false, addEventListener() {} },
-        navigator: {},
+        document: {
+            hidden: false, addEventListener() {},
+            createElement: () => { counts.keepers++; const a = { paused: true, loop: false, src: '', setAttribute() {}, play() { counts.keeperPlays++; a.paused = !env.gesture; return env.gesture ? Promise.resolve() : Promise.reject(new Error('sin toque')); } }; counts.keeper = a; return a; }
+        },
+        navigator: ios ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) CriOS/131.0', audioSession: { type: 'auto' } } : {},
+        URL: { createObjectURL: () => 'blob:silencio' }, Blob: class { constructor(parts, opts) { counts.wavBytes = parts[0].byteLength; counts.wavType = opts.type; } }, ArrayBuffer, DataView,
         // La revision cada 4 s no se corre aqui (dejaria el proceso abierto): se prueba aparte, en Chrome
         setInterval: () => 0, clearTimeout,
         Promise, setTimeout, console
     };
     vm.createContext(context);
     vm.runInContext(`${source}\nthis.SisdelSirena = SisdelSirena;`, context);
-    return { S: context.SisdelSirena, counts, env };
+    return { S: context.SisdelSirena, counts, env, nav: context.navigator };
 }
 // Lo que hace la pagina (panico-alertas.js): cuando el sonido queda listo, vuelve a revisar si debe sonar y llama start()
 function page(S) {
@@ -130,6 +135,25 @@ console.log('Sirena: "Probar la sirena" de la Central de Monitoreo (2026-11-25)'
     equal('si llega una alerta mientras se prueba, la sirena sigue sonando', [S.playing(), active(counts)], [true, 4]);
     S.stop();
     equal('arm() deja lista la sirena sin crear ninguna (solo el audio)', (() => { const x = load(); x.env.gesture = true; x.S.arm(); return [x.S.ready(), x.counts.created, x.S.playing()]; })(), [true, 0, false]);
+}
+
+console.log('Sirena: en el iPhone suena aunque este en silencio (2026-11-25)');
+{
+    const { S, counts, env, nav } = load({ ios: true });
+    S.arm(); // al abrir, sin toque: no suena todavia
+    await tick();
+    equal('al abrir sin toque, el audio casi mudo no arranca (el iPhone exige el toque) y la sirena no esta lista', [S.ready(), counts.keeper ? counts.keeper.paused : true], [false, true]);
+    env.gesture = true;
+    S.wake(); // el toque de "ACTIVAR LA SIRENA"
+    await tick();
+    equal('con el toque pide la sesion de reproduccion (iOS 17) y deja sonando un audio casi mudo en bucle', [nav.audioSession.type, counts.keeper.loop, counts.keeper.paused, counts.wavType], ['playback', true, false, 'audio/wav']);
+    equal('un solo audio casi mudo (no uno por toque) y la sirena queda lista', [counts.keepers, S.ready()], [1, true]);
+    S.wake();
+    equal('tocar otra vez no lo vuelve a arrancar si ya suena', counts.keeperPlays, 2);
+    const desk = load();
+    desk.env.gesture = true;
+    desk.S.wake();
+    equal('en una computadora no hace falta el audio casi mudo', desk.counts.keepers, 0);
 }
 
 console.log(`\nSirena: ${passed} correctas, ${failures.length} fallas`);

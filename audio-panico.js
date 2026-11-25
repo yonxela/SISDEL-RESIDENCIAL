@@ -89,7 +89,7 @@ const SisdelAudioPanico = (() => {
                 // El telefono del vecino dice por aqui si su microfono esta dando sonido (un telefono con la version anterior no dice nada)
                 let neighborMic = null;
                 const connectedText = () => neighborMic === false
-                    ? 'Conectado, pero el teléfono del vecino NO dio permiso al micrófono: él le oye a usted, usted todavía no lo escucha. Toque "Hablar" y pídale que toque «PRESIONE PARA HABLAR» y permita el micrófono: en cuanto lo haga, lo escuchará aquí sin volver a llamar.'
+                    ? 'Conectado, pero el teléfono del vecino NO dio permiso al micrófono: él le oye a usted, usted todavía no lo escucha. Toque "Hablar" y pídale que toque «ACTIVAR PARA HABLAR» y permita el micrófono: en cuanto lo haga, lo escuchará aquí sin volver a llamar.'
                     : neighborMic === true
                         ? 'Conectado: escucha lo que pasa en el teléfono del vecino (su micrófono está abierto). Toque "Hablar" para que le oiga.'
                         : 'Conectado: escucha lo que pasa en el teléfono del vecino. Toque "Hablar" para que le oiga.';
@@ -140,15 +140,17 @@ const SisdelAudioPanico = (() => {
     let micPromise = null;
     let micStream = null;
     let micError = '';
+    let micMs = null; // cuanto tardo en contestar el telefono (si nego al instante, sin preguntar, lo tiene denegado en sus Ajustes)
     const micListeners = new Set(); // las llamadas abiertas sin microfono: lo meten en su linea en cuanto llega
     const micLive = () => !!micStream && micStream.getAudioTracks().some((t) => t.readyState === 'live');
     function prepareMic() {
         if (!supported()) { micError = 'NoSoportado'; return Promise.resolve(null); }
         if (micLive()) return Promise.resolve(micStream);
         if (!micPromise) {
+            const t0 = Date.now();
             micPromise = navigator.mediaDevices.getUserMedia(micConstraints)
-                .then((s) => { micStream = s; micError = ''; micListeners.forEach((fn) => { try { fn(s); } catch { /* esa llamada ya termino */ } }); return s; })
-                .catch((e) => { micPromise = null; micError = (e && e.name) || 'Error'; console.warn('microfono', micError); return null; });
+                .then((s) => { micStream = s; micError = ''; micMs = Date.now() - t0; micListeners.forEach((fn) => { try { fn(s); } catch { /* esa llamada ya termino */ } }); return s; })
+                .catch((e) => { micPromise = null; micError = (e && e.name) || 'Error'; micMs = Date.now() - t0; console.warn('microfono', micError, micMs); return null; });
         }
         return micPromise;
     }
@@ -205,10 +207,10 @@ const SisdelAudioPanico = (() => {
         const started = Date.now();
         const tellMic = () => { try { if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ mic: hasMic })); } catch { /* canal cerrado */ } };
         const liveText = () => (audioBlocked
-            ? `${byName} está en línea: toque «PRESIONE PARA HABLAR» para oírla${hasMic ? '' : ' y permita el micrófono para que le escuche'}.`
+            ? `${byName} está en línea: toque «ACTIVAR PARA HABLAR» para oírla${hasMic ? '' : ' y permita el micrófono para que le escuche'}.`
             : hasMic
                 ? `${byName} está en línea: le escucha.`
-                : `${byName} está en línea y usted le oye, pero NO le escucha: toque «PRESIONE PARA HABLAR» y permita el micrófono.`);
+                : `${byName} está en línea y usted le oye, pero NO le escucha: toque «ACTIVAR PARA HABLAR» y permita el micrófono.`);
         const info = () => ({ mic: hasMic, audioBlocked });
         // El vecino dio el microfono con la llamada abierta: entra en la linea que ya va a la central
         const onMic = (stream) => {
@@ -297,7 +299,7 @@ const SisdelAudioPanico = (() => {
         return ctl;
     }
 
-    // ── VECINO: el boton "PRESIONE PARA HABLAR" (pedido del usuario el 2026-11-25; antes "HABLAR A CENTRAL DE MONITOREO") ──
+    // ── VECINO: el boton "ACTIVAR PARA HABLAR" (pedido del usuario el 2026-11-25; antes "HABLAR A CENTRAL DE MONITOREO" y "PRESIONE PARA HABLAR") ──
     // Antes el microfono se pedia solo al enviar la alerta y salia la ventana del telefono "garita.app solicita autorizacion para
     // usar el microfono" sin que el vecino supiera para que (esa ventana es del telefono: una pagina no puede cambiar su texto).
     // Ahora se pide al tocar este boton, que es la forma de autorizarlo: la ventana sale cuando el vecino ya sabe para que es. Al
@@ -314,59 +316,117 @@ const SisdelAudioPanico = (() => {
         if (error === 'NotReadableError') return 'El micrófono lo está usando otra aplicación (una llamada, una nota de voz): ciérrela y toque de nuevo.';
         if (error === 'NoSoportado' || inApp) return 'Este navegador no deja usar el micrófono: abra garita.app en Safari (iPhone) o en Chrome (Android) y toque de nuevo.';
         if (ios && /CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)) return 'En el iPhone: Ajustes > (su navegador, por ejemplo Chrome) > active «Micrófono»; vuelva a esta página y toque de nuevo. O abra garita.app en Safari.';
+        // Nego al instante, sin preguntar: el iPhone lo tiene DENEGADO en sus Ajustes (para Safari o para garita.app)
+        if (ios && error === 'NotAllowedError' && micMs != null && micMs < 700) return 'Su iPhone tiene el micrófono DENEGADO y ni siquiera pregunta. Ábralo así: 1) Ajustes del iPhone > Apps > Safari (en iOS 17 o anterior: Ajustes > Safari) > Micrófono > «Preguntar» o «Permitir». 2) En Safari, toque «aA» junto a la dirección > Configuración del sitio web > Micrófono > «Permitir». 3) Vuelva a abrir esta página y toque de nuevo «ACTIVAR PARA HABLAR».';
         if (ios) return 'En el iPhone: toque «aA» (junto a la dirección, arriba o abajo) > Configuración del sitio web > Micrófono > Permitir; o recargue la página. Después toque de nuevo y, cuando el teléfono pregunte, toque «Permitir».';
         if (android) return 'En Android: toque el candado (o el ícono de ajustes) junto a la dirección > Permisos > Micrófono > Permitir; después toque de nuevo.';
         return 'Permita el micrófono para garita.app en los ajustes del navegador (el candado junto a la dirección) y toque de nuevo.';
     }
-    // El indicador del microfono: barras dentro del boton que se mueven con la voz (pedido del usuario el 2026-11-25: "que muestre un
-    // microfono que da senales al hablar, que se note bien cuando ya se activo"). Los estilos son de aqui (los dos paginas los usan)
+    // ── El boton del vecino: "ACTIVAR PARA HABLAR" (pedido del usuario el 2026-11-25, tercera version: "lo unico que se tiene que ver
+    // despues de enviar la alerta es el boton verde de ALERTA ENVIADA y el boton en relieve de activar para hablar; despues de
+    // presionar ese mismo boton muestra un microfono con ondas que muestran que esta transmitiendo") ──
+    // Boton en relieve (se hunde al tocarlo). Con el microfono abierto se pone verde y el microfono echa ondas que crecen con la voz
+    // (un AnalyserNode sobre el microfono: --lvl y data-level del boton): "TRANSMITIENDO" en la llamada, "MICROFONO ACTIVO" antes.
+    // Nada de texto fijo debajo: si el telefono no da el microfono, la ayuda sale en una ventana al tocar (con recargar si hace falta).
     function talkStyles() {
         if (typeof document === 'undefined' || document.getElementById('ap-talk-style')) return;
         const st = document.createElement('style');
         st.id = 'ap-talk-style';
         st.textContent = `
-            .ap-meter { display: none; align-items: center; gap: 4px; height: 30px; margin-left: auto; flex: none; }
-            .panic-talk[data-state="live"] .ap-meter { display: inline-flex; }
-            .ap-bar { width: 6px; height: 100%; border-radius: 3px; background: currentColor; transform: scaleY(0.18); transition: transform 70ms linear; }
-            .panic-talk[data-state="live"] { background: #15803d; border-color: #86efac; box-shadow: 0 0 0 4px rgba(34,197,94,0.35); }
-            .panic-talk[data-state="live"] svg { animation: ap-pulse 1.4s ease-in-out infinite; }
-            .panic-talk[data-state="nomic"] { border-color: #f87171; }
-            .panic-talk-note .ap-reload { display: block; width: 100%; margin-top: 0.55rem; padding: 0.6rem 0.8rem; border-radius: 10px; border: 1px solid #f59e0b; background: #b45309; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
-            @keyframes ap-pulse { 50% { opacity: 0.55; } }
-            @media (prefers-reduced-motion: reduce) { .panic-talk[data-state="live"] svg { animation: none; } .ap-bar { transition: none; } }`;
+            .panic-talk.ap-talk { position: relative; align-self: stretch; width: 100%; display: flex; align-items: center; gap: 1.35rem; padding: 1.05rem 1.15rem;
+                border: none; border-bottom: 7px solid #1e3a8a; border-radius: 22px; background: linear-gradient(180deg, #4f8cff 0%, #2563eb 55%, #1d4ed8 100%); color: #fff;
+                box-shadow: 0 12px 26px rgba(0,0,0,0.45), inset 0 2px 0 rgba(255,255,255,0.35); transform: translateY(0);
+                transition: transform 80ms ease, border-bottom-width 80ms ease, box-shadow 80ms ease; -webkit-tap-highlight-color: transparent; }
+            .panic-talk.ap-talk:active { transform: translateY(5px); border-bottom-width: 2px; box-shadow: 0 4px 10px rgba(0,0,0,0.45), inset 0 2px 0 rgba(255,255,255,0.3); }
+            .panic-talk.ap-talk b { font-size: 1.2rem; letter-spacing: 0.04em; }
+            .panic-talk.ap-talk[data-state="live"] { background: linear-gradient(180deg, #4ade80 0%, #16a34a 55%, #15803d 100%); border-bottom-color: #14532d; }
+            .panic-talk.ap-talk[data-state="nomic"] { background: linear-gradient(180deg, #f87171 0%, #dc2626 55%, #b91c1c 100%); border-bottom-color: #7f1d1d; }
+            .ap-mic { position: relative; flex: none; width: 54px; height: 54px; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,0.16); }
+            .ap-mic svg { position: relative; z-index: 1; width: 30px; height: 30px; }
+            .ap-wave { position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(255,255,255,0.85); opacity: 0; pointer-events: none; }
+            .panic-talk[data-state="live"] .ap-wave { opacity: calc(0.25 + var(--lvl, 0) * 0.75); transform: scale(calc(1.05 + var(--lvl, 0) * 0.5)); transition: transform 70ms linear, opacity 70ms linear; }
+            .panic-talk[data-state="live"] .ap-wave.w2 { transform: scale(calc(1.12 + var(--lvl, 0) * 0.8)); opacity: calc(0.1 + var(--lvl, 0) * 0.6); }
+            .panic-talk[data-state="live"] .ap-wave.w3 { animation: ap-ripple 1.6s ease-out infinite; }
+            @keyframes ap-ripple { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.7); opacity: 0; } }
+            .ap-help { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 1rem; background: rgba(2,6,23,0.72); }
+            .ap-help-card { width: min(420px, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; box-sizing: border-box; padding: 1.2rem; border-radius: 16px; background: #1e293b; color: #f8fafc; border: 2px solid #f59e0b; font-size: 1rem; line-height: 1.45; }
+            .ap-help-card h3 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+            .ap-help-card p { margin: 0 0 0.6rem; }
+            .ap-help-card small { display: block; opacity: 0.7; margin-bottom: 0.6rem; }
+            .ap-help-card button { display: block; width: 100%; margin-top: 0.5rem; padding: 0.8rem; border-radius: 12px; border: 1px solid #475569; background: #334155; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+            .ap-help-card button.main { background: #b45309; border-color: #f59e0b; }
+            @media (prefers-reduced-motion: reduce) { .panic-talk[data-state="live"] .ap-wave.w3 { animation: none; } }`;
         document.head.appendChild(st);
     }
-    // opts.unlock(): lo que la pagina hace con cada toque para que suene la central (answerCalls.unlock)
+    // La ayuda para activar el microfono, en una ventana (solo cuando el vecino toca y el telefono no lo da)
+    function showMicHelp(text, code, reload) {
+        const old = document.querySelector('.ap-help');
+        if (old) old.remove();
+        const wrap = document.createElement('div');
+        wrap.className = 'ap-help';
+        wrap.setAttribute('role', 'dialog');
+        wrap.setAttribute('aria-modal', 'true');
+        const card = document.createElement('div');
+        card.className = 'ap-help-card';
+        const h = document.createElement('h3');
+        h.textContent = 'Su teléfono no dio el micrófono';
+        const p = document.createElement('p');
+        p.textContent = text;
+        const c = document.createElement('small');
+        c.textContent = code;
+        card.append(h, p, c);
+        if (reload) {
+            const r = document.createElement('button');
+            r.type = 'button';
+            r.className = 'main';
+            r.textContent = 'Recargar la página y volver a intentar';
+            r.addEventListener('click', () => location.reload());
+            card.appendChild(r);
+        }
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.textContent = 'Entendido';
+        ok.addEventListener('click', () => wrap.remove());
+        card.appendChild(ok);
+        wrap.appendChild(card);
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) wrap.remove(); });
+        document.body.appendChild(wrap);
+    }
+    // opts.unlock(): lo que la pagina hace con cada toque para que suene la central (answerCalls.unlock). note ya no se usa (se deja
+    // vacio y escondido: la ayuda sale en la ventana)
     function talkButton({ button, note, unlock }) {
         talkStyles();
+        button.classList.add('ap-talk');
         let call = null;
         let inCall = false;
-        let callMic = false;
         let audioBlocked = false;
-        let told = false;   // la central ya sabe que quiere hablar (want)
+        let told = false;       // la central ya sabe que quiere hablar (want)
+        let wantFailed = false;
         let meterCtx = null;
         let meter = null;
         const label = button.querySelector('[data-talk-label]');
         const sub = button.querySelector('[data-talk-sub]');
-        let bars = [...button.querySelectorAll('.ap-bar')];
-        if (!bars.length) {
-            const m = document.createElement('span');
-            m.className = 'ap-meter';
-            m.setAttribute('aria-hidden', 'true');
-            m.innerHTML = '<i class="ap-bar"></i><i class="ap-bar"></i><i class="ap-bar"></i><i class="ap-bar"></i><i class="ap-bar"></i>';
-            button.appendChild(m);
-            bars = [...m.querySelectorAll('.ap-bar')];
+        // El icono del microfono dentro de su circulo, con las ondas
+        let mic = button.querySelector('.ap-mic');
+        if (!mic) {
+            mic = document.createElement('span');
+            mic.className = 'ap-mic';
+            mic.setAttribute('aria-hidden', 'true');
+            mic.innerHTML = '<i class="ap-wave w3"></i><i class="ap-wave w2"></i><i class="ap-wave"></i>';
+            const icon = button.querySelector('svg');
+            if (icon) { button.insertBefore(mic, icon); mic.appendChild(icon); } else button.insertBefore(mic, button.firstChild);
         }
+        if (note) { note.textContent = ''; note.hidden = true; }
         const TEXT = {
-            idle: ['PRESIONE PARA HABLAR', 'Toque y permita el micrófono: la Central de Monitoreo le escuchará'],
-            asking: ['PERMITA EL MICRÓFONO...', 'Toque «Permitir» en la ventana del teléfono'],
-            nomic: ['PRESIONE PARA HABLAR', 'Su teléfono no dio el micrófono: vea abajo cómo permitirlo'],
-            oncall: ['PRESIONE PARA HABLAR', 'Está en línea: la central le oye solo si permite el micrófono'],
-            hear: ['PRESIONE PARA HABLAR', 'Toque para oír a la central y permitir el micrófono']
+            idle: ['ACTIVAR PARA HABLAR', 'Toque para que la Central de Monitoreo le escuche'],
+            asking: ['PERMITA EL MICRÓFONO', 'Toque «Permitir» en la ventana del teléfono'],
+            nomic: ['ACTIVAR PARA HABLAR', 'Micrófono bloqueado: toque para ver cómo activarlo'],
+            oncall: ['ACTIVAR PARA HABLAR', 'La central está en línea: toque para que le escuche'],
+            hear: ['ACTIVAR PARA HABLAR', 'Toque para oír a la central']
         };
-        const liveSub = () => (inCall
-            ? 'La Central de Monitoreo le escucha: hable con normalidad'
-            : (told ? 'La central ya sabe que quiere hablar: cuando le llame, le escuchará' : 'Micrófono listo: cuando la central le llame, le escuchará'));
+        const liveText = () => (inCall
+            ? ['TRANSMITIENDO', 'La Central de Monitoreo le escucha']
+            : ['MICRÓFONO ACTIVO', wantFailed ? 'No se pudo avisar a la central: toque de nuevo' : (told ? 'La central ya sabe que quiere hablar' : 'Esperando a la central')]);
         function startMeter() {
             if (meter || !micLive()) return;
             try {
@@ -385,8 +445,7 @@ const SisdelAudioPanico = (() => {
                     for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
                     const lvl = Math.min(1, peak / 48);
                     button.dataset.level = lvl.toFixed(2);
-                    const t = Date.now() / 110;
-                    bars.forEach((b, i) => { b.style.transform = `scaleY(${(0.18 + 0.82 * lvl * (0.55 + 0.45 * Math.abs(Math.sin(t + i * 1.3)))).toFixed(3)})`; });
+                    button.style.setProperty('--lvl', lvl.toFixed(3));
                     meter.raf = requestAnimationFrame(tick);
                 };
                 meter = { an, raf: requestAnimationFrame(tick) };
@@ -395,42 +454,28 @@ const SisdelAudioPanico = (() => {
         function stopMeter() {
             if (meter) cancelAnimationFrame(meter.raf);
             meter = null;
-            bars.forEach((b) => { b.style.transform = ''; });
+            button.style.removeProperty('--lvl');
             delete button.dataset.level;
         }
-        function setNote(text, reload) {
-            note.textContent = text || '';
-            if (reload) {
-                // Safari del iPhone recuerda el "No" de esta pagina y no vuelve a preguntar hasta recargarla
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'ap-reload';
-                b.textContent = 'Recargar la página y volver a intentar';
-                b.addEventListener('click', () => location.reload());
-                note.appendChild(b);
-            }
-        }
-        function set(state, text, reload) {
+        function set(state) {
             button.dataset.state = state;
             button.disabled = state === 'asking';
-            const t = state === 'live' ? ['MICRÓFONO ACTIVO', liveSub()] : TEXT[state];
+            const t = state === 'live' ? liveText() : TEXT[state];
             label.textContent = t[0];
             sub.textContent = t[1];
-            setNote(text, reload);
             if (state === 'live') startMeter(); else stopMeter();
             paint();
         }
         function paint() {
             button.hidden = !call;
-            note.hidden = !call || !note.textContent;
+            if (note) note.hidden = true;
         }
-        // El estado que toca segun la llamada y el microfono (sin pisar "preguntando" ni el aviso de microfono negado)
+        // El estado que toca segun la llamada y el microfono (sin pisar "preguntando" ni el de microfono bloqueado)
         function refresh() {
             if (!call || button.dataset.state === 'asking') return;
-            if (micLive()) { set('live', ''); return; }
+            if (micLive()) { set('live'); return; }
             if (button.dataset.state === 'nomic') { paint(); return; }
-            if (inCall) set(audioBlocked ? 'hear' : 'oncall', '');
-            else set('idle', '');
+            set(inCall ? (audioBlocked ? 'hear' : 'oncall') : 'idle');
         }
         button.addEventListener('click', async () => {
             const mine = call;
@@ -439,34 +484,36 @@ const SisdelAudioPanico = (() => {
             if (unlock) { try { unlock(); } catch { /* sin llamada */ } }
             if (!meterCtx) { try { const Ctx = window.AudioContext || window.webkitAudioContext; meterCtx = new Ctx(); if (meterCtx.resume) meterCtx.resume().catch(() => {}); } catch { meterCtx = null; } }
             if (micLive()) { refresh(); return; }
-            set('asking', 'Su teléfono le pregunta si deja usar el micrófono: toque «Permitir». Así la Central de Monitoreo podrá escucharle.');
+            set('asking');
             const stream = await prepareMic();
             if (mine !== call) return;
             if (!stream) {
                 const ua = navigator.userAgent || '';
                 const iosSafari = /iPhone|iPad|iPod/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
-                set('nomic', `Su teléfono no dio permiso al micrófono, así que la central no le escucha. ${micHelp(micError)}`, iosSafari && micError === 'NotAllowedError');
-                mine('want', { mic: false }).catch(() => {});
+                set('nomic');
+                showMicHelp(`La Central de Monitoreo no le escucha mientras su teléfono no dé el micrófono. ${micHelp(micError)}`,
+                    `Código: ${micError || 'desconocido'}${micMs != null ? ` (${micMs} ms)` : ''}`, iosSafari && micError === 'NotAllowedError');
+                mine('want', { mic: false, micError, micMs, ua: (navigator.userAgent || '').slice(0, 200) }).catch(() => {});
                 return;
             }
-            set('live', '');
+            wantFailed = false;
+            set('live');
             if (inCall) return; // en linea, el microfono ya entro en la llamada (answerCalls)
             let ok = false;
             try { const r = await mine('want', { mic: true }); ok = !!(r && r.ok); } catch { ok = false; }
             if (mine !== call) return;
             told = ok;
-            // Sin recuadro de texto cuando salio bien: el boton ya lo dice (pedido del usuario: poco texto con la alerta abierta)
-            set('live', ok ? '' : 'Su micrófono está listo, pero no se pudo avisar a la central: revise su conexión y toque de nuevo. Si es urgente, llame a la garita por teléfono.');
+            wantFailed = !ok;
+            set('live');
         });
         return {
-            show(fn) { if (call === fn) return; call = fn; inCall = false; callMic = false; audioBlocked = false; told = false; set(micLive() ? 'live' : 'idle', ''); },
-            hide() { call = null; inCall = false; callMic = false; stopMeter(); paint(); },
-            // El estado de la llamada (answerCalls): en linea con microfono, MICROFONO ACTIVO; sin microfono, pide tocarlo; si el
-            // telefono no dejo sonar a la central, pide un toque para oirla
+            show(fn) { if (call === fn) return; call = fn; inCall = false; audioBlocked = false; told = false; wantFailed = false; set(micLive() ? 'live' : 'idle'); },
+            hide() { call = null; inCall = false; stopMeter(); paint(); },
+            // El estado de la llamada (answerCalls): en linea con microfono, TRANSMITIENDO; sin microfono, pide tocarlo; si el telefono no
+            // dejo sonar a la central, pide un toque para oirla
             callState(state, info) {
                 if (!call) return;
                 inCall = state === 'conectado' || state === 'conectando';
-                callMic = !!(info && info.mic);
                 audioBlocked = !!(info && info.audioBlocked);
                 refresh();
             }

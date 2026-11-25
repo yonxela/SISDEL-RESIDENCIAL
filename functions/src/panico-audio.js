@@ -175,8 +175,12 @@ const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
     // "HABLAR A CENTRAL DE MONITOREO": la central ve que el vecino pide hablar (y si su telefono ya dio el microfono)
     if (action === 'want') {
         if (!open) return { ok: false, error: 'La alerta ya está cerrada.' };
-        await alertRef.update({ audioWant: { at: nowIso(), mic: data.mic === true } });
-        log('ok', { mic: data.mic === true });
+        // Sin microfono, el telefono dice por que (el nombre del error del navegador) y que telefono y navegador es (2026-11-25: un
+        // iPhone lo negaba sin preguntar y no se sabia por que). Solo texto corto, para el registro
+        const micError = data.mic === true ? '' : String(data.micError || '').replace(/[^A-Za-z]/g, '').slice(0, 40);
+        const ua = String(data.ua || '').replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+        await alertRef.update({ audioWant: { at: nowIso(), mic: data.mic === true, ...(micError ? { micError } : {}) } });
+        log('ok', { mic: data.mic === true, ...(micError ? { micError } : {}), ...(ua ? { ua } : {}), ...(data.micMs != null ? { micMs: Math.max(0, Math.min(600000, Number(data.micMs) || 0)) } : {}) });
         return { ok: true };
     }
     fail('permission-denied', 'Esta acción es de la garita');

@@ -91,11 +91,12 @@
         /* "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): grande, azul; verde cuando la central ya sabe */
         .panic-talk { align-self: stretch; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.95rem 1rem; border: 2px solid #60a5fa; border-radius: var(--radius-md); background: #1d4ed8; color: #fff; font: inherit; text-align: left; cursor: pointer; }
         .panic-talk[hidden] { display: none; }
-        /* Con una alerta abierta solo queda lo que sirve en ese momento: el boton de panico, su estado y "PRESIONE PARA HABLAR" (pedido
-           del usuario el 2026-11-25: "en ese momento el unico boton a mostrar es presiona para hablar, para no confundir con tanto
-           texto al vecino"). Vuelve todo cuando la alerta se cierra */
-        #panicCard.alert-open .panic-help, #panicCard.alert-open #panicGps, #panicCard.alert-open #btnPanicDrill, #panicCard.alert-open #panicDrillNote,
-        #panicCard.alert-open #btnContacts, #panicCard.alert-open #panicAudio, #panicCard.alert-open #btnCancelPanic, #panicCard.alert-open .pp-actions { display: none !important; }
+        /* Con una alerta abierta SOLO se ven el circulo verde (ALERTA ENVIADA / ATENDIDA) y el boton "ACTIVAR PARA HABLAR" (pedidos del
+           usuario el 2026-11-25: "lo unico que se tiene que ver despues de enviar la alerta es el boton verde de alerta enviada y el boton
+           en relieve de activar para hablar"). En una prueba "todo sin novedad" queda ademas su resultado. Vuelve todo al cerrarse */
+        body.vec-alert-open .welcome-hero, body.vec-alert-open #vecTabs, body.vec-alert-open .panic-help, body.vec-alert-open #panicGps,
+        body.vec-alert-open #btnPanicDrill, body.vec-alert-open #panicDrillNote, body.vec-alert-open #btnContacts, body.vec-alert-open #panicAudio,
+        body.vec-alert-open #panicTalkNote, body.vec-alert-open #btnCancelPanic, body.vec-alert-open .pp-actions, body.vec-alert-real #panicStatus { display: none !important; }
         .panic-talk svg { flex: none; }
         .panic-talk b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
         .panic-talk small { display: block; margin-top: 0.15rem; font-size: 0.8rem; opacity: 0.92; }
@@ -194,9 +195,9 @@
                     <p class="panic-help">Mantenga presionado el botón 2 segundos. Avisa a la garita, a la administración y a sus contactos de emergencia.</p>
                     <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
                     <div id="panicBtnHost" title="Avisa a la garita, la administración y sus contactos de emergencia"></div>
-                    <!-- SISDEL: "PRESIONE PARA HABLAR" (audio-panico.js, talkButton; antes "HABLAR A CENTRAL DE MONITOREO"), justo debajo del boton de panico (pedido del usuario el 2026-11-25): mientras la alerta este abierta; al tocarlo se pide
+                    <!-- SISDEL: "ACTIVAR PARA HABLAR" (audio-panico.js, talkButton; antes "HABLAR A CENTRAL DE MONITOREO" y "PRESIONE PARA HABLAR"), justo debajo del boton de panico (pedido del usuario el 2026-11-25): mientras la alerta este abierta; al tocarlo se pide
                          el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
-                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
+                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>ACTIVAR PARA HABLAR</b><small data-talk-sub>Toque para que la Central de Monitoreo le escuche</small></span></button>
                     <div class="panic-talk-note" id="panicTalkNote" hidden></div>
                     <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false" style="display:none;"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
                     <!-- SISDEL: prueba "todo sin novedad" (pedidos del usuario el 2026-11-23 y 2026-11-25; antes "Hacer un simulacro", debajo
@@ -435,7 +436,7 @@
     <script src="sisdel-core.js?v=20261125m"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261125a"></script>
-    <script src="audio-panico.js?v=20261125p"></script>
+    <script src="audio-panico.js?v=20261125q"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -803,7 +804,12 @@
             let drillShown = null;
             let drillTimer = null;
             // Alerta abierta: solo el boton de panico, su estado y "PRESIONE PARA HABLAR"
-            const focusAlert = (a) => document.getElementById('panicCard').classList.toggle('alert-open', !!a && ['ACTIVE', 'ATTENDED'].includes(a.status));
+            const focusAlert = (a) => {
+                const open = !!a && ['ACTIVE', 'ATTENDED'].includes(a.status);
+                document.body.classList.toggle('vec-alert-open', open);
+                document.body.classList.toggle('vec-alert-real', open && a.simulacro !== true);
+                if (open && typeof showTab === 'function') { try { showTab('seguridad'); } catch { /* sin pestanas */ } }
+            };
             function showDrill(alert) {
                 focusAlert(alert);
                 drillShown = alert;

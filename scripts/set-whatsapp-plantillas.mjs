@@ -6,6 +6,10 @@
 //   node set-whatsapp-plantillas.mjs --target=prod --ver                    (muestra lo configurado, sin claves)
 //   node set-whatsapp-plantillas.mjs --target=prod --probar                 (pregunta a Meta si estan APROBADAS; no envia nada)
 //   node set-whatsapp-plantillas.mjs --target=prod --canal=meta|ultramsg    (por donde salen los avisos)
+//   node set-whatsapp-plantillas.mjs --target=prod --panico                 (carga las 3 plantillas de las alertas de panico)
+//   node set-whatsapp-plantillas.mjs --target=prod --canal-panico=meta|ultramsg   (por donde salen las alertas de panico)
+// Alertas de panico (functions/src/rondas/panico-meta.js): alerta_panico, alerta_panico_familia y prueba_sin_novedad, con sus
+// datos fijos; con --canal-panico=meta la alerta, el aviso a familiares y la prueba salen por Meta (los recordatorios no cambian).
 // Tipos de aviso: "mora" (Mensaje por morosidad) y "general" (Mensajes varios).
 // Datos que puede llevar un hueco: nombre, casa, saldo, cuotas, mora, condominio (en el orden de {{1}}, {{2}}...).
 import readline from 'node:readline';
@@ -14,6 +18,7 @@ import { connect, parseArgs } from './admin.mjs';
 
 const require = createRequire(import.meta.url);
 const meta = require('../functions/src/rondas/meta-estado.js');
+const panicMeta = require('../functions/src/rondas/panico-meta.js');
 
 const args = parseArgs();
 const target = args.target === 'prod' ? 'prod' : 'emulator';
@@ -42,7 +47,12 @@ const describe = (c) => {
         `  Meta (token y numero): ${c.metaToken && c.metaPhoneId ? 'configurado' : 'FALTA (use set-whatsapp.mjs)'}`,
         `  Cuenta de WhatsApp Business (WABA): ${c.metaWabaId ? 'configurada' : 'no (se pide al cargar plantillas; sirve para comprobar que esten aprobadas)'}`,
         `  Plantilla de mora: ${one('mora')}`,
-        `  Plantilla de mensajes varios: ${one('general')}`
+        `  Plantilla de mensajes varios: ${one('general')}`,
+        `  Canal de las alertas de panico: ${c.panicChannel === 'meta' ? 'WhatsApp oficial de Meta (con plantilla)' : 'UltraMsg (como siempre)'}`,
+        ...panicMeta.PANIC_KINDS.map((key) => {
+            const tpl = panicMeta.panicTemplate(c, key);
+            return `  ${panicMeta.KIND_LABEL[key]}: ${tpl ? `${tpl.name} (${tpl.language}; huecos: ${tpl.params.join(', ')})` : '(sin plantilla)'}`;
+        })
     ].join('\n');
 };
 
@@ -75,8 +85,8 @@ if (args.probar) {
         console.log('  Faltan el token de Meta (set-whatsapp.mjs) o el ID de la cuenta de WhatsApp Business (se pide al cargar plantillas).');
         process.exit(1);
     }
-    for (const key of ['mora', 'general']) {
-        const tpl = meta.normalizeTemplate((current.metaTemplates || {})[key]);
+    for (const key of ['mora', 'general', ...panicMeta.PANIC_KINDS]) {
+        const tpl = panicMeta.PANIC_KINDS.includes(key) ? panicMeta.panicTemplate(current, key) : meta.normalizeTemplate((current.metaTemplates || {})[key]);
         if (!tpl) { console.log(`  ${key}: sin plantilla configurada.`); continue; }
         const info = await fromMeta(current, tpl.name, tpl.language);
         if (!info) console.log(`  ${key}: no se pudo consultar.`);
@@ -90,6 +100,38 @@ if (args.probar) {
             console.log(`  ${key} (${tpl.name}): ${notes.join('; ')}.`);
         }
     }
+    process.exit(0);
+}
+
+// Las 3 plantillas de las alertas de panico, tal como se enviaron a Meta (no pregunta nada: el texto y los datos son fijos)
+if (args.panico) {
+    const next = { ...current, metaTemplates: { ...(current.metaTemplates || {}) }, updatedAt: new Date().toISOString() };
+    for (const key of panicMeta.PANIC_KINDS) {
+        const tpl = panicMeta.panicTemplate({ metaTemplates: panicMeta.DEFAULT_TEMPLATES }, key);
+        next.metaTemplates[key] = tpl;
+        console.log(`  ${panicMeta.KIND_LABEL[key]}: ${tpl.name} (${tpl.language}), huecos: ${tpl.params.join(', ')}.`);
+    }
+    await ref.set(next);
+    console.log(`\nGuardadas en ${target}. Todavia NO cambia nada: cuando Meta las APRUEBE (Administrador de WhatsApp > Plantillas),\n` +
+        `active el canal con: node set-whatsapp-plantillas.mjs --target=${target} --canal-panico=meta`);
+    process.exit(0);
+}
+
+// Por donde salen las alertas de panico (alerta, familiares y prueba). Los recordatorios siguen con --canal
+if (args['canal-panico']) {
+    const canal = String(args['canal-panico']);
+    if (!['meta', 'ultramsg'].includes(canal)) { console.log('Use --canal-panico=meta o --canal-panico=ultramsg'); process.exit(1); }
+    if (canal === 'meta') {
+        if (!current.metaToken || !current.metaPhoneId) { console.log('No se puede: falta el token o el numero de Meta (use set-whatsapp.mjs).'); process.exit(1); }
+        const missing = panicMeta.PANIC_KINDS.filter((key) => !panicMeta.panicTemplate(current, key));
+        if (missing.length) { console.log(`No se puede: faltan plantillas de panico (${missing.join(', ')}). Corra antes con --panico.`); process.exit(1); }
+    }
+    const next = { ...current, updatedAt: new Date().toISOString() };
+    if (canal === 'meta') next.panicChannel = 'meta'; else delete next.panicChannel;
+    await ref.set(next);
+    console.log(canal === 'meta'
+        ? `Alertas de panico en ${target}: WhatsApp oficial de Meta con plantilla. Una alerta que Meta no deje salir se intenta por UltraMsg; una prueba no.`
+        : `Alertas de panico en ${target}: UltraMsg, como siempre.`);
     process.exit(0);
 }
 

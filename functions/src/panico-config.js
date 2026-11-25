@@ -9,6 +9,7 @@ const privilegios = require('./privilegios');
 const rateLimit = require('./rateLimit');
 const whatsapp = require('./rondas/whatsapp');
 const { cleanConfig, testMessage } = require('./rondas/avisos');
+const { testVars } = require('./rondas/panico-meta');
 
 const TEST_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
 
@@ -28,11 +29,14 @@ const testPanicNotice = onCall({ timeoutSeconds: 120 }, async (request) => {
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) throw new HttpsError('failed-precondition', 'WhatsApp todavía no está conectado al condominio. Pida al programador que lo conecte.');
     await rateLimit.hit('panico-prueba', uid, TEST_LIMIT);
-    const text = testMessage(condoSnap.exists ? String(condoSnap.data().name || '') : '', cfg);
+    const condoName = condoSnap.exists ? String(condoSnap.data().name || '') : '';
+    const text = testMessage(condoName, cfg);
+    // Con el WhatsApp oficial de Meta (panicChannel 'meta') sale la plantilla de PRUEBA ("no es una emergencia"), sin caer a UltraMsg
+    const vars = testVars(condoName);
     const results = [];
     for (const p of cfg.phones) {
         let channel = null;
-        try { channel = await whatsapp.send(config, p.phone, text); } catch (e) { channel = null; }
+        try { channel = await whatsapp.sendPanic(config, p.phone, text, { tipo: 'prueba', vars, errors: [], drill: true }); } catch (e) { channel = null; }
         results.push({ kind: p.kind, name: p.name, phoneTail: p.phone.slice(-4), sent: !!channel });
     }
     logger.warn('panico: mensaje de prueba', { condominioId, por: uid, enviados: results.filter((r) => r.sent).length, total: results.length });

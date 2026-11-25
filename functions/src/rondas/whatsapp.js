@@ -5,6 +5,7 @@ const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 const estado = require('./ultramsg-estado');
 const meta = require('./meta-estado');
+const panicMeta = require('./panico-meta');
 
 async function loadConfig() {
     const snap = await db.doc('_privado/whatsapp').get();
@@ -73,9 +74,19 @@ async function send(config, to, message, opts = {}) {
     return null;
 }
 
+// Un aviso de panico (alerta, familiares o prueba): con config.panicChannel === 'meta' sale por el WhatsApp oficial con su
+// plantilla (panico-meta.js); si no, como siempre. opts: { tipo, vars, errors, drill }
+async function sendPanic(config, to, message, opts = {}) {
+    if (config.provider === 'simulado') return 'SIMULADO';
+    return panicMeta.sendPanicMessage(config, to, message, opts, {
+        sendTemplate: (c, t, tpl, params) => meta.sendTemplate(c, t, tpl, params),
+        legacy: (c, t, m) => send(c, t, m)
+    });
+}
+
 // Estado de la conexion de UltraMsg (ver ultramsg-estado.js): connection, queueStats y describeConnection
 module.exports = {
-    loadConfig, hasProvider, send,
+    loadConfig, hasProvider, send, sendPanic,
     // Estado de la conexion: del canal que se use (Meta o UltraMsg)
     connection: (config) => (meta.usesMeta(config) ? meta.connection(config) : estado.connection(config)),
     describeConnection: (conn) => (conn && conn.provider === 'meta' ? meta.describeConnection(conn) : estado.describeConnection(conn)),

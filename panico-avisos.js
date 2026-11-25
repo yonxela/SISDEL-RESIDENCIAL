@@ -169,17 +169,19 @@
     }
 
     // A quien avisar: la central de SISDEL, los telefonos configurados del condominio (garita, PNC...), el personal que atiende
-    // alertas (si el condominio no lo quito) y los familiares (solo si es un vecino). Sin repetidos. [{ nombre, telefono, mensaje }]
+    // alertas (si el condominio no lo quito) y los familiares (solo si es un vecino). Sin repetidos. [{ nombre, telefono, mensaje, tipo }]
     // Un simulacro (alert.simulacro), solo la central, las garitas y el propio vecino.
+    // `tipo` dice que plantilla del WhatsApp oficial de Meta le toca (functions/src/rondas/panico-meta.js): 'panico' (central, garita,
+    // PNC y personal), 'panicoFamilia' (familiares) o 'prueba' (simulacro: central, garitas y el propio vecino)
     function recipientsFor({ alert, condoName, contacts = [], staff = [], central = '', config }) {
         const c = cleanConfig(config);
         const out = [];
         const seen = new Set();
-        const add = (nombre, phone, mensaje) => {
+        const add = (nombre, phone, mensaje, tipo) => {
             const telefono = normalizePhone(phone);
             if (!telefono || seen.has(telefono)) return;
             seen.add(telefono);
-            out.push({ nombre, telefono, mensaje });
+            out.push({ nombre, telefono, mensaje, tipo });
         };
         const family = alert.source === 'vecino' ? contacts.filter((x) => normalizePhone(x.phone)) : [];
         // SIMULACRO: solo la central, las garitas del condominio y el propio vecino; nunca la PNC, otros telefonos, el personal ni
@@ -187,18 +189,18 @@
         if (isDrill(alert)) {
             const would = drillWould(family.length, c, staff.length);
             const forStaff = drillStaffMessage(alert, condoName, would, c);
-            add('Central SISDEL', central, forStaff);
-            c.phones.filter((p) => p.kind === 'garita').forEach((p) => add(p.name, p.phone, forStaff));
-            if (alert.phone) add(alert.userName || 'Vecino', alert.phone, drillOwnMessage(alert, condoName, would, c));
+            add('Central SISDEL', central, forStaff, 'prueba');
+            c.phones.filter((p) => p.kind === 'garita').forEach((p) => add(p.name, p.phone, forStaff, 'prueba'));
+            if (alert.phone) add(alert.userName || 'Vecino', alert.phone, drillOwnMessage(alert, condoName, would, c), 'prueba');
             return out;
         }
         const notified = family.map((x) => x.name || x.phone);
         const forStaff = staffMessage(alert, condoName, notified, c);
-        add('Central SISDEL', central, forStaff);
-        c.phones.forEach((p) => add(p.name, p.phone, forStaff));
-        if (c.notifyStaff) staff.forEach((s) => add(s.name, s.phone, forStaff));
+        add('Central SISDEL', central, forStaff, 'panico');
+        c.phones.forEach((p) => add(p.name, p.phone, forStaff, 'panico'));
+        if (c.notifyStaff) staff.forEach((s) => add(s.name, s.phone, forStaff, 'panico'));
         const forFamily = familyMessage(alert, condoName, c);
-        family.forEach((x) => add(x.name || 'Familiar', x.phone, forFamily));
+        family.forEach((x) => add(x.name || 'Familiar', x.phone, forFamily, 'panicoFamilia'));
         return out;
     }
 

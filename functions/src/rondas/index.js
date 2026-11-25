@@ -5,6 +5,7 @@ const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
 const { recipientsFor, cleanConfig, isDrill, DRILL_LIMITS } = require('./avisos');
 const whatsapp = require('./whatsapp');
+const { panicVars } = require('./panico-meta');
 const { cleanAll } = require('./mantenimiento');
 const privilegios = require('../privilegios');
 const { notifyHousehold } = require('../panico-qr');
@@ -88,11 +89,17 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         config: panicConfig
     });
 
+    // Con el WhatsApp oficial de Meta (config.panicChannel === 'meta', panico-meta.js) cada aviso sale con su plantilla aprobada y
+    // estos datos en los huecos; si no, el texto de siempre por UltraMsg
+    const vars = panicVars({ alert, condoName: condoSnap.exists ? condoSnap.data().name : '', garitaPhone: (panicConfig.phones.find((p) => p.kind === 'garita') || {}).phone });
     const results = [];
     for (const r of recipients) {
-        const canal = await whatsapp.send(config, r.telefono, r.mensaje);
-        results.push({ nombre: r.nombre, canal: canal || 'NINGUNO', exito: !!canal });
+        const errors = [];
+        let canal = null;
+        try { canal = await whatsapp.sendPanic(config, r.telefono, r.mensaje, { tipo: r.tipo, vars, errors, drill: isDrill(alert) }); } catch (e) { errors.push(e.message || 'error'); }
+        results.push({ nombre: r.nombre, canal: canal || 'NINGUNO', exito: !!canal, ...(errors.length ? { error: errors.join(' | ').slice(0, 300) } : {}) });
     }
+    // El motivo de cada aviso que no salio queda en su destinatario (error); `reason` no cambia (lo ve el vecino en la prueba)
     await event.data.ref.update({
         whatsapp: {
             sent: results.some((r) => r.exito), recipients: results, at: new Date().toISOString(), reason: recipients.length ? '' : 'Sin destinatarios',

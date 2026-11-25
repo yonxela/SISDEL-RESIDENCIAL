@@ -18,13 +18,14 @@ const VARIABLES = ['nombre', 'casa', 'saldo', 'cuotas', 'mora', 'condominio'];
 const usesMeta = (config) => !!(config && config.channel === 'meta' && config.metaToken && config.metaPhoneId);
 
 // Una plantilla valida o null. `params` dice que dato va en {{1}}, {{2}}...; `body` es el texto aprobado en Meta (para mostrarlo).
-function normalizeTemplate(raw) {
+// `variables`: los datos que puede usar (los de un residente; las alertas de panico usan los suyos, panico-meta.js)
+function normalizeTemplate(raw, variables = VARIABLES) {
     if (!raw || typeof raw !== 'object') return null;
     const name = String(raw.name || '').trim();
     if (!/^[a-z0-9_]{1,200}$/.test(name)) return null;
     const language = String(raw.language || 'es').trim() || 'es';
     const params = Array.isArray(raw.params) ? raw.params.map((p) => String(p).trim().toLowerCase()) : [];
-    if (params.some((p) => !VARIABLES.includes(p))) return null;
+    if (params.some((p) => !variables.includes(p))) return null;
     return { name, language, params, body: String(raw.body || '') };
 }
 // Plantilla de un tipo de aviso: 'mora' (mensaje por morosidad) o 'general' (mensajes varios)

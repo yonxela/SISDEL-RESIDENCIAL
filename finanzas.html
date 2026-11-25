@@ -137,12 +137,22 @@
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script src="avisos-push.js?v=20261124a"></script>
+    <!-- SISDEL: las alertas de panico y su sirena tambien en OIKOS (pedido del usuario el 2026-11-24), como en Control Garita y el panel -->
+    <script src="rondas-core.js?v=20261124a"></script>
+    <script src="sirena.js?v=20261124a"></script>
+    <script src="audio-panico.js?v=20261124a"></script>
+    <script src="panico-alertas.js?v=20261124a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'finanzas.html');
             if (!session) return;
 
             const condoId = session.condominioId;
+            // Alertas de panico: la barra roja y la sirena de alerta maxima (panico-alertas.js), con los mismos privilegios que en el panel
+            if (typeof SisdelRondas !== 'undefined' && typeof SisdelPanico !== 'undefined' && SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) {
+                SisdelRondas.init(session);
+                SisdelPanico.watch({ canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender') });
+            }
             // El nombre vigente del condominio (pudo cambiar despues de entrar: solo el programador lo cambia, con la clave
             // master). OIKOS lo usa en reportes y recibos, y las reglas solo le dejan guardar el nombre oficial.
             let condoName = session.condominioName || '';
@@ -257,7 +267,7 @@
                 const prepare = () => {
                     if (!ready) {
                         ready = (async () => {
-                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261123a', 'reportes-ui.js?v=20261124a']) await loadScript(src);
+                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261124a', 'reportes-ui.js?v=20261124a']) await loadScript(src);
                             if (typeof SisdelRondas !== 'undefined' && SisdelRondas.init) SisdelRondas.init(session);
                             users = await SISDEL.getUsers(condoId);
                         })().catch((error) => { ready = null; throw error; });

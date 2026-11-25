@@ -267,6 +267,7 @@ function docRef(path) {
 function collectionRef(path, filters = []) {
     return {
         doc: (id) => docRef(`${path}/${id || `auto${++autoId}`}`),
+        add: async (data) => { const ref = docRef(`${path}/auto${++autoId}`); await ref.set(data); return ref; },
         where: (field, op, value) => collectionRef(path, [...filters, [field, op, value]]),
         get: async () => {
             const docs = [...store.keys()].filter((k) => k.startsWith(`${path}/`) && !k.slice(path.length + 1).includes('/'))
@@ -285,9 +286,10 @@ const fakeDb = {
     })
 };
 const devicePathOf = (condo, secret) => `condominios/${condo}/panico_dispositivos/${sha256(secret)}`;
+process.env.FUNCTIONS_EMULATOR = 'true';
 const firebasePath = require.resolve('../functions/src/firebase.js');
 require.cache[firebasePath] = { id: firebasePath, filename: firebasePath, loaded: true, exports: { db: fakeDb, auth: {} } };
-const { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal } = require('../functions/src/panico-qr.js');
+const { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, notifyHousehold } = require('../functions/src/panico-qr.js');
 
 let ipCounter = 0;
 const req = (data, ip) => ({ auth: null, data, rawRequest: { headers: { 'user-agent': 'Prueba/1.0', 'x-forwarded-for': ip || `10.0.0.${++ipCounter % 250}` }, ip: '127.0.0.1' } });
@@ -360,7 +362,8 @@ let secretAna = '';
     const saved = store.get(alertKeys[0]);
     equal('la alerta sale como la del portal (alertas_panico, source vecino) con los datos del vecino, su ubicacion y via qr', [sent.ok, alertKeys.length, saved.source, saved.via, saved.userId, saved.userName, saved.casa, saved.phone, saved.lat, saved.lng, saved.accuracy, saved.status, saved.condominioId],
         [true, 1, 'vecino', 'qr', 'u-ana', 'Nombre u-ana', 'Casa 12', '55551234', 14.6, -90.5, 12, 'ACTIVE', 'c1']);
-    equal('el telefono recibe como va su alerta (sin datos de mas)', Object.keys(sent.alert).sort(), ['attendedByName', 'createdAt', 'hasLocation', 'id', 'status']);
+    equal('el telefono recibe como va su alerta (sin datos de mas) y que la envio el', [Object.keys(sent.alert).sort(), sent.alert.mine], [['attendedByName', 'createdAt', 'hasLocation', 'id', 'mine', 'status'], true]);
+    equal('la alerta guarda de que telefono salio (para no avisarle a el mismo)', saved.deviceId, sha256(secretAna));
     yes('el telefono queda con la fecha de su ultimo uso', store.get(`condominios/c1/panico_dispositivos/${sha256(secretAna)}`).lastUsedAt === saved.createdAt);
     await new Promise((r) => setTimeout(r, 5)); // la segunda alerta, un momento despues
     const nogps = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna, lat: 200, lng: 'x' });
@@ -390,6 +393,38 @@ let secretAna = '';
     equal('ve cuantos avisos de prueba salieron, sin los telefonos ni los nombres', drillStatus.alert.whatsapp, { done: true, sent: 2, reason: '' });
     const notDrill = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna, simulacro: 'si' });
     equal('solo simulacro: true cuenta (cualquier otra cosa es una alerta de verdad)', [store.get(`condominios/c1/alertas_panico/${notDrill.alert.id}`).simulacro, notDrill.alert.simulacro], [undefined, undefined]);
+    // Avisos de la casa (2026-11-24): otro telefono de Ana activa los avisos; cuando Ana envia una alerta, le llega a el y no al que la envio
+    const other = await link('c1', 'u-ana', 'VA101');
+    store.set('_privado/push', { publicKey: 'BPublicaDePrueba', privateKey: 'privada' });
+    const key = await device({ action: 'pushkey', c: 'c1', v: 'u-ana', secret: other.secret });
+    equal('el telefono pide la llave publica para activar los avisos', [key.ok, key.publicKey], [true, 'BPublicaDePrueba']);
+    const sub = { endpoint: 'https://push.example.com/prueba-sisdel-familia', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } };
+    equal('una suscripcion que no es de un servicio de avisos se rechaza', (await device({ action: 'push', c: 'c1', v: 'u-ana', secret: other.secret, subscription: { endpoint: 'http://malo', keys: {} } })).ok, false);
+    const on = await device({ action: 'push', c: 'c1', v: 'u-ana', secret: other.secret, subscription: sub });
+    equal('activa los avisos de la casa en ese telefono y queda guardado (solo direccion y llaves)', [on.ok, on.pushOn, Object.keys(store.get(devicePathOf('c1', other.secret)).push).sort()], [true, true, ['at', 'endpoint', 'keys', 'userAgent']]);
+    equal('al abrir el boton, el telefono sabe que los tiene activados', (await device({ action: 'check', c: 'c1', v: 'u-ana', secret: other.secret })).pushOn, true);
+    const fromA = { source: 'vecino', userId: 'u-ana', userName: 'Nombre u-ana', casa: 'Casa 12', lat: 14.6, lng: -90.5, deviceId: sha256(secretAna) };
+    const before = [...store.keys()].filter((k) => k.startsWith('_push_simulados/')).length;
+    const r1 = await notifyHousehold('c1', 'al-1', fromA);
+    const sentPush = [...store.entries()].filter(([k]) => k.startsWith('_push_simulados/')).map(([, v]) => v).slice(before);
+    equal('una alerta de Ana avisa al OTRO telefono de la casa (no al que la envio)', [r1.sent, r1.failed, sentPush.length, sentPush[0] && sentPush[0].endpoint], [1, 0, 1, sub.endpoint]);
+    equal('el aviso dice alerta de panico, el lote, quien y lleva al boton con esa alerta', [sentPush[0].payload.kind, /ALERTA DE PÁNICO · Casa 12/.test(sentPush[0].payload.title), /Nombre u-ana activó el botón de pánico \(con su ubicación\)/.test(sentPush[0].payload.body), sentPush[0].payload.url, sentPush[0].payload.requireInteraction],
+        ['panico', true, true, '/panico.html?c=c1&v=u-ana&alerta=al-1', true]);
+    equal('una alerta que salio de ese mismo telefono no le avisa a el', (await notifyHousehold('c1', 'al-2', { ...fromA, deviceId: sha256(other.secret) })).sent, 0);
+    equal('un simulacro no avisa a la casa', (await notifyHousehold('c1', 'al-3', { ...fromA, simulacro: true })).sent, 0);
+    equal('la alerta de un guardia tampoco', (await notifyHousehold('c1', 'al-4', { ...fromA, source: 'guardia' })).sent, 0);
+    // Lo que ve el otro telefono al abrir: la alerta de su casa, con quien y el mapa (no "su" alerta)
+    store.set('condominios/c1/alertas_panico/al-casa', { id: 'al-casa', userId: 'u-ana', userName: 'Nombre u-ana', status: 'ACTIVE', createdAt: new Date().toISOString(), lat: 14.6, lng: -90.5, deviceId: sha256(secretAna) });
+    const seenByOther = await device({ action: 'status', c: 'c1', v: 'u-ana', secret: other.secret, alertId: 'al-casa' });
+    equal('el otro telefono ve que la alerta es de otro de su casa, con quien y el mapa', [seenByOther.alert.mine, seenByOther.alert.userName, seenByOther.alert.mapUrl], [false, 'Nombre u-ana', 'https://maps.google.com/?q=14.6,-90.5']);
+    const seenBySender = await device({ action: 'status', c: 'c1', v: 'u-ana', secret: secretAna, alertId: 'al-casa' });
+    equal('el que la envio la ve como suya (sin mapa ni nombre de mas)', [seenBySender.alert.mine, seenBySender.alert.mapUrl, seenBySender.alert.userName], [true, undefined, undefined]);
+    // Un telefono que el servicio de avisos ya no reconoce se quita solo
+    store.get(devicePathOf('c1', other.secret)).push.endpoint = 'https://push.example.com/prueba-sisdel-gone';
+    const gone = await notifyHousehold('c1', 'al-5', fromA);
+    equal('si el servicio dice que ese telefono ya no existe, se le quitan los avisos', [gone.sent, gone.failed, store.get(devicePathOf('c1', other.secret)).push, typeof store.get(devicePathOf('c1', other.secret)).pushGoneAt], [0, 1, null, 'string']);
+    const off = await device({ action: 'push', c: 'c1', v: 'u-ana', secret: other.secret, subscription: null });
+    equal('el telefono puede desactivarlos (queda anotado cuando)', [off.ok, off.pushOn, typeof store.get(devicePathOf('c1', other.secret)).pushOffAt], [true, false, 'string']);
     // Tope de alertas (un telefono o programa que se queda enviando)
     let last = null;
     for (let i = 0; i < 9; i++) last = await device({ action: 'alert', c: 'c1', v: 'u-ana', secret: secretAna });

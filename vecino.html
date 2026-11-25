@@ -78,6 +78,8 @@
         /* El simulacro (prueba del boton) va en azul: no es una emergencia */
         .panic-status.drill { background: var(--info-bg); border: 1px solid var(--info); }
         .panic-drill-btn { border: 1px dashed var(--border-strong); }
+        /* Audio con la garita */
+        .panic-audio { align-self: stretch; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
         .panic-drill-note { margin: -0.25rem 0 0; max-width: 26rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
         .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
         /* Modales: titulo a la izquierda y cerrar a la derecha; si no caben en la pantalla, se desplazan por dentro */
@@ -174,6 +176,9 @@
                     <button class="btn btn-ghost btn-sm panic-drill-btn" id="btnPanicDrill" type="button">Hacer un simulacro (prueba)</button>
                     <p class="panic-drill-note">El simulacro llega a la garita marcado como prueba y a su propio WhatsApp. No avisa a sus contactos de emergencia.</p>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
+                    <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
+                         contesta solo; la garita escucha y puede hablarle -->
+                    <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
                 </div>
             </section>
 
@@ -398,7 +403,8 @@
     <script src="privilegios.js?v=20261124d"></script>
     <script src="sisdel-core.js?v=20261124d"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
-    <script src="rondas-core.js?v=20261123a"></script>
+    <script src="rondas-core.js?v=20261124a"></script>
+    <script src="audio-panico.js?v=20261124a"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -769,7 +775,7 @@
             function drillWhatsAppText(w) {
                 if (!w) return 'Enviando los avisos de prueba por WhatsApp...';
                 const sent = (w.recipients || []).filter((r) => r.exito).length;
-                if (sent) return `Avisos de prueba por WhatsApp: ${sent} ${sent === 1 ? 'enviado' : 'enviados'} . Solo van a la central, a la garita y a su propio número.`;
+                if (sent) return `Avisos de prueba por WhatsApp: ${sent} ${sent === 1 ? 'enviado' : 'enviados'}. Solo van a la central, a la garita y a su propio número.`;
                 return `Sin avisos por WhatsApp${w.reason ? ': ' + w.reason : ''}. La garita igual lo ve en su pantalla.`;
             }
             function showDrill(alert) {
@@ -807,8 +813,34 @@
             }
             function followPanic(id) {
                 if (panicUnsub) panicUnsub();
-                panicUnsub = SisdelRondas.subscribePanic(id, showPanic, (e) => console.error('alerta', e));
+                panicUnsub = SisdelRondas.subscribePanic(id, (a) => { showPanic(a); if (a && !['ACTIVE', 'ATTENDED'].includes(a.status)) stopAudio(); }, (e) => console.error('alerta', e));
+                startAudio(id);
             }
+            // ── Audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono contesta solo ──
+            let audioCtl = null;
+            let audioFor = null;
+            function paintAudio(state, text) {
+                const box = document.getElementById('panicAudio');
+                const live = state === 'conectado' || state === 'conectando';
+                box.hidden = !text && !live;
+                document.getElementById('panicAudioText').textContent = text || '';
+                document.getElementById('panicAudioHang').hidden = !live;
+            }
+            function startAudio(alertId) {
+                if (typeof SisdelAudioPanico === 'undefined' || !SisdelAudioPanico.supported() || audioFor === alertId) return;
+                stopAudio();
+                audioFor = alertId;
+                const fn = window.sisdelFirebase.functions.httpsCallable('panicAudio');
+                const call = (action, data) => fn({ action, c: session.condominioId, alertId, ...data }).then((r) => r.data);
+                audioCtl = SisdelAudioPanico.answerCalls({ call, audioEl: document.getElementById('panicAudioEl'), onState: paintAudio });
+            }
+            function stopAudio() {
+                if (audioCtl) audioCtl.stop();
+                audioCtl = null;
+                audioFor = null;
+                paintAudio('cerrada', '');
+            }
+            document.getElementById('panicAudioHang').addEventListener('click', () => { if (audioCtl) audioCtl.hangup(); });
             async function firePanic(simulacro) {
                 panicStatus.style.display = 'none';
                 const drillBtn = document.getElementById('btnPanicDrill');
@@ -822,6 +854,8 @@
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
                     const pos = await SisdelRondas.gps.bestPosition(6000);
                     const sending = SisdelRondas.raisePanic({ source: 'vecino', pos, casa: session.userCasa || '', phone: myPhone, simulacro: simulacro === true });
+                    // Una alerta de verdad pide el microfono ya (el telefono pregunta una vez): si la garita llama, contesta sin tocar nada
+                    if (!simulacro && typeof SisdelAudioPanico !== 'undefined') SisdelAudioPanico.prepareMic();
                     if (simulacro) {
                         const saved = await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
                         followPanic(saved.id);

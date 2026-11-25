@@ -34,7 +34,22 @@ const SEEN_EVERY_MS = 12 * 3600 * 1000;
 const OPEN_ALERT_MS = 6 * 3600 * 1000; // una alerta sin resolver se muestra al volver a escanear durante 6 horas
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SECRET_RE = /^[A-Za-z0-9_-]{40,64}$/;
-const ACTIONS = ['check', 'alert', 'status', 'cancel', 'unlink'];
+const ACTIONS = ['check', 'alert', 'status', 'cancel', 'unlink', 'pushkey', 'push'];
+// Avisos al celular de los telefonos de la casa (pedido del usuario el 2026-11-24: "si los familiares de los vecinos tienen la
+// aplicacion en inicio de su celular tambien sonara la sirena en el celular de ellos"): las mismas llaves y el mismo envio que los
+// avisos de la administracion (avisos-push.js), que se carga solo al usarse
+const pushLib = () => require('./avisos-push');
+const PUSH_ENDPOINT_RE = /^https:\/\/\S{10,900}$/;
+// La suscripcion que manda el telefono, limpia (lo demas no se guarda); null si no sirve
+function cleanSubscription(sub) {
+    if (!sub || typeof sub !== 'object') return null;
+    const endpoint = String(sub.endpoint || '');
+    const keys = sub.keys && typeof sub.keys === 'object' ? sub.keys : {};
+    const p256dh = String(keys.p256dh || '');
+    const auth = String(keys.auth || '');
+    if (!PUSH_ENDPOINT_RE.test(endpoint) || !/^[A-Za-z0-9_=-]{20,200}$/.test(p256dh) || !/^[A-Za-z0-9_=-]{10,100}$/.test(auth)) return null;
+    return { endpoint, keys: { p256dh, auth } };
+}
 
 const cleanId = (value) => (ID_RE.test(String(value || '')) ? String(value) : '');
 const nowIso = () => new Date().toISOString();
@@ -83,8 +98,17 @@ function info({ condo, user }) {
     };
 }
 
-function publicAlert(a) {
+// deviceId: el telefono que pregunta. mine = la envio este telefono; una alerta de otro de la casa (otro telefono o el portal del
+// vecino) trae ademas quien la envio y el mapa, para avisar en este telefono (y que suene la sirena)
+function publicAlert(a, deviceId) {
     const out = { id: a.id, status: a.status, createdAt: a.createdAt || '', attendedByName: a.status === 'ATTENDED' ? (a.attendedByName || '') : '', hasLocation: a.lat != null };
+    if (deviceId !== undefined) {
+        out.mine = !!a.deviceId && a.deviceId === deviceId;
+        if (!out.mine) {
+            out.userName = String(a.userName || '').slice(0, 80);
+            if (typeof a.lat === 'number' && typeof a.lng === 'number') out.mapUrl = `https://maps.google.com/?q=${a.lat},${a.lng}`;
+        }
+    }
     // Un simulacro dice tambien como salieron sus avisos de prueba (cuantos y, si no salieron, por que); nunca los telefonos
     if (a.simulacro === true) {
         out.simulacro = true;
@@ -214,7 +238,27 @@ const panicDevice = onCall(async (request) => {
     if (action === 'check') {
         if (!(Date.parse(device.lastSeenAt || '') > Date.now() - SEEN_EVERY_MS)) await devRef.update({ lastSeenAt: nowIso() }).catch(() => {});
         const open = await latestOpenAlert(condoId, userId);
-        return { ok: true, ...info(neighbor), alert: open ? publicAlert(open) : null };
+        return { ok: true, ...info(neighbor), pushOn: !!(device.push && device.push.endpoint), alert: open ? publicAlert(open, devRef.id) : null };
+    }
+
+    // Avisos de la casa en este telefono: la llave publica para suscribirse ('pushkey') y guardar o quitar su suscripcion ('push')
+    if (action === 'pushkey') {
+        try { return { ok: true, publicKey: (await pushLib().loadKeys()).publicKey }; } catch (e) {
+            logger.error('qr panico: llaves de avisos', { error: e.message });
+            return { ok: false, error: 'Los avisos al celular no están disponibles en este momento.' };
+        }
+    }
+    if (action === 'push') {
+        if (data.subscription === null) {
+            await devRef.update({ push: null, pushOffAt: nowIso() });
+            log('ok', { push: false });
+            return { ok: true, pushOn: false };
+        }
+        const sub = cleanSubscription(data.subscription);
+        if (!sub) return { ok: false, error: 'No se pudo activar el aviso en este teléfono.' };
+        await devRef.update({ push: { ...sub, at: nowIso(), userAgent: userAgentOf(request) } });
+        log('ok', { push: true });
+        return { ok: true, pushOn: true };
     }
 
     if (action === 'alert') {
@@ -229,14 +273,14 @@ const panicDevice = onCall(async (request) => {
         const alert = {
             id: ref.id, condominioId: condoId, source: 'vecino', userId, userName: user.name || '',
             casa: user.casa || '', phone: user.phone || '', ...cleanPos(data),
-            status: 'ACTIVE', createdAt: nowIso(), via: 'qr',
+            status: 'ACTIVE', createdAt: nowIso(), via: 'qr', deviceId: devRef.id,
             // Simulacro (prueba del boton): solo la central, la garita y el propio vecino; nunca sus familiares (rondas/avisos.js)
             ...(data.simulacro === true ? { simulacro: true } : {})
         };
         await ref.set(alert);
         await devRef.update({ lastUsedAt: alert.createdAt });
         log('ok', { alertId: ref.id, gps: alert.lat != null, simulacro: alert.simulacro === true });
-        return { ok: true, ...info(neighbor), alert: publicAlert(alert) };
+        return { ok: true, ...info(neighbor), alert: publicAlert(alert, devRef.id) };
     }
 
     // status / cancel: solo alertas de este vecino
@@ -245,16 +289,60 @@ const panicDevice = onCall(async (request) => {
     const alertSnap = alertRef ? await alertRef.get() : null;
     if (!alertSnap || !alertSnap.exists || alertSnap.data().userId !== userId) return { ok: false, error: 'No se encontró la alerta.' };
     let current = { ...alertSnap.data(), id: alertSnap.id };
+    const mineOrHouse = (a) => publicAlert(a, devRef.id);
     if (action === 'cancel') {
         if (!info(neighbor).canCancel) return { ok: false, error: 'Su usuario no puede cancelar alertas. Avise a la garita por teléfono.' };
-        if (current.status !== 'ACTIVE') return { ok: false, error: 'La alerta ya fue atendida: avise a la garita por teléfono si fue un error.', alert: publicAlert(current) };
+        if (current.status !== 'ACTIVE') return { ok: false, error: 'La alerta ya fue atendida: avise a la garita por teléfono si fue un error.', alert: mineOrHouse(current) };
         const cancelledAt = nowIso();
         await alertRef.update({ status: 'CANCELLED', cancelledAt });
         current = { ...current, status: 'CANCELLED', cancelledAt };
         log('ok', { alertId });
     }
-    return { ok: true, alert: publicAlert(current) };
+    return { ok: true, alert: mineOrHouse(current) };
 });
+
+// Cuando alguien de la casa envia una alerta de verdad (no un simulacro): aviso al celular a los OTROS telefonos de ese vecino que
+// lo activaron (vinculados con su codigo vigente). Lo llama onPanicCreated (rondas/index.js). { sent, failed }
+async function notifyHousehold(condoId, alertId, alert) {
+    if (!alert || alert.source !== 'vecino' || alert.simulacro === true || !alert.userId) return { sent: 0, failed: 0 };
+    const [devices, codes] = await Promise.all([
+        db.collection(`condominios/${condoId}/panico_dispositivos`).where('userId', '==', alert.userId).get(),
+        db.collection('codigos').where('userId', '==', alert.userId).get()
+    ]);
+    const valid = new Set(codes.docs.filter((d) => d.data().condominioId === condoId).map((d) => sha256(d.id)));
+    const targets = devices.docs.filter((d) => {
+        const x = d.data();
+        return !x.revokedAt && x.push && x.push.endpoint && valid.has(x.codeHash) && d.id !== alert.deviceId;
+    });
+    if (!targets.length) return { sent: 0, failed: 0 };
+    const lib = pushLib();
+    const keys = await lib.loadKeys();
+    const payload = {
+        kind: 'panico',
+        title: `ALERTA DE PÁNICO${alert.casa ? ' · ' + String(alert.casa).slice(0, 40) : ''}`,
+        body: `${String(alert.userName || 'Alguien de su casa').slice(0, 60)} activó el botón de pánico${alert.lat != null ? ' (con su ubicación)' : ''}. Toque para ver.`,
+        tag: `panico-${alertId}`,
+        url: `/panico.html?c=${encodeURIComponent(condoId)}&v=${encodeURIComponent(alert.userId)}&alerta=${encodeURIComponent(alertId)}`,
+        requireInteraction: true
+    };
+    let sent = 0;
+    let failed = 0;
+    await Promise.all(targets.map(async (d) => {
+        const x = d.data();
+        try {
+            await lib.sendTo({ id: d.id, userId: alert.userId, endpoint: x.push.endpoint, keys: x.push.keys }, payload, keys);
+            sent++;
+            await d.ref.update({ pushOkAt: nowIso() }).catch(() => {});
+        } catch (e) {
+            failed++;
+            const status = e && e.statusCode;
+            // El servicio de avisos dice que ese telefono ya no existe: se le quita (vuelve a activarlo al abrir el boton)
+            if (status === 404 || status === 410) await d.ref.update({ push: null, pushGoneAt: nowIso() }).catch(() => {});
+            else await d.ref.update({ pushErrorAt: nowIso(), pushError: String(status || (e && e.message) || '').slice(0, 200) }).catch(() => {});
+        }
+    }));
+    return { sent, failed };
+}
 
 // ───────── Entregar la clave de acceso con el QR (pedido del usuario el 2026-11-22) ─────────
 // "La oficina entrega el QR de panico al vecino; el vecino lo escanea y ve su clave por una sola vez con el aviso; luego el QR sirve
@@ -547,4 +635,4 @@ const panicCodeReveal = onCall(async (request) => {
     return { ok: true, code, ...(linked ? { secret: linked } : {}), ...(replaced ? { replaced } : {}), ...info(neighbor), problem, alert: null };
 });
 
-module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, _test: { cleanPos, neighborProblem, deliveryState, deviceKind, campaignCovers, deliverable } };
+module.exports = { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, notifyHousehold, _test: { cleanSubscription, cleanPos, neighborProblem, deliveryState, deviceKind, campaignCovers, deliverable } };

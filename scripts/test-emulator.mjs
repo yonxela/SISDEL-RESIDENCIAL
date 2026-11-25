@@ -753,6 +753,29 @@ async function run() {
         await allowed('el vecino termina su simulacro', () => updateDoc(rref(ana, 'alertas_panico', 'pan-s1'), { status: 'CANCELLED', cancelledAt: ts() }));
     }
 
+    // Avisos de la casa (2026-11-24): un telefono de la casa de Ana con el boton de panico y los avisos activados recibe el aviso al
+    // celular cuando Ana envia una alerta de verdad (simulado en el emulador: _push_simulados); un simulacro no lo avisa
+    {
+        const owner = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
+        const devUrl = `http://${EMULATOR.firestore}/v1/projects/${PROJECT_ID}/databases/(default)/documents/condominios/${A}/panico_dispositivos/dev-casa-ana`;
+        const put = await fetch(devUrl, { method: 'PATCH', headers: owner, body: JSON.stringify({ fields: {
+            userId: { stringValue: 'u-ana' }, condominioId: { stringValue: A }, codeHash: { stringValue: sha256('VA101') }, createdAt: { stringValue: ts() },
+            push: { mapValue: { fields: { endpoint: { stringValue: 'https://push.example.com/prueba-sisdel-casa-ana' }, keys: { mapValue: { fields: { p256dh: { stringValue: 'B'.repeat(87) }, auth: { stringValue: 'a'.repeat(22) } } } } } } }
+        } }) });
+        equal('un telefono de la casa con los avisos activados (solo el servidor lo escribe)', put.status, 200);
+        await allowed('Ana envia una alerta de verdad', () => setDoc(rref(ana, 'alertas_panico', 'pan-casa'), panico('pan-casa')));
+        await waitFor('al telefono de la casa le llega el aviso al celular y queda anotado en la alerta', async () => {
+            const p = (await getDoc(rref(admin, 'alertas_panico', 'pan-casa'))).data().push;
+            return !!p && p.sent === 1 && p.failed === 0;
+        });
+        await allowed('Ana hace un simulacro', () => setDoc(rref(ana, 'alertas_panico', 'pan-casa-s'), panico('pan-casa-s', { simulacro: true })));
+        await waitFor('el simulacro no avisa a la casa (solo WhatsApp de prueba)', async () => {
+            const d = (await getDoc(rref(admin, 'alertas_panico', 'pan-casa-s'))).data();
+            return !!d.whatsapp && !d.push;
+        });
+        await denied('el audio de una alerta no se lee desde el navegador (solo panicAudio)', () => getDoc(doc(admin.db, `condominios/${A}/alertas_panico/pan-casa/audio/llamada`)));
+    }
+
     // ───────── Configuracion > Boton de panico (admin.html): telefonos de la garita y la PNC y los textos del aviso ─────────
     console.log('\nConfiguracion del boton de panico');
     {

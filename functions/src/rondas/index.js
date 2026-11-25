@@ -7,6 +7,7 @@ const { recipientsFor, cleanConfig, isDrill, DRILL_LIMITS } = require('./avisos'
 const whatsapp = require('./whatsapp');
 const { cleanAll } = require('./mantenimiento');
 const privilegios = require('../privilegios');
+const { notifyHousehold } = require('../panico-qr');
 
 // Dia de Guatemala (UTC-6) de una fecha ISO
 const gtDay = (iso) => {
@@ -40,10 +41,19 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
     const alert = event.data && event.data.data();
     if (!alert) return;
     const condoRef = db.collection('condominios').doc(event.params.condoId);
+    // Primero, sin esperar al WhatsApp: el aviso al celular a los OTROS telefonos de la casa que lo activaron (panico.html; no en un
+    // simulacro). Va aparte del WhatsApp: sale aunque WhatsApp no este configurado. Queda anotado en la alerta (push)
+    const pushing = notifyHousehold(event.params.condoId, event.params.alertId, alert)
+        .catch((e) => { logger.error('panico: aviso a la casa', { error: e.message }); return { sent: 0, failed: 0, error: true }; });
+    const savePush = async () => {
+        const r = await pushing;
+        if (r.sent || r.failed || r.error) await event.data.ref.update({ push: { ...r, at: new Date().toISOString() } }).catch(() => {});
+    };
     const config = await whatsapp.loadConfig();
     if (!whatsapp.hasProvider(config)) {
         await event.data.ref.update({ whatsapp: { sent: false, reason: 'WhatsApp sin configurar', at: new Date().toISOString() } });
         logger.warn('panico: WhatsApp sin configurar', { condoId: event.params.condoId, alertId: event.params.alertId });
+        await savePush();
         return;
     }
     // Un simulacro solo avisa a la central, las garitas y el propio vecino (avisos.js), y como mucho DRILL_LIMITS por dia: pasado
@@ -53,6 +63,7 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         if (!slot.ok) {
             await event.data.ref.update({ whatsapp: { sent: false, simulacro: true, reason: slot.reason, at: new Date().toISOString() } });
             logger.info('panico: simulacro sin WhatsApp (tope del dia)', { condoId: event.params.condoId, alertId: event.params.alertId });
+            await savePush();
             return;
         }
     }
@@ -89,6 +100,7 @@ const onPanicCreated = onDocumentCreated('condominios/{condoId}/alertas_panico/{
         }
     });
     logger.info(isDrill(alert) ? 'panico: simulacro, avisos enviados' : 'panico: avisos enviados', { condoId: event.params.condoId, alertId: event.params.alertId, enviados: results.filter((r) => r.exito).length, total: results.length });
+    await savePush();
 });
 
 // Todos los dias a las 03:00: cierra turnos y rondas olvidados y borra posiciones de mas de 30 dias

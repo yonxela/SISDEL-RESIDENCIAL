@@ -2,9 +2,15 @@
    SISDEL - Aviso de alertas de panico en pantalla
    ───────────────────────────────────────────────────────────────
    Barra roja fija arriba con cada alerta sin resolver (vecinos y guardias),
-   sonido al llegar una nueva y botones para atender y resolver.
-   La usan garita.html y admin.html (RONDIN tiene su propia alarma de panico).
-   Requiere rondas-core.js (SisdelRondas ya inicializado).
+   SIRENA DE ALERTA MAXIMA (pedido del usuario el 2026-11-24): suena sin parar,
+   con la pantalla destellando en rojo, mientras haya una alerta real sin atender;
+   se calla al atenderla (o con "Silenciar"). Un simulacro suena solo 4 segundos.
+   La usan garita.html (Control Garita), admin.html y finanzas.html (OIKOS);
+   RONDIN tiene su propia alarma de panico.
+   AUDIO (2026-11-24): "Escuchar / Hablar" en cada alerta de un vecino llama al
+   telefono del vecino, que contesta solo mientras tenga abierta la pagina del boton
+   (audio-panico.js); la garita escucha y, con "Hablar", le habla.
+   Requiere rondas-core.js (SisdelRondas ya inicializado), sirena.js y audio-panico.js.
    ═══════════════════════════════════════════════════════════════ */
 
 const SisdelPanico = (() => {
@@ -29,6 +35,22 @@ const SisdelPanico = (() => {
             font-weight: 800; color: #fff; background: #b91c1c; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
         .pan-min { align-self: flex-end; pointer-events: auto; }
         @keyframes panPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.7); } 50% { box-shadow: 0 0 0 10px rgba(239,68,68,0); } }
+        /* Mientras suena la sirena: toda la pantalla destella en rojo (no tapa los clics) */
+        .pan-flash { position: fixed; inset: 0; z-index: 2999; pointer-events: none; background: rgba(220,38,38,0.38); animation: panFlash 0.9s steps(2, jump-none) infinite; }
+        @keyframes panFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
+        .pan-item button.pan-mute { background: #fde047; color: #7f1d1d; border-color: #fde047; }
+        /* El navegador no deja sonar nada hasta el primer toque: este boton lo pide (y se va solo) */
+        /* La llamada de audio con el vecino */
+        .pan-call { position: fixed; left: 12px; bottom: 12px; z-index: 3002; width: min(400px, calc(100vw - 24px)); box-sizing: border-box; padding: 0.9rem 1rem;
+            border-radius: 14px; background: #0f172a; color: #f8fafc; border: 2px solid #60a5fa; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit; }
+        .pan-call .pan-call-title { font-weight: 800; font-size: 0.95rem; margin: 0 0 0.25rem; }
+        .pan-call .pan-call-state { font-size: 0.85rem; line-height: 1.4; margin: 0 0 0.7rem; color: #cbd5e1; }
+        .pan-call .pan-call-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .pan-call button { font: inherit; font-size: 0.85rem; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 0.6rem 0.9rem; border: 1px solid #475569; background: #1e293b; color: #fff; }
+        .pan-call button.talk-on { background: #16a34a; border-color: #16a34a; }
+        .pan-call button.hang { background: #b91c1c; border-color: #b91c1c; }
+        .pan-sound { position: fixed; right: 12px; bottom: 12px; z-index: 3001; border: 2px solid #fca5a5; border-radius: 999px; padding: 0.6rem 1rem;
+            font: inherit; font-size: 0.85rem; font-weight: 800; color: #fff; background: #b91c1c; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
     `;
 
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -40,29 +62,13 @@ const SisdelPanico = (() => {
         return `hace ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
     }
 
-    // Sirena corta con WebAudio (sin archivos de sonido)
-    let audioCtx = null;
-    // El navegador crea el audio suspendido hasta el primer toque: se reanuda ahi y en cada sirena
-    function wakeAudio() {
-        try {
-            audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-        } catch { /* sin audio */ }
-    }
-    document.addEventListener('pointerdown', wakeAudio, { once: true, capture: true });
-    function beep() {
-        try {
-            wakeAudio();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'square';
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            gain.gain.value = 0.08;
-            const t = audioCtx.currentTime;
-            [0, 0.35, 0.7].forEach((d) => { osc.frequency.setValueAtTime(880, t + d); osc.frequency.setValueAtTime(660, t + d + 0.17); });
-            osc.start(t); osc.stop(t + 1.05);
-        } catch { /* sin audio */ }
-    }
+    // La sirena (sirena.js, SisdelSirena): la misma en Control Garita, el panel, OIKOS y los telefonos de la casa (panico.html)
+    const S = SisdelSirena;
+    const audioReady = () => S.ready();
+    const wakeAudio = () => S.wake();
+    const startSiren = () => S.start();
+    const stopSiren = () => S.stop();
+    const beep = () => S.beep();
 
     // Empieza a escuchar las alertas. options: { canResolve, readOnly, onChange(alerts) }
     function watch(options = {}) {
@@ -79,6 +85,102 @@ const SisdelPanico = (() => {
         let alerts = [];
         let first = true;
         let minimized = false;
+
+        // ── Sirena de alerta maxima ──
+        // Suena mientras haya una alerta REAL sin atender que no se silencio; un simulacro, solo DRILL_SIREN_MS. Con la sirena, la
+        // pantalla destella en rojo, el titulo de la pestana parpadea (se ve aunque la pestana no este al frente) y vibra (Android)
+        const DRILL_SIREN_MS = 4000;
+        const silenced = new Set();
+        let drillUntil = 0;
+        const flash = document.createElement('div');
+        flash.className = 'pan-flash';
+        flash.hidden = true;
+        document.body.appendChild(flash);
+        const baseTitle = document.title;
+        let blink = null;
+        let shake = null;
+        function sirenWanted() {
+            const real = alerts.some((a) => a.simulacro !== true && a.status === 'ACTIVE' && !silenced.has(a.id));
+            return { real, drill: Date.now() < drillUntil };
+        }
+        function updateSiren() {
+            const want = sirenWanted();
+            if (want.real || want.drill) startSiren(); else stopSiren();
+            flash.hidden = !want.real;
+            if (want.real && !blink) {
+                let on = false;
+                blink = setInterval(() => { on = !on; document.title = on ? '¡ALERTA DE PÁNICO!' : baseTitle; }, 700);
+                const canVibrate = navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive);
+                if (canVibrate) { navigator.vibrate([600, 200, 600]); shake = setInterval(() => navigator.vibrate([600, 200, 600]), 2500); }
+            }
+            if (!want.real && blink) {
+                clearInterval(blink); blink = null; document.title = baseTitle;
+                if (shake) { clearInterval(shake); shake = null; if (navigator.vibrate) navigator.vibrate(0); }
+            }
+        }
+        // ── Audio con el vecino (audio-panico.js): una llamada a la vez ──
+        const canCall = !options.readOnly && typeof SisdelAudioPanico !== 'undefined' && SisdelAudioPanico.supported() && !!(window.sisdelFirebase && window.sisdelFirebase.functions);
+        let callCtl = null;
+        let callBox = null;
+        function closeCall() {
+            if (callCtl) { callCtl.hangup(); callCtl = null; }
+            if (callBox) { callBox.remove(); callBox = null; }
+        }
+        function openCall(a) {
+            closeCall();
+            silenced.add(a.id); // la sirena taparia el audio
+            updateSiren(); render();
+            callBox = document.createElement('div');
+            callBox.className = 'pan-call';
+            callBox.setAttribute('role', 'dialog');
+            callBox.innerHTML = `<p class="pan-call-title">Audio con ${esc(a.userName)}${a.casa ? ' · ' + esc(a.casa) : ''}</p>
+                <p class="pan-call-state">Preparando la llamada...</p>
+                <div class="pan-call-row"><button type="button" data-talk="1" disabled>Hablar</button><button type="button" class="hang" data-hang="1">Colgar</button></div>`;
+            const audio = document.createElement('audio');
+            audio.autoplay = true;
+            audio.setAttribute('playsinline', '');
+            callBox.appendChild(audio);
+            document.body.appendChild(callBox);
+            const box = callBox;
+            const fn = window.sisdelFirebase.functions.httpsCallable('panicAudio');
+            const call = (action, data) => fn({ action, c: a.condominioId || options.condoId || '', alertId: a.id, ...data }).then((r) => r.data);
+            const ctl = SisdelAudioPanico.callNeighbor({
+                call, audioEl: audio,
+                onState: (state, text) => {
+                    if (!box.isConnected) return;
+                    box.querySelector('.pan-call-state').textContent = text || '';
+                    const talk = box.querySelector('[data-talk]');
+                    talk.disabled = state !== 'conectado';
+                    if (['sin_respuesta', 'colgado', 'error'].includes(state)) {
+                        if (callCtl === ctl) callCtl = null;
+                        box.querySelector('.pan-call-row').innerHTML = `<button type="button" data-retry="1">Volver a llamar</button><button type="button" data-close="1">Cerrar</button>`;
+                    }
+                }
+            });
+            callCtl = ctl;
+            box.addEventListener('click', (e) => {
+                if (e.target.closest('[data-talk]')) {
+                    ctl.setTalk(!ctl.talking);
+                    const b = e.target.closest('[data-talk]');
+                    b.textContent = ctl.talking ? 'Dejar de hablar (le está oyendo)' : 'Hablar';
+                    b.classList.toggle('talk-on', ctl.talking);
+                }
+                if (e.target.closest('[data-hang]')) ctl.hangup();
+                if (e.target.closest('[data-close]')) { if (callBox === box) closeCall(); else box.remove(); }
+                if (e.target.closest('[data-retry]')) openCall(alerts.find((x) => x.id === a.id) || a);
+            });
+        }
+
+        // El boton que pide activar el sonido (el navegador no deja sonar nada hasta el primer toque o tecla en la pagina)
+        const soundBtn = document.createElement('button');
+        soundBtn.type = 'button';
+        soundBtn.className = 'pan-sound';
+        soundBtn.textContent = 'Toque aquí para activar la sirena de alertas de pánico';
+        document.body.appendChild(soundBtn);
+        const paintSoundBtn = () => { soundBtn.hidden = audioReady(); if (audioReady()) updateSiren(); };
+        const offReady = S.onReady(paintSoundBtn);
+        soundBtn.addEventListener('click', () => { wakeAudio(); setTimeout(paintSoundBtn, 300); });
+        setTimeout(paintSoundBtn, 1500);
 
         function render() {
             bar.classList.toggle('min', minimized && alerts.length > 0);
@@ -104,6 +206,8 @@ const SisdelPanico = (() => {
                         <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}${drill ? ' · No hay que ir al lugar: márquelo como recibido para completar la prueba' : ''}</div>
                     </div>
                     ${map}
+                    ${a.status === 'ACTIVE' && !drill && !silenced.has(a.id) ? `<button class="pan-mute" data-mute="${esc(a.id)}" title="Calla la sirena de esta alerta (la alerta sigue en pantalla)">Silenciar</button>` : ''}
+                    ${canCall && a.source === 'vecino' ? `<button data-call="${esc(a.id)}" title="Llama al teléfono del vecino por internet: escucha lo que pasa y puede hablarle (contesta solo si tiene abierta la página del botón)">Escuchar / Hablar</button>` : ''}
                     ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">${drill ? 'Marcar recibido' : 'Atender'}</button>` : ''}
                     ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}" data-drill="${drill ? '1' : ''}">${drill ? 'Cerrar simulacro' : 'Resolver'}</button>` : ''}
                 </div>`;
@@ -113,6 +217,10 @@ const SisdelPanico = (() => {
         bar.addEventListener('click', async (e) => {
             if (e.target.closest('[data-minimize]')) { minimized = true; render(); return; }
             if (e.target.closest('[data-expand]')) { minimized = false; render(); return; }
+            const mute = e.target.closest('[data-mute]');
+            if (mute) { silenced.add(mute.dataset.mute); updateSiren(); render(); return; }
+            const callBtn = e.target.closest('[data-call]');
+            if (callBtn) { const a = alerts.find((x) => x.id === callBtn.dataset.call); if (a) openCall(a); return; }
             const attend = e.target.closest('[data-attend]');
             const resolve = e.target.closest('[data-resolve]');
             try {
@@ -134,19 +242,24 @@ const SisdelPanico = (() => {
             list.forEach((a) => seen.add(a.id));
             alerts = list;
             if (fresh.length) minimized = false; // una alerta nueva siempre se muestra completa
+            // Un simulacro nuevo suena unos segundos; una alerta real suena hasta que se atienda (updateSiren). Al abrir la pagina con
+            // alertas reales activas tambien suena (las que se silenciaron en esta pagina siguen calladas)
+            if (fresh.some((a) => a.simulacro === true) && (!first || fresh.length)) {
+                drillUntil = Date.now() + DRILL_SIREN_MS;
+                setTimeout(updateSiren, DRILL_SIREN_MS + 100);
+            }
             render();
-            // Vibrar solo despues de un toque real (Chrome lo bloquea antes)
-            const canVibrate = navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive);
-            if (!first && fresh.length) { beep(); if (canVibrate) navigator.vibrate([400, 150, 400]); }
-            // Al abrir la pagina con alertas activas tambien suena
-            if (first && list.some((a) => a.status === 'ACTIVE')) beep();
+            updateSiren();
             first = false;
             if (options.onChange) options.onChange(list);
         }, (error) => console.error('Alertas de panico:', error));
 
         // Refresca el "hace N min"
         const timer = setInterval(render, 30000);
-        return () => { unsubscribe(); clearInterval(timer); bar.remove(); };
+        return () => {
+            unsubscribe(); clearInterval(timer); alerts = []; drillUntil = 0; updateSiren(); stopSiren(); closeCall();
+            offReady(); bar.remove(); flash.remove(); soundBtn.remove();
+        };
     }
 
     return { watch, beep };

@@ -26,6 +26,8 @@ const { onPanicCreated, dailyRondas } = require('./src/rondas');
 // QR de panico por vecino (panico.html): vincular el telefono con su codigo y enviar la alerta; la oficina entrega la clave
 // con el QR (se ve una sola vez) (src/panico-qr.js)
 const { linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal } = require('./src/panico-qr');
+// Audio de doble via entre la garita y el vecino que pidio ayuda (src/panico-audio.js)
+const { panicAudio } = require('./src/panico-audio');
 // Configuracion > Boton de panico: mensaje de prueba a los telefonos de la garita y la PNC (src/panico-config.js)
 const { testPanicNotice } = require('./src/panico-config');
 // Avisos en el celular (notificaciones push): registrar el telefono del vecino y avisarle cada mensaje de la administracion
@@ -39,7 +41,7 @@ module.exports = {
     startReminderCampaign, controlReminderCampaign, sendReminderTest, sendReminderOne, sendAccessCode, checkWhatsAppConnection, reconcileReminderCampaign, resendReminderCampaign, processReminderQueue,
     whatsappWebhook, sendChatMessage, markChatRead, loadChatHistory,
     onFinanceMovement, onFinanceSettings, dailyFinance,
-    onPanicCreated, dailyRondas, linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, testPanicNotice,
+    onPanicCreated, dailyRondas, linkPanicDevice, panicDevice, panicCodeDelivery, panicCodeReveal, testPanicNotice, panicAudio,
     pushDevice, onMessagePush, residentMessages,
     auditUsers, auditVehicles, auditFinanceResidents, auditFinanceMovements, auditFinanceSettings, auditBankAccounts, auditBankMovements, auditPanicConfig, auditVecinoConfig
 };

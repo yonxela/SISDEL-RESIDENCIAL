@@ -352,4 +352,5 @@ const residentMessages = onCall({ timeoutSeconds: 300 }, async (request) => {
     return { ok: true, sent: recipients.length, skipped, push: { ...sum, users: reached.size }, campaignId: summaryRef.id };
 });
 
-module.exports = { pushDevice, onMessagePush, residentMessages, _test: { loadKeys, sendTo } };
+// loadKeys y sendTo los usa tambien el boton de panico (panico-qr.js: el aviso a los telefonos de la casa)
+module.exports = { pushDevice, onMessagePush, residentMessages, loadKeys, sendTo, _test: { loadKeys, sendTo } };

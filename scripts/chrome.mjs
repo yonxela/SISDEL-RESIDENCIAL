@@ -46,13 +46,14 @@ class Connection {
 }
 
 // Abre Chrome. Devuelve { newPage, close }.
-export async function launch(chromePath) {
+// extraArgs: opciones de Chrome de mas (por ejemplo, un microfono de prueba para el audio del boton de panico)
+export async function launch(chromePath, extraArgs = []) {
     const executable = findChrome(chromePath);
     if (!executable) throw new Error('No se encontro Chrome. Indique la ruta con --chrome= o la variable CHROME_PATH.');
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sisdel-chrome-'));
     const child = spawn(executable, [
         '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run',
-        '--no-default-browser-check', '--window-size=1280,900', 'about:blank'
+        '--no-default-browser-check', '--window-size=1280,900', ...extraArgs, 'about:blank'
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
     const wsUrl = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Chrome no arranco')), 20000);

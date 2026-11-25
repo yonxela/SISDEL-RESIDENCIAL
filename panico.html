@@ -44,6 +44,14 @@
         .panic-status.drill { background: var(--info-bg); border: 1px solid var(--info); }
         .pq-drill { border: 1px dashed var(--border-strong); }
         .pq-drill-note { margin: 0; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; text-align: center; }
+        /* Avisos de la casa: que suene este telefono si otro de la casa pide ayuda (2026-11-24) */
+        .pq-house { width: 100%; box-sizing: border-box; padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--bg-surface); text-align: left; }
+        .pq-house p { margin: 0 0 0.5rem; font-size: 0.88rem; line-height: 1.4; }
+        .pq-house .pq-house-title { font-weight: 800; font-size: 0.95rem; }
+        .panic-audio { width: 100%; box-sizing: border-box; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
+        .panic-status.house { background: #b91c1c; color: #fff; border: 2px solid #fecaca; }
+        .panic-status.house a, .panic-status.house button { color: #fff; }
+        .panic-status.house .btn { border: 1px solid rgba(255,255,255,0.7); background: rgba(255,255,255,0.14); }
         .pq-error { padding: 0.9rem 1rem; border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; margin: 0; }
         #pqStepSave ol { margin: 0 0 0.75rem; padding-left: 1.25rem; font-size: 0.88rem; line-height: 1.5; color: var(--text-secondary); }
         #pqStepSave li { margin-bottom: 0.35rem; }
@@ -119,10 +127,21 @@
             <div id="panicBtnHost"></div>
             <p class="pq-warn" id="pqNoGps" hidden>Sin su ubicación la alerta sale igual, con su lote y su nombre, pero sin el mapa.</p>
             <div class="panic-status" id="panicStatus" hidden></div>
+            <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta que envio ESTE telefono este abierta, si la garita
+                 llama, contesta solo; la garita escucha y puede hablarle -->
+            <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
             <!-- SISDEL: simulacro (pedido del usuario el 2026-11-23): probar el boton sin avisar a los familiares; el servidor solo avisa a
                  la central, la garita y al propio vecino, con un tope por dia (functions/src/rondas/avisos.js) -->
             <button class="btn btn-ghost btn-sm pq-drill" id="pqDrill" type="button">Hacer un simulacro (prueba)</button>
             <p class="pq-drill-note">El simulacro llega a la garita marcado como prueba y a su propio WhatsApp. No avisa a sus contactos de emergencia.</p>
+            <!-- SISDEL: avisos de la casa (pedido del usuario el 2026-11-24): cuando OTRO de la casa envia una alerta, a este telefono le
+                 llega un aviso (suena su tono) y, al abrirlo, suena la sirena. Necesita el permiso de avisos del telefono (en iPhone, el
+                 boton agregado a la pantalla de inicio) -->
+            <div class="pq-house" id="pqHouse" hidden>
+                <p class="pq-house-title">Avisos de la casa</p>
+                <p id="pqHouseText">Que suene este teléfono si alguien de su casa pide ayuda.</p>
+                <button class="btn btn-ghost btn-sm" id="pqHouseBtn" type="button" style="border:1px solid var(--border-strong);">Activar en este teléfono</button>
+            </div>
         </section>
 
         <!-- Guardarlo en la pantalla de inicio: asi el telefono no olvida la clave del vinculo ni hay que buscar el QR -->
@@ -141,7 +160,9 @@
     </main>
 
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
-    <script src="rondas-core.js?v=20261123a"></script>
+    <script src="rondas-core.js?v=20261124a"></script>
+    <script src="sirena.js?v=20261124a"></script>
+    <script src="audio-panico.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
     <script src="panico-qr.js?v=20261122a"></script>
@@ -188,6 +209,7 @@
                 $('pqCondo').textContent = link ? link.condoName || '' : '';
                 $('pqUnlink').hidden = !link;
                 paintSaveCard();
+                paintHouse();
             }
             // ── Guardarlo en la pantalla de inicio ──
             // Solo si el telefono esta vinculado, el boton no se abrio ya desde la pantalla de inicio y no se dijo "ya lo agregue"
@@ -280,7 +302,9 @@
                     if (res.ok) {
                         link = { ...link, name: res.name, casa: res.casa, condoName: res.condoName, canCancel: res.canCancel };
                         saveLink(link);
+                        pushOn = !!res.pushOn;
                         paintWho();
+                        paintHouse();
                         if (res.alert) follow(res.alert, true);
                     } else if (res.relink) needRelink(res.error);
                     else { blocked = true; fail(res.error); $('pqStepPanic').hidden = true; $('pqStepLink').hidden = true; paintSaveCard(); }
@@ -462,7 +486,7 @@
             };
             function drillWhatsAppText(w) {
                 if (!w) return 'Enviando los avisos de prueba por WhatsApp...';
-                if (w.sent) return `Avisos de prueba por WhatsApp: ${w.sent} ${w.sent === 1 ? 'enviado' : 'enviados'} . Solo van a la central, a la garita y a su propio número.`;
+                if (w.sent) return `Avisos de prueba por WhatsApp: ${w.sent} ${w.sent === 1 ? 'enviado' : 'enviados'}. Solo van a la central, a la garita y a su propio número.`;
                 return `Sin avisos por WhatsApp${w.reason ? ': ' + w.reason : ''}. La garita igual lo ve en su pantalla.`;
             }
             function showDrill(a) {
@@ -492,8 +516,51 @@
                     panicStatus.append(end);
                 }
             }
+            // ── Alerta de OTRO de la casa (otro telefono o el portal del vecino): en rojo, con quien, cuando y el mapa, y la sirena
+            // sonando mientras siga sin atender (se puede silenciar). No traba el boton grande: aqui tambien se puede pedir ayuda ──
+            const HOUSE_HEAD = { ACTIVE: 'ALERTA DE PÁNICO DE SU CASA', ATTENDED: 'ALERTA DE SU CASA: YA LA ATIENDEN', RESOLVED: 'ALERTA DE SU CASA: RESUELTA', CANCELLED: 'ALERTA DE SU CASA: CANCELADA' };
+            const houseSilenced = new Set();
+            function showHouse(a) {
+                const ringing = a.status === 'ACTIVE' && !houseSilenced.has(a.id);
+                if (ringing) SisdelSirena.start(); else SisdelSirena.stop();
+                panicStatus.hidden = false;
+                panicStatus.className = 'panic-status' + (['ACTIVE', 'ATTENDED'].includes(a.status) ? ' house' : ' calm');
+                panicStatus.textContent = '';
+                const line = (text, css) => { const d = document.createElement('div'); if (css) d.style.cssText = css; d.textContent = text; return d; };
+                const strong = document.createElement('strong');
+                strong.style.cssText = 'font-size:1.1rem;letter-spacing:0.04em;';
+                strong.textContent = HOUSE_HEAD[a.status] || a.status;
+                const when = a.createdAt ? new Date(a.createdAt).toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+                panicStatus.append(strong, line(`${a.userName || 'Alguien de su casa'} activó el botón de pánico. ${when}${a.status === 'ATTENDED' && a.attendedByName ? ' · Lo atiende ' + a.attendedByName : ''}`, 'margin-top:0.35rem;'));
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.6rem;';
+                if (a.mapUrl) {
+                    const map = document.createElement('a');
+                    map.className = 'btn btn-sm';
+                    map.href = a.mapUrl;
+                    map.target = '_blank';
+                    map.rel = 'noopener';
+                    map.textContent = 'Ver dónde está';
+                    row.append(map);
+                } else row.append(line('Sin ubicación GPS', 'font-size:0.8rem;opacity:0.9;align-self:center;'));
+                if (ringing) {
+                    const mute = document.createElement('button');
+                    mute.type = 'button';
+                    mute.className = 'btn btn-sm';
+                    mute.textContent = SisdelSirena.ready() ? 'Silenciar la sirena' : 'Toque aquí para que suene la sirena';
+                    mute.addEventListener('click', () => {
+                        if (!SisdelSirena.ready()) { SisdelSirena.wake(); SisdelSirena.stop(); SisdelSirena.start(); setTimeout(() => showHouse(current || a), 300); return; }
+                        houseSilenced.add(a.id); showHouse(current || a);
+                    });
+                    row.append(mute);
+                }
+                panicStatus.append(row);
+            }
             function showAlert(a, recuperada) {
                 current = a;
+                syncAudio(a);
+                if (a.mine === false && a.simulacro !== true) { showHouse(a); return; }
+                SisdelSirena.stop();
                 if (a.simulacro === true) { showDrill(a); return; }
                 // Enviada y atendida bloquean el boton 30 segundos; cancelada o resuelta lo liberan
                 panicButton.setState(SisdelPanicoBoton.stateForAlert(a.status), a.id, recuperada ? Date.parse(a.createdAt) : undefined);
@@ -528,6 +595,25 @@
                     panicStatus.append(cancel);
                 }
             }
+            // ── Audio con la garita: solo para la alerta que envio este telefono, mientras este abierta ──
+            let audioCtl = null;
+            let audioFor = null;
+            function paintAudio(state, text) {
+                const live = state === 'conectado' || state === 'conectando';
+                $('panicAudio').hidden = !text && !live;
+                $('panicAudioText').textContent = text || '';
+                $('panicAudioHang').hidden = !live;
+            }
+            function syncAudio(a) {
+                const want = !!a && a.mine === true && ['ACTIVE', 'ATTENDED'].includes(a.status) && typeof SisdelAudioPanico !== 'undefined' && SisdelAudioPanico.supported();
+                if (want && audioFor === a.id) return;
+                if (audioCtl) { audioCtl.stop(); audioCtl = null; audioFor = null; paintAudio('cerrada', ''); }
+                if (!want || !link) return;
+                audioFor = a.id;
+                const call = (action, data) => api('panicAudio', { action, secret: link.secret, alertId: a.id, ...data });
+                audioCtl = SisdelAudioPanico.answerCalls({ call, audioEl: $('panicAudioEl'), onState: paintAudio });
+            }
+            $('panicAudioHang').addEventListener('click', () => { if (audioCtl) audioCtl.hangup(); });
             // Sigue la alerta (atendida, resuelta...) cada 15 s mientras la pagina esta a la vista (un simulacro, cada 5 s al principio:
             // asi se ve pronto como salieron sus avisos de prueba)
             function follow(a, recuperada) {
@@ -568,6 +654,80 @@
                 }
             }
             $('pqDrill').addEventListener('click', fireDrill);
+
+            // ── Avisos de la casa en este telefono (sw-avisos.js con su propio alcance '/panico': otra suscripcion que la del portal) ──
+            // var y function (no const/let): paintWho los usa y puede correr antes de llegar a estas lineas
+            function canPush() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+            var pushOn = false;
+            function paintHouse() {
+                const box = $('pqHouse');
+                box.hidden = !link || blocked;
+                if (box.hidden) return;
+                const btn = $('pqHouseBtn');
+                if (!canPush()) {
+                    $('pqHouseText').textContent = isIos && !standalone()
+                        ? 'Para que suene este teléfono cuando alguien de su casa pida ayuda: agregue este botón a la pantalla de inicio (pasos abajo), ábralo desde el ícono y active aquí los avisos.'
+                        : 'Este navegador no puede recibir avisos. Use Chrome o Safari actualizado.';
+                    btn.hidden = true;
+                    return;
+                }
+                btn.hidden = false;
+                const on = pushOn && Notification.permission === 'granted';
+                $('pqHouseText').textContent = on
+                    ? 'Activado: si alguien de su casa pide ayuda, a este teléfono le llega un aviso y, al abrirlo, suena la sirena.'
+                    : Notification.permission === 'denied'
+                        ? 'Este teléfono tiene bloqueados los avisos de garita.app: permítalos en los ajustes del teléfono (Notificaciones) y vuelva a tocar el botón.'
+                        : 'Que suene este teléfono si alguien de su casa pide ayuda.';
+                btn.textContent = on ? 'Desactivar en este teléfono' : 'Activar en este teléfono';
+            }
+            function pushBytes(b64) {
+                const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+                const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+                return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+            }
+            async function pushRegistration() {
+                const reg = await navigator.serviceWorker.register('sw-avisos.js', { scope: './panico' });
+                if (reg.active) return reg;
+                const worker = reg.installing || reg.waiting;
+                await new Promise((resolve) => {
+                    if (!worker) { resolve(); return; }
+                    worker.addEventListener('statechange', () => { if (worker.state === 'activated') resolve(); });
+                    setTimeout(resolve, 8000);
+                });
+                return reg;
+            }
+            $('pqHouseBtn').addEventListener('click', async () => {
+                const btn = $('pqHouseBtn');
+                btn.disabled = true;
+                try {
+                    if (pushOn && Notification.permission === 'granted') {
+                        const reg = await navigator.serviceWorker.getRegistration('./panico');
+                        const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+                        if (sub) await sub.unsubscribe().catch(() => {});
+                        const res = await api('panicDevice', { action: 'push', secret: link.secret, subscription: null });
+                        if (res.ok) pushOn = false;
+                        return;
+                    }
+                    const permission = await Notification.requestPermission();
+                    if (permission !== 'granted') return;
+                    const key = await api('panicDevice', { action: 'pushkey', secret: link.secret });
+                    if (!key.ok) { alert(key.error || 'Los avisos no están disponibles en este momento.'); return; }
+                    const reg = await pushRegistration();
+                    let sub = await reg.pushManager.getSubscription();
+                    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushBytes(key.publicKey) });
+                    const res = await api('panicDevice', { action: 'push', secret: link.secret, subscription: sub.toJSON() });
+                    if (res.ok) pushOn = true;
+                    else alert(res.error || 'No se pudo activar el aviso en este teléfono.');
+                } catch (e) {
+                    console.error('avisos de la casa', e);
+                    alert('No se pudo activar el aviso en este teléfono. Revise su conexión e intente de nuevo.');
+                } finally {
+                    btn.disabled = false;
+                    paintHouse();
+                }
+            });
+            // Al tocar el aviso con esta pagina abierta, el service worker la trae al frente: se vuelve a preguntar por la alerta
+            if (canPush()) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'sisdel-panico' && link) verifyLink(); });
             async function firePanic() {
                 if (!link) { panicButton.setState('ready'); return; }
                 status('');
@@ -575,6 +735,8 @@
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
                     const pos = await SisdelRondas.gps.bestPosition(6000);
                     const sending = api('panicDevice', { action: 'alert', secret: link.secret, lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null });
+                    // Se pide el microfono ya (el telefono pregunta una vez): si la garita llama, contesta sin tocar nada
+                    if (typeof SisdelAudioPanico !== 'undefined') SisdelAudioPanico.prepareMic();
                     // Aunque la respuesta tarde (poca senal), cuando llegue el boton pasa solo a ALERTA ENVIADA
                     sending.then((res) => { if (res.ok && res.alert) follow(res.alert); }, () => {});
                     // Sin respuesta en 20 segundos se avisa que no se pudo confirmar, para no dejar el boton en ENVIANDO...

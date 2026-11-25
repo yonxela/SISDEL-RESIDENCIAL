@@ -81,6 +81,12 @@
             padding: 0.7rem 1rem; border: 2px solid var(--success); border-radius: 999px; background: var(--success-bg); color: var(--success);
             font: inherit; font-size: 0.95rem; font-weight: 800; cursor: pointer; }
         .panic-drill-btn:disabled { opacity: 0.6; cursor: wait; }
+        /* "Mis contactos de emergencia" (pedido del usuario el 2026-11-25): un 30 % mas grande que antes (1rem -> 1.3rem), en negrita y en
+           azul, para distinguirlo del rojo del panico y del verde de la prueba y la ubicacion; en el tema claro, un azul mas oscuro que se lea */
+        .panic-contacts-btn { font-size: 1.3rem; font-weight: 800; color: var(--primary-light); border: 2px solid rgba(96, 165, 250, 0.55); background: rgba(37, 99, 235, 0.12); }
+        .panic-contacts-btn:hover { color: #bfdbfe; border-color: var(--primary-light); background: rgba(37, 99, 235, 0.22); }
+        body.light-mode .panic-contacts-btn { color: #1d4ed8; border-color: rgba(29, 78, 216, 0.45); background: rgba(37, 99, 235, 0.08); }
+        body.light-mode .panic-contacts-btn:hover { color: #1e3a8a; border-color: #1d4ed8; }
         .panic-drill-btn svg { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
         /* Audio con la garita */
         .panic-audio { align-self: stretch; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
@@ -181,7 +187,7 @@
                     <button class="panic-drill-btn" id="btnPanicDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
                     <p class="panic-drill-note" id="panicDrillNote"></p>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
-                    <button class="btn btn-ghost btn-sm" id="btnContacts" type="button" style="border:1px solid var(--border-strong);">Mis contactos de emergencia</button>
+                    <button class="btn btn-ghost btn-sm panic-contacts-btn" id="btnContacts" type="button">Mis contactos de emergencia</button>
                     <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
                          contesta solo; la garita escucha y puede hablarle -->
                     <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>

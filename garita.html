@@ -4,8 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SISDEL - Control Garita</title>
+    <title>SISDEL - Central de Monitoreo</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <!-- Se puede instalar como aplicacion en la computadora de la garita: instalada, Chrome deja sonar la sirena desde que se abre -->
+    <link rel="manifest" href="manifest-monitoreo.webmanifest">
+    <meta name="theme-color" content="#0f172a">
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
     <style>
@@ -84,9 +87,12 @@
         .cg-dot.off { background: #64748b; animation: none; }
         .cg-dot.warn { background: #f59e0b; animation: none; }
         @keyframes cg-pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); } 70% { box-shadow: 0 0 0 9px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
-        #urgentWarnings:not(:empty) { margin-bottom: 1rem; }
-        .cg-alert { display: flex; align-items: center; gap: .75rem; padding: .65rem 1rem; border-radius: 12px; background: rgba(245, 158, 11, .09); border: 1px solid rgba(245, 158, 11, .38); color: #b45309; font-size: .9rem; }
-        body:not(.light-mode) .cg-alert { color: #fcd34d; }
+        /* La sirena de alertas de panico siempre a la vista (pedido del usuario el 2026-11-25): verde = activa; rojo parpadeando = apagada */
+        button.cg-chip { cursor: pointer; font-family: inherit; color: inherit; }
+        .cg-chip.siren-off { border-color: #ef4444; background: rgba(239, 68, 68, .14); color: #fecaca; animation: cg-blink 1.1s infinite; }
+        body.light-mode .cg-chip.siren-off { color: #b91c1c; }
+        .cg-dot.red { background: #ef4444; animation: none; }
+        @keyframes cg-blink { 50% { background: rgba(239, 68, 68, .34); } }
         .cg-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
         .cg-kpi { padding: .85rem 1rem; }
         .cg-kpi small { display: block; font-size: .72rem; color: var(--cg-sub); font-weight: 700; letter-spacing: .4px; }
@@ -193,12 +199,13 @@
                     </svg>
                 </div>
                 <div class="brand-text">
-                    <h1>CONTROL GARITA</h1>
+                    <h1>CENTRAL DE MONITOREO</h1>
                     <p><span id="condoName">SISDEL</span> · Guardia: <span id="guardName">-</span></p>
                 </div>
             </div>
             <div class="cg-clock"><b id="cgClock">--:--:--</b><span id="cgDate"></span></div>
             <div class="cg-chips">
+                <button type="button" class="cg-chip" id="chipSirena" style="display:none;"><i class="cg-dot"></i><span id="chipSirenaText"></span></button>
                 <span class="cg-chip" id="chipLector" style="display:none;"><i class="cg-dot"></i><span id="chipLectorText"></span></span>
                 <span class="cg-chip" id="chipCamara" style="display:none;"><i class="cg-dot cam"></i><span id="chipCamaraText"></span></span>
             </div>
@@ -216,15 +223,11 @@
         </header>
 
         <div class="page-content">
-            <!-- Aviso de vecinos en mora: franja ambar discreta (privilegio garita.morosos) -->
-            <div id="urgentWarnings"></div>
-
             <div class="cg-kpis">
                 <div class="cg-card cg-kpi green" id="kpiEntered"><small>INGRESOS HOY</small><b id="enteredCount">0</b></div>
                 <div class="cg-card cg-kpi" id="kpiExited"><small>SALIDAS HOY</small><b id="exitedCount">0</b></div>
                 <div class="cg-card cg-kpi blue" id="insideCard"><small>VISITAS DENTRO</small><b id="insideCount">0</b></div>
                 <div class="cg-card cg-kpi" id="kpiPending"><small>PASES POR LLEGAR</small><b id="pendingCount">0</b></div>
-                <div class="cg-card cg-kpi red" id="kpiMorosos"><small>VECINOS EN MORA</small><b id="morososCount">0</b></div>
             </div>
 
             <div class="garita-columns">
@@ -297,11 +300,11 @@
         </div>
     </div>
 
-    <!-- Configuracion de Control Garita (se guarda en esta computadora; privilegio garita.configurar) -->
+    <!-- Configuracion de la Central de Monitoreo (se guarda en esta computadora; privilegio garita.configurar) -->
     <div class="modal-overlay" id="modalGaritaConfig" style="display:none;">
         <div class="modal cg cg-cfg" style="max-width:580px; padding:1.75rem;">
             <button class="btn btn-ghost btn-icon modal-close" id="btnXGaritaConfig" type="button" aria-label="Cerrar" title="Cerrar" style="position:absolute; top:0.75rem; right:0.75rem;">&times;</button>
-            <h3>Configuración de Control Garita</h3>
+            <h3>Configuración de la Central de Monitoreo</h3>
             <p>Se guarda en esta computadora de la garita: no cambia nada en las demás.</p>
             <div class="cg-opt">
                 <div class="l"><b>Escáner manual (lector de pistola)</b><span id="gcfgScannerText"></span></div>
@@ -321,6 +324,11 @@
             <div class="cg-opt">
                 <div class="l"><b>Pantalla completa al mostrar el marbete</b><span>Ocupa todo el monitor para verse de lejos.</span></div>
                 <button type="button" class="cg-sw" id="gcfgFull" role="switch" aria-checked="false" aria-label="Pantalla completa"></button>
+            </div>
+            <div class="cg-opt" id="gcfgSirenaBox" style="display:none;">
+                <div class="l"><b>Sirena de alertas de pánico</b><span id="gcfgSirenaText"></span></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnGcfgSirena" style="border:1px solid var(--border-strong);">Probar la sirena</button>
+                <div class="cg-test" id="gcfgInstall"></div>
             </div>
             <div class="cg-opt">
                 <div class="l"><b>Probar el lector</b><span>Escanee cualquier código: se ve exactamente lo que escribe el lector, sin registrar nada.</span></div>
@@ -381,14 +389,14 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261124d"></script>
+    <script src="privilegios.js?v=20261125a"></script>
     <script src="accesos.js?v=20261123c"></script>
     <script src="lector-codigos.js?v=20261123a"></script>
-    <script src="sisdel-core.js?v=20261124d"></script>
+    <script src="sisdel-core.js?v=20261125a"></script>
     <script src="rondas-core.js?v=20261124a"></script>
-    <script src="sirena.js?v=20261124b"></script>
+    <script src="sirena.js?v=20261125a"></script>
     <script src="audio-panico.js?v=20261124a"></script>
-    <script src="panico-alertas.js?v=20261124a"></script>
+    <script src="panico-alertas.js?v=20261125a"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const session = await SISDEL.requireAuth([], 'garita.html');
@@ -416,12 +424,11 @@
             const seesCamera = SISDEL.can('garita.camara');
             const g = {
                 escanear: SISDEL.can('garita.escanear'), verificar: SISDEL.can('garita.verificar'), ingreso: SISDEL.can('garita.ingreso'), salida: SISDEL.can('garita.salida'),
-                visitasDia: SISDEL.can('garita.visitas_dia'), morosos: SISDEL.can('garita.morosos'),
+                visitasDia: SISDEL.can('garita.visitas_dia'),
                 lector: SISDEL.can('garita.lector'), configurar: SISDEL.can('garita.configurar'),
                 vivo: seesCamera && SISDEL.can('garita.vivo'), historial: seesCamera && SISDEL.can('garita.historial'),
                 mensajes: SISDEL.can('mensajes.recibir')
             };
-            if (!g.morosos) document.getElementById('kpiMorosos').style.display = 'none';
             if (!g.visitasDia) document.getElementById('visitsCard').style.display = 'none';
             // Ultimos accesos y las cifras de ingresos y salidas del dia salen del registro de accesos (garita.historial)
             if (!g.historial) { document.getElementById('historyMonitorContainer').style.display = 'none'; document.getElementById('kpiExited').style.display = 'none'; }
@@ -479,34 +486,84 @@
 
             // Alertas de panico de vecinos y guardias: barra roja con sonido, para atenderlas desde la garita
             SisdelRondas.init(session);
-            if (SISDEL.can('panico.ver') && SISDEL.can('panico.avisos')) SisdelPanico.watch({
-                canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender')
+            // Sin la franja ni la cifra de vecinos en mora (pedido del usuario el 2026-11-25): el medallon rojo "EN MORA" del marbete leido sigue
+            const panicOn = SISDEL.can('panico.ver') && SISDEL.can('panico.avisos');
+            if (panicOn) SisdelPanico.watch({
+                canResolve: SISDEL.can('panico.resolver'), readOnly: !SISDEL.can('panico.atender'), soundButton: false
             });
+
+            // ── Sirena siempre encendida (pedido del usuario el 2026-11-25: "el boton de sonar sirena debe permanecer encendido todo el tiempo") ──
+            // El navegador no deja sonar nada hasta el primer toque o tecla en la pagina: la sirena se ARMA sola con el primer toque, tecla o
+            // lectura del escaner y queda armada (sirena.js la reanuda si el equipo la suspende: pantalla, otra app, suspension). El indicador
+            // del encabezado siempre dice como esta: verde "Sirena activa" o rojo parpadeando "Sirena apagada: toque aqui". Instalada como
+            // aplicacion en la computadora de la garita (Configuracion > Instalar), Chrome la deja sonar desde que se abre, sin ningun toque.
+            const isInstalled = () => ['standalone', 'window-controls-overlay', 'minimal-ui'].some((m) => window.matchMedia && window.matchMedia(`(display-mode: ${m})`).matches);
+            let installPrompt = null;
+            window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; paintSiren(); });
+            window.addEventListener('appinstalled', () => { installPrompt = null; SISDEL.showToast('Instalada: ábrala desde su ícono y la sirena quedará activa desde que se abre', 'success'); paintSiren(); });
+            function paintSiren() {
+                if (!panicOn) return;
+                const on = SisdelSirena.ready();
+                const chip = document.getElementById('chipSirena');
+                chip.style.display = '';
+                chip.classList.toggle('siren-off', !on);
+                chip.querySelector('.cg-dot').className = 'cg-dot' + (on ? '' : ' red');
+                document.getElementById('chipSirenaText').textContent = on ? 'Sirena activa' : 'Sirena apagada: toque aquí';
+                chip.title = on ? 'La sirena sonará sin parar en cuanto llegue una alerta de pánico.' : 'El navegador no deja sonar nada hasta tocar la página: toque aquí para activar la sirena.';
+                // En Configuracion: como esta, probarla e instalar la central para que suene sin ningun toque
+                document.getElementById('gcfgSirenaBox').style.display = '';
+                document.getElementById('gcfgSirenaText').textContent = on
+                    ? 'Activa: suena sin parar con cada alerta de pánico real hasta que se atienda.'
+                    : 'Apagada hasta que alguien toque la página o use el escáner (el navegador lo exige).';
+                const inst = document.getElementById('gcfgInstall');
+                if (isInstalled()) inst.textContent = 'Instalada como aplicación en esta computadora: la sirena queda activa desde que se abre, sin tocar nada.';
+                else if (installPrompt) inst.innerHTML = 'Para que la sirena quede activa desde que se abre, sin tocar nada, instale la central en esta computadora: <button type="button" class="btn btn-primary btn-sm" id="btnGcfgInstall" style="margin-top:.4rem;">Instalar en esta computadora</button>';
+                else inst.textContent = 'Para que la sirena quede activa desde que se abre, sin tocar nada, instale la central como aplicación: en Chrome, el ícono de instalar a la derecha de la dirección (o menú ⋮ > Transmitir, guardar y compartir > Instalar). Después ábrala siempre desde su ícono.';
+            }
+            if (panicOn) {
+                document.getElementById('chipSirena').addEventListener('click', () => {
+                    if (SisdelSirena.ready()) SISDEL.showToast('La sirena está activa: sonará en cuanto llegue una alerta de pánico', 'success');
+                    else SisdelSirena.wake();
+                    setTimeout(paintSiren, 300);
+                });
+                document.getElementById('btnGcfgSirena').addEventListener('click', () => {
+                    SisdelSirena.wake();
+                    if (!SisdelSirena.test(2000)) SISDEL.showToast('La sirena ya está sonando', 'info');
+                    setTimeout(paintSiren, 300);
+                });
+                document.getElementById('gcfgInstall').addEventListener('click', async (e) => {
+                    if (!e.target.closest('#btnGcfgInstall') || !installPrompt) return;
+                    const prompt = installPrompt;
+                    installPrompt = null;
+                    try { await prompt.prompt(); await prompt.userChoice; } catch { /* el navegador no lo dejo */ }
+                    paintSiren();
+                });
+                SisdelSirena.onReady(paintSiren);
+                setInterval(paintSiren, 3000);
+                paintSiren();
+            }
+
+            // La pantalla de la central no se apaga sola mientras esta a la vista (Wake Lock: se suelta al ocultar la pestana y se pide otra vez al volver)
+            let wakeLock = null;
+            async function keepScreenOn() {
+                if (!('wakeLock' in navigator) || document.visibilityState !== 'visible' || wakeLock) return;
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                } catch { /* sin soporte o sin permiso: la pantalla se apaga como siempre */ }
+            }
+            document.addEventListener('visibilitychange', keepScreenOn);
+            keepScreenOn();
 
             // --- Stats & Rendering ---
             async function renderStats() {
                 const visits = await SISDEL.getTodayVisits(condoId);
                 const entered = visits.filter(v => v.status === SISDEL.VISIT_STATUS.ENTERED).length;
-                const morososList = g.morosos ? await SISDEL.getUsersByPaymentStatus(condoId, SISDEL.PAYMENT_STATUS.MOROSO) : [];
-                const morosos = morososList.length;
 
                 // Ingresos y salidas de hoy salen del registro de accesos (los pone renderHistory); sin permiso para leerlo, los ingresos de visitas
                 if (!g.historial) document.getElementById('enteredCount').textContent = entered;
                 document.getElementById('pendingCount').textContent = visits.length - entered;
                 document.getElementById('insideCount').textContent = visits.filter((v) => SISDEL.isVisitInside(v)).length;
-                document.getElementById('morososCount').textContent = morosos;
-
-                // Franja ambar discreta (el medallon rojo del marbete ya dice quien esta en mora)
-                const warnings = document.getElementById('urgentWarnings');
-                if (morosos > 0) {
-                    warnings.innerHTML = `
-                        <div class="cg-alert">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-                            <span><b>${morosos} ${morosos === 1 ? 'vivienda en mora' : 'viviendas en mora'}.</b> Al leer su marbete el medallón saldrá en rojo: informar al vecino.</span>
-                        </div>`;
-                } else {
-                    warnings.innerHTML = '';
-                }
             }
 
             async function renderVisits() {

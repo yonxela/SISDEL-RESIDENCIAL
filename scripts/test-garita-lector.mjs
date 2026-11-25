@@ -67,9 +67,9 @@ async function run() {
         const unfocus = () => page.evaluate(`(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); return true; })()`);
         const cardInfo = () => page.evaluate(`(() => { const q = (id) => document.getElementById(id); return { shown: getComputedStyle(q('sectionLector')).display !== 'none', ring: q('cgRing').className, ringTitle: q('ringTitle').textContent, title: q('lectorTitle').textContent, chip: q('chipLectorText').textContent, hint: q('lectorHint').textContent, sw: q('gcfgScanner').getAttribute('aria-checked'), cfgBtn: getComputedStyle(q('btnGaritaConfig')).display !== 'none', pref: localStorage.getItem('sisdel_escaner_manual_${CONDO}'), cfg: localStorage.getItem('sisdel_garita_config_${CONDO}'), pend: localStorage.getItem('sisdel_lector_pend_${CONDO}') }; })()`);
 
-        console.log('\nControl Garita: encabezado y escaner activado de entrada');
+        console.log('\nCentral de Monitoreo: encabezado y escaner activado de entrada');
         const head = await page.evaluate(`({ title: document.title, h1: document.querySelector('.cg-top h1').textContent, condo: document.getElementById('condoName').textContent, guard: document.getElementById('guardName').textContent, clock: document.getElementById('cgClock').textContent, date: document.getElementById('cgDate').textContent, buttons: [...document.querySelectorAll('.top-bar-actions .btn-sm')].map((b) => b.textContent.trim()).filter(Boolean) })`);
-        record('el encabezado dice CONTROL GARITA, el condominio, el guardia de la sesion, un reloj en vivo con la fecha y los botones Configuración y Salir', head.title === 'SISDEL - Control Garita' && head.h1 === 'CONTROL GARITA' && head.condo === 'Villa Ferrer' && /\w/.test(head.guard) && head.guard !== '-' && /^\d\d:\d\d:\d\d$/.test(head.clock) && /\d{4}/.test(head.date) && head.buttons.includes('Configuración') && head.buttons.includes('Salir'), JSON.stringify(head));
+        record('el encabezado dice CENTRAL DE MONITOREO, el condominio, el guardia de la sesion, un reloj en vivo con la fecha y los botones Configuración y Salir', head.title === 'SISDEL - Central de Monitoreo' && head.h1 === 'CENTRAL DE MONITOREO' && head.condo === 'Villa Ferrer' && /\w/.test(head.guard) && head.guard !== '-' && /^\d\d:\d\d:\d\d$/.test(head.clock) && /\d{4}/.test(head.date) && head.buttons.includes('Configuración') && head.buttons.includes('Salir'), JSON.stringify(head));
         await sleep(1200);
         record('y el reloj avanza solo', (await page.evaluate(`document.getElementById('cgClock').textContent`)) !== head.clock);
         let card = await cardInfo();
@@ -78,8 +78,9 @@ async function run() {
         const chips = await page.evaluate(`({ lastReads: document.getElementById('lastReads').innerText, tablaVacia: getComputedStyle(document.getElementById('historyEmptyState')).display !== 'none', camara: getComputedStyle(document.getElementById('chipCamara')).display !== 'none' ? document.getElementById('chipCamaraText').textContent : '' })`);
         record('antes de leer: sin lecturas, sin accesos y la camara dice lo que sabe (no inventa que esta en linea)', /Todavía no hay lecturas/.test(chips.lastReads) && chips.tablaVacia && !/en línea/i.test(chips.camara), JSON.stringify(chips));
 
-        const moraGuard = await page.evaluate(`(() => { const cards = [...document.querySelectorAll('.cg-kpi')].filter((c) => getComputedStyle(c).display !== 'none'); const box = document.querySelector('.cg-kpis').getBoundingClientRect(); const sum = cards.reduce((t, c) => t + c.getBoundingClientRect().width, 0); const gap = parseFloat(getComputedStyle(document.querySelector('.cg-kpis')).columnGap) || 0; return { kpi: getComputedStyle(document.getElementById('kpiMorosos')).display !== 'none', strip: !!document.querySelector('#urgentWarnings .cg-alert'), n: cards.length, fills: Math.abs(sum + gap * (cards.length - 1) - box.width) < 3 }; })()`);
-        record('el guardia NO ve la cifra "Vecinos en mora" ni la franja de aviso (garita.morosos solo la trae el administrador) y las cifras que quedan llenan la fila sin dejar un hueco', !moraGuard.kpi && !moraGuard.strip && moraGuard.n === 4 && moraGuard.fills, JSON.stringify(moraGuard));
+        const moraGuard = await page.evaluate(`(() => { const cards = [...document.querySelectorAll('.cg-kpi')].filter((c) => getComputedStyle(c).display !== 'none'); const box = document.querySelector('.cg-kpis').getBoundingClientRect(); const sum = cards.reduce((t, c) => t + c.getBoundingClientRect().width, 0); const gap = parseFloat(getComputedStyle(document.querySelector('.cg-kpis')).columnGap) || 0; return { kpi: !!document.getElementById('kpiMorosos'), strip: !!document.getElementById('urgentWarnings') || /viviendas? en mora/.test(document.body.innerText), siren: getComputedStyle(document.getElementById('chipSirena')).display !== 'none' ? document.getElementById('chipSirenaText').textContent : '', n: cards.length, fills: Math.abs(sum + gap * (cards.length - 1) - box.width) < 3 }; })()`);
+        record('ya no hay cifra "Vecinos en mora" ni franja amarilla (se quitaron el 2026-11-25) y las cifras que quedan llenan la fila sin dejar un hueco', !moraGuard.kpi && !moraGuard.strip && moraGuard.n === 4 && moraGuard.fills, JSON.stringify(moraGuard));
+        record('la sirena de alertas de panico se ve siempre en el encabezado (activa o "toque aqui")', /^Sirena (activa|apagada: toque aquí)$/.test(moraGuard.siren), JSON.stringify(moraGuard));
 
         console.log('\nConfiguracion: tiempo del marbete en pantalla');
         await page.evaluate(`document.getElementById('btnGaritaConfig').click()`);
@@ -333,15 +334,15 @@ async function run() {
                 await usersRef.doc('u-pedro').update({ privilegios: FieldValue.delete() });
             }
         };
-        const noLector = await asGuard({ 'garita.lector': false, 'garita.configurar': false, 'garita.morosos': false, 'garita.historial': false, 'garita.visitas_dia': false, 'garita.salida': false }, async (lim) => {
-            const seen = await lim.evaluate(`({ lector: ${vis('sectionLector')}, chip: ${vis('chipLector')}, config: ${vis('btnGaritaConfig')}, morosos: ${vis('kpiMorosos')}, strip: !!document.querySelector('#urgentWarnings .cg-alert'), visitas: ${vis('visitsCard')}, historial: ${vis('historyMonitorContainer')}, salidas: ${vis('kpiExited')}, dentro: ${vis('insideCard')}, camara: ${vis('sectionQR')}, manual: ${vis('sectionManual')} })`);
+        const noLector = await asGuard({ 'garita.lector': false, 'garita.configurar': false, 'garita.historial': false, 'garita.visitas_dia': false, 'garita.salida': false }, async (lim) => {
+            const seen = await lim.evaluate(`({ lector: ${vis('sectionLector')}, chip: ${vis('chipLector')}, config: ${vis('btnGaritaConfig')}, visitas: ${vis('visitsCard')}, historial: ${vis('historyMonitorContainer')}, salidas: ${vis('kpiExited')}, dentro: ${vis('insideCard')}, camara: ${vis('sectionQR')}, manual: ${vis('sectionManual')} })`);
             await keysOn(lim, 'MARTEST1');
             await sleep(1500);
             const after = await lim.evaluate(`({ overlay: ${vis('lectorOverlay')}, modal: ${vis('modalResult')}, big: !document.getElementById('bigStatusScreen').classList.contains('hide-splash') })`);
             return { seen, after };
         });
-        record('sin garita.lector, garita.configurar, garita.morosos, garita.historial, garita.visitas_dia y garita.salida: no sale el lector, ni Configuracion, ni la cifra y la franja de mora, ni las visitas, ni los ultimos accesos, ni salidas ni visitas dentro; la camara y la busqueda manual siguen (son otros privilegios)',
-            noLector.seen.lector === false && noLector.seen.chip === false && noLector.seen.config === false && noLector.seen.morosos === false && noLector.seen.strip === false && noLector.seen.visitas === false && noLector.seen.historial === false && noLector.seen.salidas === false && noLector.seen.dentro === false && noLector.seen.camara === true && noLector.seen.manual === true, JSON.stringify(noLector.seen));
+        record('sin garita.lector, garita.configurar, garita.historial, garita.visitas_dia y garita.salida: no sale el lector, ni Configuracion, ni las visitas, ni los ultimos accesos, ni salidas ni visitas dentro; la camara y la busqueda manual siguen (son otros privilegios)',
+            noLector.seen.lector === false && noLector.seen.chip === false && noLector.seen.config === false && noLector.seen.visitas === false && noLector.seen.historial === false && noLector.seen.salidas === false && noLector.seen.dentro === false && noLector.seen.camara === true && noLector.seen.manual === true, JSON.stringify(noLector.seen));
         record('y una lectura rapida no abre la tarjeta ni nada: el lector esta apagado para ese guardia', !noLector.after.overlay && !noLector.after.modal && !noLector.after.big, JSON.stringify(noLector.after));
         const before = (await all()).length;
         const soloLee = await asGuard({ 'garita.ingreso': false, 'garita.configurar': false }, async (lim) => {
@@ -356,16 +357,14 @@ async function run() {
         record('un guardia con el lector pero sin garita.ingreso ni garita.configurar: lee y ve la tarjeta, pero dice que no se registro nada, sin "Era una salida" y sin boton de Configuracion', soloLee.seen.lector === true && soloLee.seen.config === false && /No se registró nada/.test(soloLee.card2.foot) && soloLee.card2.exit === false, JSON.stringify(soloLee));
         equal('y no se escribio ningun acceso', (await all()).length, before);
 
-        console.log('\nEl aviso de morosos: el administrador si, el guardia solo si se le marca');
-        const conMora = await asGuard({ 'garita.morosos': true }, async (lim) => lim.evaluate(`({ kpi: ${vis('kpiMorosos')}, n: document.getElementById('morososCount').textContent, strip: (document.querySelector('#urgentWarnings .cg-alert') || {}).textContent || '' })`));
-        record('si el administrador le marca "Ver el aviso de morosos" a un guardia, ve la cifra y la franja ambar', conMora.kpi && conMora.n === '1' && /1 vivienda en mora/.test(conMora.strip), JSON.stringify(conMora));
+        console.log('\nEl administrador tampoco ve la cifra ni la franja de mora (se quitaron el 2026-11-25)');
         const adm = await newPage({ stepTimeoutMs: 60000 });
         await adm.login(BASE, 'VF100');
         await adm.goto(`${BASE}/garita.html`);
-        await adm.waitFor(`document.getElementById('condoName') && document.getElementById('condoName').textContent === 'Villa Ferrer' && document.getElementById('morososCount')`, 'Control Garita del administrador', 30000);
+        await adm.waitFor(`document.getElementById('condoName') && document.getElementById('condoName').textContent === 'Villa Ferrer' && getComputedStyle(document.getElementById('chipSirena')).display !== 'none'`, 'la Central de Monitoreo del administrador', 30000);
         await sleep(1500);
-        const admMora = await adm.evaluate(`({ kpi: ${vis('kpiMorosos')}, strip: (document.querySelector('#urgentWarnings .cg-alert') || {}).textContent || '' })`);
-        record('el administrador ve la cifra y la franja de mora por defecto', admMora.kpi && /1 vivienda en mora/.test(admMora.strip), JSON.stringify(admMora));
+        const admView = await adm.evaluate(`({ kpi: !!document.getElementById('kpiMorosos'), strip: /viviendas? en mora/.test(document.body.innerText), chip: document.getElementById('chipSirenaText').textContent, h1: document.querySelector('.cg-top h1').textContent, floating: !!document.querySelector('.pan-sound') })`);
+        record('el administrador tampoco ve la cifra ni la franja de mora; ve la sirena en el encabezado (sin el boton flotante)', !admView.kpi && !admView.strip && /^Sirena (activa|apagada: toque aquí)$/.test(admView.chip) && admView.h1 === 'CENTRAL DE MONITOREO' && !admView.floating, JSON.stringify(admView));
         await adm.close();
 
         console.log('\nEl administrador lo ve en su reporte');

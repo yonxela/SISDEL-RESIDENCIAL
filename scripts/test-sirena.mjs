@@ -37,8 +37,11 @@ function load() {
         }
     }
     const context = {
-        window: { AudioContext: FakeContext },
+        window: { AudioContext: FakeContext, addEventListener() {} },
         document: { hidden: false, addEventListener() {} },
+        navigator: {},
+        // La revision cada 4 s no se corre aqui (dejaria el proceso abierto): se prueba aparte, en Chrome
+        setInterval: () => 0, clearTimeout,
         Promise, setTimeout, console
     };
     vm.createContext(context);
@@ -109,6 +112,24 @@ console.log('Sirena: el telefono suspende el audio y lo reanuda');
     await tick();
     equal('tocar otra vez con el sonido listo no avisa de nuevo ni crea otra sirena', [p.calls, counts.created], [before + 2, 4]);
     S.stop();
+}
+
+console.log('Sirena: "Probar la sirena" de la Central de Monitoreo (2026-11-25)');
+{
+    const { S, counts, env } = load();
+    env.gesture = true;
+    S.wake();
+    await tick();
+    equal('la prueba suena', [S.test(40), S.playing(), active(counts)], [true, true, 4]);
+    equal('si ya esta sonando no se prueba otra vez', S.test(40), false);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    equal('y se calla sola', [S.playing(), active(counts)], [false, 0]);
+    S.test(40);
+    S.start(); // llega una alerta mientras se prueba
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    equal('si llega una alerta mientras se prueba, la sirena sigue sonando', [S.playing(), active(counts)], [true, 4]);
+    S.stop();
+    equal('arm() deja lista la sirena sin crear ninguna (solo el audio)', (() => { const x = load(); x.env.gesture = true; x.S.arm(); return [x.S.ready(), x.counts.created, x.S.playing()]; })(), [true, 0, false]);
 }
 
 console.log(`\nSirena: ${passed} correctas, ${failures.length} fallas`);

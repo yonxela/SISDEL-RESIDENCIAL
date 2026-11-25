@@ -35,7 +35,9 @@ try {
     const garita = await newPage({ stepTimeoutMs: 120000 });
     await garita.login(BASE, 'VP103');
     await garita.goto(`${BASE}/garita.html`);
-    await waitFor('Control Garita abre con el aviso de panico', () => garita.evaluate(`typeof SisdelPanico !== 'undefined' && !!document.querySelector('.pan-bar')`));
+    await waitFor('la Central de Monitoreo abre con el aviso de panico', () => garita.evaluate(`typeof SisdelPanico !== 'undefined' && !!document.querySelector('.pan-bar')`));
+    // Este Chrome deja sonar sin un toque (como la central instalada como aplicacion): la sirena queda activa sola al abrir
+    await waitFor('sin tocar nada, el encabezado dice "Sirena activa" (sin el boton flotante)', () => garita.evaluate(`document.getElementById('chipSirenaText').textContent === 'Sirena activa' && !document.querySelector('.pan-sound')`));
     // Cuenta los osciladores que se crean: con el sonido ya permitido, la version del 2026-11-24 entraba en un ciclo y creaba miles
     // de sirenas encimadas (el audio se trababa sin sonar en Control Garita)
     await garita.evaluate(`(() => { window.__osc = 0; const P = (window.AudioContext || window.webkitAudioContext).prototype; const f = P.createOscillator; P.createOscillator = function () { window.__osc++; return f.call(this); }; return true; })()`);

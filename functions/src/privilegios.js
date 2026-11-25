@@ -129,9 +129,8 @@
                 { key: 'garita.ingreso', sub: 'Operar la garita', parent: 'garita.operar', label: 'Registrar ingresos', description: 'Confirmar el ingreso de una visita, un vehículo o un residente.', enforce: 'reglas' },
                 { key: 'garita.salida', sub: 'Operar la garita', parent: 'garita.operar', label: 'Registrar salidas', description: 'Confirmar la salida de una visita, un vehículo o un residente.', enforce: 'reglas' },
                 { key: 'garita.visitas_dia', sub: 'Operar la garita', parent: 'garita.operar', label: 'Ver las visitas del día', description: 'La lista de visitas esperadas hoy, con su botón Validar.', enforce: 'pantalla' },
-                { key: 'garita.morosos', sub: 'Operar la garita', parent: 'garita.operar', label: 'Ver el aviso de morosos', description: 'La cifra de vecinos en mora y la franja de aviso de Control Garita. Solo el administrador la trae por defecto: al guardia se le marca a mano. El medallón rojo «EN MORA» al leer un marbete sale siempre.', autoRoles: ['admin'], enforce: 'pantalla' },
                 { key: 'garita.lector', sub: 'Operar la garita', parent: 'garita.operar', label: 'Usar el escáner manual (lector de pistola)', description: 'Leer marbetes, pases de visita y claves con un lector de códigos USB, sin tocar la pantalla: muestra el marbete y registra el ingreso solo.', enforce: 'pantalla' },
-                { key: 'garita.configurar', sub: 'Operar la garita', parent: 'garita.operar', label: 'Configurar Control Garita', description: 'El botón Configuración de Control Garita: escáner manual, tiempo del marbete en pantalla, sonido y pantalla completa (se guarda en la computadora de la garita).', enforce: 'pantalla' },
+                { key: 'garita.configurar', sub: 'Operar la garita', parent: 'garita.operar', label: 'Configurar la Central de Monitoreo', description: 'El botón Configuración de la Central de Monitoreo (garita.html): escáner manual, tiempo del marbete en pantalla, sonido, pantalla completa y la sirena de esta computadora (se guarda en la computadora de la garita).', enforce: 'pantalla' },
                 { key: 'garita.camara', sub: 'Cámara de placas', label: 'Ver el historial de la cámara', description: 'Consultar los accesos y lecturas de la cámara de placas.', roles: ['admin', 'policia', 'auditor'], enforce: 'reglas' },
                 { key: 'garita.vivo', sub: 'Cámara de placas', parent: 'garita.camara', label: 'Recibir avisos en vivo de la cámara', description: 'Aviso y pantalla grande cada vez que la cámara lee una placa.', enforce: 'pantalla' },
                 { key: 'garita.historial', sub: 'Cámara de placas', parent: 'garita.camara', label: 'Ver el historial de accesos del día', description: 'Los últimos ingresos del día en la garita.', enforce: 'pantalla' }
@@ -371,7 +370,7 @@
     // El orden es el de preferencia cuando el login busca a donde mandar a un usuario.
     const PAGES = [
         { page: 'admin.html', label: 'Administración', any: ['usuarios.panel'] },
-        { page: 'garita.html', label: 'Garita', any: ['garita.operar'] },
+        { page: 'garita.html', label: 'Monitoreo', any: ['garita.operar'] }, // la Central de Monitoreo (corto: cabe en el encabezado de los paneles)
         { page: 'auditor.html', label: 'Auditoría', any: ['auditoria.ver'] },
         { page: 'finanzas.html', label: 'Finanzas', any: ['finanzas.usar'] },
         { page: 'rondin/', label: 'Rondas', any: ['rondas.ver', 'rondas.patrullar'] },

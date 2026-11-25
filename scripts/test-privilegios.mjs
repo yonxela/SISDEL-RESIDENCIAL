@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 165 privilegios: 34 paraguas y 131 acciones', [P.KEYS.length, roots.length, kids.length], [165, 34, 131]);
+equal('hay 164 privilegios: 34 paraguas y 130 acciones', [P.KEYS.length, roots.length, kids.length], [164, 34, 130]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -230,11 +230,11 @@ yes('desmarcar "Registrar vehiculos" o "Crear visitas" quita tambien el reporte 
     const base = P.toggle(new Set(), 'finanzas.reportes_marbetes', true, { role: 'operador' });
     return !P.toggle(new Set(base), 'vehiculos.crear', false).has('finanzas.reportes_marbetes') && !P.toggle(new Set(base), 'visitas.crear', false).has('finanzas.reportes_marbetes');
 })());
-// El aviso de morosos de Control Garita lo trae por defecto solo el administrador (pedido del usuario el 2026-11-24: "eliminar ese dato en garita en clave de guardias")
-yes('Control Garita: el aviso de morosos (cifra y franja) lo trae por defecto solo el administrador; el guardia y el operador lo reciben solo si se les marca, y se le puede quitar al administrador', keysOn('admin').includes('garita.morosos') && !keysOn('policia').includes('garita.morosos') && !keysOn('operador', { 'garita.operar': true }).includes('garita.morosos') && keysOn('policia', { 'garita.morosos': true }).includes('garita.morosos') && !keysOn('admin', { 'garita.morosos': false }).includes('garita.morosos'));
-yes('en Configuracion > Privilegios dice "Se habilita aparte" para el guardia y no para el administrador', P.explicitFor('garita.morosos', 'policia') === true && P.explicitFor('garita.morosos', 'operador') === true && P.explicitFor('garita.morosos', 'admin') === false);
-yes('ni la plantilla del garitero ni quitar y volver a marcar todo se lo dan a un guardia, y el guardia conserva todo lo demas de la garita', (() => { const t = P.templateKeys(P.templateById('sys-garitero'), 'policia'); return !t.includes('garita.morosos') && ['garita.operar', 'garita.lector', 'garita.configurar', 'garita.historial', 'garita.visitas_dia'].every((k) => t.includes(k)); })());
-yes('el medallon rojo EN MORA al leer un marbete no depende de ese privilegio', (() => { const g = fs.readFileSync(new URL('../garita.html', import.meta.url), 'utf8'); return /tone: late \? 'late' : 'ok'|const late = resident\.paymentStatus === SISDEL\.PAYMENT_STATUS\.MOROSO/.test(g) && !/g\.morosos[^\n]*late/.test(g); })());
+// La Central de Monitoreo (antes Control Garita) ya no muestra la franja ni la cifra de vecinos en mora (pedido del usuario el
+// 2026-11-25): su privilegio garita.morosos se quito del catalogo. El medallon rojo EN MORA al leer un marbete sigue
+yes('Central de Monitoreo: ya no existe el privilegio del aviso de morosos (se quito la franja y la cifra)', !P.ITEMS.some((i) => i.key === 'garita.morosos') && !keysOn('admin').includes('garita.morosos'));
+yes('el medallon rojo EN MORA al leer un marbete sigue (no dependia de ese privilegio)', (() => { const g = fs.readFileSync(new URL('../garita.html', import.meta.url), 'utf8'); return /tone: late \? 'late' : 'ok'|const late = resident\.paymentStatus === SISDEL\.PAYMENT_STATUS\.MOROSO/.test(g) && !/garita\.morosos|kpiMorosos|urgentWarnings|viviendas en mora|getUsersByPaymentStatus/.test(g); })());
+yes('la plantilla del garitero conserva todo lo de la garita', (() => { const t = P.templateKeys(P.templateById('sys-garitero'), 'policia'); return ['garita.operar', 'garita.lector', 'garita.configurar', 'garita.historial', 'garita.visitas_dia'].every((k) => t.includes(k)); })());
 equal('supervisor va a rondin/', P.landing('supervisor', {}), 'rondin/');
 equal('auditor va a auditor.html', P.landing('auditor', {}), 'auditor.html');
 equal('vecino va a vecino.html', P.landing('vecino', {}), 'vecino.html');
@@ -248,8 +248,8 @@ equal('lo demas no cambia al quitar uno', P.has('admin', { 'finanzas.usar': fals
 equal('toOverrides guarda solo las diferencias', P.toOverrides('admin', keysOn('admin').filter((k) => k !== 'finanzas.usar')), { 'finanzas.usar': false });
 equal('toOverrides de un conjunto igual al rol es vacio', P.toOverrides('policia', keysOn('policia')), {});
 const withKids = (...list) => list.flatMap((k) => [k, ...P.descendantsOf(k)]);
-equal('toOverrides del operador son sus paraguas (las acciones vienen con el, salvo el aviso de morosos, que solo trae el administrador y se guarda como true)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true, 'garita.morosos': true });
-equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true, 'garita.morosos': true });
+equal('toOverrides del operador son sus paraguas (las acciones vienen con el)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver', 'mensajes.recibir')), { 'usuarios.ver': true, 'garita.operar': true });
+equal('el operador que no recibe mensajes lo guarda como false (los recibe por defecto)', P.toOverrides('operador', withKids('garita.operar', 'usuarios.ver')), { 'usuarios.ver': true, 'mensajes.recibir': false, 'garita.operar': true });
 equal('toOverrides guarda una accion apagada como false', P.toOverrides('operador', ['usuarios.ver', 'garita.operar', 'mensajes.recibir']),
     { 'usuarios.ver': true, 'usuarios.contacto': false, 'usuarios.pagos_ver': false, 'garita.operar': true, 'garita.escanear': false, 'garita.verificar': false, 'garita.ingreso': false, 'garita.salida': false, 'garita.visitas_dia': false, 'garita.lector': false, 'garita.configurar': false });
 equal('toOverrides acepta un mapa', P.toOverrides('operador', { 'garita.operar': true, 'usuarios.ver': false, 'mensajes.recibir': true }),
@@ -269,7 +269,7 @@ yes('ida y vuelta de cada plantilla del sistema: las diferencias reproducen exac
 equal('cleanOverrides descarta claves ajenas y valores que no son booleanos', P.cleanOverrides({ 'garita.operar': false, otra: true, 'usuarios.ver': 1 }), { 'garita.operar': false });
 
 // toOverrides acepta un Set (el editor de privilegios le pasa un Set: un error aqui borraba los privilegios al guardar)
-equal('toOverrides con un Set', P.toOverrides('operador', new Set(withKids('usuarios.ver', 'garita.operar', 'mensajes.recibir'))), { 'usuarios.ver': true, 'garita.operar': true, 'garita.morosos': true });
+equal('toOverrides con un Set', P.toOverrides('operador', new Set(withKids('usuarios.ver', 'garita.operar', 'mensajes.recibir'))), { 'usuarios.ver': true, 'garita.operar': true });
 equal('toOverrides con un Set igual al rol es vacio', P.toOverrides('policia', new Set(keysOn('policia'))), {});
 equal('toOverrides con Set, arreglo y mapa dan lo mismo', [P.toOverrides('auditor', new Set(['usuarios.ver'])), P.toOverrides('auditor', { 'usuarios.ver': true })], [P.toOverrides('auditor', ['usuarios.ver']), P.toOverrides('auditor', ['usuarios.ver'])]);
 equal('toOverrides no guarda acciones de un paraguas que no se muestra', P.toOverrides('operador', ['rondas.panel_ver', 'mensajes.recibir']), {});
@@ -465,10 +465,23 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
                 && /if \(!drill\) dispatchDrone\(p, 'NEIGHBOR'\);/.test(rondin) && /if \(!drill\) dispatchDrone\(p, 'GUARD'\);/.test(rondin));
             // Sirena de alerta maxima, avisos de la casa y audio de doble via (2026-11-24)
             const sirena = read('sirena.js'); const audio = read('audio-panico.js'); const sw = read('sw-avisos.js'); const fin = read('finanzas.html'); const fnIndex = read('functions/index.js');
+            // Central de Monitoreo (2026-11-25): la sirena siempre encendida y a la vista
+            const central = read('garita.html');
+            const manifestCentral = JSON.parse(read('manifest-monitoreo.webmanifest'));
+            yes('Central de Monitoreo: el indicador de la sirena va siempre en el encabezado (verde activa, rojo parpadeando apagada) y reemplaza el boton flotante', /id="chipSirena"/.test(central) && /\.cg-chip\.siren-off \{/.test(central) && /'Sirena activa' : 'Sirena apagada: toque aquí'/.test(central)
+                && /soundButton: false/.test(central) && /options\.soundButton === false \? null/.test(banner));
+            yes('la sirena se arma sola: al abrir (si el navegador lo deja), con el primer toque o tecla, y se reanuda si el equipo la suspende', /S\.arm\(\);/.test(banner) && /function arm\(\) \{ wake\(\); \}/.test(sirena)
+                && /window\.addEventListener\('focus', revive\)/.test(sirena) && /act\.hasBeenActive/.test(sirena) && /ctx\.onstatechange = notify/.test(sirena));
+            yes('Configuracion: probar la sirena e instalar la central para que suene sin ningun toque; el aviso no calla la prueba', /id="btnGcfgSirena"/.test(central) && /SisdelSirena\.test\(2000\)/.test(central) && /beforeinstallprompt/.test(central)
+                && /function test\(ms = 2000\)/.test(sirena) && /else if \(ownSiren\) \{ stopSiren\(\); ownSiren = false; \}/.test(banner));
+            yes('la central se puede instalar como aplicacion (Chrome deja sonar sin toque a una aplicacion instalada) y su pantalla no se apaga sola', /<link rel="manifest" href="manifest-monitoreo\.webmanifest">/.test(central)
+                && manifestCentral.start_url === '/garita.html' && manifestCentral.display === 'standalone' && manifestCentral.icons.some((i) => i.sizes === '512x512')
+                && /navigator\.wakeLock\.request\('screen'\)/.test(central) && /document\.addEventListener\('visibilitychange', keepScreenOn\)/.test(central));
+            yes('la pagina de la garita se llama Central de Monitoreo en el encabezado y en los botones de los demas paneles', /<h1>CENTRAL DE MONITOREO<\/h1>/.test(central) && P.PAGES.find((p) => p.page === 'garita.html').label === 'Monitoreo');
             yes('sirena: suena sin parar mientras haya una alerta real sin atender, con destello; el simulacro solo unos segundos; se puede silenciar', /function sirenWanted\(\)/.test(banner) && /a\.simulacro !== true && a\.status === 'ACTIVE' && !silenced\.has\(a\.id\)/.test(banner)
                 && /const DRILL_SIREN_MS = 4000;/.test(banner) && /data-mute=/.test(banner) && /class="pan-flash"|className = 'pan-flash'/.test(banner) && /const SisdelSirena = \(\(\) => \{/.test(sirena) && /function start\(\)/.test(sirena));
             yes('sirena: tambien en OIKOS, con los mismos privilegios que el panel', /SISDEL\.can\('panico\.ver'\) && SISDEL\.can\('panico\.avisos'\)\) \{\s*SisdelRondas\.init\(session\);\s*SisdelPanico\.watch\(/.test(fin));
-            yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261124b'))
+            yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261125a'))
                 && ['garita.html', 'admin.html', 'finanzas.html', 'panico.html', 'vecino.html'].every((f) => read(f).includes('audio-panico.js?v=20261124a')));
             yes('audio: la garita llama ("Escuchar / Hablar") y solo el telefono que envio la alerta contesta solo, con el microfono pedido al enviarla', /data-call="\$\{esc\(a\.id\)\}"/.test(banner) && /SisdelAudioPanico\.callNeighbor\(/.test(banner)
                 && /SisdelAudioPanico\.answerCalls\(/.test(vecino) && /SisdelAudioPanico\.answerCalls\(/.test(qrPage) && /a\.mine === true && \['ACTIVE', 'ATTENDED'\]\.includes\(a\.status\)/.test(qrPage)
@@ -476,7 +489,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             yes('avisos de la casa: el QR los activa con su propio registro (alcance /panico) y el aviso de panico se queda hasta tocarlo y abre el boton', /register\('sw-avisos\.js', \{ scope: '\.\/panico' \}\)/.test(qrPage) && /if \(p\.kind === 'panico'\) options\.vibrate/.test(sw)
                 && /event\.notification\.data\.kind === 'panico'/.test(sw) && /if \(a\.mine === false && a\.simulacro !== true\) \{ showHouse\(a\); return; \}/.test(qrPage));
             yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261124a'))
-                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261124a')));
+                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125a')));
         }
         yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
         yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));

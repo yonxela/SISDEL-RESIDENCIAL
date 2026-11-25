@@ -9,7 +9,7 @@ Cada administrador decide, usuario por usuario, qué módulos y acciones puede v
 | --- | --- | --- |
 | `master` | `master.html` | Todos los condominios. |
 | `admin` | `admin.html` | Su condominio: usuarios, códigos, vehículos, visitas y mensajes. |
-| `policia` | `garita.html` | Control Garita: verifica códigos y QR, lee marbetes con el escáner manual (lector USB), registra ingresos y salidas. |
+| `policia` | `garita.html` | Central de Monitoreo (antes Control Garita): verifica códigos y QR, lee marbetes con el escáner manual (lector USB), registra ingresos y salidas. |
 | `vecino` | `vecino.html` | Sus visitas, vehículos y mensajes. |
 | `admin` (finanzas) | `finanzas.html` | Sistema Financiero del condominio (OIKOS): cuotas, ingresos, egresos, estados de cuenta y reportes. |
 | `supervisor` | `rondin/` | SISDEL RONDÍN: rutas de monitoreo, guardias en vivo, Rondín Air, alertas, incidentes y vecinos. El admin entra como Director General y el auditor en solo lectura. |
@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-165 privilegios: 34 paraguas y 131 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+164 privilegios: 34 paraguas y 130 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -117,9 +117,8 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `garita.ingreso` | Registrar ingresos. Confirmar el ingreso de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
 | `garita.salida` | Registrar salidas. Confirmar la salida de una visita, un vehículo o un residente. | los de su paraguas | Reglas |
 | `garita.visitas_dia` | Ver las visitas del día. La lista de visitas esperadas hoy, con su botón Validar. | los de su paraguas | Pantalla |
-| `garita.morosos` | Ver el aviso de morosos. La cifra de vecinos en mora y la franja de aviso de Control Garita. Solo el administrador la trae por defecto: al guardia se le marca a mano. El medallón rojo «EN MORA» al leer un marbete sale siempre. | los de su paraguas | Pantalla |
 | `garita.lector` | Usar el escáner manual (lector de pistola). Leer marbetes, pases de visita y claves con un lector de códigos USB, sin tocar la pantalla: muestra el marbete y registra el ingreso solo. | los de su paraguas | Pantalla |
-| `garita.configurar` | Configurar Control Garita. El botón Configuración de Control Garita: escáner manual, tiempo del marbete en pantalla, sonido y pantalla completa (se guarda en la computadora de la garita). | los de su paraguas | Pantalla |
+| `garita.configurar` | Configurar la Central de Monitoreo. El botón Configuración de la Central de Monitoreo (garita.html): escáner manual, tiempo del marbete en pantalla, sonido, pantalla completa y la sirena de esta computadora (se guarda en la computadora de la garita). | los de su paraguas | Pantalla |
 | `garita.camara` | Ver el historial de la cámara. Consultar los accesos y lecturas de la cámara de placas. | `admin`, `policia`, `auditor` | Reglas |
 | `garita.vivo` | Recibir avisos en vivo de la cámara. Aviso y pantalla grande cada vez que la cámara lee una placa. | los de su paraguas | Pantalla |
 | `garita.historial` | Ver el historial de accesos del día. Los últimos ingresos del día en la garita. | los de su paraguas | Pantalla |

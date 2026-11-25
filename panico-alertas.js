@@ -92,6 +92,7 @@ const SisdelPanico = (() => {
         const DRILL_SIREN_MS = 4000;
         const silenced = new Set();
         let drillUntil = 0;
+        let ownSiren = false;
         const flash = document.createElement('div');
         flash.className = 'pan-flash';
         flash.hidden = true;
@@ -105,7 +106,8 @@ const SisdelPanico = (() => {
         }
         function updateSiren() {
             const want = sirenWanted();
-            if (want.real || want.drill) startSiren(); else stopSiren();
+            // Solo calla la sirena que encendio el aviso (no la de "Probar la sirena" de la Central de Monitoreo)
+            if (want.real || want.drill) { startSiren(); ownSiren = true; } else if (ownSiren) { stopSiren(); ownSiren = false; }
             flash.hidden = !want.real;
             if (want.real && !blink) {
                 let on = false;
@@ -171,15 +173,19 @@ const SisdelPanico = (() => {
             });
         }
 
-        // El boton que pide activar el sonido (el navegador no deja sonar nada hasta el primer toque o tecla en la pagina)
-        const soundBtn = document.createElement('button');
-        soundBtn.type = 'button';
-        soundBtn.className = 'pan-sound';
-        soundBtn.textContent = 'Toque aquí para activar la sirena de alertas de pánico';
-        document.body.appendChild(soundBtn);
-        const paintSoundBtn = () => { soundBtn.hidden = audioReady(); if (audioReady()) updateSiren(); };
+        // El boton que pide activar el sonido (el navegador no deja sonar nada hasta el primer toque o tecla en la pagina).
+        // options.soundButton === false: la pagina tiene su propio indicador de la sirena (la Central de Monitoreo, en su encabezado)
+        const soundBtn = options.soundButton === false ? null : document.createElement('button');
+        if (soundBtn) {
+            soundBtn.type = 'button';
+            soundBtn.className = 'pan-sound';
+            soundBtn.textContent = 'Toque aquí para activar la sirena de alertas de pánico';
+            document.body.appendChild(soundBtn);
+            soundBtn.addEventListener('click', () => { wakeAudio(); setTimeout(paintSoundBtn, 300); });
+        }
+        function paintSoundBtn() { if (soundBtn) soundBtn.hidden = audioReady(); if (audioReady()) updateSiren(); }
         const offReady = S.onReady(paintSoundBtn);
-        soundBtn.addEventListener('click', () => { wakeAudio(); setTimeout(paintSoundBtn, 300); });
+        S.arm(); // sin esperar un toque, si el navegador lo deja (la central instalada como aplicacion)
         setTimeout(paintSoundBtn, 1500);
 
         function render() {
@@ -258,7 +264,7 @@ const SisdelPanico = (() => {
         const timer = setInterval(render, 30000);
         return () => {
             unsubscribe(); clearInterval(timer); alerts = []; drillUntil = 0; updateSiren(); stopSiren(); closeCall();
-            offReady(); bar.remove(); flash.remove(); soundBtn.remove();
+            offReady(); bar.remove(); flash.remove(); if (soundBtn) soundBtn.remove();
         };
     }
 

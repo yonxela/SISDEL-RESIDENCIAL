@@ -35,11 +35,25 @@ const SisdelSirena = (() => {
         } catch { /* sin audio */ }
     }
     ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => document.addEventListener(ev, wake, { capture: true, passive: true }));
-    // Si el telefono suspende el audio (llamada, pantalla), al volver se reanuda
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx && ctx.state !== 'running') wake(); });
+    // Que quede ENCENDIDA (pedido del usuario el 2026-11-25): si el equipo suspende el audio (llamada, pantalla, otra app, la
+    // computadora se durmio), al volver se reanuda solo; y cada 4 s se revisa, una vez que la pagina ya recibio un toque (despues
+    // de eso el navegador deja reanudar sin otro toque)
+    const revive = () => { if (ctx && ctx.state !== 'running' && !document.hidden) wake(); };
+    document.addEventListener('visibilitychange', revive);
+    window.addEventListener('focus', revive);
+    window.addEventListener('pageshow', revive);
+    setInterval(() => {
+        const act = navigator.userActivation;
+        if (ctx && ctx.state !== 'running' && !document.hidden && (!act || act.hasBeenActive)) wake();
+    }, 4000);
+    // Al abrir la pagina se intenta armarla sin esperar un toque: el navegador lo deja cuando la central esta instalada como
+    // aplicacion (o el sitio ya tiene permiso de sonido); si no, queda lista para el primer toque o tecla
+    function arm() { wake(); }
 
+    let testTimer = null;
     function start() {
-        if (siren || starting) return; // una sola sirena: wake() puede avisar a la pagina y la pagina volver a pedir start()
+        if (siren) { clearTimeout(testTimer); testTimer = null; return; } // si estaba en prueba, una alerta la deja sonando
+        if (starting) return; // una sola sirena: wake() puede avisar a la pagina y la pagina volver a pedir start()
         starting = true;
         try {
             wake();
@@ -65,7 +79,17 @@ const SisdelSirena = (() => {
             siren = { nodes: [...make('sawtooth', 950, 420, 0.55), ...make('square', 1300, 300, 4.5)], master, out };
         } catch { siren = null; } finally { starting = false; }
     }
+    // "Probar la sirena": suena ms y se calla sola. Si mientras tanto llega una alerta (start()), sigue sonando. false si ya sonaba
+    function test(ms = 2000) {
+        if (siren) return false;
+        start();
+        if (!siren) return false;
+        testTimer = setTimeout(() => { testTimer = null; stop(); }, ms);
+        return true;
+    }
     function stop() {
+        clearTimeout(testTimer);
+        testTimer = null;
         if (!siren) return;
         try { siren.nodes.forEach((n) => n.stop()); siren.master.disconnect(); siren.out.disconnect(); } catch { /* ya parada */ }
         siren = null;
@@ -87,5 +111,5 @@ const SisdelSirena = (() => {
             osc.stop(t + 1.05);
         } catch { /* sin audio */ }
     }
-    return { wake, ready, start, stop, playing, onReady, beep };
+    return { wake, arm, ready, start, stop, test, playing, onReady, beep };
 })();

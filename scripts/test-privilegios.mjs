@@ -511,7 +511,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             yes('avisos de la casa: el QR los activa con su propio registro (alcance /panico) y el aviso de panico se queda hasta tocarlo y abre el boton', /register\('sw-avisos\.js', \{ scope: '\.\/panico' \}\)/.test(qrPage) && /if \(p\.kind === 'panico'\) options\.vibrate/.test(sw)
                 && /event\.notification\.data\.kind === 'panico'/.test(sw) && /if \(a\.mine === false && a\.simulacro !== true\) \{ showHouse\(a\); return; \}/.test(qrPage));
             yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261125a'))
-                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125b')));
+                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125c')));
         }
         yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
         yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));

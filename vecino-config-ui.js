@@ -8,6 +8,11 @@
    - Pases de visita y, debajo, accesos temporales (varios dias).
    Cada interruptor se guarda al instante (con confirmacion); el mensaje que ve el vecino cuando algo esta apagado se guarda con
    su boton. Las reglas piden vecino.configurar y la bitacora anota cada cambio. Todo lo escrito se pinta como texto.
+   - Clave de acceso con el QR de panico (2026-11-25: el usuario la busco aqui, la "activo" con los interruptores de arriba y no
+     salia; la habia apagado en Reportes > QR de panico): el MISMO interruptor de la entrega general de claves de ese reporte
+     (panicCodeDelivery generalStatus / generalOn / generalOff, que exige el servidor), con su estado a la vista. Aqui se enciende
+     para todos los vecinos; para solo algunos (casas, lotes, una fase) se usa el reporte. Se ve con usuarios.codigos y se cambia con
+     reportes.panico_entrega.
    ═══════════════════════════════════════════════════════════════ */
 const SisdelVecinoConfigUI = (() => {
     const C = () => window.SisdelVecinoConfig;
@@ -51,6 +56,9 @@ const SisdelVecinoConfigUI = (() => {
         .vcf-note-row { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; }
         .vcf-note-row input { flex:1 1 260px; padding-left:1rem; }
         .vcf-foot { font-size:0.8rem; }
+        .vcf-keys-opts { display:flex; flex-wrap:wrap; align-items:flex-end; gap:0.75rem; margin-top:0.85rem; }
+        .vcf-keys-opts label { display:block; font-size:0.8rem; font-weight:700; margin-bottom:0.25rem; }
+        .vcf-keys-opts select { padding-left:0.85rem; min-width:9rem; }
         `;
         document.head.appendChild(el('style', { id: 'vcf-styles', text: css }));
     }
@@ -126,8 +134,97 @@ const SisdelVecinoConfigUI = (() => {
             visitasState, temporalBox, visitasNote.wrap
         ]);
 
+        // ── Clave de acceso con el QR de panico (la entrega general de claves de Reportes > QR de panico por vecino) ──
+        const canSeeKeys = S.can('usuarios.codigos') && !!(window.sisdelFirebase && window.sisdelFirebase.functions);
+        const canSwitchKeys = canSeeKeys && S.can('reportes.panico_entrega');
+        let general = null;
+        let generalError = '';
+        let generalBusy = false;
+        const keysSwitch = makeSwitch('vcfKeys', 'Clave de acceso con el QR de pánico');
+        const keysState = el('div', { class: 'vcf-state', id: 'vcfKeysState', text: 'Consultando…' });
+        const keysDays = el('select', { class: 'form-input', id: 'vcfKeysDays' });
+        [1, 3, 7, 15, 30].forEach((d) => { const o = el('option', { value: String(d), text: `${d} día${d === 1 ? '' : 's'}` }); if (d === 7) o.selected = true; keysDays.appendChild(o); });
+        const keysRefresh = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', style: 'border:1px solid var(--border-strong);', text: 'Actualizar' });
+        const keysOpts = el('div', { class: 'vcf-keys-opts', id: 'vcfKeysOpts' }, [
+            el('div', {}, [el('label', { for: 'vcfKeysDays', text: 'Se apaga sola en' }), keysDays]),
+            el('p', { class: 'text-xs text-muted', style: 'margin:0; flex:1 1 220px;', text: 'Aquí se enciende para TODOS los vecinos. Para darla solo a algunos (casas con lote, solo lotes, una fase o elegidos uno por uno), use Reportes > QR de pánico por vecino.' }),
+            keysRefresh
+        ]);
+        const keysNoPriv = el('p', { class: 'text-xs text-muted', id: 'vcfKeysNoPriv', style: 'margin:0.6rem 0 0; display:none;', text: 'Usted puede ver si está encendida, pero encenderla o apagarla pide el privilegio "Activar o desactivar la entrega de claves con el QR" (Configuración > Privilegios > Reportes).' });
+        const keysCard = el('div', { class: 'card vcf-card', id: 'vcfKeysCard' }, [
+            el('div', { class: 'vcf-row' }, [
+                el('div', { class: 'vcf-text' }, [
+                    el('h3', { text: 'Clave de acceso con el QR de pánico' }),
+                    el('p', { class: 'text-sm text-muted', text: 'Encendida, la primera vez que se escanea el QR de pánico de cada vecino muestra su clave de acceso a garita.app UNA sola vez (con el aviso de no compartirla) y ese teléfono queda vinculado a su botón de pánico. Quien ya recibió su clave no la vuelve a ver. Apagada, los QR no muestran ninguna clave.' })
+                ]),
+                keysSwitch
+            ]),
+            keysState, keysOpts, keysNoPriv
+        ]);
+
         const foot = el('p', { class: 'text-muted vcf-foot', id: 'vcfFoot', text: 'Cargando…' });
-        root.append(intro, marbeteCard, visitasCard, foot);
+        root.append(intro, ...(canSeeKeys ? [keysCard] : []), marbeteCard, visitasCard, foot);
+
+        const fmtKeys = (iso) => { const d = new Date(iso); return iso && !isNaN(d) ? d.toLocaleString('es-GT', { timeZone: 'America/Guatemala', dateStyle: 'medium', timeStyle: 'short' }) : ''; };
+        function paintKeys() {
+            if (!canSeeKeys) return;
+            const on = !!(general && general.active);
+            paintSwitch(keysSwitch, on);
+            keysSwitch.disabled = generalBusy || !general || !canSwitchKeys;
+            keysState.className = `vcf-state ${general ? (on ? 'on' : 'off') : ''}`;
+            let text;
+            if (generalBusy) text = 'Guardando…';
+            else if (!general) text = generalError ? `No se pudo consultar: ${generalError}` : 'Consultando…';
+            else if (on) {
+                const who = general.scope === 'lista'
+                    ? `para ${general.count} vecino${general.count === 1 ? '' : 's'}${general.label ? ` (${general.label})` : ''}`
+                    : 'para todos los vecinos';
+                text = `Encendida hasta el ${fmtKeys(general.until)}${general.startedByName ? ` (la encendió ${general.startedByName})` : ''}, ${who}. Entregadas en esta entrega: ${general.delivered || 0}.`;
+            } else {
+                const ended = general.endedAt ? ` Se apagó el ${fmtKeys(general.endedAt)}${general.endedByName ? ` (${general.endedByName})` : ''}.`
+                    : (general.until && Date.parse(general.until) <= Date.now() ? ` La última venció el ${fmtKeys(general.until)}.` : '');
+                text = `Apagada: los QR no muestran ninguna clave.${ended}${general.campaignId ? ` En la última entrega se entregaron ${general.delivered || 0}.` : ''}`;
+            }
+            keysState.textContent = text;
+            keysOpts.style.display = canSwitchKeys && general && !on ? '' : 'none';
+            keysNoPriv.style.display = canSwitchKeys ? 'none' : '';
+            keysRefresh.disabled = generalBusy;
+        }
+        async function callKeys(payload) {
+            try {
+                const r = await window.sisdelFirebase.functions.httpsCallable('panicCodeDelivery')({ condoId, ...payload });
+                return r.data || { ok: false, error: 'Sin respuesta del servidor.' };
+            } catch (e) { return { ok: false, error: String((e && e.message) || 'No se pudo completar. Intente de nuevo.').replace(/\s*\[\d{3}\]\s*$/, '') }; }
+        }
+        async function loadKeys() {
+            if (!canSeeKeys) return;
+            const res = await callKeys({ action: 'generalStatus' });
+            general = res.ok ? res : null;
+            generalError = res.ok ? '' : (res.error || '');
+            paintKeys();
+        }
+        async function runKeys(payload, done) {
+            generalBusy = true; paintKeys();
+            const res = await callKeys(payload);
+            generalBusy = false;
+            if (res.ok) { general = res; S.showToast(done, 'success'); }
+            else { alert(res.error || 'No se pudo completar. Intente de nuevo.'); if (res.campaignId !== undefined) general = res; }
+            paintKeys();
+        }
+        if (canSeeKeys) {
+            keysSwitch.addEventListener('click', () => {
+                if (!general || generalBusy || !canSwitchKeys) return;
+                if (general.active) {
+                    if (!confirm('¿Apagar la entrega de la clave con el QR?\n\nDesde ahora los QR no mostrarán ninguna clave. Las que ya se entregaron no cambian.')) return;
+                    runKeys({ action: 'generalOff' }, 'Clave con el QR: apagada. Los QR ya no muestran claves.');
+                    return;
+                }
+                const days = Number(keysDays.value) || 7;
+                if (!confirm(`¿Encender la entrega de la clave con el QR para TODOS los vecinos durante ${days} día${days === 1 ? '' : 's'}?\n\nMientras esté encendida, la PRIMERA persona que escanee el QR de cada vecino verá su clave una sola vez (también en los QR que ya estén pegados en puertas o carros). Enciéndala solo mientras se reparten las tarjetas.`)) return;
+                runKeys({ action: 'generalOn', days }, `Clave con el QR: encendida por ${days} día${days === 1 ? '' : 's'} para todos los vecinos.`);
+            });
+            keysRefresh.addEventListener('click', () => { general = null; generalError = ''; paintKeys(); loadKeys(); });
+        }
 
         const paintSwitch = (b, on) => {
             b.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -236,8 +333,9 @@ const SisdelVecinoConfigUI = (() => {
         bindNote(visitasNote, 'visitasNote');
 
         load();
+        loadKeys();
         return {
-            reload: load,
+            reload: () => { load(); loadKeys(); },
             // Hay un mensaje escrito sin guardar
             isDirty: () => [[marbeteNote, 'marbeteNote'], [visitasNote, 'visitasNote']].some(([n, f]) => C().clean({ [f]: n.input.value })[f] !== saved[f])
         };

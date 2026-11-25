@@ -1519,6 +1519,11 @@ console.log('\nPanel del vecino: marbete y pases para todos los vecinos');
     const { createRequire } = await import('node:module');
     const C = createRequire(import.meta.url)('../vecino-config.js');
     const admin = read('admin.html'); const vecino = read('vecino.html'); const ui = read('vecino-config-ui.js'); const rules = read('firestore.rules');
+    // La clave de acceso con el QR de panico tambien aqui (2026-11-25: el usuario la buscaba en esta pantalla): el mismo interruptor
+    // de la entrega general de claves de Reportes > QR de panico, con su estado; para todos los vecinos
+    yes('panel del vecino: la clave con el QR se ve con usuarios.codigos y se enciende o apaga con reportes.panico_entrega (el servidor lo exige)', /const canSeeKeys = S\.can\('usuarios\.codigos'\)/.test(ui) && /const canSwitchKeys = canSeeKeys && S\.can\('reportes\.panico_entrega'\)/.test(ui)
+        && /httpsCallable\('panicCodeDelivery'\)/.test(ui) && /action: 'generalStatus'/.test(ui) && /runKeys\(\{ action: 'generalOn', days \}/.test(ui) && /runKeys\(\{ action: 'generalOff' \}/.test(ui)
+        && /root\.append\(intro, \.\.\.\(canSeeKeys \? \[keysCard\] : \[\]\), marbeteCard, visitasCard, foot\);/.test(ui) && /keysState\.textContent = text;/.test(ui));
     const def = P.itemOf('vecino.configurar');
     yes('privilegio propio (paraguas) del administrador, sensible, de reglas y solo para administrador u operador',
         !!def && !def.parent && JSON.stringify(def.roles) === '["admin"]' && JSON.stringify(def.onlyRoles) === '["admin","operador"]' && def.sensitive === true && def.enforce === 'reglas'

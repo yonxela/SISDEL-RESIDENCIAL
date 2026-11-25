@@ -72,20 +72,25 @@ try {
     // "PRESIONE PARA HABLAR" (2026-11-25, antes "HABLAR A CENTRAL DE MONITOREO"): el microfono se pide al tocarlo (aqui el permiso de prueba lo da solo)
     await waitFor('el telefono del vecino muestra "PRESIONE PARA HABLAR" mientras la alerta esta abierta', () => vecino.evaluate(`!document.getElementById('panicTalk').hidden && /PRESIONE PARA HABLAR/.test(document.getElementById('panicTalk').innerText)`));
     await vecino.evaluate(`document.getElementById('panicTalk').click()`);
-    await waitFor('al tocarlo da el microfono y avisa a la central (el boton pasa a verde)', () => vecino.evaluate(`document.getElementById('panicTalk').dataset.state === 'sent' && /LA CENTRAL YA SABE/.test(document.getElementById('panicTalk').innerText) && /Cuando le llamen/.test(document.getElementById('panicTalkNote').textContent)`), 30000);
+    await waitFor('al tocarlo da el microfono y avisa a la central: el boton pasa a verde, MICROFONO ACTIVO', () => vecino.evaluate(`document.getElementById('panicTalk').dataset.state === 'live' && /MICRÓFONO ACTIVO/.test(document.getElementById('panicTalk').innerText) && /cuando le llame, le escuchará/.test(document.getElementById('panicTalk').innerText) && document.getElementById('panicTalkNote').hidden`), 30000);
+    // Las barras del microfono se mueven con el sonido (el microfono de prueba de Chrome suena a ratos)
+    await waitFor('las barras del microfono se mueven al hablar', () => vecino.evaluate(`Number(document.getElementById('panicTalk').dataset.level || 0) > 0.05`), 20000);
+    // Con la alerta abierta solo queda el boton de panico, su estado y "PRESIONE PARA HABLAR" (2026-11-25: "para no confundir con tanto texto")
+    equal('con la alerta abierta se esconden la prueba, los contactos, la ubicacion y la llamada en texto', await vecino.evaluate(`['btnPanicDrill', 'panicDrillNote', 'btnContacts', 'panicGps', 'panicAudio'].map((id) => getComputedStyle(document.getElementById(id)).display)`), ['none', 'none', 'none', 'none', 'none']);
+    equal('y el boton de hablar va justo debajo del boton de panico', await vecino.evaluate(`document.getElementById('panicBtnHost').nextElementSibling.id`), 'panicTalk');
     await waitFor('la central ve "PIDE HABLAR" y su "Escuchar / Hablar" late en amarillo', () => garita.evaluate(`/PIDE HABLAR/.test(document.querySelector('.pan-bar').innerText) && document.querySelector('[data-call="${callBtn}"]').classList.contains('want')`), 30000);
     await garita.evaluate(`document.querySelector('[data-call="${callBtn}"]').click()`);
     equal('al llamar deja de decir "PIDE HABLAR"', await garita.evaluate(`!/PIDE HABLAR/.test(document.querySelector('.pan-bar').innerText)`), true);
     await waitFor('la garita llama: el telefono del vecino contesta solo y quedan en linea', () => vecino.evaluate(`/está en línea: le escucha/.test(document.getElementById('panicAudioText').textContent)`), 60000);
     await waitFor('la garita ve "Conectado" y puede hablar', () => garita.evaluate(`(() => { const b = document.querySelector('.pan-call'); return !!b && /Conectado/.test(b.innerText) && !b.querySelector('[data-talk]').disabled; })()`), 30000);
-    equal('en linea, el boton del vecino se esconde (se ve la llamada)', await vecino.evaluate(`document.getElementById('panicTalk').hidden`), true);
+    equal('en linea, el boton dice MICROFONO ACTIVO: la central le escucha', await vecino.evaluate(`!document.getElementById('panicTalk').hidden && document.getElementById('panicTalk').dataset.state === 'live' && /le escucha: hable/.test(document.getElementById('panicTalk').innerText)`), true);
     equal('los dos reciben el audio del otro', await Promise.all([garita.evaluate(`!!document.querySelector('.pan-call audio').srcObject`), vecino.evaluate(`!!document.getElementById('panicAudioEl').srcObject`)]), [true, true]);
     await garita.evaluate(`document.querySelector('.pan-call [data-talk]').click()`);
     equal('"Hablar" abre el microfono de la garita', await garita.evaluate(`/Dejar de hablar/.test(document.querySelector('.pan-call [data-talk]').textContent)`), true);
     await garita.evaluate(`document.querySelector('.pan-call [data-hang]').click()`);
     await waitFor('la garita cuelga y el telefono del vecino lo dice', () => vecino.evaluate(`/La garita colgó/.test(document.getElementById('panicAudioText').textContent)`), 20000);
     equal('la garita puede volver a llamar', await garita.evaluate(`!!document.querySelector('.pan-call [data-retry]')`), true);
-    equal('y al colgar el vecino vuelve a tener "PRESIONE PARA HABLAR"', await vecino.evaluate(`!document.getElementById('panicTalk').hidden && document.getElementById('panicTalk').dataset.state === 'idle'`), true);
+    equal('al colgar el vecino conserva el microfono listo para la siguiente llamada', await vecino.evaluate(`!document.getElementById('panicTalk').hidden && document.getElementById('panicTalk').dataset.state === 'live' && /cuando le llame/i.test(document.getElementById('panicTalk').innerText)`), true);
 
     // ── El telefono del vecino SIN microfono (2026-11-25: en la prueba la central no oia al vecino y decia "escucha lo que pasa") ──
     console.log('\nUn telefono que no dio el microfono: la central lo dice y, al permitirlo, lo escucha sin volver a llamar');
@@ -96,7 +101,7 @@ try {
     await sinMic.send('Emulation.setGeolocationOverride', { latitude: 14.542, longitude: -90.453, accuracy: 15 });
     // Chrome de prueba da el microfono sin preguntar: aqui el telefono lo niega (como un iPhone con el microfono bloqueado) hasta
     // que se "permite" mas abajo
-    await sinMic.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { if (!navigator.mediaDevices) return; const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); window.__permitirMicrofono = () => { navigator.mediaDevices.getUserMedia = real; }; navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('Permission denied', 'NotAllowedError')); })()` });
+    await sinMic.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { if (!navigator.mediaDevices) return; const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); window.__pedidos = 0; window.__permitirMicrofono = () => { navigator.mediaDevices.getUserMedia = real; }; navigator.mediaDevices.getUserMedia = () => { window.__pedidos++; return Promise.reject(new DOMException('Permission denied', 'NotAllowedError')); }; })()` });
     await sinMic.login(BASE, 'VA101');
     await waitFor('el telefono sin microfono abre con su alerta y "PRESIONE PARA HABLAR"', () => sinMic.evaluate(`!document.getElementById('panicTalk').hidden`), 60000);
     await sinMic.evaluate(`document.querySelectorAll('.modal-overlay').forEach((m) => { m.style.display = 'none'; }); true`);
@@ -108,11 +113,12 @@ try {
     await garita.evaluate(`document.querySelector('.pan-call [data-retry]').click()`);
     await waitFor('la garita vuelve a llamar: el telefono contesta sin microfono y la garita lo dice en ambar', () => garita.evaluate(`(() => { const b = document.querySelector('.pan-call'); return !!b && b.classList.contains('nomic') && /NO dio permiso al micrófono/.test(b.innerText); })()`), 60000);
     await waitFor('el vecino ve que la central no le escucha y el boton sigue a la vista', () => sinMic.evaluate(`!document.getElementById('panicTalk').hidden && document.getElementById('panicTalk').dataset.state === 'oncall' && /NO le escucha/.test(document.getElementById('panicAudioText').textContent)`), 30000);
+    equal('al contestar solo, el telefono NO pidio el microfono (sin un toque salia la ventana de sorpresa)', await sinMic.evaluate(`window.__pedidos`), 0);
     const quiet = await level(garita);
     equal('sin microfono no llega sonido del vecino a la garita (la linea va en silencio)', quiet >= 0 && quiet < 0.001, true);
     await sinMic.evaluate(`window.__permitirMicrofono(); document.getElementById('panicTalk').click(); true`);
     await waitFor('al permitirlo, la garita lo dice: su microfono esta abierto (sin volver a llamar)', () => garita.evaluate(`(() => { const b = document.querySelector('.pan-call'); return !!b && !b.classList.contains('nomic') && /micrófono está abierto/.test(b.innerText); })()`), 30000);
-    await waitFor('y el vecino ve que ya le escuchan (el boton se esconde)', () => sinMic.evaluate(`/le escucha\./.test(document.getElementById('panicAudioText').textContent) && document.getElementById('panicTalk').hidden`), 30000);
+    await waitFor('y el vecino ve que ya le escuchan: MICROFONO ACTIVO', () => sinMic.evaluate(`/le escucha\./.test(document.getElementById('panicAudioText').textContent) && document.getElementById('panicTalk').dataset.state === 'live'`), 30000);
     const loud = await level(garita);
     equal('ahora si llega el sonido del microfono del vecino a la garita', loud > 0.001, true);
     console.log('   nivel sin microfono:', quiet, '· con microfono:', loud);

@@ -91,6 +91,11 @@
         /* "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): grande, azul; verde cuando la central ya sabe */
         .panic-talk { align-self: stretch; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.95rem 1rem; border: 2px solid #60a5fa; border-radius: var(--radius-md); background: #1d4ed8; color: #fff; font: inherit; text-align: left; cursor: pointer; }
         .panic-talk[hidden] { display: none; }
+        /* Con una alerta abierta solo queda lo que sirve en ese momento: el boton de panico, su estado y "PRESIONE PARA HABLAR" (pedido
+           del usuario el 2026-11-25: "en ese momento el unico boton a mostrar es presiona para hablar, para no confundir con tanto
+           texto al vecino"). Vuelve todo cuando la alerta se cierra */
+        #panicCard.alert-open .panic-help, #panicCard.alert-open #panicGps, #panicCard.alert-open #btnPanicDrill, #panicCard.alert-open #panicDrillNote,
+        #panicCard.alert-open #btnContacts, #panicCard.alert-open #panicAudio, #panicCard.alert-open #btnCancelPanic, #panicCard.alert-open .pp-actions { display: none !important; }
         .panic-talk svg { flex: none; }
         .panic-talk b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
         .panic-talk small { display: block; margin-top: 0.15rem; font-size: 0.8rem; opacity: 0.92; }
@@ -189,6 +194,10 @@
                     <p class="panic-help">Mantenga presionado el botón 2 segundos. Avisa a la garita, a la administración y a sus contactos de emergencia.</p>
                     <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
                     <div id="panicBtnHost" title="Avisa a la garita, la administración y sus contactos de emergencia"></div>
+                    <!-- SISDEL: "PRESIONE PARA HABLAR" (audio-panico.js, talkButton; antes "HABLAR A CENTRAL DE MONITOREO"), justo debajo del boton de panico (pedido del usuario el 2026-11-25): mientras la alerta este abierta; al tocarlo se pide
+                         el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
+                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
+                    <div class="panic-talk-note" id="panicTalkNote" hidden></div>
                     <button class="panic-loc warn" id="panicGps" type="button" role="checkbox" aria-checked="false" style="display:none;"><span class="panic-loc-box" id="panicGpsBox"></span><span id="panicGpsText">Activar ubicación</span></button>
                     <!-- SISDEL: prueba "todo sin novedad" (pedidos del usuario el 2026-11-23 y 2026-11-25; antes "Hacer un simulacro", debajo
                          de los contactos): manda su ubicacion y sus datos a la garita marcados como prueba, sin sirena; el servidor solo avisa a la
@@ -197,10 +206,6 @@
                     <button class="panic-drill-btn" id="btnPanicDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
                     <p class="panic-drill-note" id="panicDrillNote"></p>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
-                    <!-- SISDEL: "HABLAR A CENTRAL DE MONITOREO" (audio-panico.js, talkButton): mientras la alerta este abierta; al tocarlo se pide
-                         el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
-                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
-                    <div class="panic-talk-note" id="panicTalkNote" hidden></div>
                     <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
                          contesta solo; la garita escucha y puede hablarle -->
                     <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
@@ -430,7 +435,7 @@
     <script src="sisdel-core.js?v=20261125m"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261125a"></script>
-    <script src="audio-panico.js?v=20261125n"></script>
+    <script src="audio-panico.js?v=20261125p"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -797,18 +802,22 @@
             document.getElementById('panicDrillNote').textContent = SisdelPanicoPrueba.NOTE;
             let drillShown = null;
             let drillTimer = null;
+            // Alerta abierta: solo el boton de panico, su estado y "PRESIONE PARA HABLAR"
+            const focusAlert = (a) => document.getElementById('panicCard').classList.toggle('alert-open', !!a && ['ACTIVE', 'ATTENDED'].includes(a.status));
             function showDrill(alert) {
+                focusAlert(alert);
                 drillShown = alert;
                 clearTimeout(drillTimer);
                 panicStatus.style.display = 'block';
                 panicStatus.classList.add('drill');
                 const r = SisdelPanicoPrueba.render(panicStatus, alert, {
                     onCancel: canCancelPanic ? async () => { try { await SisdelRondas.cancelPanic(alert.id); } catch (e) { SISDEL.showToast('No se pudo terminar la prueba', 'error'); } } : null,
-                    onClose: () => { drillShown = null; clearTimeout(drillTimer); panicStatus.style.display = 'none'; }
+                    onClose: () => { drillShown = null; clearTimeout(drillTimer); panicStatus.style.display = 'none'; focusAlert(null); }
                 });
                 if (r.state === 'wait') drillTimer = setTimeout(() => { if (drillShown && drillShown.id === alert.id) showDrill(drillShown); }, 15000);
             }
             function showPanic(alert) {
+                focusAlert(alert);
                 if (!alert) { panicStatus.style.display = 'none'; panicButton.setState('ready'); return; }
                 if (alert.simulacro === true) { showDrill(alert); return; }
                 drillShown = null; clearTimeout(drillTimer);
@@ -847,7 +856,7 @@
             // "HABLAR A CENTRAL DE MONITOREO": el microfono se pide al tocarlo (ya no solo al enviar la alerta)
             let talk = null;
             function talkUi() {
-                if (!talk) talk = SisdelAudioPanico.talkButton({ button: document.getElementById('panicTalk'), note: document.getElementById('panicTalkNote') });
+                if (!talk) talk = SisdelAudioPanico.talkButton({ button: document.getElementById('panicTalk'), note: document.getElementById('panicTalkNote'), unlock: () => { if (audioCtl) audioCtl.unlock(); } });
                 return talk;
             }
             function startAudio(alertId) {

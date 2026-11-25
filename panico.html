@@ -55,6 +55,10 @@
         /* "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): grande, azul; verde cuando la central ya sabe */
         .panic-talk { align-self: stretch; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.95rem 1rem; border: 2px solid #60a5fa; border-radius: var(--radius-md); background: #1d4ed8; color: #fff; font: inherit; text-align: left; cursor: pointer; }
         .panic-talk[hidden] { display: none; }
+        /* Con una alerta de ESTE telefono abierta solo queda el boton de panico, su estado y "PRESIONE PARA HABLAR" (pedido del usuario el
+           2026-11-25: "para no confundir con tanto texto al vecino"). Vuelve todo cuando la alerta se cierra */
+        body.pq-alert-open #pqNoGps, body.pq-alert-open #pqDrill, body.pq-alert-open #pqDrillNote, body.pq-alert-open #panicAudio,
+        body.pq-alert-open #pqHouse, body.pq-alert-open #pqStepSave, body.pq-alert-open #panicStatus .btn, body.pq-alert-open .pp-actions { display: none !important; }
         .panic-talk svg { flex: none; }
         .panic-talk b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
         .panic-talk small { display: block; margin-top: 0.15rem; font-size: 0.8rem; opacity: 0.92; }
@@ -139,6 +143,10 @@
         <section class="pq-panic" id="pqStepPanic" hidden>
             <!-- El circulo de panico (panico-boton.js): mantener presionado 2 segundos; se llena y, al terminar, dice ALERTA ENVIADA -->
             <div id="panicBtnHost"></div>
+            <!-- SISDEL: "PRESIONE PARA HABLAR" (audio-panico.js, talkButton; antes "HABLAR A CENTRAL DE MONITOREO"), justo debajo del boton de panico (pedido del usuario el 2026-11-25): mientras la alerta este abierta; al tocarlo se pide
+                 el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
+            <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
+            <div class="panic-talk-note" id="panicTalkNote" hidden></div>
             <p class="pq-warn" id="pqNoGps" hidden>Sin su ubicación la alerta sale igual, con su lote y su nombre, pero sin el mapa.</p>
             <!-- SISDEL: prueba "todo sin novedad" (pedidos del usuario el 2026-11-23 y 2026-11-25; antes "Hacer un simulacro", mas abajo):
                  manda su ubicacion y sus datos a la garita marcados como prueba, sin sirena; el servidor solo avisa a la central, la garita y
@@ -146,10 +154,6 @@
             <button class="pq-drill" id="pqDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
             <p class="pq-drill-note" id="pqDrillNote"></p>
             <div class="panic-status" id="panicStatus" hidden></div>
-            <!-- SISDEL: "HABLAR A CENTRAL DE MONITOREO" (audio-panico.js, talkButton): mientras la alerta este abierta; al tocarlo se pide
-                 el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
-            <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
-            <div class="panic-talk-note" id="panicTalkNote" hidden></div>
             <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta que envio ESTE telefono este abierta, si la garita
                  llama, contesta solo; la garita escucha y puede hablarle -->
             <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
@@ -181,7 +185,7 @@
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
     <script src="rondas-core.js?v=20261125a"></script>
     <script src="sirena.js?v=20261125b"></script>
-    <script src="audio-panico.js?v=20261125n"></script>
+    <script src="audio-panico.js?v=20261125p"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
     <script src="panico-prueba.js?v=20261125a"></script>
@@ -274,6 +278,7 @@
                 m.hidden = !text;
             }
             function needRelink(text) {
+                document.body.classList.remove('pq-alert-open');
                 dropLink();
                 link = null;
                 paintWho();
@@ -510,7 +515,7 @@
                             if (!res.ok) alert(res.error);
                         } catch (e) { alert('No hay conexión: vuelva a intentarlo.'); }
                     } : null,
-                    onClose: () => { clearTimeout(pollTimer); current = null; panicStatus.hidden = true; }
+                    onClose: () => { clearTimeout(pollTimer); current = null; panicStatus.hidden = true; document.body.classList.remove('pq-alert-open'); }
                 });
             }
             // Mientras la prueba espera a la garita o al WhatsApp (los primeros 2 minutos), se pregunta cada 5 s
@@ -557,6 +562,8 @@
             }
             function showAlert(a, recuperada) {
                 current = a;
+                // Alerta de este telefono abierta: solo el boton de panico, su estado y "PRESIONE PARA HABLAR"
+                document.body.classList.toggle('pq-alert-open', !!a && a.mine !== false && ['ACTIVE', 'ATTENDED'].includes(a.status));
                 syncAudio(a);
                 if (a.mine === false && a.simulacro !== true) { showHouse(a); return; }
                 SisdelSirena.stop();
@@ -615,7 +622,7 @@
                 audioFor = a.id;
                 const call = (action, data) => api('panicAudio', { action, secret: link.secret, alertId: a.id, ...data });
                 audioCtl = SisdelAudioPanico.answerCalls({ call, audioEl: $('panicAudioEl'), onState: paintAudio });
-                if (!talk) talk = SisdelAudioPanico.talkButton({ button: $('panicTalk'), note: $('panicTalkNote') });
+                if (!talk) talk = SisdelAudioPanico.talkButton({ button: $('panicTalk'), note: $('panicTalkNote'), unlock: () => { if (audioCtl) audioCtl.unlock(); } });
                 talk.show(call);
             }
             $('panicAudioHang').addEventListener('click', () => { if (audioCtl) audioCtl.hangup(); });

@@ -21,7 +21,7 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261120m"></script>
+    <script src="./sisdel-reportes.js?v=20261124b"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
     <script src="./sisdel-bancos.js?v=20261120a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
@@ -844,13 +844,14 @@
                         <div class="rep-cat rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden shadow-sm transition" data-cat="residentes">
                             <button type="button" onclick="toggleReportCategory('residentes')" class="rep-cat-head w-full flex items-center gap-3 px-4 py-3.5 bg-slate-50 dark:bg-slate-700/40 text-left hover:bg-slate-100 dark:hover:bg-slate-700/70 transition" aria-expanded="false">
                                 <i class="fas fa-users w-5 text-center text-lg text-slate-700 dark:text-slate-200"></i>
-                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Residentes y vehículos</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Propietarios con su deuda y los marbetes de los vehículos.</span></span>
+                                <span class="flex-1 min-w-0"><span class="block font-bold text-slate-900 dark:text-white">Residentes y vehículos</span><span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Propietarios con su deuda, los marbetes de los vehículos y las visitas que autorizan.</span></span>
                                 <span class="rep-cat-count inline-flex items-center justify-center min-w-[1.6rem] h-6 px-2 rounded-full text-xs font-bold border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300">2</span>
                                 <i class="fas fa-chevron-down rep-cat-chev text-slate-400 transition-transform"></i>
                             </button>
                             <ul class="rep-cat-items hidden p-1.5 border-t border-slate-200 dark:border-slate-700">
                                 <li><button type="button" onclick="selectReport('owners')" id="rep-tab-owners" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Número de lote, nombre, teléfono y lo que debe cada propietario: cuotas, mora y saldo total, con filtros por período y por fase."><span>Listado general de propietarios</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                                 <li><button type="button" onclick="selectReport('marbetes')" id="rep-tab-marbetes" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) con un subtotal por fase, para imprimir y entregar los marbetes; también imprime las calcomanías con su código QR."><span>Impresión de marbetes por fase</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
+                                <li><button type="button" onclick="selectReport('visitas')" id="rep-tab-visitas" class="rep-tab w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-left text-[15px] font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-400/10 hover:text-blue-600 dark:hover:text-blue-400 transition" title="Los pases de visita que autorizó cada vecino: fecha, hora, visitante, placa, tiempo autorizado, cuándo ingresó y cuándo salió del condominio; por vecino, fecha o visitante, con búsqueda por nombre o placa."><span>Visitas autorizadas por residente</span><span class="text-lg leading-none text-slate-400 dark:text-slate-500">&rsaquo;</span></button></li>
                             </ul>
                         </div>
                             <!-- Seguridad: el QR de panico por vecino (reportes.panico_qr), el mismo reporte de Administracion > Reportes. Lo abre
@@ -1038,6 +1039,44 @@
                                     <select id="mb-order" onchange="marbetesFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
                                         <option value="unit">Por lote o casa</option>
                                         <option value="name">Alfabético</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- SISDEL: filtros de Visitas autorizadas por residente (pedido del usuario el 2026-11-24): buscar por visitante o
+                                 placa (tambien por el vecino o su lote), a cuales mostrar, el orden (por vecino, fecha o visitante) y si las
+                                 fechas van de la mas nueva a la mas vieja. Desde y Hasta son los de todos los reportes. -->
+                            <div id="rep-visitas-filters" class="flex flex-wrap items-end gap-3" style="display:none">
+                                <div class="min-w-[16rem] flex-1 max-w-md">
+                                    <label for="vs-search" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Buscar</label>
+                                    <div class="relative">
+                                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none"></i>
+                                        <input type="search" id="vs-search" autocomplete="off" spellcheck="false" oninput="visitsSearchChanged()" placeholder="Nombre del visitante o placa (también vecino o lote)" class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="vs-show" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Mostrar</label>
+                                    <select id="vs-show" onchange="visitsFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="all">Todas las visitas</option>
+                                        <option value="entered">Las que ingresaron</option>
+                                        <option value="inside">Las que siguen dentro</option>
+                                        <option value="pending">Las que están por llegar</option>
+                                        <option value="noshow">Las que no llegaron</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="vs-order" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Ordenar por</label>
+                                    <select id="vs-order" onchange="visitsFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer font-semibold">
+                                        <option value="unit">Vecino (lote o casa)</option>
+                                        <option value="name">Vecino (nombre)</option>
+                                        <option value="date">Fecha</option>
+                                        <option value="visitor">Nombre del visitante</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="vs-recent" class="block text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400 mb-1">Fechas</label>
+                                    <select id="vs-recent" onchange="visitsFiltersChanged()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg outline-none text-sm cursor-pointer">
+                                        <option value="1">Las más recientes primero</option>
+                                        <option value="0">Las más antiguas primero</option>
                                     </select>
                                 </div>
                             </div>
@@ -7461,6 +7500,7 @@
             'pay-map': 'Tabla general',
             owners: 'Listado general de propietarios',
             marbetes: 'Impresión de marbetes por fase',
+            visitas: 'Visitas autorizadas por residente',
             'mora-discounts': 'Descuentos de mora',
             'account-statement': 'Estado de cuenta general'
         };
@@ -7528,7 +7568,7 @@
             // El filtro de fechas aplica a todos menos 'morosos'.
             const periodWrap = document.getElementById('rep-period-wrap');
             const periodWrapTo = document.getElementById('rep-period-wrap-to');
-            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance' || key === 'mora-discounts';
+            const showPeriod = key === 'income' || key === 'expense-cat' || key === 'account-statement' || key === 'month-balance' || key === 'mora-discounts' || key === 'visitas';
             if (periodWrap) periodWrap.style.display = showPeriod ? '' : 'none';
             if (periodWrapTo) periodWrapTo.style.display = showPeriod ? '' : 'none';
             // SISDEL: el Listado general de propietarios trae sus propios filtros (periodo por meses, fase, orden y a quienes mostrar)
@@ -7544,9 +7584,12 @@
             const marbetesWrap = document.getElementById('rep-marbetes-filters');
             if (marbetesWrap) marbetesWrap.style.display = key === 'marbetes' ? '' : 'none';
             if (key === 'marbetes') marbetesPrepareFilters();
+            const visitasWrap = document.getElementById('rep-visitas-filters');
+            if (visitasWrap) visitasWrap.style.display = key === 'visitas' ? '' : 'none';
+            if (key === 'visitas') visitsPrepareFilters();
             // SISDEL: lote o casa: el filtro va en los reportes por residente
             const typeWrap = document.getElementById('rep-type-wrap');
-            const byResident = key === 'morosos' || key === 'mora-list' || key === 'pay-map' || key === 'owners' || key === 'marbetes';
+            const byResident = key === 'morosos' || key === 'mora-list' || key === 'pay-map' || key === 'owners' || key === 'marbetes' || key === 'visitas';
             if (typeWrap) typeWrap.style.display = byResident ? '' : 'none';
             if (byResident) unitTypeOptions(document.getElementById('rep-type'), unitTypeCounts(Store.get('residents') || []), repTypeFilter || '');
             renderCurrentReport();
@@ -7565,6 +7608,7 @@
             else if (currentReportKey === 'pay-map') currentReportData = buildPayMapReport();
             else if (currentReportKey === 'owners') currentReportData = buildOwnersReport();
             else if (currentReportKey === 'marbetes') currentReportData = buildMarbetesReport();
+            else if (currentReportKey === 'visitas') currentReportData = buildVisitsReport();
             else if (currentReportKey === 'mora-discounts') currentReportData = buildMoraDiscountReport();
             paintReportTable();
             paintMarbetesView();
@@ -9202,6 +9246,187 @@
                 chartDatasets: [
                     { label: 'Marbetes (vehículos registrados)', data: list.groups.map(g => g.vehicles), color: 'rgba(59,130,246,0.7)', border: '#2563EB' },
                     { label: 'Residentes sin vehículo', data: list.groups.map(g => g.without), color: 'rgba(251,191,36,0.7)', border: '#D97706' }
+                ]
+            };
+        }
+
+        // ─── SISDEL: Visitas autorizadas por residente (pedido del usuario el 2026-11-24: "agregar reporte VISITAS AUTORIZADAS POR
+        // RESIDENTE, con las columnas fecha, hora, nombre, placas, tiempo autorizado, hora y fecha en que salio del condominio,
+        // ordenado por vecino y con imprimir, PDF, exportar y WhatsApp, con opcion de ordenar por fecha, por nombre y busqueda por
+        // nombre o placa del vehiculo"). Los pases los entrega finanzas.html (window.parent.sisdelVisitsReport.load, solo con "Ver
+        // visitas" y el privilegio del reporte) para el rango Desde / Hasta; el calculo es visitsReport de finanzas/sisdel-reportes.js.
+        // Se agregaron cuando ingreso, cuanto estuvo dentro y el estado (dentro, salio, por llegar, no llego). `var` y funciones: el
+        // reporte puede pintarse antes de que corra una variable de aqui.
+        var visitsSearch = '';
+        var visitsSearchTimer = null;
+        var visitsShow = 'all';
+        var visitsOrder = (function () { try { const v = localStorage.getItem('sisdel_visitas_orden'); return ['unit', 'name', 'date', 'visitor'].indexOf(v) >= 0 ? v : 'unit'; } catch (e) { return 'unit'; } })();
+        var visitsRecent = (function () { try { return localStorage.getItem('sisdel_visitas_recientes') !== '0'; } catch (e) { return true; } })();
+        var visitsCache = { key: '', at: 0, list: null, truncated: false, error: '', loading: '' };
+        var VISITS_CACHE_MS = 30000;
+        function visitsBridge() {
+            try { return window.parent && window.parent !== window ? window.parent.sisdelVisitsReport : null; } catch (e) { return null; }
+        }
+        function visitsRange() {
+            const from = document.getElementById('rep-from')?.value || '';
+            const to = document.getElementById('rep-to')?.value || '';
+            return { from: from, to: to, ok: /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to };
+        }
+        // Pide los pases del rango (de nuevo si cambia el rango o, con Actualizar, si pasaron 30 s) y vuelve a pintar al llegar.
+        // Mientras llegan los nuevos se ven los de antes del mismo rango; la respuesta de un rango que ya no se pide se descarta
+        function loadReportVisits(from, to) {
+            const bridge = visitsBridge();
+            if (!bridge || typeof bridge.load !== 'function') return;
+            const key = from + '|' + to;
+            const fresh = visitsCache.key === key && (visitsCache.list || visitsCache.error) && Date.now() - visitsCache.at < VISITS_CACHE_MS;
+            if (fresh || visitsCache.loading === key) return;
+            if (visitsCache.key !== key) { visitsCache.list = null; visitsCache.error = ''; visitsCache.truncated = false; }
+            visitsCache.key = key;
+            visitsCache.loading = key;
+            Promise.resolve().then(function () { return bridge.load(from, to); }).then(function (res) {
+                if (visitsCache.loading !== key) return;
+                visitsCache.list = Array.isArray(res && res.list) ? res.list : [];
+                visitsCache.truncated = !!(res && res.truncated);
+                visitsCache.error = '';
+            }, function (error) {
+                if (visitsCache.loading !== key) return;
+                visitsCache.list = null;
+                visitsCache.error = String((error && (error.code || error.message)) || 'error');
+            }).then(function () {
+                if (visitsCache.loading !== key) return;
+                visitsCache.loading = '';
+                visitsCache.at = Date.now();
+                const pane = document.getElementById('rep-detail');
+                if (currentReportKey === 'visitas' && pane && !pane.classList.contains('hidden')) renderCurrentReport();
+            });
+        }
+        function visitsSearchChanged() {
+            clearTimeout(visitsSearchTimer);
+            visitsSearchTimer = setTimeout(function () {
+                const el = document.getElementById('vs-search');
+                const next = el ? el.value.trim() : '';
+                if (next === visitsSearch) return;
+                visitsSearch = next;
+                renderCurrentReport();
+            }, 160);
+        }
+        function visitsPrepareFilters() {
+            const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+            set('vs-search', visitsSearch);
+            set('vs-show', visitsShow);
+            set('vs-order', visitsOrder);
+            set('vs-recent', visitsRecent ? '1' : '0');
+        }
+        function visitsFiltersChanged() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+            visitsShow = ['all', 'entered', 'inside', 'pending', 'noshow'].indexOf(val('vs-show')) >= 0 ? val('vs-show') : 'all';
+            visitsOrder = ['unit', 'name', 'date', 'visitor'].indexOf(val('vs-order')) >= 0 ? val('vs-order') : 'unit';
+            visitsRecent = val('vs-recent') !== '0';
+            try { localStorage.setItem('sisdel_visitas_orden', visitsOrder); localStorage.setItem('sisdel_visitas_recientes', visitsRecent ? '1' : '0'); } catch (e) { /* solo se pierde la preferencia */ }
+            renderCurrentReport();
+        }
+        var VISIT_STATUS_CLASS = { dentro: 'text-amber-600 dark:text-amber-300', salio: 'text-emerald-600 dark:text-emerald-400', por_llegar: 'text-blue-600 dark:text-blue-400', no_llego: 'text-slate-500 dark:text-slate-400' };
+
+        function buildVisitsReport() {
+            const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const R = SisdelReportesOikos;
+            const bridge = visitsBridge();
+            const range = visitsRange();
+            if (bridge && range.ok) loadReportVisits(range.from, range.to);
+            const sameRange = visitsCache.key === range.from + '|' + range.to;
+            const loaded = range.ok && sameRange && Array.isArray(visitsCache.list);
+            let visits = loaded ? visitsCache.list : [];
+            const residents = Store.get('residents') || [];
+            const byId = new Map(residents.map(r => [String(r.id), r]));
+            // Lote o casa (filtro comun de los reportes por residente): solo los pases de los vecinos de ese tipo
+            if (repTypeFilter) { const ids = new Set(reportResidents().map(r => String(r.id))); visits = visits.filter(v => ids.has(String(v.userId))); }
+            // Busqueda inteligente: el visitante y la placa (lo pedido), y tambien el vecino y su lote o casa
+            if (visitsSearch) {
+                visits = SisdelBusqueda.filter(visits, visitsSearch, v => { const r = byId.get(String(v.userId)); return [v.visitorName, v.vehiclePlate, r ? r.name : '', r ? r.unit : v.casa]; });
+            }
+            const data = R.visitsReport(visits, residents, { from: range.from, to: range.to, today: localDayKey(new Date()), order: visitsOrder, recent: visitsRecent, show: visitsShow });
+            const t = data.totals;
+            const show = (text) => (visitsSearch ? SisdelBusqueda.highlight(String(text || ''), visitsSearch) : esc(text));
+            const muted = (text) => '<span class="italic text-slate-400 dark:text-slate-500">' + esc(text) + '</span>';
+            const status = (st) => '<span class="font-semibold ' + (VISIT_STATUS_CLASS[st] || '') + '">' + esc(R.VISIT_STATUS[st] || '') + '</span>';
+            const rowOf = (x) => [
+                show(x.resident.unit || '—'), x.resident.known ? show(x.resident.name) : muted(x.resident.name),
+                esc(R.dayLabel(x.day)), x.time ? esc(R.hourLabel(x.time)) : muted('Sin hora'),
+                show(x.visitor || '—'), x.plate ? show(x.plate) : muted('Sin placa'),
+                esc(x.authorized),
+                x.entered ? esc(R.stampLabel(x.entered)) : muted('—'),
+                x.exited ? esc(R.stampLabel(x.exited)) + (x.stay != null ? '<span class="block text-xs text-slate-500 dark:text-slate-400"> (estuvo ' + esc(R.stayLabel(x.stay)) + ')</span>' : '')
+                    : (x.status === 'dentro' ? muted('Sigue dentro') : muted('—')),
+                status(x.status)
+            ];
+            const rows = [];
+            const meta = [];
+            if (data.groups.length) {
+                data.groups.forEach(function (g) {
+                    g.rows.forEach(function (x) { rows.push(rowOf(x)); meta.push(null); });
+                    rows.push(['', 'Subtotal: ' + esc(g.resident.name), '', '', plural(g.rows.length, 'visita', 'visitas'), '', '',
+                        g.entered === 1 ? '1 ingresó' : g.entered + ' ingresaron', g.inside ? g.inside + ' dentro' : '', g.noShow ? (g.noShow === 1 ? '1 no llegó' : g.noShow + ' no llegaron') : '']);
+                    meta.push({ kind: 'subtotal' });
+                });
+            } else {
+                data.rows.forEach(function (x) { rows.push(rowOf(x)); meta.push(null); });
+            }
+
+            const rangeText = range.ok ? 'del ' + R.dayLabel(range.from) + ' al ' + R.dayLabel(range.to) : '';
+            const orderText = { unit: 'por vecino (lote o casa)', name: 'por vecino (nombre)', date: 'por fecha', visitor: 'por nombre del visitante' }[visitsOrder] + (visitsRecent ? ', las más recientes primero' : ', las más antiguas primero');
+            const showText = { all: '', entered: 'solo las que ingresaron', inside: 'solo las que siguen dentro', pending: 'solo las que están por llegar', noshow: 'solo las que no llegaron' }[visitsShow];
+            const filterText = [rangeText, orderText, showText, visitsSearch ? 'búsqueda: «' + visitsSearch + '»' : '', repTypeFilter ? unitTypeFilterText(repTypeFilter) : ''].filter(Boolean).join(' · ');
+
+            let notice = '';
+            if (!bridge) notice = 'No se pueden leer los pases de visita: su usuario necesita el privilegio «Ver visitas».';
+            else if (!range.ok) notice = 'Elija las fechas Desde y Hasta (Desde no puede ser después de Hasta) y pulse Actualizar.';
+            else if (sameRange && visitsCache.error && !loaded) notice = 'No se pudieron leer los pases de visita (' + visitsCache.error + '). Vuelva a intentarlo con Actualizar.';
+            else if (!loaded) notice = 'Cargando las visitas ' + rangeText + '...';
+            else if (visitsCache.truncated) notice = 'Hay más de ' + ((bridge && bridge.MAX) || 5000) + ' pases en el rango: solo se muestran esos. Acorte Desde y Hasta para verlos todos.';
+
+            // Grafica: los vecinos con mas visitas (hasta 15)
+            const perResident = new Map();
+            data.rows.forEach(x => { const k = x.resident.id; if (!perResident.has(k)) perResident.set(k, { label: (x.resident.unit ? x.resident.unit + ' · ' : '') + x.resident.name, visits: 0, entered: 0 }); const p = perResident.get(k); p.visits++; if (x.entered) p.entered++; });
+            const top = [...perResident.values()].sort((a, b) => b.visits - a.visits).slice(0, 15);
+
+            return {
+                title: 'Visitas autorizadas por residente',
+                summary: plural(t.visits, 'visita', 'visitas') + ' de ' + plural(t.residents, 'vecino', 'vecinos') + ' · ' + filterText,
+                hideSummary: true,
+                kpisFromTotals: false,
+                highlights: [
+                    { tone: 'total', value: String(t.visits), label: t.visits === 1 ? 'visita autorizada' : 'visitas autorizadas' },
+                    { tone: 'paid', value: String(t.entered), label: t.entered === 1 ? 'ingresó' : 'ingresaron' },
+                    { tone: 'pending', value: String(t.inside), label: t.inside === 1 ? 'sigue dentro' : 'siguen dentro' },
+                    { tone: 'blank', value: String(t.pending), label: 'por llegar' },
+                    { tone: 'none', value: String(t.noShow), label: t.noShow === 1 ? 'no llegó' : 'no llegaron' },
+                    { tone: 'total', value: String(t.residents), label: t.residents === 1 ? 'vecino que autorizó' : 'vecinos que autorizaron' }
+                ],
+                highlightsNote: filterText + (t.temporal ? ' · ' + plural(t.temporal, 'acceso temporal', 'accesos temporales') + ' (varios días: su ingreso y su salida son los últimos)' : ''),
+                hint: 'Imprimir, PDF, Excel y WhatsApp sacan la lista tal como se ve (con la búsqueda y los filtros)',
+                notice: notice,
+                emptyText: visitsSearch || visitsShow !== 'all' || repTypeFilter ? 'Ninguna visita coincide con los filtros.' : 'No hay visitas autorizadas en ese período.',
+                headers: ['Lote / Casa', 'Residente', 'Fecha', 'Hora', 'Visitante', 'Placa', 'Tiempo autorizado', 'Ingresó', 'Salió', 'Estado'],
+                leftCols: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+                nowrapCols: [0, 2, 3, 5, 9],
+                emphasisCols: [1, 4],
+                rows: rows,
+                rowsMeta: meta,
+                totals: ['TOTAL', plural(t.residents, 'vecino', 'vecinos'), '', '', plural(t.visits, 'visita', 'visitas'), '', t.temporal ? plural(t.temporal, 'acceso temporal', 'accesos temporales') : '',
+                    t.entered === 1 ? '1 ingresó' : t.entered + ' ingresaron', t.inside ? t.inside + ' dentro' : '', t.noShow ? (t.noShow === 1 ? '1 no llegó' : t.noShow + ' no llegaron') : ''],
+                numericCols: [],
+                // WhatsApp: el vecino, la fecha, el visitante, la placa y el estado
+                compact: {
+                    headers: ['Vecino', 'Fecha', 'Visitante', 'Placa', 'Estado'],
+                    rows: data.rows.map(x => [esc((x.resident.unit ? x.resident.unit + ' ' : '') + x.resident.name), esc(R.dayLabel(x.day) + (x.time ? ' ' + R.hourLabel(x.time) : '')), esc(x.visitor || '—'), esc(x.plate || '—'), esc(R.VISIT_STATUS[x.status] + (x.exited ? ' ' + R.stampLabel(x.exited) : ''))]),
+                    totals: ['TOTAL', '', plural(t.visits, 'visita', 'visitas'), '', t.entered + ' ingresaron'],
+                    numericCols: []
+                },
+                chartType: 'bar',
+                chartLabels: top.map(p => p.label),
+                chartDatasets: [
+                    { label: 'Visitas autorizadas', data: top.map(p => p.visits), color: 'rgba(59,130,246,0.7)', border: '#2563EB' },
+                    { label: 'Ingresaron', data: top.map(p => p.entered), color: 'rgba(16,185,129,0.7)', border: '#059669' }
                 ]
             };
         }

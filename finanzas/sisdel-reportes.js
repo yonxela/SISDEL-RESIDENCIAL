@@ -753,6 +753,122 @@
         };
     }
 
+    // ─── Visitas autorizadas por residente (pedido del usuario el 2026-11-24) ───
+    // Cada pase de visita de SISDEL (coleccion visitas) que vale algun dia del rango [from, to]: un pase de un dia, su dia
+    // (visitDate); un acceso temporal, de visitDate a endDate. Va con el vecino que lo autorizo (userId; si ya no esta en
+    // Residentes, con la casa del pase). El estado sale de lo que anoto la garita: ingreso (enteredAt) y salida (exitedAt, solo si
+    // es despues del ingreso; un acceso temporal guarda el ultimo ingreso y la ultima salida). Las horas van en hora de Guatemala.
+    const GT_OFFSET_MS = -6 * 3600 * 1000; // Guatemala no cambia de horario
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const validDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+    const dayLabel = (ymd) => (validDay(ymd) ? `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}` : '');
+    function hourLabel(hm) {
+        const m = /^(\d{1,2}):(\d{2})/.exec(String(hm || ''));
+        if (!m || Number(m[1]) > 23) return '';
+        const h = Number(m[1]);
+        return `${h % 12 || 12}:${m[2]} ${h >= 12 ? 'p. m.' : 'a. m.'}`;
+    }
+    // Un instante (ISO, milisegundos o un Timestamp de Firestore) en hora de Guatemala: { day, time, ms }
+    function localStamp(value) {
+        let ms = NaN;
+        if (value && typeof value.toDate === 'function') ms = value.toDate().getTime();
+        else if (typeof value === 'number') ms = value;
+        else if (value) ms = Date.parse(value);
+        if (!Number.isFinite(ms)) return null;
+        const d = new Date(ms + GT_OFFSET_MS);
+        return { day: `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`, time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`, ms };
+    }
+    const stampLabel = (st) => (st ? `${dayLabel(st.day)} ${hourLabel(st.time)}` : '');
+    const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+    function stayLabel(minutes) {
+        if (!(minutes >= 0)) return '';
+        if (minutes < 60) return `${minutes} min`;
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        if (h < 48) return m ? `${h} h ${m} min` : `${h} h`;
+        const d = Math.floor(h / 24);
+        return `${d} días${h % 24 ? ` ${h % 24} h` : ''}`;
+    }
+    const VISIT_STATUS = { dentro: 'Dentro', salio: 'Salió', por_llegar: 'Por llegar', no_llego: 'No llegó' };
+    const VISIT_ORDERS = ['unit', 'name', 'date', 'visitor'];
+    const VISIT_SHOW = { all: null, entered: ['dentro', 'salio'], inside: ['dentro'], pending: ['por_llegar'], noshow: ['no_llego'] };
+
+    // visits: los pases tal como los entrega finanzas.html; residents: los de OIKOS (id, name, unit, fase).
+    // opts: { from, to, today ('AAAA-MM-DD'), order: 'unit' | 'name' | 'date' | 'visitor', recent (las fechas mas nuevas primero),
+    // show: 'all' | 'entered' | 'inside' | 'pending' | 'noshow' }. Con order 'unit' o 'name' van agrupados por vecino (groups).
+    function visitsReport(visits, residents, opts) {
+        const o = opts || {};
+        const text = (v) => String(v == null ? '' : v).trim();
+        const from = validDay(o.from) ? o.from : '0000-01-01';
+        const to = validDay(o.to) ? o.to : '9999-12-31';
+        const today = validDay(o.today) ? o.today : to;
+        const order = VISIT_ORDERS.includes(o.order) ? o.order : 'unit';
+        const recent = o.recent !== false;
+        const wanted = VISIT_SHOW[o.show] || null;
+        const known = new Map((residents || []).filter((r) => r && r.id !== undefined && r.id !== null && r.id !== '').map((r) => [String(r.id), r]));
+
+        const items = [];
+        (visits || []).forEach((v) => {
+            if (!v || !validDay(v.visitDate)) return;
+            const temporal = v.visitType === 'temporal' && validDay(v.endDate) && v.endDate >= v.visitDate;
+            const day = v.visitDate;
+            const endDay = temporal ? v.endDate : day;
+            if (endDay < from || day > to) return;
+            const entered = localStamp(v.enteredAt);
+            let exited = localStamp(v.exitedAt);
+            if (exited && (!entered || exited.ms < entered.ms)) exited = null;
+            const status = entered ? (exited ? 'salio' : 'dentro') : (today <= endDay ? 'por_llegar' : 'no_llego');
+            const owner = String(v.userId || '');
+            const r = known.get(owner);
+            const resident = r
+                ? { id: owner, name: text(r.name), unit: text(r.unit), fase: text(r.fase), known: true }
+                : { id: owner, name: 'Vecino que ya no está en Residentes', unit: text(v.casa), fase: '', known: false };
+            const days = daysBetween(day, endDay) + 1;
+            items.push({
+                id: text(v.id), resident, visitor: text(v.visitorName), plate: text(v.vehiclePlate).toUpperCase(), day, endDay,
+                time: /^\d{1,2}:\d{2}/.test(text(v.visitTime)) ? text(v.visitTime).slice(0, 5) : '', temporal, days,
+                authorized: temporal ? `${days} días (${dayLabel(day).slice(0, 5)} al ${dayLabel(endDay)})` : 'Un día (una entrada)',
+                entered, exited, stay: entered && exited ? Math.round((exited.ms - entered.ms) / 60000) : null, status,
+                created: localStamp(v.createdAt)
+            });
+        });
+        const all = items;
+        const shown = wanted ? all.filter((x) => wanted.includes(x.status)) : all;
+        const dateKey = (x) => `${x.day} ${x.time || '99:99'} ${x.created ? x.created.ms : 0}`;
+        const byDate = (a, b) => (recent ? -1 : 1) * (dateKey(a) < dateKey(b) ? -1 : dateKey(a) > dateKey(b) ? 1 : 0) || collator(a.visitor, b.visitor) || collator(a.id, b.id);
+        const residentCmp = order === 'name'
+            ? (a, b) => collator(a.name, b.name) || collator(a.unit, b.unit) || collator(a.id, b.id)
+            : (a, b) => collator(a.unit, b.unit) || collator(a.name, b.name) || collator(a.id, b.id);
+        let rows;
+        const groups = [];
+        if (order === 'unit' || order === 'name') {
+            const map = new Map();
+            shown.forEach((x) => { if (!map.has(x.resident.id)) map.set(x.resident.id, { resident: x.resident, rows: [] }); map.get(x.resident.id).rows.push(x); });
+            [...map.values()].sort((a, b) => residentCmp(a.resident, b.resident)).forEach((g) => {
+                g.rows.sort(byDate);
+                g.entered = g.rows.filter((x) => x.entered).length;
+                g.inside = g.rows.filter((x) => x.status === 'dentro').length;
+                g.noShow = g.rows.filter((x) => x.status === 'no_llego').length;
+                groups.push(g);
+            });
+            rows = groups.flatMap((g) => g.rows);
+        } else if (order === 'visitor') {
+            rows = shown.slice().sort((a, b) => collator(a.visitor, b.visitor) || byDate(a, b));
+        } else {
+            rows = shown.slice().sort(byDate);
+        }
+        const count = (list, st) => list.filter((x) => x.status === st).length;
+        return {
+            rows, groups, grouped: groups.length > 0 || order === 'unit' || order === 'name',
+            totals: {
+                visits: rows.length, residents: new Set(rows.map((x) => x.resident.id)).size,
+                entered: rows.filter((x) => x.entered).length, inside: count(rows, 'dentro'), out: count(rows, 'salio'),
+                pending: count(rows, 'por_llegar'), noShow: count(rows, 'no_llego'), temporal: rows.filter((x) => x.temporal).length
+            },
+            all: all.length
+        };
+    }
+
     // Texto de una celda que puede traer HTML (p. ej. el boton del No. de documento)
     function plain(value) {
         if (value === null || value === undefined) return '';
@@ -800,7 +916,9 @@
                 if (number !== null) out = number;
             }
             if (options.excel && fill) return { v: out, s: fill };
-            return bold ? { v: out, s: 1 } : out;
+            // La negrita solo existe en el Excel: en WhatsApp una celda con estilo salia "[object Object]" (2026-11-24: el nombre del
+            // vecino del Listado de morosidad y de la Impresion de marbetes)
+            return bold && options.excel ? { v: out, s: 1 } : out;
         };
         // emphasisCols (p. ej. el nombre del vecino): en negrita en el Excel
         const bold = new Set(report.emphasisCols || []);
@@ -890,5 +1008,5 @@
         return out;
     }
 
-    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, marbetesList, periodLabel, accountDebt, pendingRows, withDueDates, pendingByYear, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
+    return { MAX_MONTHS, NO_FASE, monthBalance, cashMonths, periodSummary, paymentMap, moraList, ownersList, marbetesList, visitsReport, VISIT_STATUS, dayLabel, hourLabel, localStamp, stampLabel, stayLabel, periodLabel, accountDebt, pendingRows, withDueDates, pendingByYear, plain, moneyValue, slug, exportModel, addMonths, monthLong, creditCoverage, isOpeningCredit };
 });

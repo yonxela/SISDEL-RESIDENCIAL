@@ -1764,8 +1764,8 @@ async function run() {
             head('cobranza').click(); out.cobranza = [openOnes(), head('cobranza').getAttribute('aria-expanded')];
             head('dinero').click(); out.dinero = [openOnes(), localStorage.getItem('sisdel_rep_cat')];
             head('dinero').click(); out.cerrada = [openOnes(), localStorage.getItem('sisdel_rep_cat')];
-            // Lo que el bloqueo oculta no cuenta: sin marbetes ni propietarios, Residentes y vehiculos no sale
-            const st = document.createElement('style'); st.id = 'prueba-oculta'; st.textContent = '#rep-tab-owners, #rep-tab-marbetes { display: none !important; }';
+            // Lo que el bloqueo oculta no cuenta: sin marbetes, propietarios ni visitas, Residentes y vehiculos no sale
+            const st = document.createElement('style'); st.id = 'prueba-oculta'; st.textContent = '#rep-tab-owners, #rep-tab-marbetes, #rep-tab-visitas { display: none !important; }';
             document.head.appendChild(st); paintReportCategories();
             out.sinResidentes = cats().map((c) => c.dataset.cat);
             st.remove(); paintReportCategories();

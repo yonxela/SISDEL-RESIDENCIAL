@@ -129,11 +129,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-functions-compat.js"></script>
     <script src="firebase-client.js?v=20260929"></script>
-    <script src="privilegios.js?v=20261124b"></script>
-    <script src="sisdel-core.js?v=20261124b"></script>
+    <script src="privilegios.js?v=20261124c"></script>
+    <script src="sisdel-core.js?v=20261124c"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261123a"></script>
-    <script src="finanzas-bloqueo.js?v=20261123a"></script>
+    <script src="finanzas-sync.js?v=20261124a"></script>
+    <script src="finanzas-bloqueo.js?v=20261124a"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script src="avisos-push.js?v=20261124a"></script>
@@ -257,7 +257,7 @@
                 const prepare = () => {
                     if (!ready) {
                         ready = (async () => {
-                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261123a', 'reportes-ui.js?v=20261122d']) await loadScript(src);
+                            for (const src of ['sisdel-busqueda.js?v=20261115a', 'reportes-export.js?v=20261115a', 'panico-qr.js?v=20261122a', 'rondas-core.js?v=20261123a', 'reportes-ui.js?v=20261124a']) await loadScript(src);
                             if (typeof SisdelRondas !== 'undefined' && SisdelRondas.init) SisdelRondas.init(session);
                             users = await SISDEL.getUsers(condoId);
                         })().catch((error) => { ready = null; throw error; });
@@ -308,7 +308,7 @@
             function openReportFromHash(win) {
                 if (deepLinkDone) return;
                 deepLinkDone = true;
-                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|mora-list|pay-map|owners|marbetes|mora-discounts|account-statement|resumen)$/.exec(window.location.hash);
+                const match = /^#reportes\/(income|expense-cat|month-balance|morosos|mora-list|pay-map|owners|marbetes|visitas|mora-discounts|account-statement|resumen)$/.exec(window.location.hash);
                 if (!match) return;
                 try {
                     if (match[1] === 'resumen') {
@@ -479,6 +479,36 @@
                                 });
                         }
                         return () => { vehicleListeners.delete(callback); };
+                    }
+                };
+            }
+
+            // Pases de visita de los vecinos (coleccion visitas): los usa el reporte "Visitas autorizadas por residente" de OIKOS
+            // (window.parent.sisdelVisitsReport.load, pedido del usuario el 2026-11-24). Solo con "Ver visitas" (visitas.ver, que exigen
+            // las reglas) y el privilegio del reporte. Una lectura por rango (no en tiempo real): los pases que valen del dia `from` al
+            // `to` y los accesos temporales que empezaron hasta 62 dias antes (siguen valiendo dentro del rango). Hasta MAX pases: si
+            // hay mas, `truncated` y el reporte pide acortar el rango. Solo los campos que el reporte usa.
+            window.sisdelVisitsReport = null;
+            if (SISDEL.can('visitas.ver') && SISDEL.can('finanzas.reportes_visitas')) {
+                const text = (v) => (v == null ? '' : String(v));
+                const iso = (v) => (v && typeof v.toDate === 'function' ? v.toDate().toISOString() : (typeof v === 'string' ? v : ''));
+                const MAX = 5000;
+                const dayBefore = (ymd, days) => { const d = new Date(`${ymd}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - days); return d.toISOString().slice(0, 10); };
+                window.sisdelVisitsReport = {
+                    MAX,
+                    async load(from, to) {
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(from)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(to))) throw new Error('rango');
+                        const snap = await window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('visitas')
+                            .where('visitDate', '>=', dayBefore(from, 62)).where('visitDate', '<=', to).limit(MAX + 1).get();
+                        const list = snap.docs.map((d) => {
+                            const x = d.data() || {};
+                            return {
+                                id: d.id, userId: text(x.userId), casa: text(x.casa), visitorName: text(x.visitorName), vehiclePlate: text(x.vehiclePlate),
+                                visitDate: text(x.visitDate), visitTime: text(x.visitTime), visitType: text(x.visitType), endDate: text(x.endDate),
+                                enteredAt: iso(x.enteredAt), exitedAt: iso(x.exitedAt), createdAt: iso(x.createdAt)
+                            };
+                        });
+                        return { list: list.slice(0, MAX), truncated: list.length > MAX };
                     }
                 };
             }

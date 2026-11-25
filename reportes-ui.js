@@ -25,7 +25,7 @@ const SisdelReportes = (() => {
 
     // Reportes de OIKOS a los que se llega desde aqui (la clave de cada uno es su privilegio en Finanzas)
     // Mismo orden que Finanzas > Reportes de OIKOS, que los agrupa por categoria (pedido del usuario el 2026-11-22): ingresos y gastos
-    // (los cinco primeros), cobranza y morosidad (los cuatro siguientes) y residentes y vehiculos (los dos ultimos)
+    // (los cinco primeros), cobranza y morosidad (los cuatro siguientes) y residentes y vehiculos (los tres ultimos)
     const FIN_REPORTS = [
         { id: 'income', key: 'finanzas.reportes_ingresos', title: 'Ingresos por período', text: 'Lo cobrado cada mes (cuotas, cargos y otros ingresos) con el detalle de cada pago.' },
         { id: 'expense-cat', key: 'finanzas.reportes_gastos', title: 'Gastos por período y categoría', text: 'En qué se gasta el dinero del condominio en el período que elija.' },
@@ -37,7 +37,8 @@ const SisdelReportes = (() => {
         { id: 'pay-map', key: 'finanzas.reportes_morosos', title: 'Tabla general', text: 'Cada residente con sus años y meses: en rojo lo que debe, en verde lo que pagó; arriba los que más tiempo llevan en mora.' },
         { id: 'mora-discounts', key: 'finanzas.reportes_descuentos', title: 'Descuentos de mora', text: 'Cada descuento de mora: fecha, residente, meses, mora descontada, saldo antes y después, motivo y quién lo hizo.' },
         { id: 'owners', key: 'finanzas.reportes_morosos', title: 'Listado general de propietarios', text: 'Número de lote, nombre y teléfono de cada propietario con su deuda por cuotas, su mora y su saldo total; por período, por fase, en orden alfabético o de mayor a menor deuda.' },
-        { id: 'marbetes', key: 'finanzas.reportes_marbetes', title: 'Impresión de marbetes por fase', text: 'Los vehículos de los vecinos agrupados por fase, con su lote o casa, placa, marca, color y código del marbete, y un subtotal por fase; con Imprimir, PDF y Excel, y las calcomanías con su código QR.' }
+        { id: 'marbetes', key: 'finanzas.reportes_marbetes', title: 'Impresión de marbetes por fase', text: 'Los vehículos de los vecinos agrupados por fase, con su lote o casa, placa, marca, color y código del marbete, y un subtotal por fase; con Imprimir, PDF y Excel, y las calcomanías con su código QR.' },
+        { id: 'visitas', key: 'finanzas.reportes_visitas', title: 'Visitas autorizadas por residente', text: 'Los pases de visita que autorizó cada vecino: fecha, hora, visitante, placa, tiempo autorizado, cuándo ingresó y cuándo salió; por vecino, fecha o visitante, con búsqueda por nombre o placa.' }
     ];
 
     // Reportes de garita: todos usan el mismo rango de fechas y los mismos datos

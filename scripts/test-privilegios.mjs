@@ -41,7 +41,7 @@ yes('cada clave tiene subgrupo', P.ITEMS.every((i) => i.sub));
 yes('los roles por defecto existen', P.ITEMS.every((i) => i.defaultRoles.every((r) => P.ROLES.includes(r))));
 yes('los 26 privilegios de siempre siguen existiendo', LEGACY.every((k) => P.KEYS.includes(k)));
 yes('hay un privilegio para cada opcion: ya son mas de 130', P.KEYS.length >= 130);
-equal('hay 164 privilegios: 34 paraguas y 130 acciones', [P.KEYS.length, roots.length, kids.length], [164, 34, 130]);
+equal('hay 165 privilegios: 34 paraguas y 131 acciones', [P.KEYS.length, roots.length, kids.length], [165, 34, 131]);
 yes('el boton "Limpiar Base de Datos" de OIKOS, su funcion y su privilegio ya no existen', !P.KEYS.some((k) => (k.key || k) === 'finanzas.limpiar') && !/clearDB|btn-clear/.test(fs.readFileSync(new URL('../finanzas/index.html', import.meta.url), 'utf8')) && !/clearDB|btn-clear|'limpiar'/.test(fs.readFileSync(new URL('../finanzas-bloqueo.js', import.meta.url), 'utf8')));
 yes('solo los paraguas traen roles por defecto', roots.every((i) => Array.isArray(i.roles)) && kids.every((i) => i.roles === undefined));
 yes('cada accion cuelga de un paraguas que existe y aparece antes', kids.every((i) => P.KEYS.includes(i.parent) && P.KEYS.indexOf(i.parent) < P.KEYS.indexOf(i.key)));
@@ -177,7 +177,7 @@ equal('descontar mora arrastra registrar pagos y ver estados de cuenta (la pesta
     yes('OIKOS: el descuento se guarda como mora_discount con sus cuotas, motivo, quien lo hizo y lo que debia antes y despues', /type: 'mora_discount', amount: plan\.total, resiId: String\(r\.id\)/.test(ui) && /moraItems: items, mode:/.test(ui) && /byId: who \? String\(who\.id \|\| ''\) : '', byName:/.test(ui) && /before, after/.test(ui));
     yes('OIKOS: lo que debe resta la mora descontada (tambien la fija) y el descuento no entra en caja ni en el libro del estado de cuenta', /- \(ms\.moraDaily \|\| 0\) \+ \(ms\.moraWaived \|\| 0\)/.test(ui) && /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\) && !isOpeningCredit\(t\); \}/.test(ui) && !/filter\(t => t\.type !== 'charge'\)/.test(ui) && !/&& t\.type !== 'charge'; \}/.test(ui) && /if \(t\.type === 'mora_discount'\) return false;/.test(ui));
     yes('OIKOS: el reporte Descuentos de mora lista todos (tambien anulados) con motivo y quien lo hizo, y abre el detalle', /function buildMoraDiscountReport\(\)/.test(ui) && /headers: \['Fecha', 'Residente', 'Meses', 'Mora descontada', 'Debía', 'Quedó debiendo', 'Motivo', 'Registró', 'Estado'\]/.test(ui) && /kind: 'tx', txId: t\.id/.test(ui) && /m\.kind === 'tx' && m\.txId/.test(ui));
-    yes('finanzas.html le dice a OIKOS quien lo usa (el Master con su id reservado) y abre el reporte desde el panel', /window\.sisdelWho = session\.role === 'master'/.test(read('finanzas.html')) && /owners\|marbetes\|mora-discounts\|account-statement/.test(read('finanzas.html')));
+    yes('finanzas.html le dice a OIKOS quien lo usa (el Master con su id reservado) y abre el reporte desde el panel', /window\.sisdelWho = session\.role === 'master'/.test(read('finanzas.html')) && /owners\|marbetes\|visitas\|mora-discounts\|account-statement/.test(read('finanzas.html')));
     yes('OIKOS carga el motor nuevo (sisdel-mora.js?v=20261120a: la mora se carga el dia 6 y la mora al corte de una carga de saldos)', ui.includes('sisdel-mora.js?v=20261120a'));
 }
 
@@ -521,10 +521,10 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     // Cada clave que usa el modulo existe en el catalogo
     const used = [...rp.matchAll(/can\('([a-z_]+\.[a-z_]+)'\)/g)].map((m) => m[1]);
     yes('reportes-ui.js solo usa privilegios del catalogo', used.length > 10 && used.every((k) => P.itemOf(k)));
-    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 11);
+    yes('las claves de los reportes de OIKOS (FIN_REPORTS) son privilegios de Finanzas', [...rp.matchAll(/key: '(finanzas\.reportes_[a-z]+)'/g)].every((m) => P.itemOf(m[1])) && (rp.match(/key: 'finanzas\.reportes_/g) || []).length === 12);
     // Los accesos directos llegan a pantallas que existen en OIKOS
     const ids = [...rp.matchAll(/\{ id: '([a-z-]+)', key: 'finanzas\.reportes_/g)].map((m) => m[1]);
-    equal('los once reportes de OIKOS tienen acceso directo (en el orden de sus categorias)', ids, ['income', 'expense-cat', 'month-balance', 'account-statement', 'resumen', 'morosos', 'mora-list', 'pay-map', 'mora-discounts', 'owners', 'marbetes']);
+    equal('los doce reportes de OIKOS tienen acceso directo (en el orden de sus categorias)', ids, ['income', 'expense-cat', 'month-balance', 'account-statement', 'resumen', 'morosos', 'mora-list', 'pay-map', 'mora-discounts', 'owners', 'marbetes', 'visitas']);
     yes('cada acceso directo corresponde a una pestana de reportes de OIKOS (o al reporte financiero)', ids.filter((i) => i !== 'resumen').every((i) => oikos.includes(`id="rep-tab-${i}"`) && oikos.includes(`selectReport('${i}')`)) && /function openReportModal\(/.test(oikos));
     // La lista de Reportes de OIKOS trae los mismos cinco que el panel Reportes de SISDEL, en el mismo orden
     const oikosCatalog = oikos.slice(oikos.indexOf('id="rep-catalog"'), oikos.indexOf('id="rep-detail"'));
@@ -571,7 +571,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('el ingreso dice a que meses llega el saldo a favor que deja el pago (o el que ya tiene), dentro de la caja del saldo', /id="inc-bal-cover"/.test(oikos) && oikos.indexOf('id="inc-bal-cover"') > oikos.indexOf('id="inc-balance-box"') && oikos.indexOf('id="inc-bal-cover"') < oikos.indexOf('id="inc-tabs"') && /creditLeft = left > 0\.004 \? left : 0;/.test(oikos) && /creditCoverText\(creditCoverageOf\(r, creditLeft\)\)/.test(oikos));
     yes('el pago que deja saldo a favor lo anota (creditAfter, creditNote) y el comprobante, sus opciones y el detalle del movimiento lo dicen', /if \(creditInfo\) \{ tx\.creditAfter = creditInfo\.after; if \(creditInfo\.note\) tx\.creditNote = creditInfo\.note; \}/.test(oikos) && /doc\.text\('Saldo a favor después de este pago:'/.test(oikos) && /deja un saldo a favor de ' \+ formatMoney\(tx\.creditAfter\)/.test(oikos) && /Dejó un saldo a favor de \$\{esc\(formatMoney\(tx\.creditAfter\)\)\}/.test(oikos));
     yes('la lista de Residentes dice hasta que mes cubre un saldo a favor y el estado de cuenta (pantalla, PDF, impresion, Excel y WhatsApp) a que meses llega', /a favor · \$\{esc\(creditCov\.until\)\}/.test(oikos) && /id="ec-credit-cover"/.test(oikos) && (oikos.match(/ecCreditCover\(r\)/g) || []).length >= 4 && /label: 'Aplicación del saldo a favor'/.test(oikos) && /\$\{creditHtml\}/.test(oikos) && !/if \(d\.credit > 0\) kpis\.push/.test(oikos));
-    yes('OIKOS carga la version nueva de sisdel-reportes.js (con creditCoverage, cashMonths y la Tabla general en una linea por vecino)', /sisdel-reportes\.js\?v=20261120m/.test(oikos));
+    yes('OIKOS carga la version nueva de sisdel-reportes.js (con creditCoverage, cashMonths y la Tabla general en una linea por vecino)', /sisdel-reportes\.js\?v=20261124b/.test(oikos));
     // Las tres graficas del tablero (pedido del usuario, 2026-11-18): Ingresos, Gastos y Saldo del mes de 3 meses, con flechas
     // Plazo de pago de 35 dias (pedido del dueno el 2026-11-19, para todos los condominios): la cuota de un mes se paga durante
     // ese mes y hasta el dia 5 del siguiente; hasta entonces no es mora ni sale en los morosos, y en la Tabla general va en blanco
@@ -611,7 +611,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
         ['pm-fase', 'pm-order', 'pm-view', 'rep-paymap-filters'].every((id) => oikos.includes(`id="${id}"`)) && /localStorage\.setItem\('sisdel_tabla_orden', payMapOrder\)/.test(oikos)
         && /sisdelPayMap\(\{ fase: payMapFase, order: payMapOrder, search: payMapSearch, coverage: true, mora: withMora \}\)/.test(oikos) && /if \(key === 'pay-map'\) payMapPrepareFilters\(\);/.test(oikos));
     yes('los meses que cubre el saldo a favor salen "Adelantado" en verde (con su leyenda)', /coverageOf: extra\.coverage \?/.test(oikos) && /'Adelantado'/.test(oikos) && /"Adelantado": cubierto con su saldo a favor/.test(oikos));
-    yes('Morosos, la Tabla general y el Listado de propietarios se pueden sacar solo de lotes o solo de casas, y lo dicen en su texto', /<select id="rep-type" onchange="repTypeChanged\(this\.value\)"/.test(oikos) && /(?:const|let) residents = extra\.only \|\| reportResidents\(\);/.test(oikos) && /R\.ownersList\(reportResidents\(\), /.test(oikos) && (oikos.match(/unitTypeFilterText\(repTypeFilter\)/g) || []).length === 5 && /const byResident = key === 'morosos' \|\| key === 'mora-list' \|\| key === 'pay-map' \|\| key === 'owners' \|\| key === 'marbetes';/.test(oikos));
+    yes('Morosos, la Tabla general y el Listado de propietarios se pueden sacar solo de lotes o solo de casas, y lo dicen en su texto', /<select id="rep-type" onchange="repTypeChanged\(this\.value\)"/.test(oikos) && /(?:const|let) residents = extra\.only \|\| reportResidents\(\);/.test(oikos) && /R\.ownersList\(reportResidents\(\), /.test(oikos) && (oikos.match(/unitTypeFilterText\(repTypeFilter\)/g) || []).length === 6 && /const byResident = key === 'morosos' \|\| key === 'mora-list' \|\| key === 'pay-map' \|\| key === 'owners' \|\| key === 'marbetes' \|\| key === 'visitas';/.test(oikos));
     // Lo que debe el residente: cuotas y cargos pendientes + mora = TOTAL QUE DEBE, en la pantalla y en las cuatro salidas
     yes('el Estado de cuenta muestra cuotas y cargos pendientes + mora = TOTAL QUE DEBE y la tabla de cuotas pendientes', ['ec-pending', 'ec-overdue', 'ec-upcoming', 'ec-mora', 'ec-total-due', 'ec-pending-wrap', 'ec-pending-body', 'ec-pending-foot'].every((id) => oikos.includes(`id="${id}"`)) && /= Total que debe/.test(oikos) && /Saldo sin mora/.test(oikos));
     yes('el PDF, la impresion, el Excel y WhatsApp traen primero el total que debe y la tabla de cuotas pendientes', /doc\.text\('= TOTAL QUE DEBE'/.test(oikos) && /'= Total que debe', formatMoney\(d\.total\)/.test(oikos) && /label: 'TOTAL QUE DEBE', value: money\(d\.total\)/.test(oikos) && /title: 'Cuotas pendientes y su mora'/.test(oikos) && (oikos.match(/ecPendingTable\(dd\.list, (?:true|false)\)/g) || []).length === 2);
@@ -665,7 +665,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     yes('el nombre del vecino va en negrita y un 20 % mas grande en pantalla, impresion, PDF y Excel (emphasisCols)', /emphasisCols: \[1\]/.test(oikos) && /'font-weight:700;font-size:' \+ emphScale\(i\) \+ 'em'/.test(oikos) && /return \(d\.emphasisScale && d\.emphasisScale\[i\]\) \|\| 1\.2;/.test(oikos) && /const emphPx = \(i\) => Math\.round\(12 \* \(\(d\.emphasisScale && d\.emphasisScale\[i\]\) \|\| 1\.2\) \* 10\) \/ 10;/.test(oikos) && /fontStyle: 'bold', fontSize: Math\.round\(pdfBodySize \* \(\(d\.emphasisScale && d\.emphasisScale\[i\]\) \|\| 1\.2\) \* 10\) \/ 10/.test(oikos) && /report\.emphasisCols/.test(read('finanzas/sisdel-reportes.js')));
     yes('la impresion y el PDF llevan la leyenda de colores y el PDF el pie con "Pagina X de Y"', /SISDEL_LEGEND_COLORS/.test(oikos) && (oikos.match(/\(d\.legend \|\| \[\]\)\.length/g) || []).length >= 2 && /'Página ' \+ p \+ ' de ' \+ pageCount/.test(oikos));
     yes('la logica del listado vive en sisdel-reportes.js y se exporta', /function moraList\(map, opts\)/.test(read('finanzas/sisdel-reportes.js')) && /paymentMap, moraList, ownersList/.test(read('finanzas/sisdel-reportes.js')));
-    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 10);
+    yes('todas las graficas de los reportes son de barras', !/chartType: '(?!bar')/.test(oikos) && (oikos.match(/chartType: 'bar'/g) || []).length === 11);
     // Impresion de marbetes por fase (pedido del usuario el 2026-11-20)
     yes('la Impresion de marbetes por fase esta en la lista de reportes de OIKOS (despues del Listado de propietarios), con su nombre y sus filtros', /id="rep-tab-marbetes"/.test(oikos) && oikos.indexOf('id="rep-tab-owners"') < oikos.indexOf('id="rep-tab-marbetes"') && /marbetes: 'Impresión de marbetes por fase'/.test(oikos) && ['mb-view', 'mb-search', 'mb-fase', 'mb-show', 'mb-order'].every((id) => oikos.includes(`id="${id}"`)) && /if \(key === 'marbetes'\) marbetesPrepareFilters\(\);/.test(oikos) && /else if \(currentReportKey === 'marbetes'\) currentReportData = buildMarbetesReport\(\);/.test(oikos));
     yes('el reporte agrupa por fase (marbetesList) con un subtotal por fase, solo residentes vigentes, y la busqueda tambien mira placa, marca, color y codigo', /R\.marbetesList\(residents, vehicles, \{ fase: marbetesFase, show: marbetesShow, order: marbetesOrder \}\)/.test(oikos) && /meta\.push\(\{ kind: 'subtotal' \}\);/.test(oikos) && /let residents = reportResidents\(\)\.filter\(isResidentActive\);/.test(oikos) && /SisdelBusqueda\.filter\(residents, marbetesSearch, r => residentSearchFields\(r\)\.concat\([^\n]*v\.plate, v\.brand, v\.model, v\.color, v\.marbeteCode/.test(oikos) && /function marbetesList\(residents, vehicles, opts\)/.test(read('finanzas/sisdel-reportes.js')) && /ownersList, marbetesList,/.test(read('finanzas/sisdel-reportes.js')));
@@ -798,12 +798,13 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
     equal('quitar reportes.panico_qr oculta la seccion de seguridad (QR de panico)', sectionsFor('admin', { 'reportes.panico_qr': false }), ['garita', 'morosos', 'finanzas', 'rondas']);
     // Catalogo en acordeon: categorias con los reportes que cada usuario puede abrir
     const catalogOf = (role, overrides) => { const can = (k) => P.has(role, overrides, k); return reports.catalogFor(can).map((c) => `${c.id}:${c.items.length}`); };
-    equal('el administrador ve cinco categorias, con 8, 1, 11, 1 y 1 reportes', catalogOf('admin', {}), ['garita:8', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
+    equal('el administrador ve cinco categorias, con 8, 1, 12, 1 y 1 reportes', catalogOf('admin', {}), ['garita:8', 'morosos:1', 'finanzas:12', 'rondas:1', 'seguridad:1']);
     equal('la plantilla de consulta ve solo la categoria de garita, con sus 8 reportes', catalogOf('operador', P.toOverrides('operador', P.templateKeys(P.templateById('sys-consulta')))), ['garita:8']);
-    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:8', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
-    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:8', 'morosos:1', 'finanzas:9', 'rondas:1', 'seguridad:1']);
-    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:8', 'morosos:1', 'finanzas:7', 'rondas:1', 'seguridad:1']);
-    equal('sin el privilegio de marbetes el panel Reportes no ofrece ese reporte', catalogOf('admin', { 'finanzas.reportes_marbetes': false }), ['garita:8', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
+    equal('quitar un reporte de OIKOS quita solo ese del catalogo', catalogOf('admin', { 'finanzas.reportes_libro': false }), ['garita:8', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
+    equal('sin el reporte financiero se quitan el y el de ingresos y egresos por mes', catalogOf('admin', { 'finanzas.reportes_resumen': false }), ['garita:8', 'morosos:1', 'finanzas:10', 'rondas:1', 'seguridad:1']);
+    equal('sin el de morosos se quitan el, el mapa de pagos y el listado de propietarios', catalogOf('admin', { 'finanzas.reportes_morosos': false }), ['garita:8', 'morosos:1', 'finanzas:8', 'rondas:1', 'seguridad:1']);
+    equal('sin el privilegio de marbetes el panel Reportes no ofrece ese reporte', catalogOf('admin', { 'finanzas.reportes_marbetes': false }), ['garita:8', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
+    equal('sin el privilegio de visitas el panel Reportes no ofrece ese reporte', catalogOf('admin', { 'finanzas.reportes_visitas': false }), ['garita:8', 'morosos:1', 'finanzas:11', 'rondas:1', 'seguridad:1']);
     equal('sin reportes.ver el catalogo esta vacio', catalogOf('admin', { 'reportes.ver': false }), []);
     equal('un guardia, un vecino y el auditor no tienen catalogo del administrador', [catalogOf('policia', {}), catalogOf('vecino', {}), catalogOf('auditor', {})], [[], [], []]);
     const allDefs = reports.catalogFor(() => true).flatMap((c) => c.items);
@@ -1323,7 +1324,7 @@ console.log('\nRecordatorios por WhatsApp a todos (servidor)');
     equal('cuatro categorias con sus reportes: ingresos y gastos, cobranza y morosidad, residentes y vehiculos y seguridad', cats, [
         ['dinero', ['income', 'expense-cat', 'month-balance', 'account-statement', 'resumen']],
         ['cobranza', ['morosos', 'mora-list', 'pay-map', 'mora-discounts']],
-        ['residentes', ['owners', 'marbetes']],
+        ['residentes', ['owners', 'marbetes', 'visitas']],
         ['seguridad', ['panico-qr']]
     ]);
     yes('cada categoria es un boton que abre y cierra su lista (una a la vez), con cuantos reportes tiene y su flecha',
@@ -1393,6 +1394,32 @@ console.log('\nPlantillas: aplicar una plantilla a un usuario');
         if (P.KEYS.some((k) => !!eff[k] !== keys.includes(k))) { exact = false; console.log('    distinto:', tpl.id, role); }
     }
     yes('lo que se guarda al aplicar da exactamente los privilegios de la plantilla (todas las plantillas del sistema, todos los roles)', exact);
+}
+
+// ───────── Visitas autorizadas por residente (OIKOS > Reportes, 2026-11-24) ─────────
+console.log('\nVisitas autorizadas por residente');
+{
+    const oik = read('finanzas/index.html'); const fin = read('finanzas.html'); const blo = read('finanzas-bloqueo.js');
+    const def = P.itemOf('finanzas.reportes_visitas');
+    yes('privilegio propio (accion de Usar el Sistema Financiero), de pantalla, sensible, que pide ver visitas; el contador no lo trae',
+        !!def && def.parent === 'finanzas.usar' && def.enforce === 'pantalla' && def.sensitive === true && JSON.stringify(def.requires) === '["finanzas.ver","visitas.ver"]'
+        && P.has('admin', {}, 'finanzas.reportes_visitas') && !P.templateKeys(P.templateById('sys-contador'), 'operador').includes('finanzas.reportes_visitas'));
+    yes('en la lista de OIKOS despues de la impresion de marbetes, con su nombre, sus filtros y su construccion',
+        oik.indexOf('id="rep-tab-marbetes"') < oik.indexOf('id="rep-tab-visitas"') && /visitas: 'Visitas autorizadas por residente'/.test(oik)
+        && ['vs-search', 'vs-show', 'vs-order', 'vs-recent'].every((id) => oik.includes(`id="${id}"`)) && /if \(key === 'visitas'\) visitsPrepareFilters\(\);/.test(oik)
+        && /else if \(currentReportKey === 'visitas'\) currentReportData = buildVisitsReport\(\);/.test(oik) && /key === 'mora-discounts' \|\| key === 'visitas';/.test(oik));
+    yes('las columnas pedidas (fecha, hora, nombre, placa, tiempo autorizado y salida) mas el vecino, el ingreso y el estado',
+        /headers: \['Lote \/ Casa', 'Residente', 'Fecha', 'Hora', 'Visitante', 'Placa', 'Tiempo autorizado', 'Ingresó', 'Salió', 'Estado'\]/.test(oik));
+    yes('busca por visitante y placa (y vecino o lote) con la busqueda inteligente; el orden y las fechas se recuerdan en el equipo',
+        /SisdelBusqueda\.filter\(visits, visitsSearch, v => \{ const r = byId\.get\(String\(v\.userId\)\); return \[v\.visitorName, v\.vehiclePlate, r \? r\.name : '', r \? r\.unit : v\.casa\]; \}\)/.test(oik)
+        && /localStorage\.setItem\('sisdel_visitas_orden', visitsOrder\)/.test(oik) && /localStorage\.setItem\('sisdel_visitas_recientes'/.test(oik));
+    yes('los pases los da finanzas.html solo con Ver visitas y el privilegio del reporte, por rango y con tope',
+        /window\.sisdelVisitsReport = null;\s*if \(SISDEL\.can\('visitas\.ver'\) && SISDEL\.can\('finanzas\.reportes_visitas'\)\) \{/.test(fin)
+        && /\.where\('visitDate', '>=', dayBefore\(from, 62\)\)\.where\('visitDate', '<=', to\)\.limit\(MAX \+ 1\)\.get\(\)/.test(fin));
+    yes('el bloqueo de OIKOS lo pide (pestana, filtros y abrir el reporte) y Reportes se abre con el aunque sea el unico',
+        /visitas: 'reportes_visitas'/.test(blo) && /\[\/\^selectReport\\\('visitas'\\\)\/, \['reportes_visitas'\]\]/.test(blo) && /\[\['reportes_visitas'\], \['#rep-tab-visitas', '#rep-visitas-filters'\]\]/.test(blo) && /'reportes_marbetes', 'reportes_visitas'\];/.test(blo));
+    yes('lo que viene de la base se escapa (o se resalta escapado) al pintarlo', /const show = \(text\) => \(visitsSearch \? SisdelBusqueda\.highlight\(String\(text \|\| ''\), visitsSearch\) : esc\(text\)\);/.test(oik)
+        && /x\.plate \? show\(x\.plate\) : muted\('Sin placa'\)/.test(oik) && /show\(x\.visitor \|\| '—'\)/.test(oik));
 }
 
 // ───────── Panel del vecino: marbete y pases encendidos o apagados para todos (2026-11-24) ─────────

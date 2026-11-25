@@ -516,6 +516,60 @@ equal('marbetes: solo con vehiculo o solo sin vehiculo', [mb({ show: 'with' }).g
 equal('marbetes: por nombre dentro de la fase', mb({ order: 'name', fase: 'A' }).groups[0].rows.map((x) => x.resident.name), ['Beto', 'Zoila', 'Zoila']);
 equal('marbetes: sin vehiculos registrados salen todos sin placa; sin residentes no hay grupos', [R.marbetesList(mbRes, []).totals.without, R.marbetesList([], mbVeh).groups.length, R.marbetesList(null, null).totals.residents], [5, 0, 0]);
 
+// ─── Visitas autorizadas por residente (pedido del usuario el 2026-11-24) ───
+console.log('\nVisitas autorizadas por residente');
+{
+    const res = [{ id: 'a', name: 'Ana García', unit: 'A2', fase: '1' }, { id: 'b', name: 'Beto Paz', unit: 'A10', fase: '1' }, { id: 'c', name: 'Carlos Ruiz', unit: 'B1', fase: '2' }];
+    const visits = [
+        // Un dia: entro a las 6:35 p. m. y salio a las 8:50 p. m. (hora de Guatemala, UTC-6)
+        { id: 'v1', userId: 'a', visitorName: 'Roberto Herrera', vehiclePlate: 'p123abc', visitDate: '2026-11-20', visitTime: '18:30', enteredAt: '2026-11-21T00:35:00.000Z', exitedAt: '2026-11-21T02:50:00.000Z', createdAt: '2026-11-20T15:00:00Z' },
+        // Temporal de 7 dias que sigue dentro
+        { id: 'v2', userId: 'a', visitorName: 'Carla Méndez', visitDate: '2026-11-24', visitType: 'temporal', endDate: '2026-11-30', enteredAt: '2026-11-24T14:00:00Z' },
+        // No llego (ya paso su dia)
+        { id: 'v3', userId: 'b', visitorName: 'Diego López', visitDate: '2026-11-10', visitTime: '09:05' },
+        // De un vecino que ya no esta en Residentes: va con la casa del pase; por llegar
+        { id: 'v4', userId: 'zz', casa: 'Casa 9', visitorName: 'Eva Soto', visitDate: '2026-11-25' },
+        // Fuera del rango
+        { id: 'v5', userId: 'b', visitorName: 'Fuera', visitDate: '2026-09-01' },
+        // Temporal que empezo antes del rango y sigue valiendo dentro: cuenta
+        { id: 'v6', userId: 'c', visitorName: 'Fernando Paz', visitDate: '2026-10-28', visitType: 'temporal', endDate: '2026-11-03' },
+        // Salida anotada antes del ingreso (un temporal que volvio a entrar): sigue dentro, sin salida
+        { id: 'v7', userId: 'c', visitorName: 'Gaby', visitDate: '2026-11-15', enteredAt: '2026-11-15T20:00:00Z', exitedAt: '2026-11-15T19:00:00Z' }
+    ];
+    const opts = { from: '2026-11-01', to: '2026-11-30', today: '2026-11-24' };
+    const r = R.visitsReport(visits, res, opts);
+    const ids = (list) => list.map((x) => x.id);
+    equal('solo los pases que valen algun dia del rango (un temporal que empezo antes cuenta)', ids(r.rows).sort(), ['v1', 'v2', 'v3', 'v4', 'v6', 'v7']);
+    equal('por defecto, agrupados por vecino en orden de lote (A2 antes que A10) y el que ya no esta con la casa del pase',
+        r.groups.map((g) => `${g.resident.unit}:${ids(g.rows).join(',')}`), ['A2:v2,v1', 'A10:v3', 'B1:v7,v6', 'Casa 9:v4']);
+    equal('el estado: salio, dentro, no llego y por llegar (una salida anterior al ingreso no cuenta)',
+        ['v1', 'v2', 'v3', 'v4', 'v6', 'v7'].map((id) => r.rows.find((x) => x.id === id).status), ['salio', 'dentro', 'no_llego', 'por_llegar', 'no_llego', 'dentro']);
+    equal('los totales', r.totals, { visits: 6, residents: 4, entered: 3, inside: 2, out: 1, pending: 1, noShow: 2, temporal: 2 });
+    const v1 = r.rows.find((x) => x.id === 'v1');
+    equal('hora de Guatemala, tiempo dentro, placa en mayusculas y tiempo autorizado',
+        [R.dayLabel(v1.day), R.hourLabel(v1.time), R.stampLabel(v1.entered), R.stampLabel(v1.exited), R.stayLabel(v1.stay), v1.plate, v1.authorized, r.rows.find((x) => x.id === 'v2').authorized],
+        ['20/11/2026', '6:30 p. m.', '20/11/2026 6:35 p. m.', '20/11/2026 8:50 p. m.', '2 h 15 min', 'P123ABC', 'Un día (una entrada)', '7 días (24/11 al 30/11/2026)']);
+    equal('el vecino que ya no esta se marca (no se inventa un nombre de Residentes)', [r.rows.find((x) => x.id === 'v4').resident.known, r.rows.find((x) => x.id === 'v1').resident.known], [false, true]);
+    equal('por nombre del vecino', R.visitsReport(visits, res, { ...opts, order: 'name' }).groups.map((g) => g.resident.name), ['Ana García', 'Beto Paz', 'Carlos Ruiz', 'Vecino que ya no está en Residentes']);
+    equal('por fecha, las mas recientes primero o las mas antiguas primero (sin grupos)',
+        [ids(R.visitsReport(visits, res, { ...opts, order: 'date' }).rows), ids(R.visitsReport(visits, res, { ...opts, order: 'date', recent: false }).rows), R.visitsReport(visits, res, { ...opts, order: 'date' }).groups.length],
+        [['v4', 'v2', 'v1', 'v7', 'v3', 'v6'], ['v6', 'v3', 'v7', 'v1', 'v2', 'v4'], 0]);
+    equal('por nombre del visitante', R.visitsReport(visits, res, { ...opts, order: 'visitor' }).rows.map((x) => x.visitor), ['Carla Méndez', 'Diego López', 'Eva Soto', 'Fernando Paz', 'Gaby', 'Roberto Herrera']);
+    equal('mostrar: las que ingresaron, siguen dentro, por llegar y no llegaron',
+        ['entered', 'inside', 'pending', 'noshow'].map((show) => ids(R.visitsReport(visits, res, { ...opts, order: 'date', show }).rows)),
+        [['v2', 'v1', 'v7'], ['v2', 'v7'], ['v4'], ['v3', 'v6']]);
+    equal('horas: medianoche, mediodia y una hora mal escrita', [R.hourLabel('00:05'), R.hourLabel('12:00'), R.hourLabel('9:7'), R.hourLabel(''), R.stayLabel(45), R.stayLabel(3000)], ['12:05 a. m.', '12:00 p. m.', '', '', '45 min', '2 días 2 h']);
+    equal('sin pases ni rango, vacio y sin errores', R.visitsReport(null, null, {}).totals.visits, 0);
+}
+
+// WhatsApp de un reporte con columnas en negrita (el nombre del vecino): antes salia "[object Object]"
+{
+    const rep = { title: 'M', headers: ['a', 'b', 'c'], rows: [['1', 'Ana', 'P1']], emphasisCols: [1, 2], compact: { headers: ['Vecino', 'Placa'], rows: [['Ana', 'P1']], numericCols: [] } };
+    equal('en WhatsApp las celdas en negrita salen como texto; en el Excel siguen en negrita',
+        [X.whatsappText(R.exportModel(rep, {})).includes('Ana · P1'), /object Object/.test(X.whatsappText(R.exportModel(rep, {}))), JSON.stringify(R.exportModel(rep, { excel: true })).includes('{"v":"Ana","s":1}')],
+        [true, false, true]);
+}
+
 const sandbox = { self: {} };
 vm.createContext(sandbox);
 vm.runInContext(read('finanzas/sisdel-reportes.js'), sandbox);

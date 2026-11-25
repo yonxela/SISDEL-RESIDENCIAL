@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-164 privilegios: 34 paraguas y 130 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+165 privilegios: 34 paraguas y 131 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -176,6 +176,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.reportes_libro` | Estado de cuenta general. El libro cronológico de pagos y egresos con saldo acumulado. | los de su paraguas | Pantalla |
 | `finanzas.reportes_resumen` | Reporte financiero mensual o por período. Ingresos netos, gastos y balance, con su resumen para WhatsApp. | los de su paraguas | Pantalla |
 | `finanzas.reportes_marbetes` | Reporte de marbetes por fase **(sensible)**. Los vehículos de los vecinos agrupados por fase (lote o casa, residente, placa, marca, color y código del marbete) para imprimir y entregar los marbetes, con sus calcomanías con código QR. | los de su paraguas | Pantalla |
+| `finanzas.reportes_visitas` | Reporte de visitas autorizadas por residente **(sensible)**. Los pases de visita que autorizó cada vecino: fecha, hora, visitante, placa, tiempo autorizado, cuándo ingresó y cuándo salió del condominio; por vecino, fecha o visitante, con búsqueda por nombre o placa e Imprimir, PDF, Excel y WhatsApp. | los de su paraguas | Pantalla |
 | `finanzas.reportes_exportar` | Exportar e imprimir **(sensible)**. Descargar o imprimir reportes, estados de cuenta y listas en PDF o Excel: saca datos del sistema. | los de su paraguas | Pantalla |
 | `finanzas.bancos_ver` | Ver bancos. Las cuentas bancarias con su saldo y sus movimientos. Los pagos y gastos que se registran entran solos a la cuenta favorita. | los de su paraguas | Pantalla |
 | `finanzas.bancos_cuentas` | Abrir y editar cuentas bancarias **(sensible)**. Abrir una cuenta (banco, número, tipo, moneda y saldo de apertura) y cambiar sus datos. La cuenta favorita solo la cambia el administrador con su código. | los de su paraguas | Reglas |

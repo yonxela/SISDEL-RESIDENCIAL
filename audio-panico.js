@@ -51,6 +51,30 @@ const SisdelAudioPanico = (() => {
         });
     }
     const micConstraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+    // SESION DE AUDIO DEL IPHONE (2026-11-25, prueba con el microfono YA permitido en Safari y la central seguia sin oir al vecino).
+    // El servidor anoto "InvalidStateError" en 0 ms: el QR de panico carga la sirena (sirena.js), que con cada toque pone la sesion de
+    // audio de la pagina en "solo reproduccion" (navigator.audioSession.type = 'playback', para que suene aunque el telefono este en
+    // silencio), y en ese modo Safari NO deja abrir el microfono: rechaza al instante, sin preguntar. Antes de pedir el microfono la
+    // sesion pasa a 'play-and-record' (reproducir y grabar: tambien suena con el telefono en silencio) y vuelve a como estaba cuando
+    // ya nadie usa el microfono. sirena.js no la cambia mientras este en 'play-and-record'. Sin la API (todo lo que no es Safari) no
+    // hace nada.
+    const captureHolders = new Set();
+    let sessionBefore = null;
+    function holdCapture(key) {
+        captureHolders.add(key);
+        try {
+            const s = navigator.audioSession;
+            if (s && s.type !== 'play-and-record') { if (sessionBefore === null) sessionBefore = s.type; s.type = 'play-and-record'; }
+        } catch { /* sin la API */ }
+    }
+    function dropCapture(key) {
+        if (!captureHolders.delete(key) || captureHolders.size) return;
+        try {
+            const s = navigator.audioSession;
+            if (s && sessionBefore !== null && s.type === 'play-and-record') s.type = sessionBefore;
+        } catch { /* sin la API */ }
+        sessionBefore = null;
+    }
 
     // ── GARITA: llama al telefono del vecino. onState(estado, texto): pidiendo_microfono, llamando, conectado, sin_respuesta,
     // colgado, error. Devuelve { setTalk(on), hangup() } de inmediato (se puede colgar mientras conecta) ──
@@ -64,6 +88,7 @@ const SisdelAudioPanico = (() => {
             done = true;
             try { if (pc) pc.close(); } catch { /* ya cerrada */ }
             if (stream) stream.getTracks().forEach((t) => t.stop());
+            dropCapture(ctl);
             audioEl.srcObject = null;
             if (tellServer && callId) call('hangup', { callId }).catch(() => {});
             onState(state, text || '');
@@ -80,6 +105,7 @@ const SisdelAudioPanico = (() => {
             try {
                 if (!supported()) return finish('error', 'Este navegador no puede hacer llamadas de audio.', false);
                 onState('pidiendo_microfono', 'Permita el micrófono de esta computadora para poder hablarle al vecino.');
+                holdCapture(ctl); // la central tambien carga la sirena (Safari en una Mac tiene la misma sesion de audio)
                 stream = await navigator.mediaDevices.getUserMedia(micConstraints);
                 stream.getAudioTracks().forEach((t) => { t.enabled = false; }); // primero solo se escucha; "Hablar" abre el microfono
                 if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -148,9 +174,10 @@ const SisdelAudioPanico = (() => {
         if (micLive()) return Promise.resolve(micStream);
         if (!micPromise) {
             const t0 = Date.now();
+            holdCapture('vecino'); // en el mismo toque, antes de pedirlo: si la sesion esta en 'playback', Safari lo niega al instante
             micPromise = navigator.mediaDevices.getUserMedia(micConstraints)
                 .then((s) => { micStream = s; micError = ''; micMs = Date.now() - t0; micListeners.forEach((fn) => { try { fn(s); } catch { /* esa llamada ya termino */ } }); return s; })
-                .catch((e) => { micPromise = null; micError = (e && e.name) || 'Error'; micMs = Date.now() - t0; console.warn('microfono', micError, micMs); return null; });
+                .catch((e) => { micPromise = null; dropCapture('vecino'); micError = (e && e.name) || 'Error'; micMs = Date.now() - t0; console.warn('microfono', micError, micMs, e && e.message); return null; });
         }
         return micPromise;
     }
@@ -173,6 +200,7 @@ const SisdelAudioPanico = (() => {
         if (micStream) micStream.getTracks().forEach((t) => t.stop());
         micPromise = null;
         micStream = null;
+        dropCapture('vecino');
     }
     // Una linea de audio en silencio para la llamada mientras el vecino no da el microfono: asi la llamada ya lleva su canal de ida
     // y el microfono entra despues con replaceTrack, sin volver a llamar
@@ -313,6 +341,9 @@ const SisdelAudioPanico = (() => {
         const android = /Android/i.test(ua);
         const inApp = /FBAN|FBAV|Instagram|Line\/|WhatsApp|wv\)/i.test(ua);
         if (error === 'NotFoundError') return 'Este teléfono no tiene un micrófono disponible.';
+        // El telefono no dejo abrir el microfono en ese momento (en el iPhone: la sesion de audio de la pagina no era de grabar; ya se
+        // corrige sola antes de pedirlo, pero si vuelve a pasar, recargar deja la pagina limpia)
+        if (error === 'InvalidStateError') return 'El teléfono no dejó abrir el micrófono en este momento. Recargue la página y toque de nuevo; si sigue igual, cierre el navegador por completo y vuelva a abrir el botón de pánico.';
         if (error === 'NotReadableError') return 'El micrófono lo está usando otra aplicación (una llamada, una nota de voz): ciérrela y toque de nuevo.';
         if (error === 'NoSoportado' || inApp) return 'Este navegador no deja usar el micrófono: abra garita.app en Safari (iPhone) o en Chrome (Android) y toque de nuevo.';
         if (ios && /CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)) return 'En el iPhone: Ajustes > (su navegador, por ejemplo Chrome) > active «Micrófono»; vuelva a esta página y toque de nuevo. O abra garita.app en Safari.';
@@ -492,7 +523,7 @@ const SisdelAudioPanico = (() => {
                 const iosSafari = /iPhone|iPad|iPod/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
                 set('nomic');
                 showMicHelp(`La Central de Monitoreo no le escucha mientras su teléfono no dé el micrófono. ${micHelp(micError)}`,
-                    `Código: ${micError || 'desconocido'}${micMs != null ? ` (${micMs} ms)` : ''}`, iosSafari && micError === 'NotAllowedError');
+                    `Código: ${micError || 'desconocido'}${micMs != null ? ` (${micMs} ms)` : ''}`, iosSafari && (micError === 'NotAllowedError' || micError === 'InvalidStateError'));
                 mine('want', { mic: false, micError, micMs, ua: (navigator.userAgent || '').slice(0, 200) }).catch(() => {});
                 return;
             }

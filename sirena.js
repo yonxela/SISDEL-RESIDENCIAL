@@ -42,8 +42,14 @@ const SisdelSirena = (() => {
         for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + (i & 1));
         return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
     }
+    // 'play-and-record' (reproducir y grabar) no se toca: la pone audio-panico.js mientras el vecino habla con la central. En
+    // 'playback' Safari NO deja abrir el microfono (rechaza con InvalidStateError: la central no oia al vecino, 2026-11-25) y
+    // 'play-and-record' tambien suena con el telefono en silencio
     function playbackSession() {
-        try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch { /* sin la API */ }
+        try {
+            const s = navigator.audioSession;
+            if (s && s.type !== 'playback' && s.type !== 'play-and-record') s.type = 'playback';
+        } catch { /* sin la API */ }
         if (!IS_IOS) return;
         try {
             if (!keeper) {

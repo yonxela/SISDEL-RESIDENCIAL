@@ -51,7 +51,12 @@ function load({ ios = false } = {}) {
     };
     vm.createContext(context);
     vm.runInContext(`${source}\nthis.SisdelSirena = SisdelSirena;`, context);
-    return { S: context.SisdelSirena, counts, env, nav: context.navigator };
+    context.window.RTCPeerConnection = function RTCPeerConnection() {};
+    const S = context.SisdelSirena;
+    // Para cargar audio-panico.js en la misma "pagina" (el QR de panico carga los dos)
+    Object.defineProperty(S, '__run', { value: (code) => vm.runInContext(code, context) });
+    Object.defineProperty(S, '__get', { value: (name) => context[name] });
+    return { S, counts, env, nav: context.navigator };
 }
 // Lo que hace la pagina (panico-alertas.js): cuando el sonido queda listo, vuelve a revisar si debe sonar y llama start()
 function page(S) {
@@ -154,6 +159,55 @@ console.log('Sirena: en el iPhone suena aunque este en silencio (2026-11-25)');
     desk.env.gesture = true;
     desk.S.wake();
     equal('en una computadora no hace falta el audio casi mudo', desk.counts.keepers, 0);
+}
+
+console.log('Microfono del vecino en el iPhone con la sirena cargada (QR de panico, 2026-11-25)');
+{
+    // El 2026-11-25 el vecino ya tenia el microfono permitido en Safari y la central no lo oia: el servidor anoto InvalidStateError en
+    // 0 ms. Safari (iOS 17 o mas) NO abre el microfono si la sesion de audio de la pagina es de solo reproduccion, y la sirena la ponia
+    // en 'playback' con cada toque. Aqui un getUserMedia de mentira hace lo mismo que Safari y audio-panico.js se carga junto a la sirena
+    const audioSource = fs.readFileSync(process.env.AUDIO_FILE || new URL('../audio-panico.js', import.meta.url), 'utf8');
+    const { S, env, nav } = load({ ios: true });
+    const mic = { asked: 0, stopped: 0, deny: false };
+    const track = () => ({ readyState: 'live', enabled: true, stop() { mic.stopped++; this.readyState = 'ended'; } });
+    nav.mediaDevices = {
+        getUserMedia() {
+            mic.asked++;
+            const t = nav.audioSession.type;
+            if (t === 'playback' || t === 'ambient' || t === 'transient' || t === 'transient-solo') return Promise.reject(Object.assign(new Error('AudioSession category is not compatible with audio capture.'), { name: 'InvalidStateError' }));
+            if (mic.deny) return Promise.reject(Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }));
+            const tr = track();
+            return Promise.resolve({ getAudioTracks: () => [tr], getTracks: () => [tr] });
+        }
+    };
+    env.gesture = true;
+    S.wake(); // un toque en la pagina: la sirena pone la sesion de reproduccion
+    await tick();
+    equal('con el primer toque la sirena deja la sesion en "playback" (para sonar con el telefono en silencio)', nav.audioSession.type, 'playback');
+    const direct = await nav.mediaDevices.getUserMedia().then(() => 'abrio', (e) => e.name);
+    equal('el getUserMedia de mentira hace lo que Safari: en "playback" rechaza al instante con InvalidStateError', direct, 'InvalidStateError');
+    const A = loadAudio(audioSource);
+    S.wake(); // el toque de "ACTIVAR PARA HABLAR" pasa primero por la sirena (pointerdown) y despues llega al boton
+    const stream = await A.prepareMic();
+    equal('"ACTIVAR PARA HABLAR" abre el microfono aunque la sirena este cargada', !!stream, true);
+    equal('para abrirlo la sesion pasa a "play-and-record" (reproducir y grabar: tambien suena en silencio)', nav.audioSession.type, 'play-and-record');
+    S.wake(); // mas toques mientras habla con la central
+    await tick();
+    equal('otro toque en la pagina NO la devuelve a "playback" (cortaria el microfono)', nav.audioSession.type, 'play-and-record');
+    A.releaseMic(); // la alerta se cerro
+    equal('al soltar el microfono la sesion vuelve a "playback" y el microfono se apaga', [nav.audioSession.type, mic.stopped], ['playback', 1]);
+    mic.deny = true;
+    const none = await A.prepareMic();
+    equal('si el telefono niega el microfono, la sesion tambien vuelve a "playback"', [none, nav.audioSession.type], [null, 'playback']);
+    mic.deny = false;
+    const again = await A.prepareMic();
+    equal('y al permitirlo despues, se abre (otra vez "play-and-record")', [!!again, nav.audioSession.type], [true, 'play-and-record']);
+    A.releaseMic();
+    function loadAudio(src) {
+        nav.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.2 Mobile/15E148 Safari/604.1';
+        S.__run(`${src}\nthis.SisdelAudioPanico = SisdelAudioPanico;`);
+        return S.__get('SisdelAudioPanico');
+    }
 }
 
 console.log(`\nSirena: ${passed} correctas, ${failures.length} fallas`);

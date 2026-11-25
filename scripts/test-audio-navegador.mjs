@@ -117,8 +117,9 @@ try {
     equal('ahora si llega el sonido del microfono del vecino a la garita', loud > 0.001, true);
     console.log('   nivel sin microfono:', quiet, '· con microfono:', loud);
     await garita.evaluate(`document.querySelector('.pan-call [data-hang]').click()`);
-    console.log('errores en el telefono sin microfono:', JSON.stringify(sinMic.errors.filter((e) => !/favicon|manifest/i.test(e)).slice(0, 5)));
-    console.log('errores en las paginas:', JSON.stringify([...garita.errors, ...vecino.errors].filter((e) => !/favicon|manifest/i.test(e)).slice(0, 5)));
+    // Un error en una pagina hace fallar la prueba (2026-11-25: "first is not defined" en la barra de la central solo se imprimia y la
+    // prueba pasaba, porque la barra se repintaba en la siguiente novedad)
+    equal('sin errores en las paginas (garita, telefono del vecino y telefono sin microfono)', [...garita.errors, ...vecino.errors, ...sinMic.errors].filter((e) => !/favicon|manifest/i.test(e)).slice(0, 5), []);
 } finally {
     await close();
 }

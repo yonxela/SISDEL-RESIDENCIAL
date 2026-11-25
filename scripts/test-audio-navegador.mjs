@@ -36,9 +36,13 @@ try {
     await garita.login(BASE, 'VP103');
     await garita.goto(`${BASE}/garita.html`);
     await waitFor('Control Garita abre con el aviso de panico', () => garita.evaluate(`typeof SisdelPanico !== 'undefined' && !!document.querySelector('.pan-bar')`));
+    // Cuenta los osciladores que se crean: con el sonido ya permitido, la version del 2026-11-24 entraba en un ciclo y creaba miles
+    // de sirenas encimadas (el audio se trababa sin sonar en Control Garita)
+    await garita.evaluate(`(() => { window.__osc = 0; const P = (window.AudioContext || window.webkitAudioContext).prototype; const f = P.createOscillator; P.createOscillator = function () { window.__osc++; return f.call(this); }; return true; })()`);
     const realRef = db.collection(`condominios/${CONDO}/alertas_panico`).doc();
     await realRef.set({ id: realRef.id, condominioId: CONDO, source: 'vecino', userId: 'u-ana', userName: 'Ana García', casa: 'Casa 12', phone: '5555-5678', lat: 14.54, lng: -90.45, status: 'ACTIVE', createdAt: new Date().toISOString() });
     await waitFor('llega una alerta real: suena la sirena sin parar y la pantalla destella en rojo', () => garita.evaluate(`SisdelSirena.playing() && !document.querySelector('.pan-flash').hidden && /ALERTA DE PÁNICO/.test(document.querySelector('.pan-bar').innerText)`));
+    equal('una sola sirena: 4 osciladores (dos tonos y sus ondulaciones), no miles encimados', await garita.evaluate(`window.__osc`), 4);
     await sleep(5000);
     equal('a los 5 segundos sigue sonando (no es un pitido corto)', await garita.evaluate(`SisdelSirena.playing()`), true);
     await garita.evaluate(`document.querySelector('[data-mute="${realRef.id}"]').click()`);

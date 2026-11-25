@@ -10,14 +10,27 @@
 const SisdelSirena = (() => {
     let ctx = null;
     let siren = null;
+    let starting = false;
+    let lastReady = false;
     const listeners = new Set();
 
     function ready() { return !!ctx && ctx.state === 'running'; }
-    function notify() { listeners.forEach((f) => { try { f(ready()); } catch { /* nada */ } }); }
+    // Avisa SOLO cuando cambia (listo / no listo). Antes avisaba en cada wake() y, con el sonido ya activado, start() -> wake() ->
+    // aviso -> la pagina volvia a llamar start() antes de que hubiera sirena: se metia en un ciclo, creaba cientos de sirenas
+    // encimadas y el audio se trababa sin sonar (lo vio el usuario el 2026-11-24 en Control Garita)
+    function notify() {
+        const now = ready();
+        if (now === lastReady) return;
+        lastReady = now;
+        listeners.forEach((f) => { try { f(now); } catch { /* nada */ } });
+    }
     function wake() {
         try {
-            ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-            if (ctx.state === 'suspended') ctx.resume().then(notify, () => {});
+            if (!ctx) {
+                ctx = new (window.AudioContext || window.webkitAudioContext)();
+                ctx.onstatechange = notify; // el telefono lo suspende o lo reanuda solo (llamada, pantalla)
+            }
+            if (ctx.state !== 'running') ctx.resume().then(notify, () => {});
             else notify();
         } catch { /* sin audio */ }
     }
@@ -26,7 +39,8 @@ const SisdelSirena = (() => {
     document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx && ctx.state !== 'running') wake(); });
 
     function start() {
-        if (siren) return;
+        if (siren || starting) return; // una sola sirena: wake() puede avisar a la pagina y la pagina volver a pedir start()
+        starting = true;
         try {
             wake();
             const out = ctx.createDynamicsCompressor(); // fuerte sin que se rompa el sonido
@@ -49,7 +63,7 @@ const SisdelSirena = (() => {
                 return [osc, lfo];
             };
             siren = { nodes: [...make('sawtooth', 950, 420, 0.55), ...make('square', 1300, 300, 4.5)], master, out };
-        } catch { siren = null; }
+        } catch { siren = null; } finally { starting = false; }
     }
     function stop() {
         if (!siren) return;

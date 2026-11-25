@@ -199,7 +199,7 @@
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
                     <!-- SISDEL: "HABLAR A CENTRAL DE MONITOREO" (audio-panico.js, talkButton): mientras la alerta este abierta; al tocarlo se pide
                          el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
-                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>HABLAR A CENTRAL DE MONITOREO</b><small data-talk-sub>Toque y permita el micrófono</small></span></button>
+                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>PRESIONE PARA HABLAR</b><small data-talk-sub>Toque y permita el micrófono: la Central de Monitoreo le escuchará</small></span></button>
                     <div class="panic-talk-note" id="panicTalkNote" hidden></div>
                     <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
                          contesta solo; la garita escucha y puede hablarle -->
@@ -430,7 +430,7 @@
     <script src="sisdel-core.js?v=20261125m"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261125a"></script>
-    <script src="audio-panico.js?v=20261125a"></script>
+    <script src="audio-panico.js?v=20261125n"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -836,13 +836,13 @@
             // ── Audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono contesta solo ──
             let audioCtl = null;
             let audioFor = null;
-            function paintAudio(state, text) {
+            function paintAudio(state, text, info) {
                 const box = document.getElementById('panicAudio');
                 const live = state === 'conectado' || state === 'conectando';
                 box.hidden = !text && !live;
                 document.getElementById('panicAudioText').textContent = text || '';
                 document.getElementById('panicAudioHang').hidden = !live;
-                if (talk) talk.callState(state);
+                if (talk) talk.callState(state, info); // info.mic: si la central ya le escucha
             }
             // "HABLAR A CENTRAL DE MONITOREO": el microfono se pide al tocarlo (ya no solo al enviar la alerta)
             let talk = null;

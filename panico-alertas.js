@@ -58,6 +58,8 @@ const SisdelPanico = (() => {
         .pan-call button { font: inherit; font-size: 0.85rem; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 0.6rem 0.9rem; border: 1px solid #475569; background: #1e293b; color: #fff; }
         .pan-call button.talk-on { background: #16a34a; border-color: #16a34a; }
         .pan-call button.hang { background: #b91c1c; border-color: #b91c1c; }
+        .pan-call.nomic { border-color: #f59e0b; }
+        .pan-call.nomic .pan-call-state { color: #fde68a; font-weight: 700; }
         .pan-sound { position: fixed; right: 12px; bottom: 12px; z-index: 3001; border: 2px solid #fca5a5; border-radius: 999px; padding: 0.6rem 1rem;
             font: inherit; font-size: 0.85rem; font-weight: 800; color: #fff; background: #b91c1c; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
     `;
@@ -100,6 +102,10 @@ const SisdelPanico = (() => {
         const seen = new Set();
         let alerts = [];
         let minimized = false;
+        // La primera lectura de las alertas (al abrir la pagina): un "PIDE HABLAR" que ya estaba no hace sonar los tonos. Se habia
+        // quitado con la prueba "todo sin novedad" y el aviso de PIDE HABLAR (que se escribio a la par) lo seguia usando: la lectura
+        // fallaba con "first is not defined" y la barra no se repintaba hasta la siguiente
+        let first = true;
 
         // ── Sirena de alerta maxima ──
         // Suena mientras haya una alerta REAL sin atender que no se silencio; una prueba del vecino (simulacro) NUNCA suena (antes 4
@@ -170,9 +176,11 @@ const SisdelPanico = (() => {
             const call = (action, data) => fn({ action, c: a.condominioId || options.condoId || '', alertId: a.id, ...data }).then((r) => r.data);
             const ctl = SisdelAudioPanico.callNeighbor({
                 call, audioEl: audio,
-                onState: (state, text) => {
+                onState: (state, text, info) => {
                     if (!box.isConnected) return;
                     box.querySelector('.pan-call-state').textContent = text || '';
+                    // El telefono del vecino dice si dio el microfono (audio-panico.js): sin el, la central no lo escucha y se ve en ambar
+                    box.classList.toggle('nomic', !!(info && info.neighborMic === false) && state === 'conectado');
                     const talk = box.querySelector('[data-talk]');
                     talk.disabled = state !== 'conectado';
                     if (['sin_respuesta', 'colgado', 'error'].includes(state)) {
@@ -306,6 +314,7 @@ const SisdelPanico = (() => {
             render();
             updateSiren();
             handleTests(list);
+            first = false;
             if (options.onChange) options.onChange(list);
         }, (error) => console.error('Alertas de panico:', error));
 

@@ -11,6 +11,8 @@
 //   poll    el telefono del vecino pregunta si lo estan llamando (cada pocos segundos mientras su alerta este abierta)
 //   answer  el telefono del vecino contesta SOLO (el vecino pidio ayuda: la garita lo escucha sin que toque nada)
 //   hangup  cualquiera de los dos cuelga
+//   want    el vecino toco "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): la alerta queda con
+//           audioWant { at, mic } y la central ve "PIDE HABLAR" en su "Escuchar / Hablar" (mic: si su telefono dio el microfono)
 // El vecino entra con su sesion (vecino.html) o con la clave del telefono vinculado al QR (panico.html, sin sesion); contesta solo
 // el telefono que envio la alerta (los demas de la casa reciben el aviso, no la llamada). La llamada
 // solo existe mientras la alerta este activa o atendida (y de menos de 6 horas). Las reglas no dejan leer ni escribir el audio
@@ -28,7 +30,7 @@ const { sha256 } = require('./util');
 const privilegios = require('./privilegios');
 const rateLimit = require('./rateLimit');
 
-const ACTIONS = ['ice', 'offer', 'wait', 'poll', 'answer', 'hangup'];
+const ACTIONS = ['ice', 'offer', 'wait', 'poll', 'answer', 'hangup', 'want'];
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SECRET_RE = /^[A-Za-z0-9_-]{40,64}$/;
 const SDP_MAX = 20000;
@@ -134,6 +136,8 @@ const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
             await rateLimit.hit('panico_audio', key, OFFER_LIMIT);
             const callId = crypto.randomBytes(9).toString('base64url');
             await callRef.set({ callId, state: 'llamando', offer: data.sdp, answer: null, by: who.userId, byName: who.name, at: nowIso(), answeredAt: null, endedAt: null, endedBy: null });
+            // Si el vecino habia pedido hablar, ya se le llamo: las demas pantallas dejan de decir "PIDE HABLAR"
+            if (alert.audioWant && !alert.audioWant.calledAt) await alertRef.update({ 'audioWant.calledAt': nowIso() });
             log('ok', { callId });
             return { ok: true, callId };
         }
@@ -166,6 +170,13 @@ const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
     if (action === 'hangup') {
         if (call && call.callId === data.callId && call.state !== 'colgado') await callRef.update({ state: 'colgado', endedAt: nowIso(), endedBy: 'vecino' });
         log('ok');
+        return { ok: true };
+    }
+    // "HABLAR A CENTRAL DE MONITOREO": la central ve que el vecino pide hablar (y si su telefono ya dio el microfono)
+    if (action === 'want') {
+        if (!open) return { ok: false, error: 'La alerta ya está cerrada.' };
+        await alertRef.update({ audioWant: { at: nowIso(), mic: data.mic === true } });
+        log('ok', { mic: data.mic === true });
         return { ok: true };
     }
     fail('permission-denied', 'Esta acción es de la garita');

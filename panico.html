@@ -52,6 +52,16 @@
         .pq-house { width: 100%; box-sizing: border-box; padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--bg-surface); text-align: left; }
         .pq-house p { margin: 0 0 0.5rem; font-size: 0.88rem; line-height: 1.4; }
         .pq-house .pq-house-title { font-weight: 800; font-size: 0.95rem; }
+        /* "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): grande, azul; verde cuando la central ya sabe */
+        .panic-talk { align-self: stretch; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.95rem 1rem; border: 2px solid #60a5fa; border-radius: var(--radius-md); background: #1d4ed8; color: #fff; font: inherit; text-align: left; cursor: pointer; }
+        .panic-talk[hidden] { display: none; }
+        .panic-talk svg { flex: none; }
+        .panic-talk b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
+        .panic-talk small { display: block; margin-top: 0.15rem; font-size: 0.8rem; opacity: 0.92; }
+        .panic-talk[data-state="sent"], .panic-talk[data-state="again"] { background: #15803d; border-color: #4ade80; }
+        .panic-talk:disabled { cursor: default; }
+        .panic-talk-note { align-self: stretch; width: 100%; box-sizing: border-box; padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid rgba(96,165,250,0.55); background: rgba(37,99,235,0.12); font-size: 0.88rem; line-height: 1.4; }
+        .panic-talk[data-state="nomic"] + .panic-talk-note { border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); }
         .panic-audio { width: 100%; box-sizing: border-box; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
         .panic-status.house { background: #b91c1c; color: #fff; border: 2px solid #fecaca; }
         .panic-status.house a, .panic-status.house button { color: #fff; }
@@ -136,6 +146,10 @@
             <button class="pq-drill" id="pqDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
             <p class="pq-drill-note" id="pqDrillNote"></p>
             <div class="panic-status" id="panicStatus" hidden></div>
+            <!-- SISDEL: "HABLAR A CENTRAL DE MONITOREO" (audio-panico.js, talkButton): mientras la alerta este abierta; al tocarlo se pide
+                 el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
+            <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>HABLAR A CENTRAL DE MONITOREO</b><small data-talk-sub>Toque y permita el micrófono</small></span></button>
+            <div class="panic-talk-note" id="panicTalkNote" hidden></div>
             <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta que envio ESTE telefono este abierta, si la garita
                  llama, contesta solo; la garita escucha y puede hablarle -->
             <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
@@ -167,7 +181,7 @@
     <!-- Sin el SDK de Firebase: el servidor se llama con fetch (panico-qr.js) para que la pagina abra rapido en una emergencia -->
     <script src="rondas-core.js?v=20261125a"></script>
     <script src="sirena.js?v=20261125a"></script>
-    <script src="audio-panico.js?v=20261124a"></script>
+    <script src="audio-panico.js?v=20261125a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
     <script src="panico-prueba.js?v=20261125a"></script>
@@ -588,15 +602,21 @@
                 $('panicAudio').hidden = !text && !live;
                 $('panicAudioText').textContent = text || '';
                 $('panicAudioHang').hidden = !live;
+                if (talk) talk.callState(state);
             }
+            // "HABLAR A CENTRAL DE MONITOREO": el microfono se pide al tocarlo (ya no solo al enviar la alerta)
+            let talk = null;
             function syncAudio(a) {
                 const want = !!a && a.mine === true && ['ACTIVE', 'ATTENDED'].includes(a.status) && typeof SisdelAudioPanico !== 'undefined' && SisdelAudioPanico.supported();
                 if (want && audioFor === a.id) return;
                 if (audioCtl) { audioCtl.stop(); audioCtl = null; audioFor = null; paintAudio('cerrada', ''); }
+                if (talk) talk.hide();
                 if (!want || !link) return;
                 audioFor = a.id;
                 const call = (action, data) => api('panicAudio', { action, secret: link.secret, alertId: a.id, ...data });
                 audioCtl = SisdelAudioPanico.answerCalls({ call, audioEl: $('panicAudioEl'), onState: paintAudio });
+                if (!talk) talk = SisdelAudioPanico.talkButton({ button: $('panicTalk'), note: $('panicTalkNote') });
+                talk.show(call);
             }
             $('panicAudioHang').addEventListener('click', () => { if (audioCtl) audioCtl.hangup(); });
             // Sigue la alerta (atendida, resuelta...) cada 15 s mientras la pagina esta a la vista (una prueba, cada 5 s al principio:
@@ -720,8 +740,7 @@
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
                     const pos = await SisdelRondas.gps.bestPosition(6000);
                     const sending = api('panicDevice', { action: 'alert', secret: link.secret, lat: pos ? pos.lat : null, lng: pos ? pos.lng : null, accuracy: pos ? pos.accuracy : null });
-                    // Se pide el microfono ya (el telefono pregunta una vez): si la garita llama, contesta sin tocar nada
-                    if (typeof SisdelAudioPanico !== 'undefined') SisdelAudioPanico.prepareMic();
+                    // El microfono ya no se pide aqui: lo pide "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25)
                     // Aunque la respuesta tarde (poca senal), cuando llegue el boton pasa solo a ALERTA ENVIADA
                     sending.then((res) => { if (res.ok && res.alert) follow(res.alert); }, () => {});
                     // Sin respuesta en 20 segundos se avisa que no se pudo confirmar, para no dejar el boton en ENVIANDO...

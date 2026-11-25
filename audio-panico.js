@@ -105,7 +105,8 @@ const SisdelAudioPanico = (() => {
         return ctl;
     }
 
-    // ── VECINO: el microfono se pide al enviar la alerta (asi en la llamada no hay que tocar nada) y se guarda mientras dure ──
+    // ── VECINO: el microfono se pide al tocar "HABLAR A CENTRAL DE MONITOREO" (talkButton) o, si no lo toco, al contestar la llamada;
+    // se guarda mientras dure la alerta (asi una segunda llamada no vuelve a preguntar) ──
     let micPromise = null;
     function prepareMic() {
         if (!supported()) return Promise.resolve(null);
@@ -176,5 +177,66 @@ const SisdelAudioPanico = (() => {
         return ctl;
     }
 
-    return { supported, callNeighbor, prepareMic, releaseMic, answerCalls };
+    // ── VECINO: el boton "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25) ──
+    // Antes el microfono se pedia solo al enviar la alerta y salia la ventana del telefono "garita.app solicita autorizacion para
+    // usar el microfono" sin que el vecino supiera para que (esa ventana es del telefono: una pagina no puede cambiar su texto).
+    // Ahora se pide al tocar este boton, que es la forma de autorizarlo: la ventana sale cuando el vecino ya sabe para que es. Al
+    // tocarlo, la central ve "PIDE HABLAR" y, cuando llama, el telefono contesta solo con el microfono ya permitido.
+    // button lleva [data-talk-label] y [data-talk-sub]; note es donde se explica que paso. Devuelve { show(call), hide(), callState(estado) }
+    const MIC_HELP = 'en el iPhone, Ajustes > Safari (o el navegador que use) > Micrófono > Preguntar; en Android, el candado junto a la dirección > Permisos > Micrófono.';
+    function talkButton({ button, note }) {
+        let call = null;
+        let inCall = false;
+        let timer = null;
+        const label = button.querySelector('[data-talk-label]');
+        const sub = button.querySelector('[data-talk-sub]');
+        const TEXT = {
+            idle: ['HABLAR A CENTRAL DE MONITOREO', 'Toque y permita el micrófono'],
+            asking: ['PERMITA EL MICRÓFONO...', 'Toque «Permitir» en la ventana del teléfono'],
+            sent: ['LA CENTRAL YA SABE QUE QUIERE HABLAR', 'Cuando le llamen, su teléfono contesta solo'],
+            again: ['AVISAR OTRA VEZ A LA CENTRAL', 'La central ya sabe que quiere hablar'],
+            nomic: ['HABLAR A CENTRAL DE MONITOREO', 'Su teléfono no dio el micrófono: toque de nuevo']
+        };
+        function set(state, text) {
+            clearTimeout(timer);
+            button.dataset.state = state;
+            button.disabled = state === 'asking' || state === 'sent';
+            label.textContent = TEXT[state][0];
+            sub.textContent = TEXT[state][1];
+            note.textContent = text || '';
+            paint();
+        }
+        function paint() {
+            button.hidden = !call || inCall;
+            note.hidden = button.hidden || !note.textContent;
+        }
+        button.addEventListener('click', async () => {
+            const mine = call;
+            if (!mine || button.disabled) return;
+            set('asking', 'Su teléfono le pregunta si deja usar el micrófono: toque «Permitir». Así la Central de Monitoreo podrá escucharle.');
+            const stream = await prepareMic();
+            if (mine !== call) return;
+            let ok = false;
+            try { const r = await mine('want', { mic: !!stream }); ok = !!(r && r.ok); } catch { ok = false; }
+            if (mine !== call) return;
+            if (!ok) { set('idle', 'No se pudo avisar a la central: revise su conexión y toque de nuevo. Si es urgente, llame a la garita por teléfono.'); return; }
+            if (!stream) { set('nomic', `La central ya sabe que quiere hablar, pero su teléfono no dio permiso al micrófono: podrá oír a la central, no hablarle. Para permitirlo: ${MIC_HELP} Después toque de nuevo.`); return; }
+            set('sent', 'Listo: la Central de Monitoreo ve que quiere hablar. Cuando le llamen, su teléfono contesta solo. Deje esta página abierta y la pantalla encendida.');
+            timer = setTimeout(() => { if (button.dataset.state === 'sent') { button.disabled = false; button.dataset.state = 'again'; label.textContent = TEXT.again[0]; sub.textContent = TEXT.again[1]; } }, 30000);
+        });
+        return {
+            show(fn) { if (call === fn) return; call = fn; inCall = false; set('idle', ''); },
+            hide() { call = null; inCall = false; clearTimeout(timer); paint(); },
+            // El estado de la llamada (answerCalls): en linea se esconde el boton; al colgar vuelve para pedir otra vez
+            callState(state) {
+                if (!call) return;
+                const was = inCall;
+                inCall = state === 'conectado' || state === 'conectando';
+                if (was && !inCall) set('idle', '');
+                else paint();
+            }
+        };
+    }
+
+    return { supported, callNeighbor, prepareMic, releaseMic, answerCalls, talkButton };
 })();

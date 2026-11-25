@@ -123,6 +123,19 @@ seed();
     equal('una accion desconocida se rechaza', await codeOf(staff('u-pedro', { action: 'grabar', alertId: 'al-qr' })), 'invalid-argument');
 }
 
+console.log('\n"HABLAR A CENTRAL DE MONITOREO": el vecino pide hablar (2026-11-25)');
+seed();
+{
+    equal('el telefono que envio la alerta pide hablar: la alerta queda con audioWant y si dio el microfono', [(await qr(SECRET_A, { action: 'want', alertId: 'al-qr', mic: true })).ok, store.get('condominios/c1/alertas_panico/al-qr').audioWant.mic], [true, true]);
+    equal('desde el portal tambien (sin microfono: mic false)', [(await staff('u-ana', { action: 'want', alertId: 'al-portal', mic: false })).ok, store.get('condominios/c1/alertas_panico/al-portal').audioWant.mic], [true, false]);
+    equal('otro telefono de la casa no pide por esa alerta', await codeOf(qr(SECRET_B, { action: 'want', alertId: 'al-qr', mic: true })), 'permission-denied');
+    equal('otro vecino tampoco', await codeOf(staff('u-maria', { action: 'want', alertId: 'al-portal' })), 'permission-denied');
+    equal('la garita no lo usa (es del telefono del vecino)', await codeOf(staff('u-pedro', { action: 'want', alertId: 'al-portal' })), 'permission-denied');
+    const ring = await staff('u-pedro', { action: 'offer', alertId: 'al-qr', sdp: SDP });
+    equal('cuando la central llama, el pedido queda como atendido (las demas pantallas dejan de decir PIDE HABLAR)', [ring.ok, !!store.get('condominios/c1/alertas_panico/al-qr')['audioWant.calledAt']], [true, true]);
+    equal('con la alerta cerrada no se pide',[(await staff('u-ana', { action: 'want', alertId: 'al-cerrada', mic: true })).ok, !!store.get('condominios/c1/alertas_panico/al-cerrada').audioWant], [false, false]);
+}
+
 console.log('\nAlerta cerrada');
 seed();
 {

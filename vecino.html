@@ -88,6 +88,16 @@
         body.light-mode .panic-contacts-btn { color: #1d4ed8; border-color: rgba(29, 78, 216, 0.45); background: rgba(37, 99, 235, 0.08); }
         body.light-mode .panic-contacts-btn:hover { color: #1e3a8a; border-color: #1d4ed8; }
         .panic-drill-btn svg { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
+        /* "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25): grande, azul; verde cuando la central ya sabe */
+        .panic-talk { align-self: stretch; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.95rem 1rem; border: 2px solid #60a5fa; border-radius: var(--radius-md); background: #1d4ed8; color: #fff; font: inherit; text-align: left; cursor: pointer; }
+        .panic-talk[hidden] { display: none; }
+        .panic-talk svg { flex: none; }
+        .panic-talk b { display: block; font-size: 1.05rem; font-weight: 800; letter-spacing: 0.3px; line-height: 1.2; }
+        .panic-talk small { display: block; margin-top: 0.15rem; font-size: 0.8rem; opacity: 0.92; }
+        .panic-talk[data-state="sent"], .panic-talk[data-state="again"] { background: #15803d; border-color: #4ade80; }
+        .panic-talk:disabled { cursor: default; }
+        .panic-talk-note { align-self: stretch; width: 100%; box-sizing: border-box; padding: 0.6rem 0.85rem; border-radius: var(--radius-md); border: 1px solid rgba(96,165,250,0.55); background: rgba(37,99,235,0.12); font-size: 0.88rem; line-height: 1.4; }
+        .panic-talk[data-state="nomic"] + .panic-talk-note { border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.12); }
         /* Audio con la garita */
         .panic-audio { align-self: stretch; padding: 0.7rem 1rem; border-radius: var(--radius-md); border: 1px solid #60a5fa; background: rgba(37,99,235,0.15); font-size: 0.9rem; line-height: 1.4; }
         .panic-drill-note { margin: -0.25rem 0 0; max-width: 26rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
@@ -187,10 +197,14 @@
                     <button class="panic-drill-btn" id="btnPanicDrill" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Prueba: todo sin novedad</span></button>
                     <p class="panic-drill-note" id="panicDrillNote"></p>
                     <div class="panic-status" id="panicStatus" style="display:none;"></div>
-                    <button class="btn btn-ghost btn-sm panic-contacts-btn" id="btnContacts" type="button">Mis contactos de emergencia</button>
+                    <!-- SISDEL: "HABLAR A CENTRAL DE MONITOREO" (audio-panico.js, talkButton): mientras la alerta este abierta; al tocarlo se pide
+                         el microfono (la ventana del telefono sale entonces) y la central ve que el vecino pide hablar -->
+                    <button type="button" class="panic-talk" id="panicTalk" hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg><span><b data-talk-label>HABLAR A CENTRAL DE MONITOREO</b><small data-talk-sub>Toque y permita el micrófono</small></span></button>
+                    <div class="panic-talk-note" id="panicTalkNote" hidden></div>
                     <!-- SISDEL: audio con la garita (audio-panico.js): mientras la alerta este abierta, si la garita llama, este telefono
                          contesta solo; la garita escucha y puede hablarle -->
                     <div class="panic-audio" id="panicAudio" hidden><span id="panicAudioText"></span> <button class="btn btn-ghost btn-sm" id="panicAudioHang" type="button" hidden>Colgar</button><audio id="panicAudioEl" autoplay playsinline></audio></div>
+                    <button class="btn btn-ghost btn-sm panic-contacts-btn" id="btnContacts" type="button">Mis contactos de emergencia</button>
                 </div>
             </section>
 
@@ -416,7 +430,7 @@
     <script src="sisdel-core.js?v=20261125a"></script>
     <script src="sisdel-actualizaciones.js?v=20261123a"></script>
     <script src="rondas-core.js?v=20261125a"></script>
-    <script src="audio-panico.js?v=20261124a"></script>
+    <script src="audio-panico.js?v=20261125a"></script>
     <script src="vecino-config.js?v=20261124a"></script>
     <script src="gps-ayuda.js?v=20261120a"></script>
     <script src="panico-boton.js?v=20261120b"></script>
@@ -828,6 +842,13 @@
                 box.hidden = !text && !live;
                 document.getElementById('panicAudioText').textContent = text || '';
                 document.getElementById('panicAudioHang').hidden = !live;
+                if (talk) talk.callState(state);
+            }
+            // "HABLAR A CENTRAL DE MONITOREO": el microfono se pide al tocarlo (ya no solo al enviar la alerta)
+            let talk = null;
+            function talkUi() {
+                if (!talk) talk = SisdelAudioPanico.talkButton({ button: document.getElementById('panicTalk'), note: document.getElementById('panicTalkNote') });
+                return talk;
             }
             function startAudio(alertId) {
                 if (typeof SisdelAudioPanico === 'undefined' || !SisdelAudioPanico.supported() || audioFor === alertId) return;
@@ -836,12 +857,14 @@
                 const fn = window.sisdelFirebase.functions.httpsCallable('panicAudio');
                 const call = (action, data) => fn({ action, c: session.condominioId, alertId, ...data }).then((r) => r.data);
                 audioCtl = SisdelAudioPanico.answerCalls({ call, audioEl: document.getElementById('panicAudioEl'), onState: paintAudio });
+                talkUi().show(call);
             }
             function stopAudio() {
                 if (audioCtl) audioCtl.stop();
                 audioCtl = null;
                 audioFor = null;
                 paintAudio('cerrada', '');
+                if (talk) talk.hide();
             }
             document.getElementById('panicAudioHang').addEventListener('click', () => { if (audioCtl) audioCtl.hangup(); });
             async function firePanic(simulacro) {
@@ -857,8 +880,7 @@
                     // La posicion reciente al instante; si no hay, espera unos segundos al GPS y, si no llega, la alerta sale igual
                     const pos = await SisdelRondas.gps.bestPosition(6000);
                     const sending = SisdelRondas.raisePanic({ source: 'vecino', pos, casa: session.userCasa || '', phone: myPhone, simulacro: simulacro === true });
-                    // Una alerta de verdad pide el microfono ya (el telefono pregunta una vez): si la garita llama, contesta sin tocar nada
-                    if (!simulacro && typeof SisdelAudioPanico !== 'undefined') SisdelAudioPanico.prepareMic();
+                    // El microfono ya no se pide aqui: lo pide "HABLAR A CENTRAL DE MONITOREO" (pedido del usuario el 2026-11-25)
                     if (simulacro) {
                         const saved = await SisdelPanicoBoton.withTimeout(sending, 20000, 'sin respuesta');
                         followPanic(saved.id);

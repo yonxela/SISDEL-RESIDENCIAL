@@ -44,6 +44,10 @@ const SisdelPanico = (() => {
         .pan-flash { position: fixed; inset: 0; z-index: 2999; pointer-events: none; background: rgba(220,38,38,0.38); animation: panFlash 0.9s steps(2, jump-none) infinite; }
         @keyframes panFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
         .pan-item button.pan-mute { background: #fde047; color: #7f1d1d; border-color: #fde047; }
+        /* El vecino toco "HABLAR A CENTRAL DE MONITOREO": su "Escuchar / Hablar" late en amarillo (2026-11-25) */
+        .pan-want { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: #facc15; color: #1f2937; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.3px; vertical-align: middle; }
+        .pan-item button.want { background: #facc15; color: #1f2937; border-color: #facc15; font-weight: 800; animation: panWant 1s ease-in-out infinite; }
+        @keyframes panWant { 50% { box-shadow: 0 0 0 6px rgba(250, 204, 21, 0.35); } }
         /* El navegador no deja sonar nada hasta el primer toque: este boton lo pide (y se va solo) */
         /* La llamada de audio con el vecino */
         .pan-call { position: fixed; left: 12px; bottom: 12px; z-index: 3002; width: min(400px, calc(100vw - 24px)); box-sizing: border-box; padding: 0.9rem 1rem;
@@ -103,6 +107,13 @@ const SisdelPanico = (() => {
         // frente) y vibra (Android)
         const silenced = new Set();
         let ownSiren = false;
+        // "HABLAR A CENTRAL DE MONITOREO" (audioWant, lo escribe panicAudio 'want'): se ve hasta que se le llama despues de pedirlo
+        const calledWant = new Map(); // alerta -> el audioWant.at que ya se atendio con una llamada desde esta pagina
+        const wantSeen = new Map();   // alerta -> el ultimo audioWant.at que ya sono
+        function wantsToTalk(a) {
+            const w = a.audioWant;
+            return !!w && !w.calledAt && ['ACTIVE', 'ATTENDED'].includes(a.status) && calledWant.get(a.id) !== w.at;
+        }
         const flash = document.createElement('div');
         flash.className = 'pan-flash';
         flash.hidden = true;
@@ -140,6 +151,7 @@ const SisdelPanico = (() => {
         }
         function openCall(a) {
             closeCall();
+            if (a.audioWant) calledWant.set(a.id, a.audioWant.at); // ya se le llamo: deja de decir "PIDE HABLAR"
             silenced.add(a.id); // la sirena taparia el audio
             updateSiren(); render();
             callBox = document.createElement('div');
@@ -213,17 +225,20 @@ const SisdelPanico = (() => {
                 const map = (typeof a.lat === 'number' && typeof a.lng === 'number') ? `<a href="${esc(SisdelRondas.mapsLink(a.lat, a.lng))}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span style="font-size:0.75rem;opacity:0.85;">Sin GPS</span>';
                 const drill = a.simulacro === true;
                 const state = a.status === 'ATTENDED' ? ` · ${drill ? (a.notes === AUTO_RECEIVED_NOTE ? 'Recibida automáticamente por la pantalla de' : 'Recibida por') : 'Atendida por'} ${esc(a.attendedByName || '')}` : '';
+                // El vecino pidio hablar (y todavia no se le llamo despues de pedirlo)
+                const wants = a.source === 'vecino' && wantsToTalk(a);
+                const wantBadge = wants ? `<span class="pan-want">${a.audioWant.mic === false ? 'PIDE HABLAR · SIN MICRÓFONO' : 'PIDE HABLAR'}</span>` : '';
                 return `
                 <div class="pan-item ${a.status === 'ACTIVE' ? 'active' : 'attended'}${drill ? ' drill' : ''}" role="${drill ? 'status' : 'alert'}">
                     ${drill ? ICON_TEST : ICON_ALERT}
                     <div class="pan-text">
                         <div class="pan-title">${drill ? 'PRUEBA DEL VECINO · TODO SIN NOVEDAD' : 'ALERTA DE PÁNICO'}</div>
-                        <div>${who}${phone}</div>
+                        <div>${who}${phone}${wantBadge}</div>
                         <div style="font-size:0.78rem;opacity:0.9;">${esc(ago(a.createdAt))}${state}${drill ? ' · No es una emergencia: no hay que ir al lugar. El vecino está comprobando que su botón funciona.' : ''}</div>
                     </div>
                     ${map}
                     ${a.status === 'ACTIVE' && !drill && !silenced.has(a.id) ? `<button class="pan-mute" data-mute="${esc(a.id)}" title="Calla la sirena de esta alerta (la alerta sigue en pantalla)">Silenciar</button>` : ''}
-                    ${canCall && a.source === 'vecino' ? `<button data-call="${esc(a.id)}" title="Llama al teléfono del vecino por internet: escucha lo que pasa y puede hablarle (contesta solo si tiene abierta la página del botón)">Escuchar / Hablar</button>` : ''}
+                    ${canCall && a.source === 'vecino' ? `<button data-call="${esc(a.id)}"${wants ? ' class="want"' : ''} title="Llama al teléfono del vecino por internet: escucha lo que pasa y puede hablarle (contesta solo si tiene abierta la página del botón)">Escuchar / Hablar</button>` : ''}
                     ${a.status === 'ACTIVE' && !options.readOnly ? `<button class="solid" data-attend="${esc(a.id)}">${drill ? 'Marcar recibida' : 'Atender'}</button>` : ''}
                     ${options.canResolve && !options.readOnly ? `<button data-resolve="${esc(a.id)}" data-drill="${drill ? '1' : ''}">${drill ? 'Cerrar prueba' : 'Resolver'}</button>` : ''}
                 </div>`;
@@ -282,6 +297,10 @@ const SisdelPanico = (() => {
             list.forEach((a) => seen.add(a.id));
             alerts = list;
             if (fresh.length) minimized = false; // una alerta nueva siempre se muestra completa
+            // El vecino acaba de pedir hablar: se muestra completa y, si la sirena no esta sonando, unos tonos para que se note
+            const wantNew = list.filter((a) => wantsToTalk(a) && wantSeen.get(a.id) !== a.audioWant.at);
+            wantNew.forEach((a) => wantSeen.set(a.id, a.audioWant.at));
+            if (wantNew.length) { minimized = false; if (!first && !S.playing()) beep(); }
             // Una alerta real suena hasta que se atienda (updateSiren); una prueba del vecino nunca suena. Al abrir la pagina con
             // alertas reales activas tambien suena (las que se silenciaron en esta pagina siguen calladas)
             render();

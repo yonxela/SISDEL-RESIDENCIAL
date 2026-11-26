@@ -57,6 +57,15 @@ const SisdelPanico = (() => {
         .pan-call .pan-call-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
         .pan-call button { font: inherit; font-size: 0.85rem; font-weight: 800; cursor: pointer; border-radius: 10px; padding: 0.6rem 0.9rem; border: 1px solid #475569; background: #1e293b; color: #fff; }
         .pan-call button.talk-on { background: #16a34a; border-color: #16a34a; }
+        .pan-call button.talk-off { background: #b45309; border-color: #f59e0b; animation: panCallMuted 1.2s ease-in-out infinite; }
+        @keyframes panCallMuted { 50% { box-shadow: 0 0 0 5px rgba(245,158,11,0.35); } }
+        .pan-call.muted, .pan-call.warn { border-color: #f59e0b; }
+        .pan-call.muted .pan-call-state, .pan-call.warn .pan-call-state { color: #fde68a; font-weight: 700; }
+        .pan-call .pan-call-levels { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0.3rem 0.6rem; margin: 0 0 0.7rem; font-size: 0.78rem; font-weight: 700; color: #94a3b8; }
+        .pan-call .pan-call-levels[hidden] { display: none; }
+        .pan-call .pan-call-bar { height: 8px; border-radius: 6px; background: #1e293b; overflow: hidden; }
+        .pan-call .pan-call-bar i { display: block; height: 100%; width: 0; border-radius: 6px; background: #22c55e; transition: width 110ms linear; }
+        .pan-call .pan-call-bar.them i { background: #38bdf8; }
         .pan-call button.hang { background: #b91c1c; border-color: #b91c1c; }
         .pan-call.nomic { border-color: #f59e0b; }
         .pan-call.nomic .pan-call-state { color: #fde68a; font-weight: 700; }
@@ -155,6 +164,12 @@ const SisdelPanico = (() => {
             if (callCtl) { callCtl.hangup(); callCtl = null; }
             if (callBox) { callBox.remove(); callBox = null; }
         }
+        // El boton del microfono de la central: abierto (verde, "Silenciar") o silenciado (ambar, latiendo: el vecino no le oye)
+        function paintTalk(b, talking) {
+            b.textContent = talking ? 'Silenciar mi micrófono' : 'Abrir mi micrófono (el vecino NO le oye)';
+            b.classList.toggle('talk-on', talking);
+            b.classList.toggle('talk-off', !talking);
+        }
         function openCall(a) {
             closeCall();
             if (a.audioWant) calledWant.set(a.id, a.audioWant.at); // ya se le llamo: deja de decir "PIDE HABLAR"
@@ -165,7 +180,8 @@ const SisdelPanico = (() => {
             callBox.setAttribute('role', 'dialog');
             callBox.innerHTML = `<p class="pan-call-title">Audio con ${esc(a.userName)}${a.casa ? ' · ' + esc(a.casa) : ''}</p>
                 <p class="pan-call-state">Preparando la llamada...</p>
-                <div class="pan-call-row"><button type="button" data-talk="1" disabled>Hablar</button><button type="button" class="hang" data-hang="1">Colgar</button></div>`;
+                <div class="pan-call-levels" hidden><span>Su micrófono</span><div class="pan-call-bar me"><i></i></div><span>El vecino</span><div class="pan-call-bar them"><i></i></div></div>
+                <div class="pan-call-row"><button type="button" class="talk-on" data-talk="1" disabled>Silenciar mi micrófono</button><button type="button" class="hang" data-hang="1">Colgar</button></div>`;
             const audio = document.createElement('audio');
             audio.autoplay = true;
             audio.setAttribute('playsinline', '');
@@ -181,21 +197,38 @@ const SisdelPanico = (() => {
                     box.querySelector('.pan-call-state').textContent = text || '';
                     // El telefono del vecino dice si dio el microfono (audio-panico.js): sin el, la central no lo escucha y se ve en ambar
                     box.classList.toggle('nomic', !!(info && info.neighborMic === false) && state === 'conectado');
+                    // DOBLE VIA desde que conecta (2026-11-25): el microfono de la central va abierto; silenciado, o si no da sonido, o si el
+                    // telefono del vecino no deja sonar la voz de la central, se ve en ambar
+                    box.classList.toggle('muted', !!info && info.talking === false && state === 'conectado');
+                    box.classList.toggle('warn', !!info && state === 'conectado' && info.talking !== false && (info.micSilent === true || info.neighborHear === false));
+                    box.dataset.neighborHear = info && info.neighborHear != null ? String(info.neighborHear) : '';
+                    const levels = box.querySelector('.pan-call-levels');
+                    if (levels) levels.hidden = state !== 'conectado';
                     const talk = box.querySelector('[data-talk]');
+                    if (!talk) return; // la llamada ya termino (quedan "Volver a llamar" y "Cerrar")
                     talk.disabled = state !== 'conectado';
+                    paintTalk(talk, !info || info.talking !== false);
                     if (['sin_respuesta', 'colgado', 'error'].includes(state)) {
                         if (callCtl === ctl) callCtl = null;
                         box.querySelector('.pan-call-row').innerHTML = `<button type="button" data-retry="1">Volver a llamar</button><button type="button" data-close="1">Cerrar</button>`;
                     }
+                },
+                // Cuanto sonido da el microfono de la central y cuanto llega del vecino: el guardia ve que su voz sale
+                onLevel: ({ me, neighbor }) => {
+                    if (!box.isConnected) return;
+                    const a1 = box.querySelector('.pan-call-bar.me i');
+                    const a2 = box.querySelector('.pan-call-bar.them i');
+                    if (a1) a1.style.width = `${Math.round(Math.min(1, me) * 100)}%`;
+                    if (a2) a2.style.width = `${Math.round(Math.min(1, neighbor) * 100)}%`;
+                    box.dataset.me = me.toFixed(2);
+                    box.dataset.neighbor = neighbor.toFixed(2);
                 }
             });
             callCtl = ctl;
             box.addEventListener('click', (e) => {
                 if (e.target.closest('[data-talk]')) {
                     ctl.setTalk(!ctl.talking);
-                    const b = e.target.closest('[data-talk]');
-                    b.textContent = ctl.talking ? 'Dejar de hablar (le está oyendo)' : 'Hablar';
-                    b.classList.toggle('talk-on', ctl.talking);
+                    paintTalk(e.target.closest('[data-talk]'), ctl.talking);
                 }
                 if (e.target.closest('[data-hang]')) ctl.hangup();
                 if (e.target.closest('[data-close]')) { if (callBox === box) closeCall(); else box.remove(); }

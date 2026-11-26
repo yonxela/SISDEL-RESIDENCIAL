@@ -141,6 +141,21 @@ seed();
     equal('con la alerta cerrada no se pide',[(await staff('u-ana', { action: 'want', alertId: 'al-cerrada', mic: true })).ok, !!store.get('condominios/c1/alertas_panico/al-cerrada').audioWant], [false, false]);
 }
 
+console.log('\nDiagnostico de la llamada (2026-11-25: "el no me escucha a mi")');
+seed();
+{
+    equal('solo quedan datos cortos: si/no, numeros y textos sin simbolos', _test.cleanDiag({ side: 'vecino', mic: true, hear: false, received: 1234.56789, session: 'play-and-record', ua: 'iPhone OS 18_7 <script>"x"', 'con espacio': 1, lista: [1], objeto: { a: 1 }, nulo: null }),
+        { side: 'vecino', mic: true, hear: false, received: 1234.5679, session: 'play-and-record', ua: 'iPhone OS 18_7 scriptx' });
+    equal('un texto largo se corta a 60 letras y lo que no es un objeto no deja nada', [_test.cleanDiag({ ua: 'x'.repeat(300) }).ua.length, _test.cleanDiag('hola'), _test.cleanDiag(null), _test.cleanDiag([1, 2])], [60, {}, {}, {}]);
+    equal('a lo mas 20 datos', Object.keys(_test.cleanDiag(Object.fromEntries(Array.from({ length: 40 }, (_, i) => ['k' + 'abcdefghijklmnopqrstuvwxyzabcdefghijklmn'[i] + (i < 26 ? '' : 'z'), i])))).length, 20);
+    const ring = await staff('u-pedro', { action: 'offer', alertId: 'al-qr', sdp: SDP });
+    const before = JSON.stringify([...store.entries()]);
+    equal('la central y el telefono de la alerta mandan su diagnostico de la llamada', [(await staff('u-pedro', { action: 'diag', alertId: 'al-qr', callId: ring.callId, diag: { side: 'central', talking: true } })).ok, (await qr(SECRET_A, { action: 'diag', alertId: 'al-qr', callId: ring.callId, diag: { side: 'vecino', hear: true } })).ok], [true, true]);
+    equal('el diagnostico no guarda ni cambia nada en la base (solo va al registro)', JSON.stringify([...store.entries()]), before);
+    equal('otro telefono de la casa no manda diagnostico de esa alerta', await codeOf(qr(SECRET_B, { action: 'diag', alertId: 'al-qr', callId: ring.callId, diag: {} })), 'permission-denied');
+    equal('de otra llamada (o sin llamada) no se anota nada y no falla', (await staff('u-pedro', { action: 'diag', alertId: 'al-qr', callId: 'otra', diag: { side: 'central' } })).ok, true);
+}
+
 console.log('\nAlerta cerrada');
 seed();
 {

@@ -30,7 +30,7 @@ const { sha256 } = require('./util');
 const privilegios = require('./privilegios');
 const rateLimit = require('./rateLimit');
 
-const ACTIONS = ['ice', 'offer', 'wait', 'poll', 'answer', 'hangup', 'want'];
+const ACTIONS = ['ice', 'offer', 'wait', 'poll', 'answer', 'hangup', 'want', 'diag'];
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SECRET_RE = /^[A-Za-z0-9_-]{40,64}$/;
 const SDP_MAX = 20000;
@@ -98,6 +98,19 @@ async function whoIs(request, condoId, data) {
     return null;
 }
 
+// Lo que cada lado dice de su audio, para el registro: hasta 20 datos cortos (si/no, numeros y textos sin simbolos raros)
+function cleanDiag(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const key of Object.keys(raw).slice(0, 20)) {
+        if (!/^[A-Za-z]{1,20}$/.test(key)) continue;
+        const v = raw[key];
+        if (typeof v === 'boolean') out[key] = v;
+        else if (typeof v === 'number' && Number.isFinite(v)) out[key] = Math.round(v * 10000) / 10000;
+        else if (typeof v === 'string') out[key] = v.replace(/[^\x20-\x7e]/g, '').replace(/[<>"'`\\]/g, '').slice(0, 60);
+    }
+    return out;
+}
 function sdpOk(sdp) { return typeof sdp === 'string' && sdp.length > 20 && sdp.length <= SDP_MAX && sdp.startsWith('v=0'); }
 
 const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
@@ -126,6 +139,15 @@ const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
     const call = callSnap.exists ? callSnap.data() : null;
     const ringing = !!call && call.state === 'llamando' && Date.now() - Date.parse(call.at || '') < RING_MS;
     const log = (outcome, extra = {}) => logger.info('audio panico', { action, outcome, condominioId: condoId, alertId, kind: who.kind, ...extra });
+
+    // DIAGNOSTICO de una llamada (2026-11-25: "ahora si escucho al vecino pero el no me escucha a mi" y no habia como saber de que lado
+    // estaba la falla): ya en linea, la central y el telefono del vecino mandan lo que ven de su audio (microfono abierto, si la voz
+    // del otro esta sonando, la sesion de audio del iPhone, cuanto sale y cuanto llega). SOLO va al registro: no guarda ni cambia nada
+    if (action === 'diag') {
+        if (!call || call.callId !== data.callId) return { ok: true };
+        log('ok', { callId: call.callId, diag: cleanDiag(data.diag) });
+        return { ok: true };
+    }
 
     if (who.kind === 'staff') {
         if (action === 'offer') {
@@ -186,4 +208,4 @@ const panicAudio = onCall({ timeoutSeconds: 30 }, async (request) => {
     fail('permission-denied', 'Esta acción es de la garita');
 });
 
-module.exports = { panicAudio, _test: { iceServers, whoIs, sdpOk, resetIceCache: () => { iceCache = null; } } };
+module.exports = { panicAudio, _test: { iceServers, whoIs, sdpOk, cleanDiag, resetIceCache: () => { iceCache = null; } } };

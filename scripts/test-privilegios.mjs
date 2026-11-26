@@ -516,10 +516,21 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
                 && /data-mute=/.test(banner) && /class="pan-flash"|className = 'pan-flash'/.test(banner) && /const SisdelSirena = \(\(\) => \{/.test(sirena) && /function start\(\)/.test(sirena));
             yes('sirena: tambien en OIKOS, con los mismos privilegios que el panel', /SISDEL\.can\('panico\.ver'\) && SISDEL\.can\('panico\.avisos'\)\) \{\s*SisdelRondas\.init\(session\);\s*SisdelPanico\.watch\(/.test(fin));
             yes('sirena y audio: los mismos archivos y versiones en la garita, el panel, OIKOS, el portal y el QR', ['garita.html', 'admin.html', 'finanzas.html', 'panico.html'].every((f) => read(f).includes('sirena.js?v=20261125c'))
-                && ['garita.html', 'admin.html', 'finanzas.html', 'panico.html', 'vecino.html'].every((f) => read(f).includes('audio-panico.js?v=20261125r')));
+                && ['garita.html', 'admin.html', 'finanzas.html', 'panico.html', 'vecino.html'].every((f) => read(f).includes('audio-panico.js?v=20261125s')));
             yes('audio: la garita llama ("Escuchar / Hablar") y solo el telefono que envio la alerta contesta solo', /data-call="\$\{esc\(a\.id\)\}"/.test(banner) && /SisdelAudioPanico\.callNeighbor\(/.test(banner)
                 && /SisdelAudioPanico\.answerCalls\(/.test(vecino) && /SisdelAudioPanico\.answerCalls\(/.test(qrPage) && /a\.mine === true && \['ACTIVE', 'ATTENDED'\]\.includes\(a\.status\)/.test(qrPage)
-                && /panicAudio/.test(fnIndex) && /stream\.getAudioTracks\(\)\.forEach\(\(t\) => \{ t\.enabled = false; \}\)/.test(audio));
+                && /panicAudio/.test(fnIndex));
+            // 2026-11-25: "ahora si escucho al vecino pero el no me escucha a mi". La llamada es de DOBLE VIA desde que conecta: el
+            // microfono de la central va abierto (antes cerrado hasta tocar "Hablar") y el boton lo silencia; la central ve sus barras
+            yes('audio: doble via desde que conecta: el microfono de la central va abierto y el boton lo silencia', /talking: true,/.test(audio) && /t\.enabled = ctl\.talking; \}\); \/\/ abierto desde el principio/.test(audio)
+                && !/t\.enabled = false; \}\); \/\/ primero solo se escucha/.test(audio) && /Silenciar mi micrófono/.test(banner) && /Abrir mi micrófono \(el vecino NO le oye\)/.test(banner)
+                && /SU micrófono está SILENCIADO: el vecino NO le oye/.test(audio) && /class="talk-on" data-talk="1" disabled>Silenciar mi micrófono</.test(banner));
+            yes('audio: la central ve cuanto sonido da su microfono y cuanto llega del vecino, y si su microfono no da sonido', /onLevel: \(\{ me, neighbor \}\) =>/.test(banner) && /pan-call-bar me/.test(banner) && /pan-call-bar them/.test(banner)
+                && /function meterOf\(ctx, stream\)/.test(audio) && /SU micrófono está abierto pero NO da sonido/.test(audio) && /SILENT_MIC_MS/.test(audio));
+            yes('audio: el telefono dice si la voz de la central esta SONANDO alla y la central lo ve', /dc\.send\(JSON\.stringify\(\{ mic: hasMic, hear: hearing\(\) \}\)\)/.test(audio) && /audioEl\.addEventListener\('playing', tellMic\)/.test(audio)
+                && /el teléfono del vecino todavía NO deja sonar su voz/.test(audio) && /audioEl\.muted = false;\s*audioEl\.volume = 1;/.test(audio));
+            yes('audio: cada lado manda su diagnostico de la llamada al registro (panicAudio diag), sin guardar nada', /call\('diag', \{ callId, diag: \{ side: 'central'/.test(audio) && /call\('diag', \{ callId: id, diag: \{ side: 'vecino'/.test(audio)
+                && /if \(action === 'diag'\) \{\s*if \(!call \|\| call\.callId !== data\.callId\) return \{ ok: true \};\s*log\('ok', \{ callId: call\.callId, diag: cleanDiag\(data\.diag\) \}\);/.test(read('functions/src/panico-audio.js')));
             // "HABLAR A CENTRAL DE MONITOREO" (2026-11-25): el microfono ya no se pide solo al enviar la alerta, sino al tocar el boton
             yes('el telefono del vecino ya no pide el microfono solo al enviar la alerta: lo pide el boton "PRESIONE PARA HABLAR" (portal y QR)', !/SisdelAudioPanico\.prepareMic\(\)/.test(vecino) && !/SisdelAudioPanico\.prepareMic\(\)/.test(qrPage)
                 && [vecino, qrPage].every((pg) => /id="panicTalk"/.test(pg) && /<b data-talk-label>ACTIVAR PARA HABLAR<\/b>/.test(pg) && /id="panicTalkNote"/.test(pg) && /talk\.callState\(state, info\)/.test(pg) && /function paintAudio\(state, text, info\)/.test(pg) && /\.show\(call\)/.test(pg))
@@ -527,8 +538,8 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             // La central no oia al vecino (2026-11-25): el telefono no habia dado el microfono y la central decia "escucha lo que pasa"
             yes('audio: el telefono del vecino siempre manda su linea (en silencio sin microfono) y el microfono entra despues en la misma llamada', /function silentLine\(\)/.test(audio) && /sender = pc\.addTrack\(silent\.track, silent\.stream\)/.test(audio)
                 && /sender\.replaceTrack\(track\)/.test(audio) && /micListeners\.forEach/.test(audio) && /micListeners\.add\(onMic\)/.test(audio) && /micListeners\.delete\(onMic\)/.test(audio));
-            yes('audio: el telefono le dice a la central si tiene microfono (canal de datos) y la central lo dice en pantalla, en ambar sin el', /pc\.createDataChannel\('sisdel-audio'\)/.test(audio) && /dc\.send\(JSON\.stringify\(\{ mic: hasMic \}\)\)/.test(audio)
-                && /NO dio permiso al micrófono: él le oye a usted, usted todavía no lo escucha/.test(audio) && /box\.classList\.toggle\('nomic'/.test(banner) && /\.pan-call\.nomic \{/.test(banner));
+            yes('audio: el telefono le dice a la central si tiene microfono (canal de datos) y la central lo dice en pantalla, en ambar sin el', /pc\.createDataChannel\('sisdel-audio'\)/.test(audio) && /dc\.send\(JSON\.stringify\(\{ mic: hasMic, hear: hearing\(\) \}\)\)/.test(audio)
+                && /NO dio permiso al micrófono: usted todavía no lo escucha/.test(audio) && /box\.classList\.toggle\('nomic'/.test(banner) && /\.pan-call\.nomic \{/.test(banner));
             yes('la barra de la central no se traba cuando el vecino pide hablar ("first" vuelve a existir: la lectura fallaba)', /let first = true;/.test(banner) && /handleTests\(list\);\s*first = false;/.test(banner) && /if \(!first && !S\.playing\(\)\) beep\(\);/.test(banner));
             // Prueba en un iPhone (2026-11-25): no se oyo en ningun lado y el boton no hacia nada; poco texto con la alerta abierta
             yes('audio: al contestar solo NO se pide el microfono (se usa si ya lo dio o si el navegador dice que esta permitido); solo lo pide el toque', /const stream = await micIfAllowed\(\);/.test(audio) && /async function micIfAllowed\(\)/.test(audio) && /st\.state === 'granted'/.test(audio));
@@ -544,7 +555,7 @@ yes('admin.html carga la pantalla de privilegios', /privilegios-ui\.js/.test(rea
             yes('avisos de la casa: el QR los activa con su propio registro (alcance /panico) y el aviso de panico se queda hasta tocarlo y abre el boton', /register\('sw-avisos\.js', \{ scope: '\.\/panico' \}\)/.test(qrPage) && /if \(p\.kind === 'panico'\) options\.vibrate/.test(sw)
                 && /event\.notification\.data\.kind === 'panico'/.test(sw) && /if \(a\.mine === false && a\.simulacro !== true\) \{ showHouse\(a\); return; \}/.test(qrPage));
             yes('simulacro: los mismos scripts en todas las paginas (rondas-core, panico-alertas)', ['index.html', 'vecino.html', 'garita.html', 'admin.html', 'panico.html', 'finanzas.html'].every((f) => read(f).includes('rondas-core.js?v=20261125a'))
-                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125n')));
+                && ['garita.html', 'admin.html', 'finanzas.html'].every((f) => read(f).includes('panico-alertas.js?v=20261125s')));
         }
         yes('boton de panico: la vista previa usa el MISMO modulo que el servidor', /A\(\)\.staffMessage\(/.test(ui) && /A\(\)\.familyMessage\(/.test(ui) && /require\('\.\/avisos'\)/.test(rondas));
         yes('boton de panico: guarda quien lo cambio y prueba solo lo guardado', /updatedBy: \{ id: session\.userId/.test(ui) && /btnTest\.disabled = dirty \|\| !savedPhonesCount/.test(ui) && /httpsCallable\('testPanicNotice'\)/.test(ui));

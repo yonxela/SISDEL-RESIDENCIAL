@@ -46,6 +46,8 @@ const SisdelAudioPanico = (() => {
     function playRemote(pc, audioEl, onBlocked) {
         pc.addEventListener('track', (e) => {
             audioEl.srcObject = (e.streams && e.streams[0]) || new MediaStream([e.track]);
+            audioEl.muted = false;
+            audioEl.volume = 1;
             const p = audioEl.play();
             if (p && p.catch) p.catch((err) => { if (onBlocked && err && err.name === 'NotAllowedError') onBlocked(); });
         });
@@ -76,62 +78,163 @@ const SisdelAudioPanico = (() => {
         sessionBefore = null;
     }
 
-    // ── GARITA: llama al telefono del vecino. onState(estado, texto): pidiendo_microfono, llamando, conectado, sin_respuesta,
-    // colgado, error. Devuelve { setTalk(on), hangup() } de inmediato (se puede colgar mientras conecta) ──
-    function callNeighbor({ call, onState, audioEl }) {
+    // Cuanto sonido lleva una linea de audio (0 a 1), para los indicadores de la central. Devuelve { level(), close() } o null
+    function meterOf(ctx, stream) {
+        try {
+            const src = ctx.createMediaStreamSource(stream);
+            const an = ctx.createAnalyser();
+            an.fftSize = 512;
+            src.connect(an);
+            const buf = new Uint8Array(an.fftSize);
+            return {
+                level() {
+                    an.getByteTimeDomainData(buf);
+                    let peak = 0;
+                    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128));
+                    return Math.min(1, peak / 48);
+                },
+                close() { try { src.disconnect(); } catch { /* ya cerrado */ } }
+            };
+        } catch { return null; }
+    }
+    // Cuantos datos de audio salieron y llegaron en una llamada (para el diagnostico)
+    async function audioBytes(pc) {
+        const out = { sent: 0, received: 0, energy: null };
+        try {
+            const stats = await pc.getStats();
+            stats.forEach((r) => {
+                const audio = r.kind === 'audio' || r.mediaType === 'audio';
+                if (r.type === 'outbound-rtp' && audio) out.sent += r.bytesSent || 0;
+                if (r.type === 'inbound-rtp' && audio) { out.received += r.bytesReceived || 0; if (typeof r.totalAudioEnergy === 'number') out.energy = Math.round(r.totalAudioEnergy * 10000) / 10000; }
+            });
+        } catch { /* sin estadisticas */ }
+        return out;
+    }
+    const DIAG_AFTER_MS = 7000;  // ya en linea, cada lado manda al registro lo que ve de su audio
+    const SILENT_MIC_MS = 9000;  // la central con el microfono abierto y sin sonido todo este tiempo: se avisa
+
+    // ── GARITA: llama al telefono del vecino. onState(estado, texto, info): pidiendo_microfono, llamando, conectado, sin_respuesta,
+    // colgado, error. Devuelve { talking, setTalk(on), hangup() } de inmediato (se puede colgar mientras conecta).
+    // DOBLE VIA DESDE QUE CONECTA (2026-11-25: "ahora si escucho al vecino pero el no me escucha a mi"; la llamada empezaba con el
+    // microfono de la central CERRADO y habia que tocar "Hablar": en la captura del usuario, a los 48 s de la llamada, seguia cerrado).
+    // Ahora es como una llamada de telefono: el microfono de la central va ABIERTO y el boton lo silencia. onLevel({ me, neighbor }):
+    // cuanto sonido da el microfono de la central y cuanto llega del vecino (0 a 1), para que el guardia vea que su voz sale. El
+    // telefono del vecino dice por el canal de datos si dio el microfono (mic) y si la voz de la central esta sonando alla (hear) ──
+    function callNeighbor({ call, onState, audioEl, onLevel }) {
         let done = false;
         let callId = null;
         let pc = null;
         let stream = null;
+        let neighborMic = null;   // el telefono del vecino dio el microfono (null: un telefono con una version anterior no lo dice)
+        let neighborHear = null;  // la voz de la central esta sonando en el telefono del vecino
+        let micSilent = false;    // el microfono de la central esta abierto y no da sonido
+        let meterCtx = null;
+        let meters = null;
+        let levelTimer = null;
+        let diagTimer = null;
+        let openSince = 0;
+        let mePeak = 0;
+        let neighborPeak = 0;
+        const info = () => ({ neighborMic, neighborHear, talking: ctl.talking, micSilent });
+        const connectedText = () => {
+            const parts = [];
+            if (neighborMic === false) parts.push('Conectado, pero el teléfono del vecino NO dio permiso al micrófono: usted todavía no lo escucha. Pídale que toque «ACTIVAR PARA HABLAR» y permita el micrófono: en cuanto lo haga, lo escuchará aquí sin volver a llamar.');
+            else parts.push(neighborMic === true ? 'Conectado: escucha lo que pasa en el teléfono del vecino (su micrófono está abierto).' : 'Conectado: escucha lo que pasa en el teléfono del vecino.');
+            if (!ctl.talking) parts.push('SU micrófono está SILENCIADO: el vecino NO le oye. Toque «Abrir mi micrófono» para hablarle.');
+            else if (micSilent) parts.push('SU micrófono está abierto pero NO da sonido: revise que esta computadora tenga un micrófono conectado y que el navegador use el correcto (el candado junto a la dirección).');
+            else if (neighborHear === false) parts.push('Su micrófono está abierto, pero el teléfono del vecino todavía NO deja sonar su voz: el vecino debe tocar «ACTIVAR PARA HABLAR» en su pantalla.');
+            else parts.push(neighborHear === true ? 'El vecino le oye: su micrófono está abierto y su voz suena en el teléfono del vecino.' : 'El vecino le oye: su micrófono está abierto.');
+            return parts.join(' ');
+        };
+        const paint = () => { if (!done && pc && pc.connectionState === 'connected') onState('conectado', connectedText(), info()); };
+        let lastBytes = { sent: 0, received: 0 };
+        // Al colgar la conexion ya se cierra: se manda lo ultimo que se midio
+        const sendDiag = async (when, fresh = true) => {
+            if (!callId || !pc) return;
+            const state = pc.connectionState;
+            const b = fresh ? await audioBytes(pc) : lastBytes;
+            call('diag', { callId, diag: { side: 'central', when, talking: ctl.talking, micSilent, mePeak: Math.round(mePeak * 100) / 100, neighborPeak: Math.round(neighborPeak * 100) / 100,
+                neighborMic: neighborMic === null ? 'sin dato' : neighborMic, neighborHear: neighborHear === null ? 'sin dato' : neighborHear, sent: b.sent, received: b.received, state } }).catch(() => {});
+        };
+        const stopMeters = () => {
+            clearInterval(levelTimer); levelTimer = null;
+            clearTimeout(diagTimer); diagTimer = null;
+            if (meters) { if (meters.me) meters.me.close(); if (meters.neighbor) meters.neighbor.close(); meters = null; }
+            if (meterCtx) { try { meterCtx.close(); } catch { /* ya cerrado */ } meterCtx = null; }
+        };
+        const startMeters = () => {
+            if (levelTimer || done) return;
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                meterCtx = new Ctx();
+                if (meterCtx.state === 'suspended' && meterCtx.resume) meterCtx.resume().catch(() => {});
+                meters = { me: meterOf(meterCtx, stream), neighbor: audioEl.srcObject ? meterOf(meterCtx, audioEl.srcObject) : null };
+            } catch { meters = { me: null, neighbor: null }; }
+            openSince = Date.now();
+            let ticks = 0;
+            levelTimer = setInterval(() => {
+                if (done || !meters) return;
+                if (++ticks % 25 === 0 && pc) audioBytes(pc).then((b) => { if (!done) lastBytes = b; });
+                if (!meters.neighbor && audioEl.srcObject && meterCtx) meters.neighbor = meterOf(meterCtx, audioEl.srcObject);
+                const me = ctl.talking && meters.me ? meters.me.level() : 0;
+                const neighbor = meters.neighbor ? meters.neighbor.level() : 0;
+                mePeak = Math.max(mePeak, me);
+                neighborPeak = Math.max(neighborPeak, neighbor);
+                if (onLevel) { try { onLevel({ me, neighbor }); } catch { /* la ventana ya no esta */ } }
+                // Microfono abierto y ni un sonido en todo este tiempo: la computadora no tiene microfono o usa otro
+                if (me > 0.04) { openSince = Date.now(); if (micSilent) { micSilent = false; paint(); } }
+                else if (ctl.talking && meters.me && !micSilent && Date.now() - openSince > SILENT_MIC_MS) { micSilent = true; paint(); }
+            }, 120);
+            diagTimer = setTimeout(() => sendDiag('en linea'), DIAG_AFTER_MS);
+        };
         const finish = (state, text, tellServer = true) => {
             if (done) return;
+            if (callId && pc && pc.connectionState === 'connected') sendDiag('al colgar', false);
             done = true;
+            stopMeters();
             try { if (pc) pc.close(); } catch { /* ya cerrada */ }
             if (stream) stream.getTracks().forEach((t) => t.stop());
             dropCapture(ctl);
             audioEl.srcObject = null;
             if (tellServer && callId) call('hangup', { callId }).catch(() => {});
-            onState(state, text || '');
+            onState(state, text || '', info());
         };
         const ctl = {
-            talking: false,
+            talking: true,
             setTalk(on) {
                 ctl.talking = !!on;
                 if (stream) stream.getAudioTracks().forEach((t) => { t.enabled = ctl.talking; });
+                openSince = Date.now();
+                micSilent = false;
+                paint();
             },
             hangup() { finish('colgado', 'Llamada terminada.'); }
         };
         (async () => {
             try {
                 if (!supported()) return finish('error', 'Este navegador no puede hacer llamadas de audio.', false);
-                onState('pidiendo_microfono', 'Permita el micrófono de esta computadora para poder hablarle al vecino.');
+                onState('pidiendo_microfono', 'Permita el micrófono de esta computadora para poder hablarle al vecino.', info());
                 holdCapture(ctl); // la central tambien carga la sirena (Safari en una Mac tiene la misma sesion de audio)
                 stream = await navigator.mediaDevices.getUserMedia(micConstraints);
-                stream.getAudioTracks().forEach((t) => { t.enabled = false; }); // primero solo se escucha; "Hablar" abre el microfono
+                stream.getAudioTracks().forEach((t) => { t.enabled = ctl.talking; }); // abierto desde el principio (se puede silenciar)
                 if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
                 pc = new RTCPeerConnection({ iceServers: await servers(call) });
                 stream.getTracks().forEach((t) => pc.addTrack(t, stream));
                 playRemote(pc, audioEl);
-                // El telefono del vecino dice por aqui si su microfono esta dando sonido (un telefono con la version anterior no dice nada)
-                let neighborMic = null;
-                const connectedText = () => neighborMic === false
-                    ? 'Conectado, pero el teléfono del vecino NO dio permiso al micrófono: él le oye a usted, usted todavía no lo escucha. Toque "Hablar" y pídale que toque «ACTIVAR PARA HABLAR» y permita el micrófono: en cuanto lo haga, lo escuchará aquí sin volver a llamar.'
-                    : neighborMic === true
-                        ? 'Conectado: escucha lo que pasa en el teléfono del vecino (su micrófono está abierto). Toque "Hablar" para que le oiga.'
-                        : 'Conectado: escucha lo que pasa en el teléfono del vecino. Toque "Hablar" para que le oiga.';
                 try {
                     const dc = pc.createDataChannel('sisdel-audio');
                     dc.addEventListener('message', (e) => {
                         let m = null;
                         try { m = JSON.parse(e.data); } catch { return; }
-                        if (!m || typeof m.mic !== 'boolean' || done) return;
-                        neighborMic = m.mic;
-                        if (pc.connectionState === 'connected') onState('conectado', connectedText(), { neighborMic });
+                        if (!m || done) return;
+                        if (typeof m.mic === 'boolean') neighborMic = m.mic;
+                        if (typeof m.hear === 'boolean') neighborHear = m.hear;
+                        paint();
                     });
                 } catch { /* sin canal de datos: la llamada sigue igual */ }
                 pc.addEventListener('connectionstatechange', () => {
                     if (done) return;
-                    if (pc.connectionState === 'connected') onState('conectado', connectedText(), { neighborMic });
+                    if (pc.connectionState === 'connected') { startMeters(); paint(); }
                     if (pc.connectionState === 'failed') finish('error', 'No se pudo conectar el audio: la red del teléfono del vecino no lo dejó pasar. Llámelo por teléfono.');
                 });
                 await pc.setLocalDescription(await pc.createOffer());
@@ -140,7 +243,7 @@ const SisdelAudioPanico = (() => {
                 const r = await call('offer', { sdp: pc.localDescription.sdp });
                 if (!r || !r.ok) return finish('error', (r && r.error) || 'No se pudo llamar.', false);
                 callId = r.callId;
-                onState('llamando', 'Llamando al teléfono del vecino... (contesta solo si tiene abierta la página del botón)');
+                onState('llamando', 'Llamando al teléfono del vecino... (contesta solo si tiene abierta la página del botón)', info());
                 let answered = false;
                 while (!done) {
                     await sleep(answered ? 3000 : WAIT_EVERY_MS);
@@ -233,7 +336,26 @@ const SisdelAudioPanico = (() => {
         let audioBlocked = false;
         let byName = '';
         const started = Date.now();
-        const tellMic = () => { try { if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ mic: hasMic })); } catch { /* canal cerrado */ } };
+        let diagTimer = null;
+        // La voz de la central esta SONANDO en este telefono (no solo llegando): la central lo ve en su pantalla
+        const hearing = () => !!audioEl.srcObject && !audioEl.paused && !audioBlocked;
+        const tellMic = () => { try { if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ mic: hasMic, hear: hearing() })); } catch { /* canal cerrado */ } };
+        audioEl.addEventListener('playing', tellMic);
+        audioEl.addEventListener('pause', tellMic);
+        // DIAGNOSTICO (2026-11-25): ya en linea, el telefono manda al registro del servidor lo que ve de su audio (microfono, si suena la
+        // central, la sesion de audio del iPhone, cuanto sale y cuanto llega), para saber de que lado esta una falla sin adivinar
+        const sendDiag = async () => {
+            if (!pc || !current) return;
+            const id = current;
+            const b = await audioBytes(pc);
+            const mt = micStream && micStream.getAudioTracks()[0];
+            let session = '';
+            try { session = (navigator.audioSession && navigator.audioSession.type) || ''; } catch { /* sin la API */ }
+            const ua = navigator.userAgent || '';
+            const short = [(ua.match(/iPhone OS [\d_]+|Android [\d.]+|Mac OS X [\d_.]+|Windows NT [\d.]+/) || [''])[0], (ua.match(/CriOS\/[\d.]+|FxiOS\/[\d.]+|EdgiOS\/[\d.]+|Version\/[\d.]+|Chrome\/[\d.]+|Firefox\/[\d.]+/) || [''])[0]].join(' ').trim();
+            call('diag', { callId: id, diag: { side: 'vecino', when: 'en linea', mic: hasMic, hear: hearing(), blocked: audioBlocked, paused: !!audioEl.paused, volume: audioEl.volume, muted: !!audioEl.muted,
+                session, micTrack: mt ? `${mt.readyState}${mt.muted ? ' muted' : ''}` : 'sin', sent: b.sent, received: b.received, energy: b.energy === null ? 'sin dato' : b.energy, ua: short } }).catch(() => {});
+        };
         const liveText = () => (audioBlocked
             ? `${byName} está en línea: toque «ACTIVAR PARA HABLAR» para oírla${hasMic ? '' : ' y permita el micrófono para que le escuche'}.`
             : hasMic
@@ -250,12 +372,13 @@ const SisdelAudioPanico = (() => {
                 if (silent) { silent.close(); silent = null; }
                 tellMic();
                 // Con el microfono abierto (lo dio con un toque) el audio de la central ya puede sonar
-                if (audioBlocked && audioEl.srcObject) { const pl = audioEl.play(); if (pl && pl.then) pl.then(() => { audioBlocked = false; if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); }).catch(() => {}); }
+                if (audioBlocked && audioEl.srcObject) { const pl = audioEl.play(); if (pl && pl.then) pl.then(() => { audioBlocked = false; tellMic(); if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); }).catch(() => {}); }
                 if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info());
             }).catch((e) => console.warn('audio panico: no se pudo abrir el microfono en la llamada', e && e.name));
         };
         micListeners.add(onMic);
         const endCall = (state, text, tellServer) => {
+            clearTimeout(diagTimer); diagTimer = null;
             if (pc) { try { pc.close(); } catch { /* ya cerrada */ } pc = null; }
             if (silent) { silent.close(); silent = null; }
             sender = null; dc = null; hasMic = false; audioBlocked = false;
@@ -264,13 +387,13 @@ const SisdelAudioPanico = (() => {
             onState(state, text || '', { mic: false, audioBlocked: false });
         };
         const ctl = {
-            stop() { stopped = true; micListeners.delete(onMic); endCall('cerrada', '', !!pc); current = null; releaseMic(); },
+            stop() { stopped = true; micListeners.delete(onMic); audioEl.removeEventListener('playing', tellMic); audioEl.removeEventListener('pause', tellMic); endCall('cerrada', '', !!pc); current = null; releaseMic(); },
             hangup() { endCall('colgado', 'Usted colgó.', true); },
             // Un toque del vecino (el boton): si el telefono no dejo sonar a la central, ahora si suena
             unlock() {
                 if (!audioEl.srcObject || !audioEl.paused) return;
                 const pl = audioEl.play();
-                if (pl && pl.then) pl.then(() => { if (audioBlocked) { audioBlocked = false; if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); } }).catch(() => {});
+                if (pl && pl.then) pl.then(() => { if (audioBlocked) { audioBlocked = false; if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); } tellMic(); }).catch(() => {});
             }
         };
         (async () => {
@@ -303,10 +426,10 @@ const SisdelAudioPanico = (() => {
                             dc.addEventListener('open', tellMic);
                             if (dc.readyState === 'open') tellMic();
                         });
-                        playRemote(pc, audioEl, () => { audioBlocked = true; if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); });
+                        playRemote(pc, audioEl, () => { audioBlocked = true; tellMic(); if (pc && pc.connectionState === 'connected') onState('conectado', liveText(), info()); });
                         pc.addEventListener('connectionstatechange', () => {
                             if (!pc) return;
-                            if (pc.connectionState === 'connected') { onState('conectado', liveText(), info()); tellMic(); }
+                            if (pc.connectionState === 'connected') { onState('conectado', liveText(), info()); tellMic(); clearTimeout(diagTimer); diagTimer = setTimeout(sendDiag, DIAG_AFTER_MS); }
                             if (pc.connectionState === 'failed') endCall('error', 'Se cortó el audio con la garita.', true);
                         });
                         await pc.setRemoteDescription({ type: 'offer', sdp: r.call.offer });

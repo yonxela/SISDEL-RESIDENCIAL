@@ -6,12 +6,14 @@
 //   node set-whatsapp-plantillas.mjs --target=prod --ver                    (muestra lo configurado, sin claves)
 //   node set-whatsapp-plantillas.mjs --target=prod --probar                 (pregunta a Meta si estan APROBADAS; no envia nada)
 //   node set-whatsapp-plantillas.mjs --target=prod --canal=meta|ultramsg    (por donde salen los avisos)
+//   node set-whatsapp-plantillas.mjs --target=prod --avisos                 (carga aviso_mora y aviso_general, las de los avisos)
 //   node set-whatsapp-plantillas.mjs --target=prod --panico                 (carga las 3 plantillas de las alertas de panico)
 //   node set-whatsapp-plantillas.mjs --target=prod --canal-panico=meta|ultramsg   (por donde salen las alertas de panico)
 // Alertas de panico (functions/src/rondas/panico-meta.js): alerta_panico, alerta_panico_familia y prueba_sin_novedad, con sus
 // datos fijos; con --canal-panico=meta la alerta, el aviso a familiares y la prueba salen por Meta (los recordatorios no cambian).
 // Tipos de aviso: "mora" (Mensaje por morosidad) y "general" (Mensajes varios).
-// Datos que puede llevar un hueco: nombre, casa, saldo, cuotas, mora, condominio (en el orden de {{1}}, {{2}}...).
+// Datos que puede llevar un hueco: nombre, casa, saldo, cuotas, mora, condominio y aviso (el texto que se escribe en OIKOS para
+// Mensajes varios), en el orden de {{1}}, {{2}}...
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { connect, parseArgs } from './admin.mjs';
@@ -103,6 +105,20 @@ if (args.probar) {
     process.exit(0);
 }
 
+// Las 2 plantillas de los avisos (Mensaje por morosidad y Mensajes varios), tal como se enviaron a Meta el 2026-11-25
+if (args.avisos) {
+    const next = { ...current, metaTemplates: { ...(current.metaTemplates || {}) }, updatedAt: new Date().toISOString() };
+    for (const [key, label] of [['mora', 'Mensaje por morosidad'], ['general', 'Mensajes varios']]) {
+        const tpl = meta.normalizeTemplate(meta.DEFAULT_TEMPLATES[key]);
+        next.metaTemplates[key] = tpl;
+        console.log(`  ${label}: ${tpl.name} (${tpl.language}), huecos: ${tpl.params.join(', ')}.`);
+    }
+    await ref.set(next);
+    console.log(`\nGuardadas en ${target}. Todavia NO cambia nada: cuando Meta las APRUEBE (Administrador de WhatsApp > Plantillas),\n` +
+        `pase los avisos al numero oficial con: node set-whatsapp-plantillas.mjs --target=${target} --canal=meta`);
+    process.exit(0);
+}
+
 // Las 3 plantillas de las alertas de panico, tal como se enviaron a Meta (no pregunta nada: el texto y los datos son fijos)
 if (args.panico) {
     const next = { ...current, metaTemplates: { ...(current.metaTemplates || {}) }, updatedAt: new Date().toISOString() };
@@ -140,7 +156,8 @@ if (args.canal) {
     if (!['meta', 'ultramsg'].includes(canal)) { console.log('Use --canal=meta o --canal=ultramsg'); process.exit(1); }
     if (canal === 'meta') {
         if (!current.metaToken || !current.metaPhoneId) { console.log('No se puede: falta el token o el numero de Meta (use set-whatsapp.mjs).'); process.exit(1); }
-        if (!meta.normalizeTemplate((current.metaTemplates || {}).mora)) { console.log('No se puede: falta la plantilla de mora (corra este script sin opciones).'); process.exit(1); }
+        const missing = ['mora', 'general'].filter((key) => !meta.normalizeTemplate((current.metaTemplates || {})[key]));
+        if (missing.length) { console.log(`No se puede: faltan plantillas de los avisos (${missing.join(', ')}). Corra antes con --avisos.`); process.exit(1); }
     }
     await ref.set({ ...current, channel: canal, updatedAt: new Date().toISOString() });
     console.log(`Canal de los avisos en ${target}: ${canal === 'meta' ? 'WhatsApp oficial de Meta (solo Meta, sin caer a UltraMsg)' : 'UltraMsg'}.`);

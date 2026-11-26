@@ -121,6 +121,11 @@ function templateOrFail(whatsapp, config, mode) {
     if (!tpl) throw fail('failed-precondition', `Falta la plantilla de Meta para los avisos de ${mode === 'varios' ? 'mensajes varios' : 'mora'}. Pida al programador que la cargue (scripts/set-whatsapp-plantillas.mjs).`);
     return tpl;
 }
+// Una plantilla con el AVISO que se escribe en OIKOS (aviso_general, Mensajes varios): sin el aviso no se envia (saldria
+// "le informa: -."). Al reenviar ya vienen los `params` calculados
+const avisoMissing = (tpl, item) => Array.isArray(tpl.params) && tpl.params.includes('aviso') && !(item && Array.isArray(item.params))
+    && !String((item && item.vars && item.vars.aviso) || '').trim();
+const AVISO_MISSING = 'Escriba el aviso antes de enviarlo: va dentro de la plantilla aprobada por Meta.';
 // Los datos de la plantilla de un residente: ya calculados (`params`, al reenviar) o a partir de `vars`; null si no vienen
 const paramsOf = (whatsapp, tpl, item) => {
     if (item && Array.isArray(item.params)) return item.params.map(String);
@@ -177,6 +182,7 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         let text = String((item && item.text) || '').trim();
         let params = null;
         if (tpl) {
+            if (avisoMissing(tpl, item)) throw fail('invalid-argument', AVISO_MISSING);
             params = paramsOf(whatsapp, tpl, item);
             text = params ? whatsapp.renderTemplate(tpl, params).trim() : '';
         }
@@ -486,6 +492,7 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     await requireConfirming(whatsapp, config);
     const residentId = String((data && data.residentId) || '').trim();
     const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data && data.mode) : null;
+    if (tpl && avisoMissing(tpl, data)) throw fail('invalid-argument', AVISO_MISSING);
     const params = tpl ? paramsOf(whatsapp, tpl, data) : null;
     if (tpl && !params) throw fail('invalid-argument', 'Faltan los datos del residente para la plantilla.');
     const text = tpl ? whatsapp.renderTemplate(tpl, params).trim() : String((data && data.text) || '').trim();
@@ -597,6 +604,7 @@ async function sendTest({ whatsapp, data, verify = {} }) {
     const phone = normalizePhone(data && data.phone);
     if (!phone) throw fail('invalid-argument', 'Escriba el teléfono completo (8 dígitos de Guatemala o con código de país).');
     const tpl = templatesOn(whatsapp, config) ? templateOrFail(whatsapp, config, data && data.mode) : null;
+    if (tpl && avisoMissing(tpl, data)) throw fail('invalid-argument', AVISO_MISSING);
     const params = tpl ? paramsOf(whatsapp, tpl, data) : null;
     if (tpl && !params) throw fail('invalid-argument', 'Faltan los datos de ejemplo para la plantilla.');
     const text = tpl ? whatsapp.renderTemplate(tpl, params).trim() : String((data && data.text) || '').trim();

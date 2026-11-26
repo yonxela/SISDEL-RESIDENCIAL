@@ -614,6 +614,31 @@ console.log('\nWhatsApp oficial de Meta: cada aviso sale con una plantilla aprob
     await run();
     equal('y sale con la plantilla', [sentLog.length, sentLog[0].opts.template.name, sentLog[0].opts.params], [1, 'aviso_mora', ['Beto', 'B2', 'Q20.00']]);
     reset();
+
+    // Mensajes varios con aviso_general (2026-11-25): el aviso que se escribe en OIKOS va en su hueco; sin el, no se envia
+    const AVISO = { ...META, metaTemplates: { ...MT.DEFAULT_TEMPLATES } };
+    const avisoVars = (name, aviso) => ({ ...vars(name, 'A1', 'Q0.00'), ...(aviso == null ? {} : { aviso }) });
+    cfg = AVISO;
+    await rejects('mensajes varios sin el aviso escrito: no se crea el envio', () => R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: [{ residentId: 'v1', vars: avisoVars('Ana') }] } }), 'invalid-argument');
+    await rejects('un aviso en blanco tampoco', () => R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: [{ residentId: 'v1', vars: avisoVars('Ana', '   ') }] } }), 'invalid-argument');
+    const av = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', items: [
+        { residentId: 'v1', vars: avisoVars('Ana', 'el agua se suspende el jueves de 8:00 a 12:00') },
+        { residentId: 'v2', vars: avisoVars('Beto', 'el agua se suspende el jueves de 8:00 a 12:00') }
+    ] } });
+    equal('el aviso va dentro de la plantilla, con el nombre y el condominio de cada uno', (await dest(av.id, 'v1')).text, 'Hola Ana, la administración de La Perla le informa: el agua se suspende el jueves de 8:00 a 12:00. Si tiene alguna duda, comuníquese con la administración de su residencial.');
+    equal('y guarda los tres datos en el orden de la plantilla', (await dest(av.id, 'v2')).params, ['Beto', 'La Perla', 'el agua se suspende el jueves de 8:00 a 12:00']);
+    await run();
+    equal('sale como aviso_general con sus datos', [sentLog.length, sentLog[0].opts.template.name, sentLog[0].opts.params.length], [2, 'aviso_general', 3]);
+    reset();
+    cfg = AVISO;
+    await rejects('a un residente sin el aviso: se rechaza', () => R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'varios', vars: avisoVars('Ana') } }), 'invalid-argument');
+    await rejects('la prueba sin el aviso: se rechaza', () => R.sendTest({ whatsapp, data: { phone: '5555-1111', mode: 'varios', vars: avisoVars('Ana') } }), 'invalid-argument');
+    const oneAviso = await R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'varios', vars: avisoVars('Ana', 'asamblea el sábado a las 10:00') } });
+    equal('a un residente con el aviso: sale con la plantilla', [oneAviso.sent, sentLog[0].opts.template.name, sentLog[0].opts.params[2]], [true, 'aviso_general', 'asamblea el sábado a las 10:00']);
+    const moraOk = await R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'mora', vars: vars('Ana', 'A1', 'Q10.00') } });
+    equal('el aviso de mora (sin hueco para el aviso) no lo pide', [moraOk.sent, sentLog[sentLog.length - 1].opts.template.name, sentLog[sentLog.length - 1].opts.params], [true, 'aviso_mora', ['Ana', 'La Perla', 'A1', 'Q10.00']]);
+    equal('las plantillas por defecto tienen tantos datos como huecos', ['mora', 'general'].map((k) => MT.bodyParamCount(MT.DEFAULT_TEMPLATES[k].body) === MT.DEFAULT_TEMPLATES[k].params.length), [true, true]);
+    reset();
 }
 
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');

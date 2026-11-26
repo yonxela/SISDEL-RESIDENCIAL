@@ -1277,6 +1277,12 @@
             <div id="rem-template-box" class="hidden mb-3 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 px-4 py-3">
                 <p class="text-sm font-bold text-sky-800 dark:text-sky-200"><i class="fas fa-shield-halved mr-1.5"></i>WhatsApp oficial de Meta</p>
                 <p id="rem-template-info" class="text-xs text-slate-600 dark:text-slate-300 mt-1"></p>
+                <!-- SISDEL (2026-11-25): Mensajes varios con la plantilla aviso_general: aqui se escribe el aviso que va dentro de ella -->
+                <div id="rem-meta-aviso-wrap" class="hidden mt-3">
+                    <label for="rem-meta-aviso" class="block text-xs font-bold uppercase text-blue-600 dark:text-blue-400 mb-1">El aviso (va dentro de la plantilla)</label>
+                    <textarea id="rem-meta-aviso" rows="3" maxlength="800" oninput="renderReminderPreview()" placeholder="Por ejemplo: el servicio de agua se suspenderá el jueves 28 de noviembre de 8:00 a 12:00 por mantenimiento de la bomba" class="w-full px-3 py-2 bg-white dark:bg-slate-800 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Escríbalo sin saludo ni firma: la plantilla ya los trae. Puede usar <b>{nombre}</b>, <b>{casa}</b>, <b>{saldo}</b>... Los saltos de línea se vuelven espacios (Meta no los acepta dentro de una plantilla).</p>
+                </div>
                 <p id="rem-template-preview-wrap" class="hidden text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400 mt-2">Así le llega <span id="rem-template-who" class="font-normal normal-case"></span></p>
                 <p id="rem-template-preview" class="text-sm text-slate-800 dark:text-slate-100 whitespace-pre-line break-words"></p>
             </div>
@@ -5712,7 +5718,21 @@
         function contactTemplateText(kind, r) {
             if (!remMetaMode()) return null;
             const tpl = remConn.templates ? remConn.templates[kind === 'mora' ? 'mora' : 'general'] : null;
-            return tpl ? reminderText(remTemplateAsText(tpl), r) : '';
+            return tpl ? reminderText(remTemplateWithAviso(tpl, ''), r) : '';
+        }
+        // Con el WhatsApp oficial y la plantilla con aviso: el aviso que se escribio en medio del texto (sin tocar el principio ni el
+        // final, que fija la plantilla). null si se cambio el principio o el final
+        function contactAvisoOf(text) {
+            const tpl = remMetaMode() && remConn.templates ? remConn.templates.general : null;
+            const r = contactResident();
+            if (!remTplHasAviso(tpl) || !r) return null;
+            const full = remTemplateAsText(tpl);
+            const at = full.indexOf('{aviso}');
+            const before = reminderText(full.slice(0, at), r);
+            const after = reminderText(full.slice(at + '{aviso}'.length), r);
+            const t = String(text || '').trim();
+            if (t.length < before.length + after.length || !t.startsWith(before.trim()) || !t.endsWith(after.trim())) return null;
+            return t.slice(before.trim().length, t.length - after.trim().length).replace(/\s+/g, ' ').trim();
         }
         function contactOriginals(r) {
             const saved = reminderMessagesSaved();
@@ -5767,7 +5787,11 @@
             if (remMetaMode()) {
                 if (st.kind !== 'mora' && st.kind !== 'general') return 'Con el WhatsApp oficial solo salen los avisos con su plantilla aprobada: el estado de cuenta y el mensaje propio se envían desde "Enviar desde mi WhatsApp".';
                 if (!contactTemplateText(st.kind, contactResident())) return 'Este aviso no tiene plantilla aprobada de Meta: envíelo desde "Enviar desde mi WhatsApp".';
-                if (text.trim() !== st.orig[st.kind].trim()) return 'Con el WhatsApp oficial solo sale el texto aprobado; para cambiarlo use "Enviar desde mi WhatsApp".';
+                if (st.kind === 'general' && remTplHasAviso(remConn.templates.general)) {
+                    const aviso = contactAvisoOf(text);
+                    if (aviso === null) return 'Con el WhatsApp oficial solo se cambia el aviso: deje igual el principio y el final del texto (los fija la plantilla aprobada por Meta).';
+                    if (!aviso || aviso.indexOf(SISDEL_REMINDER_PLACEHOLDER) >= 0) return 'Escriba el aviso donde dice ' + SISDEL_REMINDER_PLACEHOLDER + '.';
+                } else if (text.trim() !== st.orig[st.kind].trim()) return 'Con el WhatsApp oficial solo sale el texto aprobado; para cambiarlo use "Enviar desde mi WhatsApp".';
             }
             if (text.length > 1000) return 'El mensaje pasa de 1000 caracteres: acórtelo para enviarlo desde el WhatsApp del condominio (desde su propio WhatsApp no hay límite).';
             return '';
@@ -5843,7 +5867,8 @@
             const label = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Enviando...';
             let ok = false;
-            try { ok = await remSendOne(r, text, st.kind === 'mora' ? 'mora' : 'varios', { noConfirm: true }); }
+            const aviso = st.kind === 'general' && remMetaMode() ? contactAvisoOf(text) : null;
+            try { ok = await remSendOne(r, text, st.kind === 'mora' ? 'mora' : 'varios', { noConfirm: true, ...(aviso ? { aviso } : {}) }); }
             finally { st.sending = false; btn.innerHTML = label; contactRefresh(); }
             if (ok && contactState === st) closeModal('modal-contact');
         }
@@ -5999,13 +6024,24 @@
         function remMetaMode() { return !!(remConn && remConn.channel === 'meta'); }
         function remMetaTemplate() { return remMetaMode() && remConn.templates ? (remConn.templates[currentRemMode === 'varios' ? 'general' : 'mora'] || null) : null; }
         function remTemplateAsText(tpl) { return String(tpl.body || '').replace(/\{\{(\d+)\}\}/g, (_, n) => '{' + (tpl.params[Number(n) - 1] || 'nombre') + '}'); }
+        // SISDEL (2026-11-25): una plantilla puede llevar el AVISO que se escribe en la ventana (dato `aviso`: aviso_general de Mensajes
+        // varios). Sin escribirlo, el texto lleva [Escriba aquí el aviso] y las mismas comprobaciones de siempre no dejan enviarlo
+        function remTplHasAviso(tpl) { return !!(tpl && Array.isArray(tpl.params) && tpl.params.indexOf('aviso') >= 0); }
+        function remMetaAvisoRaw() { const el = document.getElementById('rem-meta-aviso'); return el ? String(el.value).replace(/\s+/g, ' ').trim() : ''; }
+        function remTemplateWithAviso(tpl, aviso) { return remTemplateAsText(tpl).split('{aviso}').join(aviso || SISDEL_REMINDER_PLACEHOLDER); }
+        // Los datos de un residente para la plantilla y, si se escribio, el aviso (con {nombre}... ya reemplazados)
+        function remMetaVars(r, aviso) {
+            const vars = reminderVars(r);
+            const a = aviso == null ? remMetaAvisoRaw() : String(aviso).replace(/\s+/g, ' ').trim();
+            return a ? Object.assign({}, vars, { aviso: reminderText(a, r) }) : vars;
+        }
         // Lo que se manda por residente: el texto y, con Meta, sus datos para llenar la plantilla
         function remItemFor(r) {
-            return { residentId: String(r.id), text: reminderText(reminderTemplateFor(r), r), ...(remMetaMode() ? { vars: reminderVars(r) } : {}) };
+            return { residentId: String(r.id), text: reminderText(reminderTemplateFor(r), r), ...(remMetaMode() ? { vars: remMetaVars(r) } : {}) };
         }
         // El texto que le toca a un residente segun el mensaje seleccionado (lo escrito en la ventana o, vacio, el guardado)
         function reminderTemplateFor(r) {
-            if (remMetaMode()) { const tpl = remMetaTemplate(); return tpl ? remTemplateAsText(tpl) : ''; }
+            if (remMetaMode()) { const tpl = remMetaTemplate(); return tpl ? remTemplateWithAviso(tpl, remMetaAvisoRaw()) : ''; }
             const saved = reminderMessagesSaved();
             const pick = (id, fallback) => { const v = document.getElementById(id).value; return v.trim() ? v : fallback; };
             if (currentRemMode === 'varios') return pick('rem-msg-general', saved.general);
@@ -6018,9 +6054,7 @@
             if (!phone) return alert('Este residente no tiene teléfono registrado.');
             const template = reminderTemplateFor(r);
             if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) {
-                document.getElementById('rem-msg-box').open = true;
-                document.getElementById('rem-msg-general').focus();
-                return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+                return remAvisoMissing();
             }
             remSendOne(r, reminderText(template, r), currentRemMode);
         }
@@ -6068,7 +6102,7 @@
             if (known) return confirm(remMineAsk(known, label)) ? manual() : false;
             const preview = text.length > 400 ? text.slice(0, 400) + '...' : text;
             if (!(opts && opts.noConfirm) && !confirm(`¿Enviar este mensaje por WhatsApp a ${label}?\n\nSale desde el número del condominio.\n\n${preview}`)) return false;
-            const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
+            const result = await bridge.one({ residentId: String(r.id), text, mode, ...(remMetaMode() ? { vars: remMetaVars(r, opts && opts.aviso != null ? opts.aviso : null) } : {}) });
             if (!result.ok) {
                 const restricted = /no está dejando salir/i.test(result.error);
                 if (restricted || /no está conectado/i.test(result.error)) {
@@ -6084,6 +6118,8 @@
             const outcome = remOutcome(result);
             if (outcome === 'ok') { showToast(`Mensaje enviado a ${label}: WhatsApp lo recibió${result.delivery === 'entregado' ? ' y llegó al teléfono' : ''}.`); return true; }
             if (outcome === 'rejected') return confirm(`El mensaje a ${label} NO llegó: ${result.deliveryText}\n\n¿Abrir WhatsApp para enviarlo a mano?`) ? manual() : false;
+            // Con el WhatsApp oficial no se consulta la entrega (llega despues por el aviso de Meta): basta con que Meta lo acepto
+            if (outcome === 'unconfirmed' && remMetaMode()) { showToast(`Enviado por el WhatsApp oficial a ${label}: Meta lo aceptó.`); return true; }
             if (outcome === 'unconfirmed') { alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).\n\nNo lo dé por entregado: revise de nuevo en un momento o pregunte al residente.`); return true; }
             alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
             return false;
@@ -6144,9 +6180,7 @@
             if (!r) return;
             const template = remManualTemplate(r);
             if (template.includes(SISDEL_REMINDER_PLACEHOLDER)) {
-                document.getElementById('rem-msg-box').open = true;
-                document.getElementById('rem-msg-general').focus();
-                return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+                return remAvisoMissing();
             }
             if (openMyWhatsApp(r.contact, reminderText(template, r))) myWhatsAppToast((r.unit ? r.unit + ' · ' : '') + (r.name || ''));
         }
@@ -6174,9 +6208,7 @@
             const list = remManualList();
             if (!list.length) return alert(currentRemFilter === 'seleccion' ? 'Marque al menos un residente con teléfono.' : 'No hay residentes con teléfono en esta lista.');
             if (remManualTemplate(list[0]).includes(SISDEL_REMINDER_PLACEHOLDER)) {
-                document.getElementById('rem-msg-box').open = true;
-                document.getElementById('rem-msg-general').focus();
-                return alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+                return remAvisoMissing();
             }
             const items = list.map(r => ({ id: String(r.id), label: (r.unit ? r.unit + ' · ' : '') + (r.name || ''), phone: remWaPhone(r.contact), text: reminderText(remManualTemplate(r), r) }));
             const where = remManualDest === 'app' ? 'la app de WhatsApp' : 'WhatsApp Web';
@@ -6311,11 +6343,15 @@
             if (textBox) textBox.classList.toggle('hidden', meta);
             if (!meta) return;
             const tpl = remMetaTemplate();
+            const withAviso = remTplHasAviso(tpl);
+            document.getElementById('rem-meta-aviso-wrap').classList.toggle('hidden', !withAviso);
             const info = document.getElementById('rem-template-info');
             info.className = 'text-xs mt-1 ' + (tpl ? 'text-slate-600 dark:text-slate-300' : 'text-rose-700 dark:text-rose-300 font-semibold');
-            info.textContent = tpl
-                ? `El texto de este aviso lo fija la plantilla «${tpl.name}» aprobada por Meta: no se edita aquí; solo cambian los datos de cada residente (${tpl.params.join(', ') || 'ninguno'}).`
-                : 'Falta la plantilla de Meta para este tipo de aviso: pida al programador que la cargue antes de enviar.';
+            info.textContent = !tpl
+                ? 'Falta la plantilla de Meta para este tipo de aviso: pida al programador que la cargue antes de enviar.'
+                : withAviso
+                    ? `El saludo y el cierre los fija la plantilla «${tpl.name}» aprobada por Meta; usted escribe abajo el aviso, que va en medio, y cambian los datos de cada residente (${tpl.params.filter((p) => p !== 'aviso').join(', ') || 'ninguno'}).`
+                    : `El texto de este aviso lo fija la plantilla «${tpl.name}» aprobada por Meta: no se edita aquí; solo cambian los datos de cada residente (${tpl.params.join(', ') || 'ninguno'}).`;
         }
         function paintReminderMode() {
             const varios = currentRemMode === 'varios';
@@ -6343,7 +6379,7 @@
                 const tpl = remMetaTemplate();
                 const who = document.getElementById('rem-template-who');
                 document.getElementById('rem-template-preview-wrap').classList.toggle('hidden', !r || !tpl);
-                document.getElementById('rem-template-preview').textContent = r && tpl ? reminderText(remTemplateAsText(tpl), r) : '';
+                document.getElementById('rem-template-preview').textContent = r && tpl ? reminderText(reminderTemplateFor(r), r) : '';
                 if (who) who.textContent = r ? '(' + (r.unit ? r.unit + ' · ' : '') + (r.name || '') + ')' : '';
                 wrap.classList.add('hidden');
                 return;
@@ -6760,14 +6796,24 @@
             if (remUnwatch) { try { remUnwatch(); } catch (e) { /* ya estaba cerrado */ } remUnwatch = null; }
             remUnwatch = bridge.watch((camp) => { remCampaign = camp; paintReminderProgress(); paintReminderBulk(); });
         }
+        // Lleva a la casilla del aviso que falta escribir: con el WhatsApp oficial y una plantilla con aviso, la suya; si no, el texto de siempre
+        function remAvisoMissing() {
+            if (remMetaMode() && remTplHasAviso(remMetaTemplate())) {
+                const el = document.getElementById('rem-meta-aviso');
+                if (el) el.focus();
+                alert('Escriba el aviso (va dentro de la plantilla aprobada por Meta) antes de enviarlo.');
+                return;
+            }
+            document.getElementById('rem-msg-box').open = true;
+            document.getElementById('rem-msg-general').focus();
+            alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+        }
         // Avisa y vuelve a la ventana si el aviso sigue con el texto de ejemplo
         function reminderTemplateReady(r) {
             if (remMetaMode() && !remMetaTemplate()) { alert('Falta la plantilla de Meta para este tipo de aviso. Pida al programador que la cargue antes de enviar.'); return false; }
             const template = reminderTemplateFor(r);
             if (!template.includes(SISDEL_REMINDER_PLACEHOLDER)) return true;
-            document.getElementById('rem-msg-box').open = true;
-            document.getElementById('rem-msg-general').focus();
-            alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+            remAvisoMissing();
             return false;
         }
         async function sendRemindersToAll() {
@@ -6896,9 +6942,7 @@
         // Como reminderTemplateReady, sin la plantilla de Meta (garita.app no la necesita): solo que el aviso este escrito
         function reminderTemplateReadyText(r) {
             if (!remManualTemplate(r).includes(SISDEL_REMINDER_PLACEHOLDER)) return true;
-            document.getElementById('rem-msg-box').open = true;
-            document.getElementById('rem-msg-general').focus();
-            alert('Escriba el aviso en el texto de los mensajes varios (donde dice ' + SISDEL_REMINDER_PLACEHOLDER + ') antes de enviarlo.');
+            remAvisoMissing();
             return false;
         }
         async function sendReminderTest() {
@@ -6913,11 +6957,12 @@
             if (phone === null) return;
             remLastTestPhone = phone;
             try { localStorage.setItem('sisdel_rem_prueba', phone); } catch (e) { /* solo se pierde el recuerdo */ }
-            const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r), mode: currentRemMode, ...(remMetaMode() ? { vars: reminderVars(r) } : {}) });
+            const result = await bridge.test({ phone, text: '(Mensaje de prueba)\n' + reminderText(reminderTemplateFor(r), r), mode: currentRemMode, ...(remMetaMode() ? { vars: remMetaVars(r) } : {}) });
             if (!result.ok) return alert(result.error);
             const outcome = remOutcome(result);
             if (outcome === 'ok') showToast(`Prueba enviada al teléfono que termina en ${result.phoneTail}: WhatsApp la recibió. Revise que llegó.`);
             else if (outcome === 'rejected') alert(`La prueba al teléfono que termina en ${result.phoneTail} NO llegó: ${result.deliveryText}`);
+            else if (outcome === 'unconfirmed' && remMetaMode()) showToast(`Prueba enviada por el WhatsApp oficial al teléfono que termina en ${result.phoneTail}: Meta la aceptó. Revise que llegó.`);
             else if (outcome === 'unconfirmed') alert(`UltraMsg aceptó la prueba para el teléfono que termina en ${result.phoneTail}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}). Revise el teléfono en un momento.`);
             else alert('No se pudo enviar la prueba. Revise que WhatsApp esté conectado en UltraMsg.');
             // Si la prueba salio, el aviso de "no deja salir los mensajes" se quita solo (se vuelve a preguntar)

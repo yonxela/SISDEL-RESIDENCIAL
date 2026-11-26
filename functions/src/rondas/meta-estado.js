@@ -12,8 +12,21 @@
 //   metaTemplates: { mora, general }  { name, language, params: ['nombre', 'casa', ...], body }  (no secretas)
 const TIMEOUT_MS = 10000;
 const API = 'https://graph.facebook.com/v21.0';
-// Datos de cada residente que una plantilla puede usar (los mismos {nombre}, {casa}... de los mensajes de OIKOS)
-const VARIABLES = ['nombre', 'casa', 'saldo', 'cuotas', 'mora', 'condominio'];
+// Datos de cada residente que una plantilla puede usar (los mismos {nombre}, {casa}... de los mensajes de OIKOS) y `aviso`: el texto
+// que la administracion escribe en OIKOS para Mensajes varios (pedido del usuario el 2026-11-25: convocatorias, cortes de agua,
+// cobros...), que va dentro de una plantilla con un hueco para el (aviso_general)
+const VARIABLES = ['nombre', 'casa', 'saldo', 'cuotas', 'mora', 'condominio', 'aviso'];
+// Las plantillas de los avisos enviadas a Meta el 2026-11-25 (Utilidad, espanol), con el dato de cada hueco
+const DEFAULT_TEMPLATES = {
+    mora: {
+        name: 'aviso_mora', language: 'es', params: ['nombre', 'condominio', 'casa', 'saldo'],
+        body: 'Hola {{1}}, le saluda la administración de {{2}}. Le recordamos que su lote {{3}} tiene un saldo pendiente de {{4}}. Si ya realizó su pago, se lo agradecemos y puede ignorar este mensaje.'
+    },
+    general: {
+        name: 'aviso_general', language: 'es', params: ['nombre', 'condominio', 'aviso'],
+        body: 'Hola {{1}}, la administración de {{2}} le informa: {{3}}. Si tiene alguna duda, comuníquese con la administración de su residencial.'
+    }
+};
 
 const usesMeta = (config) => !!(config && config.channel === 'meta' && config.metaToken && config.metaPhoneId);
 
@@ -113,6 +126,6 @@ function describeConnection(conn) {
 }
 
 module.exports = {
-    VARIABLES, usesMeta, normalizeTemplate, templateFor, templateParams, renderTemplate, bodyParamCount, cleanParam,
+    VARIABLES, DEFAULT_TEMPLATES, usesMeta, normalizeTemplate, templateFor, templateParams, renderTemplate, bodyParamCount, cleanParam,
     buildTemplatePayload, sendTemplate, sendText, connection, describeConnection
 };

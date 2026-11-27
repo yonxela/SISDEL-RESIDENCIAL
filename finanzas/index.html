@@ -6199,6 +6199,8 @@
             // Con el WhatsApp oficial no se consulta la entrega (llega despues por el aviso de Meta): basta con que Meta lo acepto
             if (outcome === 'unconfirmed' && remMetaMode()) { showToast(`Enviado por el WhatsApp oficial a ${label}: Meta lo aceptó.`); return true; }
             if (outcome === 'unconfirmed') { alert(`UltraMsg aceptó el mensaje para ${label}, pero todavía no se sabe si llegó (${remPendingText(result.delivery)}).\n\nNo lo dé por entregado: revise de nuevo en un momento o pregunte al residente.`); return true; }
+            // SISDEL (2026-11-27): con el WhatsApp oficial el motivo es el que dio Meta (antes decia "revise UltraMsg", que no aplica)
+            if (remMetaMode()) { alert(`El WhatsApp oficial (Meta) no aceptó el mensaje para ${label}${result.error ? ': ' + result.error : ''}.`); return false; }
             alert(`WhatsApp no entregó el mensaje a ${label}. Revise que la instancia esté conectada en UltraMsg.`);
             return false;
         }

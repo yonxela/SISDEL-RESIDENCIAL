@@ -56,7 +56,8 @@ async function sendMetaOfficial(config, to, message, opts) {
         ? await meta.sendTemplate(config, to, opts.template, opts.params || [])
         : await meta.sendText(config, to, message);
     if (result.ok) return true;
-    logger.warn('whatsapp: Meta rechazo el mensaje', { code: result.code, message: result.error });
+    // `error` y no `message`: con `message` el registro perdia el motivo de Meta (lo tapaba el texto del aviso)
+    logger.warn('whatsapp: Meta rechazo el mensaje', { code: result.code, error: result.error });
     if (Array.isArray(opts.errors)) opts.errors.push(`Meta (${result.code}): ${result.error}`);
     return false;
 }

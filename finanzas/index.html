@@ -723,7 +723,7 @@
                         <div id="chat-list-pane" class="md:w-[22rem] shrink-0 flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
                             <div class="p-3 border-b border-slate-100 dark:border-slate-700 space-y-2">
                                 <div class="flex gap-2">
-                                    <div class="relative flex-1"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="chat-search" autocomplete="off" oninput="renderChatList()" class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Buscar chat..."></div>
+                                    <div class="relative flex-1"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i><input type="text" id="chat-search" autocomplete="off" oninput="renderChatList()" class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Buscar chat o vecino..."></div>
                                     <button type="button" onclick="toggleChatNew()" id="btn-chat-new" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition" title="Escribirle a un residente"><i class="fas fa-plus"></i></button>
                                 </div>
                                 <div id="chat-new-wrap" class="hidden">
@@ -733,6 +733,7 @@
                                 <div class="flex gap-1.5 text-xs font-semibold">
                                     <button type="button" onclick="setChatFilter('all')" id="chat-filter-all" class="px-3 py-1.5 rounded-full">Todos</button>
                                     <button type="button" onclick="setChatFilter('unread')" id="chat-filter-unread" class="px-3 py-1.5 rounded-full">No leídos</button>
+                                    <button type="button" onclick="setChatFilter('vecinos')" id="chat-filter-vecinos" class="px-3 py-1.5 rounded-full" title="Todos los vecinos: abra su chat o escríbale aunque nunca haya escrito">Vecinos</button>
                                 </div>
                             </div>
                             <div id="chat-list" class="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700"></div>
@@ -3434,8 +3435,8 @@
             chatStopMessages = null;
         }
         function setChatFilter(kind) {
-            chatFilter = kind === 'unread' ? 'unread' : 'all';
-            ['all', 'unread'].forEach(function (k) {
+            chatFilter = kind === 'unread' || kind === 'vecinos' ? kind : 'all';
+            ['all', 'unread', 'vecinos'].forEach(function (k) {
                 const b = document.getElementById('chat-filter-' + k);
                 if (b) b.className = 'px-3 py-1.5 rounded-full ' + (k === chatFilter ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300');
             });
@@ -3455,11 +3456,28 @@
             if (!st.ready) { list.innerHTML = '<p class="p-6 text-center text-sm text-slate-400"><i class="fas fa-spinner fa-spin mr-2"></i>Cargando chats...</p>'; return; }
             if (st.error) { list.innerHTML = '<p class="p-6 text-center text-sm text-rose-500">' + chatEsc(st.error) + '</p>'; return; }
             const text = document.getElementById('chat-search')?.value || '';
+            // SISDEL (2026-11-27, pedido del usuario: "aqui no se ven los vecinos"): la pestaña Vecinos lista a TODOS los residentes
+            // vigentes; con chat, abre su chat; sin chat, abre uno nuevo para escribirle (por el numero oficial, con el aviso aprobado)
+            if (chatFilter === 'vecinos') {
+                const rv = chatResidentRows(text, 300);
+                if (note) note.textContent = rv.total + ' vecino(s)' + (rv.total > rv.rows.length ? ' · se muestran ' + rv.rows.length + ': escriba para buscar' : '');
+                list.innerHTML = rv.rows.length ? rv.rows.map(function (r) { return chatResidentRowHtml(r, rv.byResident, text); }).join('') : '<p class="p-6 text-center text-sm text-slate-400">Ningún vecino coincide.</p>';
+                return;
+            }
             let chats = st.chats.filter(function (c) { return chatFilter === 'all' || c.unread > 0; });
             if (text.trim()) chats = SisdelBusqueda.filter(chats, text, function (c) { return [(c.names || []).join(' '), (c.units || []).join(' '), c.phone || c.id, c.lastPushname || '']; });
             if (note) note.textContent = st.chats.length + ' chat(s)' + (st.unread ? ' · ' + st.unread + ' sin leer' : '');
+            // Al buscar, tambien los vecinos que todavia no tienen chat (para escribirles directo)
+            let others = '';
+            if (text.trim() && chatFilter === 'all') {
+                const withChat = new Set();
+                chats.forEach(function (c) { (c.residentIds || []).forEach(function (id) { withChat.add(String(id)); }); });
+                const rv = chatResidentRows(text, 8);
+                const extra = rv.rows.filter(function (r) { return !withChat.has(String(r.id)); });
+                if (extra.length) others = '<p class="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">Otros vecinos · escribirles</p>' + extra.map(function (r) { return chatResidentRowHtml(r, rv.byResident, text); }).join('');
+            }
             if (!chats.length) {
-                list.innerHTML = '<p class="p-6 text-center text-sm text-slate-400">' + (st.chats.length ? 'Ningún chat coincide.' : 'Todavía no hay conversaciones. Cuando un residente escriba o se le envíe un mensaje, aparece aquí. Para escribirle a alguien use <i class="fas fa-plus"></i>.') + '</p>';
+                list.innerHTML = others || '<p class="p-6 text-center text-sm text-slate-400">' + (st.chats.length ? 'Ningún chat ni vecino coincide.' : 'Todavía no hay conversaciones. Para escribirle a un vecino abra la pestaña <b>Vecinos</b> o búsquelo arriba.') + '</p>';
                 return;
             }
             const mark = function (v) { return text.trim() ? SisdelBusqueda.highlight(v, text) : chatEsc(v); };
@@ -3473,7 +3491,30 @@
                     + '<span class="flex-1 min-w-0"><span class="flex items-center justify-between gap-2"><span class="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">' + mark(chatTitle(c)) + '</span><span class="text-[11px] shrink-0 ' + (c.unread > 0 ? 'text-emerald-600 font-bold' : 'text-slate-400') + '">' + chatEsc(chatTimeText(c.lastAt)) + '</span></span>'
                     + '<span class="flex items-center justify-between gap-2"><span class="text-xs text-slate-500 dark:text-slate-400 truncate">' + ((c.units || []).length ? '<b>' + mark((c.units || []).join(', ')) + '</b> · ' : '') + preview + '</span>' + unread + '</span></span>'
                     + '</button>';
-            }).join('');
+            }).join('') + others;
+        }
+        // Los vecinos vigentes para la pestaña Vecinos y la busqueda: { rows, total, byResident (residente -> su chat) }
+        function chatResidentRows(text, limit) {
+            const api = sisdelChatsApi();
+            const byResident = new Map();
+            ((api && api.state.chats) || []).forEach(function (c) { (c.residentIds || []).forEach(function (id) { if (!byResident.has(String(id))) byResident.set(String(id), c); }); });
+            let rs = (Store.get('residents') || []).filter(isResidentActive);
+            rs = text.trim() ? SisdelBusqueda.filter(rs, text, residentSearchFields)
+                : rs.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }) || String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }); });
+            return { rows: rs.slice(0, limit), total: rs.length, byResident: byResident };
+        }
+        function chatResidentRowHtml(r, byResident, text) {
+            const c = byResident.get(String(r.id));
+            const mark = function (v) { return text.trim() ? SisdelBusqueda.highlight(v, text) : chatEsc(v); };
+            const phone = String(r.contact || '').trim();
+            const action = c ? '<span class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">Ver chat</span>'
+                : (phone ? '<span class="text-[11px] font-semibold text-sky-600 dark:text-sky-400 shrink-0"><i class="fas fa-pen mr-1"></i>Escribir</span>' : '<span class="text-[11px] text-rose-500 shrink-0">sin teléfono</span>');
+            const click = c ? 'openChat(this.dataset.id)' : 'startChatWith(this.dataset.id)';
+            return '<button type="button" onclick="' + click + '" data-id="' + chatEsc(c ? c.id : r.id) + '" class="w-full text-left px-3 py-2.5 flex gap-3 items-center transition hover:bg-slate-50 dark:hover:bg-slate-700/40">'
+                + '<span class="w-10 h-10 shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-bold">' + chatEsc((String(r.name || '?')[0] || '?').toUpperCase()) + '</span>'
+                + '<span class="flex-1 min-w-0"><span class="block font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">' + mark(r.name || '') + '</span>'
+                + '<span class="block text-xs text-slate-500 dark:text-slate-400 truncate">' + (r.unit ? '<b>' + mark(r.unit) + '</b>' : '') + (phone ? (r.unit ? ' · ' : '') + mark(phone) : '') + '</span></span>'
+                + action + '</button>';
         }
         // Abrir un chat (por su telefono)
         function openChat(id) {

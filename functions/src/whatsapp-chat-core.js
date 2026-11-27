@@ -351,21 +351,37 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
 
     const config = await whatsapp.loadConfig();
     if (!config || !whatsapp.canChat(config)) throw fail('failed-precondition', 'El WhatsApp del condominio no está conectado para chatear.');
-    // Se contesta por el canal por el que escribio el residente; un chat nuevo, por el canal del condominio
-    const channel = (chatData && chatData.channel) || whatsapp.defaultChannel(config);
+    // Con el WhatsApp OFICIAL activo (pedido del usuario el 2026-11-27: "que este chat sea del numero oficial y se le pueda escribir
+    // directo a cualquier vecino") todo sale por el numero oficial, tambien los chats que empezaron por UltraMsg (ese numero lo
+    // restringe WhatsApp). Sin el, se contesta por el canal por el que escribio el residente; un chat nuevo, por el del condominio.
+    const official = whatsapp.defaultChannel(config) === 'meta';
+    const channel = official ? 'meta' : ((chatData && chatData.channel) || whatsapp.defaultChannel(config));
+    // Por Meta el mensaje libre solo vale hasta 24 horas despues del ultimo mensaje que el residente mando AL NUMERO OFICIAL. Fuera
+    // de eso (o si nunca le escribio a ese numero), lo escrito sale dentro del aviso aprobado (aviso_general: "Hola {nombre}, la
+    // administracion de {condominio} le informa: {lo escrito}. ..."); sin esa plantilla, como antes, no se puede
+    let template = null;
     if (whatsapp.needsWindow(channel)) {
         const last = Date.parse((chatData && chatData.lastInboundAt) || '');
-        if (!Number.isFinite(last) || now().getTime() - last > WINDOW_MS) {
-            throw fail('failed-precondition', 'Con el WhatsApp oficial solo se le puede escribir libremente a un residente hasta 24 horas después de su último mensaje. Para escribirle ahora use un aviso con plantilla (Recordatorios); cuando él responda, se le contesta aquí.');
+        const open = (chatData && chatData.channel) === 'meta' && Number.isFinite(last) && now().getTime() - last <= WINDOW_MS;
+        if (!open) {
+            const condoSnap = await condoRef.get();
+            const nombre = (resident && resident.name) || (people.names && people.names[0]) || 'vecino';
+            template = typeof whatsapp.chatTemplate === 'function'
+                ? whatsapp.chatTemplate(config, { nombre, condominio: condoSnap.exists ? String(condoSnap.data().name || '') : '', aviso: body })
+                : null;
+            if (!template) throw fail('failed-precondition', 'Con el WhatsApp oficial solo se le puede escribir libremente a un residente hasta 24 horas después de su último mensaje. Para escribirle ahora use un aviso con plantilla (Recordatorios); cuando él responda, se le contesta aquí.');
         }
     }
+    // Lo que le llega al residente: con plantilla, el aviso ya lleno
+    const shown = template ? template.text : body;
 
     const nowIso = now().toISOString();
     const chatRef = condoRef.collection('whatsapp_chats').doc(phone);
     const ref = chatRef.collection('wa_mensajes').doc();
     const msg = {
-        waId: null, ref: ref.id, matchKey: matchKeyOf(phone, body), fromMe: true, type: 'chat', body, media: '', fileName: '',
-        at: nowIso, receivedAt: nowIso, ack: 'pending', source: 'sisdel', sentBy: caller.id, sentByName: caller.name || '', channel, updatedAt: nowIso
+        waId: null, ref: ref.id, matchKey: matchKeyOf(phone, shown), fromMe: true, type: 'chat', body: shown, media: '', fileName: '',
+        at: nowIso, receivedAt: nowIso, ack: 'pending', source: 'sisdel', sentBy: caller.id, sentByName: caller.name || '', channel, updatedAt: nowIso,
+        ...(template ? { template: template.tpl.name, aviso: body } : {})
     };
     await db.runTransaction(async (tx) => {
         const chat = await tx.get(chatRef);
@@ -373,7 +389,7 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
         tx.set(chatRef, { phone, ...people, ...(chat.exists ? {} : { createdAt: nowIso, unread: 0, channel }), lastAt: nowIso, lastMessage: lastOf(msg), updatedAt: nowIso }, { merge: true });
     });
     let result = null;
-    try { result = await whatsapp.sendChat(config, phone, body, ref.id, channel); } catch (e) { result = { ok: false, error: e && e.message ? e.message : 'error' }; }
+    try { result = await whatsapp.sendChat(config, phone, body, ref.id, channel, template); } catch (e) { result = { ok: false, error: e && e.message ? e.message : 'error' }; }
     if (!result || !result.ok) {
         const error = text((result && result.error) || 'WhatsApp no lo aceptó', 200);
         await ref.set({ ack: 'failed', error, updatedAt: now().toISOString() }, { merge: true });
@@ -387,7 +403,7 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
     } else {
         await ref.set({ providerId: text(result.id, 100), updatedAt: now().toISOString() }, { merge: true });
     }
-    return { ok: true, id: ref.id, chatId: phone, channel };
+    return { ok: true, id: ref.id, chatId: phone, channel, ...(template ? { template: template.tpl.name } : {}) };
 }
 
 // ── Marcar un chat como leido ──

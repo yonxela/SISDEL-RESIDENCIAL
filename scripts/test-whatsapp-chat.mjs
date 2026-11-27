@@ -192,8 +192,28 @@ equal('tambien la de un numero que no es de nadie', (await db.doc('whatsapp_esta
 await chatA(DORA).set({ lastInboundAt: new Date(Date.now() - 25 * 3600 * 1000).toISOString() }, { merge: true });
 await rejects('pasadas 24 horas del ultimo mensaje del residente no se le escribe libremente por Meta', () => C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: DORA, text: 'Hola' } }), 'failed-precondition');
 await rejects('ni se empieza un chat nuevo por Meta (eso va con plantilla)', () => C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { residentId: 'eva', text: 'Hola Eva' } }), 'failed-precondition');
-r = await C.sendMessage({ db, whatsapp: metaWa, condominioId: A, caller, data: { chatId: ANA, text: 'Por UltraMsg' } });
-equal('un chat que empezo por UltraMsg se contesta por UltraMsg (sin la regla de las 24 horas)', [r.ok, r.channel, metaSent[metaSent.length - 1].channel], [true, 'ultramsg', 'ultramsg']);
+// Con la plantilla aviso_general (2026-11-27): fuera de las 24 horas, o a un residente que nunca le escribio al numero oficial, lo
+// escrito sale dentro del aviso aprobado y el chat muestra lo que le llega
+const MT = require('../functions/src/rondas/meta-estado.js');
+const tplOf = (cfg, vars) => { const tpl = MT.normalizeTemplate(MT.DEFAULT_TEMPLATES.general); const params = MT.templateParams(tpl, vars); return { tpl, params, text: MT.renderTemplate(tpl, params).trim() }; };
+const metaTplSent = [];
+const metaTplWa = {
+    ...metaWa, chatTemplate: tplOf,
+    sendChat: async (cfg, phone, body, ref, channel, template) => { metaTplSent.push({ phone, body, channel, template: template ? template.tpl.name : null, params: template ? template.params : null }); return { ok: true, id: `wamid.tpl${metaTplSent.length}` }; }
+};
+r = await C.sendMessage({ db, whatsapp: metaTplWa, condominioId: A, caller, data: { chatId: DORA, text: 'Mañana se corta el agua\nde 8 a 12' } });
+const tplMsg = (await msgsA(DORA).where('template', '==', 'aviso_general').get()).docs.map((d) => d.data())[0];
+equal('pasadas 24 horas, con la plantilla aviso_general sale dentro del aviso aprobado', [r.ok, r.channel, r.template, metaTplSent[0].template, metaTplSent[0].params[2]], [true, 'meta', 'aviso_general', 'aviso_general', 'Mañana se corta el agua de 8 a 12']);
+equal('el chat muestra lo que le llega al residente (con su nombre y el condominio) y guarda lo escrito', [/^Hola Dora/.test(tplMsg.body), /le informa: Mañana se corta el agua de 8 a 12\./.test(tplMsg.body), tplMsg.aviso, tplMsg.waId], [true, true, 'Mañana se corta el agua\nde 8 a 12', 'wamid.tpl1']);
+r = await C.sendMessage({ db, whatsapp: metaTplWa, condominioId: A, caller, data: { residentId: 'eva', text: 'Bienvenida al chat' } });
+equal('se le puede escribir a cualquier residente aunque nunca haya escrito (chat nuevo, con la plantilla)', [r.ok, r.channel, metaTplSent[1].template, /^Hola Eva Sin Chat/.test((await chatA('50244440505').get()).data().lastMessage.text)], [true, 'meta', 'aviso_general', true]);
+r = await C.sendMessage({ db, whatsapp: metaTplWa, condominioId: A, caller, data: { chatId: ANA, text: 'Por el oficial' } });
+equal('con el WhatsApp oficial activo, un chat que empezo por UltraMsg sale por el oficial (con la plantilla: no le escribio a ese numero)', [r.ok, r.channel, metaTplSent[2].channel, metaTplSent[2].template], [true, 'meta', 'meta', 'aviso_general']);
+await chatA(DORA).set({ lastInboundAt: new Date().toISOString(), channel: 'meta' }, { merge: true });
+r = await C.sendMessage({ db, whatsapp: metaTplWa, condominioId: A, caller, data: { chatId: DORA, text: 'Gracias, recibido' } });
+equal('si el residente le escribio al numero oficial en las ultimas 24 horas, sale como mensaje libre (sin plantilla)', [r.ok, r.template || null, metaTplSent[3].template, metaTplSent[3].body], [true, null, null, 'Gracias, recibido']);
+r = await C.sendMessage({ db, whatsapp: fakeWa, condominioId: A, caller, data: { chatId: ANA, text: 'Por UltraMsg' } });
+equal('sin el WhatsApp oficial, un chat que empezo por UltraMsg se contesta por UltraMsg (sin la regla de las 24 horas)', [r.ok, r.channel, sent[sent.length - 1].body], [true, 'ultramsg', 'Por UltraMsg']);
 equal('Meta no guarda los mensajes de antes', (await C.loadHistory({ db, whatsapp: metaWa, condominioId: A, data: { chatId: DORA } })).reason, 'meta');
 
 console.log('\nEl aviso por internet (funcion whatsappWebhook del emulador)');

@@ -24,11 +24,19 @@ const hasUltra = (config) => !!(config && config.ultramsgInstance && config.ultr
 const canChat = (config) => !!config && (config.provider === 'simulado' || hasUltra(config) || meta.usesMeta(config));
 const defaultChannel = (config) => (config && config.provider === 'simulado' ? (config.chatChannel || 'ultramsg') : (meta.usesMeta(config) ? 'meta' : 'ultramsg'));
 const needsWindow = (channel) => channel === 'meta';
-async function sendChat(config, phone, body, referenceId, channel) {
+// El aviso aprobado por Meta (aviso_general) con lo escrito en el chat, para escribirle a un residente fuera de las 24 horas (o que
+// nunca le escribio al numero oficial). { tpl, params, text } o null si no hay una plantilla con hueco para el aviso
+function chatTemplate(config, vars) {
+    const tpl = meta.templateFor(config, 'varios');
+    if (!tpl || !tpl.params.includes('aviso')) return null;
+    const params = meta.templateParams(tpl, vars);
+    return { tpl, params, text: meta.renderTemplate(tpl, params).trim() };
+}
+async function sendChat(config, phone, body, referenceId, channel, template) {
     if (config.provider === 'simulado') return { ok: true, id: channel === 'meta' ? `wamid.SIM-${referenceId}` : `SIM-${referenceId}` };
     if (channel === 'meta') {
         if (!meta.usesMeta(config)) return { ok: false, error: 'El WhatsApp oficial (Meta) no está activo' };
-        const r = await meta.sendText(config, phone, body);
+        const r = template ? await meta.sendTemplate(config, phone, template.tpl, template.params) : await meta.sendText(config, phone, body);
         return r.ok ? { ok: true, id: String(r.id || '') } : { ok: false, error: `Meta (${r.code}): ${r.error}` };
     }
     if (!hasUltra(config)) return { ok: false, error: 'UltraMsg no está configurado' };
@@ -54,7 +62,7 @@ async function chatHistory(config, phone, limit) {
     const data = await res.json();
     return Array.isArray(data) ? data : (Array.isArray(data.messages) ? data.messages : []);
 }
-const whatsapp = { loadConfig: base.loadConfig, canChat, defaultChannel, needsWindow, sendChat, chatHistory };
+const whatsapp = { loadConfig: base.loadConfig, canChat, defaultChannel, needsWindow, sendChat, chatHistory, chatTemplate };
 
 // ── Quien llama: un usuario activo del condominio con el chat de WhatsApp ──
 async function authorize(request) {

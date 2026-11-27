@@ -3361,7 +3361,29 @@
         // WhatsApp oficial (Meta): un mensaje libre solo vale hasta 24 horas despues del ultimo mensaje del residente (el
         // servidor tambien lo exige). Devuelve { meta, allowed, until, text } para el encabezado y la caja de escribir.
         var CHAT_WINDOW_MS = 24 * 60 * 60 * 1000;
+        // SISDEL (2026-11-27, pedido del usuario: el chat es del numero OFICIAL y se le puede escribir directo a cualquier vecino): con
+        // el WhatsApp oficial activo todo sale por ese numero. Dentro de las 24 horas desde que el residente le escribio AL NUMERO OFICIAL
+        // el mensaje es libre; fuera de ellas (o si nunca le escribio) lo escrito sale dentro del aviso aprobado por Meta (aviso_general),
+        // que lo hace el servidor (whatsapp-chat-core.js). Si no se sabe si el oficial esta activo, como antes
+        function chatOfficial() { return remMetaMode() || chatOfficialSeen; }
+        var chatOfficialSeen = false;
+        var chatOfficialAsked = false;
+        function chatCheckOfficial() {
+            if (chatOfficialAsked || (remConn && remConn.at)) return;
+            chatOfficialAsked = true;
+            const bridge = remBridge();
+            if (!bridge || typeof bridge.status !== 'function') return;
+            bridge.status({}).then(function (r) {
+                if (r && r.ok && r.channel === 'meta') { chatOfficialSeen = true; updateChatComposer(); if (chatCurrentId) renderChatHeader(); }
+            }).catch(function () { /* sin la comprobacion, como antes */ });
+        }
         function chatWindowOf(c) {
+            if (chatOfficial()) {
+                const lastIn = c && c.channel === 'meta' ? Date.parse(c.lastInboundAt || '') : NaN;
+                const open = Number.isFinite(lastIn) ? lastIn + CHAT_WINDOW_MS : 0;
+                if (open > Date.now()) return { meta: true, allowed: true, until: open, text: 'WhatsApp oficial · el residente le escribió: puede contestarle libremente hasta ' + new Date(open).toLocaleString('es-GT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) };
+                return { meta: true, allowed: true, template: true, text: 'WhatsApp oficial · lo que escriba le llega dentro del aviso aprobado por Meta: «Hola (nombre), la administración de (condominio) le informa: (su mensaje). Si tiene alguna duda, comuníquese con la administración de su residencial.» Cuando el residente responda, se le contesta libremente durante 24 horas.' };
+            }
             if (!c || c.channel !== 'meta') return { meta: false, allowed: true, text: c && c.channel === 'ultramsg' ? 'WhatsApp (UltraMsg)' : '' };
             const last = Date.parse(c.lastInboundAt || '');
             const until = Number.isFinite(last) ? last + CHAT_WINDOW_MS : 0;
@@ -3373,11 +3395,14 @@
             const btn = document.getElementById('chat-send');
             const note = document.getElementById('chat-window-note');
             if (!input || !btn) return;
-            const w = chatCurrentId ? chatWindowOf(chatOf(chatCurrentId)) : { allowed: true, text: '' };
+            const w = chatCurrentId ? chatWindowOf(chatOf(chatCurrentId)) : (chatNewResident ? chatWindowOf(null) : { allowed: true, text: '' });
             // SISDEL: el campo queda abierto aunque el WhatsApp oficial no deje escribir: "Mi WhatsApp" lo manda desde el de la persona
             input.disabled = false;
             btn.disabled = !w.allowed || chatSending;
-            input.placeholder = w.allowed ? 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)' : 'Fuera de las 24 horas del WhatsApp oficial: escríbalo y use «Mi WhatsApp»';
+            btn.title = w.template ? 'Enviar por el WhatsApp oficial, dentro del aviso aprobado por Meta' : (w.meta ? 'Enviar por el WhatsApp oficial' : 'Enviar');
+            input.placeholder = !w.allowed ? 'Fuera de las 24 horas del WhatsApp oficial: escríbalo y use «Mi WhatsApp»'
+                : w.template ? 'Escriba el mensaje: sale dentro del aviso aprobado (Enter envía, Mayús+Enter cambia de línea)'
+                : 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)';
             if (note) { note.textContent = w.text || ''; note.className = 'px-4 py-1.5 text-[11px] ' + (w.allowed ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20') + (w.text ? '' : ' hidden'); }
         }
         function chatTypeLabel(type) { return CHAT_TYPES[type] || 'Mensaje'; }
@@ -3400,6 +3425,7 @@
         }
         function initChats() {
             ensureChatsSubscription();
+            chatCheckOfficial();   // si el WhatsApp oficial esta activo, el chat lo dice y le escribe a cualquiera con el aviso aprobado
             setChatFilter(chatFilter);
             renderChatPane();
         }

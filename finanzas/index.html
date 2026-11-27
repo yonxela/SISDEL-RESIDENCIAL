@@ -3458,6 +3458,9 @@
             chatMessages = [];
             renderChatList();
             renderChatPane();
+            // En la computadora, el cursor queda listo en la caja para escribir y enviar con Enter
+            const box = document.getElementById('chat-input');
+            if (box && window.innerWidth >= 768) box.focus();
             const api = sisdelChatsApi();
             if (!api || !chatCurrentId) return;
             const opened = chatCurrentId;
@@ -3628,26 +3631,37 @@
             }).join('');
             if (atBottom || box.dataset.first !== '1') { box.scrollTop = box.scrollHeight; box.dataset.first = '1'; }
         }
+        // SISDEL (2026-11-27, pedido del usuario: "despues de escribir el mensaje, al presionar Enter que lo envie"): Enter envia y
+        // Mayus+Enter cambia de linea. Tambien con el Enter del teclado numerico o un navegador que solo da keyCode 13; no cuando Enter
+        // cierra una letra compuesta (acentos o teclados con composicion: isComposing / 229), que no es un envio
         function chatInputKey(event) {
-            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChatFromInput(); }
+            const enter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter' || event.keyCode === 13;
+            if (!enter || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            sendChatFromInput();
         }
         function sendChatFromInput() {
             const api = sisdelChatsApi();
             const input = document.getElementById('chat-input');
             const btn = document.getElementById('chat-send');
-            if (!api || !input || chatSending) return;
+            if (!api || !input) return;
             const text = input.value.trim();
             if (!text) return;
-            if (chatCurrentId && !chatWindowOf(chatOf(chatCurrentId)).allowed) return;   // fuera de las 24 horas: solo "Mi WhatsApp"
+            // El anterior todavia va saliendo: no se pierde lo escrito, se avisa (asi no parece que Enter no hace nada)
+            if (chatSending) { showToast('Se está enviando el mensaje anterior: en un momento puede enviar este.'); return; }
+            if (chatCurrentId && !chatWindowOf(chatOf(chatCurrentId)).allowed) { showToast('Pasaron más de 24 horas del WhatsApp oficial: use «Mi WhatsApp».'); return; }
             const target = chatCurrentId ? { chatId: chatCurrentId } : (chatNewResident ? { residentId: chatNewResident.id } : null);
             if (!target) return;
             chatSending = true;
             if (btn) btn.disabled = true;
+            // La caja se vacia al instante (se ve que salio); si el servidor no lo acepta, lo escrito vuelve a la caja
+            input.value = '';
+            const restore = function () { const i = document.getElementById('chat-input'); if (i && !i.value.trim()) i.value = text; };
             api.send(target, text).then(function (r) {
-                input.value = '';
                 if (r && r.chatId && !chatCurrentId) openChat(r.chatId);
                 if (r && !r.ok) alert('WhatsApp no aceptó el mensaje: ' + (r.error || 'intente de nuevo') + '. Quedó marcado como no enviado.');
             }).catch(function (e) {
+                restore();
                 alert((e && e.message) || 'No se pudo enviar el mensaje.');
             }).finally(function () {
                 chatSending = false;
@@ -6709,7 +6723,11 @@
             const buttons = [];
             // Pausar detiene el envio y se puede Continuar; Cancelar es definitivo (los que faltan ya no se envian)
             if (c.status === 'running') buttons.push(`<button type="button" onclick="controlRemCampaign('pause')" class="${btnCls} bg-amber-500 hover:bg-amber-600 text-white"><i class="fas fa-pause mr-1"></i>Pausar</button>`);
-            if ((c.status === 'paused' || c.status === 'error') && (c.pending || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('resume')" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-play mr-1"></i>Continuar</button>`);
+            // SISDEL (2026-11-27): un envio cancelado, o uno hecho con el numero anterior cuando ya se usa el WhatsApp oficial, sigue con
+            // "Continuar con los que faltan": un envio NUEVO solo con quienes todavia no lo recibieron (a los demas no se les repite)
+            const oldChannel = remMetaMode() && c.channel !== 'meta';
+            if ((c.status === 'paused' || c.status === 'error') && (c.pending || 0) > 0 && !oldChannel) buttons.push(`<button type="button" onclick="controlRemCampaign('resume')" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-play mr-1"></i>Continuar</button>`);
+            if ((c.status === 'canceled' || ((c.status === 'paused' || c.status === 'error') && oldChannel)) && ((c.pending || 0) + (c.failed || 0)) > 0) buttons.push(`<button type="button" id="rem-continue-missing" onclick="continueRemCampaign()" class="${btnCls} bg-emerald-600 hover:bg-emerald-700 text-white"><i class="fas fa-play mr-1"></i>Continuar con los que faltan (${(c.pending || 0) + (c.failed || 0)})</button>`);
             if (c.status === 'running' || c.status === 'paused' || c.status === 'error') buttons.push(`<button type="button" onclick="controlRemCampaign('cancel')" class="${btnCls} bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 border border-rose-200 dark:border-rose-800">Cancelar envío</button>`);
             if (c.status !== 'running' && c.status !== 'canceled' && (c.failed || 0) > 0) buttons.push(`<button type="button" onclick="controlRemCampaign('retry')" class="${btnCls} bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800">Reintentar fallidos (${c.failed})</button>`);
             // Lo que UltraMsg dice que paso de verdad ("Comprobar entregas"): "enviados" solo cuenta lo que UltraMsg acepto
@@ -7032,10 +7050,52 @@
             // Si la prueba salio, el aviso de "no deja salir los mensajes" se quita solo (se vuelve a preguntar)
             if (remConn && remConn.confirming === false) checkRemConnection();
         }
+        // SISDEL (2026-11-27, pedido del usuario: "un boton para continuar, asi a los vecinos que ya les llego no se repite el mensaje"):
+        // un envio cancelado (o hecho con el numero anterior) sigue con un envio NUEVO solo para los que todavia no lo recibieron: los que
+        // quedaron pendientes o fallaron. A quienes ya se les mando (enviado) o no tienen telefono no se les vuelve a mandar. El texto es
+        // el de la ventana de ahora (con el WhatsApp oficial, la plantilla con el aviso escrito), con los datos de hoy de cada residente.
+        async function continueRemCampaign() {
+            const bridge = remBridge();
+            const c = remCampaign;
+            if (!bridge || !c || typeof bridge.recipients !== 'function') return;
+            if ((c.mode || 'mora') !== currentRemMode) {
+                return alert(`Ese envío era de «${c.mode === 'varios' ? 'Mensajes varios' : 'Mensaje por morosidad'}». Elija ese mensaje arriba y vuelva a pulsar «Continuar con los que faltan».`);
+            }
+            await checkRemConnection();
+            if (remConn && remConn.connected === false) return alert(remConn.message || 'WhatsApp está desconectado: no se puede enviar.');
+            if (remConn && remConn.confirming === false) return alert(remConn.healthMessage || 'WhatsApp no está dejando salir los mensajes: no se puede enviar.');
+            const res = await bridge.recipients({ campaignId: c.id });
+            if (!res.ok) return alert(res.error);
+            const missingIds = new Set(res.items.filter((it) => it.status === 'pending' || it.status === 'failed').map((it) => String(it.id)));
+            const already = res.items.filter((it) => it.status === 'sent').length;
+            const residents = Store.get('residents') || [];
+            const list = reminderSendable(residents.filter((r) => missingIds.has(String(r.id)) && r.status !== 'closed' && !r.deleted))
+                .sort((a, b) => String(a.unit || '').localeCompare(String(b.unit || ''), 'es', { numeric: true }) || String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' }));
+            if (!list.length) return alert('No queda nadie por enviar: a los demás ya se les mandó o no tienen teléfono.');
+            if (!reminderTemplateReady(list[0])) return;
+            const items = list.map(remItemFor);
+            const first = list[0];
+            const sample = items[0].text.length > 320 ? items[0].text.slice(0, 320) + '...' : items[0].text;
+            const how = remMetaMode()
+                ? 'por el WhatsApp oficial de Meta, con la plantilla aprobada (uno cada 25 a 55 segundos, de 8:00 a 18:00)'
+                : `desde el número del condominio, de a poco (uno cada 25 a 55 segundos, de 8:00 a 18:00 y hasta ${REM_DAILY_LIMIT} por día)`;
+            const ok = confirm(`Se enviará SOLO a los ${items.length} residentes a los que este envío todavía no les mandó el mensaje.\n\nA los ${already} a los que ya se les mandó NO se les repite.\n\nSale ${how}: ${remEstimate(items.length)}.\n\nEjemplo (${(first.unit ? first.unit + ' · ' : '') + (first.name || '')}):\n${sample}\n\n¿Continuar?`);
+            if (!ok) return;
+            const btn = document.getElementById('rem-continue-missing');
+            if (btn) btn.disabled = true;
+            // Un envio en pausa o detenido se cancela primero (solo puede haber uno en curso): lo que ya salio queda igual
+            if (c.status === 'paused' || c.status === 'error') {
+                const stop = await bridge.control({ campaignId: c.id, action: 'cancel' });
+                if (!stop.ok) { if (btn) btn.disabled = false; return alert(stop.error); }
+            }
+            const result = await bridge.start({ mode: currentRemMode, items, continueOf: c.id });
+            if (!result.ok) { if (btn) btn.disabled = false; paintReminderBulk(); return alert(result.error); }
+            showToast(`Envío continuado: ${result.pending} mensajes (${remEstimate(result.pending)}). A los ${already} que ya lo tenían no se les repite.` + (result.skipped ? ` ${result.skipped} sin teléfono válido.` : ''));
+        }
         async function controlRemCampaign(action) {
             const bridge = remBridge();
             if (!bridge || !remCampaign) return;
-            if (action === 'cancel' && !confirm('¿Cancelar el envío? Lo que ya salió no se puede recoger; los que faltan ya no se enviarán y no se podrá continuar.\n\nSi solo quiere detenerlo un momento, use Pausar.')) return;
+            if (action === 'cancel' && !confirm('¿Cancelar el envío? Lo que ya salió no se puede recoger y este envío ya no sigue. Después puede usar «Continuar con los que faltan»: manda el mensaje solo a quienes todavía no lo recibieron.\n\nSi solo quiere detenerlo un momento, use Pausar.')) return;
             const result = await bridge.control({ campaignId: remCampaign.id, action });
             if (!result.ok) alert(result.error);
         }

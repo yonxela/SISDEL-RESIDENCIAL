@@ -639,6 +639,27 @@ console.log('\nWhatsApp oficial de Meta: cada aviso sale con una plantilla aprob
     equal('el aviso de mora (sin hueco para el aviso) no lo pide', [moraOk.sent, sentLog[sentLog.length - 1].opts.template.name, sentLog[sentLog.length - 1].opts.params], [true, 'aviso_mora', ['Ana', 'La Perla', 'A1', 'Q10.00']]);
     equal('las plantillas por defecto tienen tantos datos como huecos', ['mora', 'general'].map((k) => MT.bodyParamCount(MT.DEFAULT_TEMPLATES[k].body) === MT.DEFAULT_TEMPLATES[k].params.length), [true, true]);
     reset();
+
+    // Un envio hecho con el numero anterior (UltraMsg) no se sigue con el WhatsApp oficial: mandaria texto libre por UltraMsg
+    // (La Perla, 2026-11-27: la fase A quedo al 20 % con el numero restringido y despues se encendio Meta)
+    cfg = SIMULADO;
+    const old = await create(['v1', 'v2']);
+    await control(old.id, 'pause');
+    cfg = AVISO;
+    await rejects('continuar con Meta un envio hecho con el numero anterior: no se deja', () => control(old.id, 'resume'), 'failed-precondition');
+    equal('y dice que use «Continuar con los que faltan»', await control(old.id, 'resume').catch((e) => /Continuar con los que faltan/.test(e.message)), true);
+    await condoRef.collection('recordatorios_envios').doc(old.id).update({ status: 'running' });
+    await db.collection('colas_envios').doc(`${CONDO}__${old.id}`).set({ status: 'running' }, { merge: true });
+    await run();
+    const stopped = await camp(old.id);
+    equal('si una corrida lo encuentra en marcha con Meta, no manda nada y queda detenido con el motivo', [sentLog.length, stopped.status, /numero anterior|número anterior/.test(stopped.errorMessage)], [0, 'error', true]);
+    await control(old.id, 'cancel');
+    const cont = await R.createCampaign({ db, whatsapp, condominioId: CONDO, caller, data: { mode: 'varios', continueOf: old.id, items: [{ residentId: 'v2', vars: avisoVars('Beto', 'corte de agua el jueves') }] } });
+    const contCamp = await camp(cont.id);
+    equal('«Continuar con los que faltan» crea uno nuevo por Meta que dice de cual sale', [contCamp.channel, contCamp.continueOf, cont.pending], ['meta', old.id, 1]);
+    await run();
+    equal('y sale con la plantilla', [sentLog.length, sentLog[0].opts.template.name], [1, 'aviso_general']);
+    reset();
 }
 
 console.log('\nTelefono al momento de mandar, interrupciones y tiempo');

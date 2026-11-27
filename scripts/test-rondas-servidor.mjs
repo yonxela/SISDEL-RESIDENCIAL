@@ -104,6 +104,28 @@ console.log('\nSimulacro (prueba del boton sin avisar a los familiares)');
     equal('el tope del dia: 20 simulacros con WhatsApp por condominio y 2 por vecino', A.DRILL_LIMITS, { perDay: 20, perUser: 2 });
 }
 
+console.log('\nTope propio de pruebas de un vecino (A006 de La Perla, 2026-11-27: 20 al dia)');
+{
+    const T = require('../functions/src/rondas/pruebas-tope.js');
+    const cfg = { vecinos: { a006: 20, raro: 'veinte', cero: 0, mucho: 500 } };
+    equal('el vecino anotado tiene su tope', T.personalDrillLimit(cfg, 'a006'), 20);
+    equal('los demas no (y un valor que no sirve tampoco)', [T.personalDrillLimit(cfg, 'otro'), T.personalDrillLimit(cfg, 'raro'), T.personalDrillLimit(cfg, 'cero'), T.personalDrillLimit(null, 'a006')], [null, null, null, null]);
+    equal('nunca mas de 50', T.personalDrillLimit(cfg, 'mucho'), 50);
+    // Sin tope propio: lo de siempre (2 por vecino y 20 en el condominio)
+    let day = {};
+    for (let i = 0; i < 2; i++) day = T.drillSlot(day, 'v1', null).next;
+    equal('un vecino comun: la tercera no lleva WhatsApp', [T.drillSlot(day, 'v1', null).ok, /ya hizo 2 simulacros/.test(T.drillSlot(day, 'v1', null).reason)], [false, true]);
+    // Con tope propio: 20 y no gasta el cupo del condominio
+    day = { count: 1, users: { a006: 1 } };   // ya hizo una prueba hoy, antes de tener su tope
+    for (let i = 0; i < 19; i++) { const s = T.drillSlot(day, 'a006', 20); if (!s.ok) break; day = s.next; }
+    equal('A006 llega a 20 en el dia', day.users.a006, 20);
+    equal('la 21 ya no lleva WhatsApp', [T.drillSlot(day, 'a006', 20).ok, /ya hizo 20 simulacros/.test(T.drillSlot(day, 'a006', 20).reason)], [false, true]);
+    equal('sus pruebas no gastan los 20 del condominio', [day.count, day.special], [1, 19]);
+    equal('los demas vecinos siguen con sus 2', T.drillSlot(day, 'v2', null).ok, true);
+    const full = { count: 20, users: {} };
+    equal('con los 20 del condominio usados, A006 todavia puede (tiene su propio tope)', [T.drillSlot(full, 'a006', 20).ok, T.drillSlot(full, 'v3', null).ok], [true, false]);
+}
+
 console.log('\nLimpieza diaria (formato de RONDIN: fechas AAAA-MM-DD HH:MM:SS en UTC)');
 const now = Date.parse('2026-11-08T12:00:00Z');
 const h = (n) => M.sqlTime(now - n * 3600 * 1000);

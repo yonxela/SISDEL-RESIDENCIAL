@@ -3,7 +3,8 @@ const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions/v2');
 const { db } = require('../firebase');
-const { recipientsFor, cleanConfig, isDrill, DRILL_LIMITS } = require('./avisos');
+const { recipientsFor, cleanConfig, isDrill } = require('./avisos');
+const { personalDrillLimit, drillSlot } = require('./pruebas-tope');
 const whatsapp = require('./whatsapp');
 const { panicVars } = require('./panico-meta');
 const { cleanAll } = require('./mantenimiento');
@@ -19,18 +20,14 @@ const gtDay = (iso) => {
 // condominios/{c}/panico_simulacros/{AAAA-MM-DD} (solo el servidor; las reglas no lo dejan leer ni escribir). { ok } o { ok: false, reason }
 async function takeDrillSlot(condoRef, alert) {
     const ref = condoRef.collection('panico_simulacros').doc(gtDay(alert.createdAt));
+    const cfgRef = condoRef.collection('panico_config').doc('pruebas');
     const userId = String(alert.userId || 'sin-usuario');
     return db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
+        const [snap, cfgSnap] = await Promise.all([tx.get(ref), tx.get(cfgRef)]);
         const day = snap.exists ? snap.data() : {};
-        const users = day.users || {};
-        if ((day.count || 0) >= DRILL_LIMITS.perDay) {
-            return { ok: false, reason: `Hoy ya se hicieron ${DRILL_LIMITS.perDay} simulacros con WhatsApp en el condominio: este quedo solo en la pantalla de la garita` };
-        }
-        if ((users[userId] || 0) >= DRILL_LIMITS.perUser) {
-            return { ok: false, reason: `Hoy ya hizo ${DRILL_LIMITS.perUser} simulacros con WhatsApp: este quedo solo en la pantalla de la garita` };
-        }
-        tx.set(ref, { count: (day.count || 0) + 1, users: { ...users, [userId]: (users[userId] || 0) + 1 }, updatedAt: new Date().toISOString() }, { merge: true });
+        const slot = drillSlot(day, userId, personalDrillLimit(cfgSnap.exists ? cfgSnap.data() : null, userId));
+        if (!slot.ok) return { ok: false, reason: slot.reason };
+        tx.set(ref, { ...slot.next, updatedAt: new Date().toISOString() }, { merge: true });
         return { ok: true };
     });
 }

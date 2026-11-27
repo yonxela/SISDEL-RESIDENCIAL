@@ -126,6 +126,8 @@ function templateOrFail(whatsapp, config, mode) {
 const avisoMissing = (tpl, item) => Array.isArray(tpl.params) && tpl.params.includes('aviso') && !(item && Array.isArray(item.params))
     && !String((item && item.vars && item.vars.aviso) || '').trim();
 const AVISO_MISSING = 'Escriba el aviso antes de enviarlo: va dentro de la plantilla aprobada por Meta.';
+// Un envio hecho con el numero anterior (UltraMsg, sin `channel: 'meta'`) no se sigue con el WhatsApp oficial (2026-11-27)
+const OLD_CHANNEL = 'Este envío se hizo con el número anterior. Use «Continuar con los que faltan»: crea un envío nuevo por el WhatsApp oficial solo con los residentes que todavía no lo recibieron.';
 // Los datos de la plantilla de un residente: ya calculados (`params`, al reenviar) o a partir de `vars`; null si no vienen
 const paramsOf = (whatsapp, tpl, item) => {
     if (item && Array.isArray(item.params)) return item.params.map(String);
@@ -241,7 +243,9 @@ async function createCampaign({ db, whatsapp, condominioId, caller, data, now = 
         total: rows.length, pending: pending.length, sent: 0, failed: 0, skipped: rows.length - pending.length,
         pauseSeconds: AVG_PAUSE_SECONDS, sample: pending[0].data.text.slice(0, 200),
         ...(tpl ? { channel: 'meta', template: tpl.name } : {}),
-        ...(data.resendOf ? { resendOf: String(data.resendOf) } : {})
+        ...(data.resendOf ? { resendOf: String(data.resendOf).slice(0, 60) } : {}),
+        // "Continuar con los que faltan" de OIKOS: el envio del que salen los que todavia no lo recibieron
+        ...(data.continueOf ? { continueOf: String(data.continueOf).slice(0, 60) } : {})
     });
     await queueDoc(db, condominioId, campRef.id).set({ condominioId, campaignId: campRef.id, status: 'running', createdAt });
     return {
@@ -268,7 +272,7 @@ async function processCampaign(ctx) {
         // En espera (fuera de horario o con el tope del dia lleno): ni se toma el turno hasta su hora
         if (schedule && camp.waitingUntil && Date.parse(camp.waitingUntil) > nowMs()) return { waiting: true };
         tx.update(campRef, { lockUntil: nowMs() + LOCK_MS });
-        return { ok: true, mode: camp.mode, wasWaiting: !!camp.waitingUntil, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
+        return { ok: true, mode: camp.mode, channel: camp.channel || null, wasWaiting: !!camp.waitingUntil, counts: { pending: camp.pending || 0, sent: camp.sent || 0, failed: camp.failed || 0, skipped: camp.skipped || 0 } };
     });
     if (claimed.gone) { await queueRef.delete(); return { campaignId, gone: true }; }
     if (claimed.status) { await queueRef.set({ status: claimed.status }, { merge: true }); return { campaignId, status: claimed.status }; }
@@ -331,6 +335,13 @@ async function processCampaign(ctx) {
             await campRef.update({ status: 'error', lockUntil: 0, errorMessage: 'Falta la plantilla de Meta para este aviso. Pida al programador que la cargue y pulse Continuar.' });
             await queueRef.set({ status: 'error' }, { merge: true });
             return { campaignId, status: 'error', stoppedBy: 'plantilla' };
+        }
+        // Un envio creado con el numero anterior (UltraMsg) no trae los datos de la plantilla: seguirlo mandaria texto libre por
+        // UltraMsg (el numero que WhatsApp restringe). Se detiene: OIKOS crea uno nuevo solo con los que faltan
+        if (claimed.channel !== 'meta') {
+            await campRef.update({ status: 'error', lockUntil: 0, errorMessage: OLD_CHANNEL });
+            await queueRef.set({ status: 'error' }, { merge: true });
+            return { campaignId, status: 'error', stoppedBy: 'canal' };
         }
     }
 
@@ -460,6 +471,7 @@ async function controlCampaign({ db, condominioId, data, whatsapp, now = () => n
         // Continuar con WhatsApp desconectado solo dejaria mas mensajes en la cola de UltraMsg; con el numero restringido, sin palomita
         if (whatsapp) {
             const config = await whatsapp.loadConfig();
+            if (templatesOn(whatsapp, config) && camp.channel !== 'meta') throw fail('failed-precondition', OLD_CHANNEL);
             await requireConnected(whatsapp, config);
             await requireConfirming(whatsapp, config);
         }

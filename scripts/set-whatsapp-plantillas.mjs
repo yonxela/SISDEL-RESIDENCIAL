@@ -8,6 +8,7 @@
 //   node set-whatsapp-plantillas.mjs --target=prod --canal=meta|ultramsg    (por donde salen los avisos)
 //   node set-whatsapp-plantillas.mjs --target=prod --avisos                 (carga aviso_mora y aviso_general, las de los avisos)
 //   node set-whatsapp-plantillas.mjs --target=prod --panico                 (carga las 3 plantillas de las alertas de panico)
+//   node set-whatsapp-plantillas.mjs --target=prod --chat                   (carga mensaje_chat, la corta del chat de OIKOS)
 //   node set-whatsapp-plantillas.mjs --target=prod --canal-panico=meta|ultramsg   (por donde salen las alertas de panico)
 // Alertas de panico (functions/src/rondas/panico-meta.js): alerta_panico, alerta_panico_familia y prueba_sin_novedad, con sus
 // datos fijos; con --canal-panico=meta la alerta, el aviso a familiares y la prueba salen por Meta (los recordatorios no cambian).
@@ -50,6 +51,7 @@ const describe = (c) => {
         `  Cuenta de WhatsApp Business (WABA): ${c.metaWabaId ? 'configurada' : 'no (se pide al cargar plantillas; sirve para comprobar que esten aprobadas)'}`,
         `  Plantilla de mora: ${one('mora')}`,
         `  Plantilla de mensajes varios: ${one('general')}`,
+        `  Plantilla del chat (corta): ${one('chat')}${t.chat ? '' : ' (el chat usa la de mensajes varios)'}`,
         `  Canal de las alertas de panico: ${c.panicChannel === 'meta' ? 'WhatsApp oficial de Meta (con plantilla)' : 'UltraMsg (como siempre)'}`,
         ...panicMeta.PANIC_KINDS.map((key) => {
             const tpl = panicMeta.panicTemplate(c, key);
@@ -116,6 +118,16 @@ if (args.avisos) {
     await ref.set(next);
     console.log(`\nGuardadas en ${target}. Todavia NO cambia nada: cuando Meta las APRUEBE (Administrador de WhatsApp > Plantillas),\n` +
         `pase los avisos al numero oficial con: node set-whatsapp-plantillas.mjs --target=${target} --canal=meta`);
+    process.exit(0);
+}
+
+// La plantilla corta del CHAT de OIKOS (mensaje_chat, 2026-11-27): lo escrito en el chat fuera de las 24 horas, como un mensaje
+// normal. Sin ella el chat usa aviso_general. Cargarla solo cuando Meta la APRUEBE (si no, cada mensaje del chat tarda un intento
+// mas: el servidor la prueba y, si Meta no la entrega, manda la general)
+if (args.chat) {
+    const tpl = meta.normalizeTemplate(meta.DEFAULT_TEMPLATES.chat);
+    await ref.set({ ...current, metaTemplates: { ...(current.metaTemplates || {}), chat: tpl }, updatedAt: new Date().toISOString() });
+    console.log(`  Chat de OIKOS: ${tpl.name} (${tpl.language}), huecos: ${tpl.params.join(', ')}.\n\nGuardada en ${target}: desde ahora lo que se escribe en el chat fuera de las 24 horas sale con ella.`);
     process.exit(0);
 }
 

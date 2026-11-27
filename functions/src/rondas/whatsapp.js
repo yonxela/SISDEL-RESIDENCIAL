@@ -55,7 +55,8 @@ async function sendMetaOfficial(config, to, message, opts) {
     const result = opts.template
         ? await meta.sendTemplate(config, to, opts.template, opts.params || [])
         : await meta.sendText(config, to, message);
-    if (result.ok) return true;
+    // El id que da Meta (wamid): con el, el mensaje queda en el chat del vecino y sus palomitas lo encuentran
+    if (result.ok) { if (Array.isArray(opts.ids) && result.id) opts.ids.push(String(result.id)); return true; }
     // `error` y no `message`: con `message` el registro perdia el motivo de Meta (lo tapaba el texto del aviso)
     logger.warn('whatsapp: Meta rechazo el mensaje', { code: result.code, error: result.error });
     if (Array.isArray(opts.errors)) opts.errors.push(`Meta (${result.code}): ${result.error}`);

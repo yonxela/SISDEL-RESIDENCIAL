@@ -212,6 +212,35 @@ equal('con el WhatsApp oficial activo, un chat que empezo por UltraMsg sale por 
 await chatA(DORA).set({ lastInboundAt: new Date().toISOString(), channel: 'meta' }, { merge: true });
 r = await C.sendMessage({ db, whatsapp: metaTplWa, condominioId: A, caller, data: { chatId: DORA, text: 'Gracias, recibido' } });
 equal('si el residente le escribio al numero oficial en las ultimas 24 horas, sale como mensaje libre (sin plantilla)', [r.ok, r.template || null, metaTplSent[3].template, metaTplSent[3].body], [true, null, null, 'Gracias, recibido']);
+// La plantilla corta (mensaje_chat, 2026-11-27): el punto final de lo escrito no se repite y, si Meta no la entrega, sale la general
+const shortOf = (cfg, vars) => {
+    const mk = (raw) => { const tpl = MT.normalizeTemplate(raw); const params = MT.templateParams(tpl, vars); return { tpl, params, text: MT.renderTemplate(tpl, params).trim() }; };
+    return { ...mk(MT.DEFAULT_TEMPLATES.chat), fallback: mk(MT.DEFAULT_TEMPLATES.general) };
+};
+let shortCalls = [];
+let shortFails = false;
+const shortWa = {
+    ...metaWa, chatTemplate: shortOf,
+    sendChat: async (cfg, phone, body, ref, channel, template) => { shortCalls.push(template); return shortFails ? { ok: true, id: `wamid.fb${shortCalls.length}`, used: template.fallback } : { ok: true, id: `wamid.short${shortCalls.length}` }; }
+};
+await chatA(DORA).set({ lastInboundAt: new Date(Date.now() - 25 * 3600 * 1000).toISOString() }, { merge: true });
+r = await C.sendMessage({ db, whatsapp: shortWa, condominioId: A, caller, data: { chatId: DORA, text: 'Hola Dora, buena tarde.' } });
+let shortMsg = (await msgsA(DORA).where('waId', '==', 'wamid.short1').get()).docs[0].data();
+equal('con la plantilla corta le llega como un mensaje normal, sin el punto repetido', [r.template, shortMsg.body, shortMsg.aviso], ['mensaje_chat', 'Mensaje de la administración de Chat A: Hola Dora, buena tarde. Puede responder a este chat.', 'Hola Dora, buena tarde.']);
+shortFails = true;
+r = await C.sendMessage({ db, whatsapp: shortWa, condominioId: A, caller, data: { chatId: DORA, text: 'Segundo aviso' } });
+shortMsg = (await msgsA(DORA).where('waId', '==', 'wamid.fb2').get()).docs[0].data();
+equal('si Meta no entrega la corta sale la general y el chat guarda lo que de verdad le llego', [r.template, shortMsg.template, /^Hola Dora/.test(shortMsg.body), /le informa: Segundo aviso\./.test(shortMsg.body)], ['aviso_general', 'aviso_general', true, true]);
+
+// Lo que sale por Recordatorios queda en el chat del vecino y sus palomitas lo encuentran (recordOutgoing)
+const recId = await C.recordOutgoing({ db, condominioId: A, phone: '44440505', residentId: 'eva', name: 'Eva Sin Chat', unit: 'C007', text: 'Hola Eva, su saldo es Q100.00', waId: 'wamid.rec1', template: 'aviso_mora', byName: 'Recordatorios' });
+const recMsg = (await msgsA('50244440505').doc(recId).get()).data();
+equal('un aviso de Recordatorios queda en el chat del vecino, con su plantilla', [recMsg.body, recMsg.source, recMsg.template, recMsg.waId, (await chatA('50244440505').get()).data().lastMessage.text], ['Hola Eva, su saldo es Q100.00', 'recordatorio', 'aviso_mora', 'wamid.rec1', 'Hola Eva, su saldo es Q100.00']);
+await C.handleWebhook({ db, body: metaBody([], [mStatus('50244440505', 'wamid.rec1', 'delivered')]) });
+equal('y su palomita de Meta lo encuentra (entregado)', (await msgsA('50244440505').doc(recId).get()).data().ack, 'device');
+await C.handleWebhook({ db, body: metaBody([{ from: '50244440505', id: 'wamid.resp1', timestamp: String(Math.floor(Date.now() / 1000) + 5), type: 'text', text: { body: 'Ya pague' } }], [], [{ wa_id: '50244440505', profile: { name: 'Eva' } }]) });
+const evaChat = (await chatA('50244440505').get()).data();
+equal('cuando el vecino responde, su respuesta queda en el mismo chat, sin leer, y se le contesta libremente', [evaChat.unread, evaChat.channel, evaChat.lastMessage.text], [1, 'meta', 'Ya pague']);
 r = await C.sendMessage({ db, whatsapp: fakeWa, condominioId: A, caller, data: { chatId: ANA, text: 'Por UltraMsg' } });
 equal('sin el WhatsApp oficial, un chat que empezo por UltraMsg se contesta por UltraMsg (sin la regla de las 24 horas)', [r.ok, r.channel, sent[sent.length - 1].body], [true, 'ultramsg', 'Por UltraMsg']);
 equal('Meta no guarda los mensajes de antes', (await C.loadHistory({ db, whatsapp: metaWa, condominioId: A, data: { chatId: DORA } })).reason, 'meta');

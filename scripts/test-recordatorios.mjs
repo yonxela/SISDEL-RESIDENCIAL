@@ -62,7 +62,7 @@ const pause = () => 0;
 const run = (extra = {}) => R.processQueue({ db, whatsapp, sleep, pause, schedule: null, ...extra });
 
 async function wipe() {
-    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios', 'recordatorios_individuales', 'recordatorios_dia']) {
+    for (const col of ['usuarios', 'finanzas_residentes', 'recordatorios_envios', 'recordatorios_individuales', 'recordatorios_dia', 'whatsapp_chats']) {
         for (const doc of (await condoRef.collection(col).get()).docs) await db.recursiveDelete(doc.ref);
     }
     for (const doc of (await db.collection('colas_envios').where('condominioId', '==', CONDO).get()).docs) await doc.ref.delete();
@@ -637,7 +637,7 @@ console.log('\nWhatsApp oficial de Meta: cada aviso sale con una plantilla aprob
     equal('a un residente con el aviso: sale con la plantilla', [oneAviso.sent, sentLog[0].opts.template.name, sentLog[0].opts.params[2]], [true, 'aviso_general', 'asamblea el sábado a las 10:00']);
     const moraOk = await R.sendOne({ db, whatsapp, condominioId: CONDO, caller, data: { residentId: 'v1', mode: 'mora', vars: vars('Ana', 'A1', 'Q10.00') } });
     equal('el aviso de mora (sin hueco para el aviso) no lo pide', [moraOk.sent, sentLog[sentLog.length - 1].opts.template.name, sentLog[sentLog.length - 1].opts.params], [true, 'aviso_mora', ['Ana', 'La Perla', 'A1', 'Q10.00']]);
-    equal('las plantillas por defecto tienen tantos datos como huecos', ['mora', 'general'].map((k) => MT.bodyParamCount(MT.DEFAULT_TEMPLATES[k].body) === MT.DEFAULT_TEMPLATES[k].params.length), [true, true]);
+    equal('las plantillas por defecto tienen tantos datos como huecos', ['mora', 'general', 'chat'].map((k) => MT.bodyParamCount(MT.DEFAULT_TEMPLATES[k].body) === MT.DEFAULT_TEMPLATES[k].params.length), [true, true, true]);
     reset();
 
     // Un envio hecho con el numero anterior (UltraMsg) no se sigue con el WhatsApp oficial: mandaria texto libre por UltraMsg
@@ -659,6 +659,21 @@ console.log('\nWhatsApp oficial de Meta: cada aviso sale con una plantilla aprob
     equal('«Continuar con los que faltan» crea uno nuevo por Meta que dice de cual sale', [contCamp.channel, contCamp.continueOf, cont.pending], ['meta', old.id, 1]);
     await run();
     equal('y sale con la plantilla', [sentLog.length, sentLog[0].opts.template.name], [1, 'aviso_general']);
+    reset();
+
+    // Lo que sale por el WhatsApp oficial queda tambien en el chat de ese vecino (OIKOS > Chats WhatsApp, 2026-11-27)
+    cfg = AVISO;
+    await user('chatv', { phone: '5599-0001', name: 'Vecina del chat', casa: 'Z9' });
+    const metaSendWa = { ...whatsapp, send: async (config, to, message, opts = {}) => { sentLog.push({ to, message, opts }); if (Array.isArray(opts.ids)) opts.ids.push(`wamid.camp${sentLog.length}`); return 'META'; } };
+    const cc = await R.createCampaign({ db, whatsapp: metaSendWa, condominioId: CONDO, caller, data: { mode: 'varios', items: [{ residentId: 'chatv', vars: avisoVars('Vecina del chat', 'corte de agua el jueves') }] } });
+    await R.processQueue({ db, whatsapp: metaSendWa, sleep, pause, schedule: null });
+    const chatDoc = (await condoRef.collection('whatsapp_chats').doc('50255990001').get()).data();
+    const chatMsgs = (await condoRef.collection('whatsapp_chats').doc('50255990001').collection('wa_mensajes').get()).docs.map((d) => d.data());
+    equal('un aviso masivo por Meta queda en el chat del vecino con su id de Meta', [!!chatDoc, chatDoc && chatDoc.names[0], chatMsgs.length, chatMsgs[0] && chatMsgs[0].waId, chatMsgs[0] && chatMsgs[0].source, chatMsgs[0] && /corte de agua el jueves/.test(chatMsgs[0].body)], [true, 'Vecina del chat', 1, 'wamid.camp1', 'recordatorio', true]);
+    await R.sendOne({ db, whatsapp: metaSendWa, condominioId: CONDO, caller, data: { residentId: 'chatv', mode: 'varios', vars: avisoVars('Vecina del chat', 'asamblea el sabado') } });
+    const chatMsgs2 = (await condoRef.collection('whatsapp_chats').doc('50255990001').collection('wa_mensajes').get()).docs.map((d) => d.data());
+    equal('y tambien el que se manda a un residente', [chatMsgs2.length, chatMsgs2.some((m) => /asamblea el sabado/.test(m.body))], [2, true]);
+    void cc;
     reset();
 }
 

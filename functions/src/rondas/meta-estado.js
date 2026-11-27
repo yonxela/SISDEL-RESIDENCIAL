@@ -25,6 +25,12 @@ const DEFAULT_TEMPLATES = {
     general: {
         name: 'aviso_general', language: 'es', params: ['nombre', 'condominio', 'aviso'],
         body: 'Hola {{1}}, la administración de {{2}} le informa: {{3}}. Si tiene alguna duda, comuníquese con la administración de su residencial.'
+    },
+    // La del CHAT de OIKOS (enviada el 2026-11-27, Marketing: como Utilidad Meta la rechazaba): lo escrito en el chat, corto, como
+    // un mensaje normal, para escribirle a un vecino fuera de las 24 horas. Se carga con set-whatsapp-plantillas.mjs --chat
+    chat: {
+        name: 'mensaje_chat', language: 'es', params: ['condominio', 'aviso'],
+        body: 'Mensaje de la administración de {{1}}: {{2}}. Puede responder a este chat.'
     }
 };
 

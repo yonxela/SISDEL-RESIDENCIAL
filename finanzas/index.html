@@ -3338,7 +3338,7 @@
             return d.length === 11 && d.startsWith('502') ? '+502 ' + d.slice(3, 7) + ' ' + d.slice(7) : (d ? '+' + d : '');
         }
         function chatTitle(c) {
-            const names = (c.names || []).filter(Boolean);
+            const names = (c.names || []).filter(Boolean).filter(function (n, i, all) { return all.indexOf(n) === i; });
             return names.length ? names.join(' / ') : (c.lastPushname || chatPhoneText(c.phone || c.id));
         }
         function chatTimeText(iso) {
@@ -3383,7 +3383,7 @@
                 const lastIn = c && c.channel === 'meta' ? Date.parse(c.lastInboundAt || '') : NaN;
                 const open = Number.isFinite(lastIn) ? lastIn + CHAT_WINDOW_MS : 0;
                 if (open > Date.now()) return { meta: true, allowed: true, until: open, text: 'WhatsApp oficial · el residente le escribió: puede contestarle libremente hasta ' + new Date(open).toLocaleString('es-GT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) };
-                return { meta: true, allowed: true, template: true, text: 'WhatsApp oficial · lo que escriba le llega dentro del aviso aprobado por Meta: «Hola (nombre), la administración de (condominio) le informa: (su mensaje). Si tiene alguna duda, comuníquese con la administración de su residencial.» Cuando el residente responda, se le contesta libremente durante 24 horas.' };
+                return { meta: true, allowed: true, template: true, text: 'WhatsApp oficial · el vecino no le ha escrito en 24 horas: Meta exige que su mensaje salga como mensaje oficial («Mensaje de la administración: su texto»). Cuando el vecino responda, el chat es normal por 24 horas.' };
             }
             if (!c || c.channel !== 'meta') return { meta: false, allowed: true, text: c && c.channel === 'ultramsg' ? 'WhatsApp (UltraMsg)' : '' };
             const last = Date.parse(c.lastInboundAt || '');
@@ -3402,7 +3402,7 @@
             btn.disabled = !w.allowed || chatSending;
             btn.title = w.template ? 'Enviar por el WhatsApp oficial, dentro del aviso aprobado por Meta' : (w.meta ? 'Enviar por el WhatsApp oficial' : 'Enviar');
             input.placeholder = !w.allowed ? 'Fuera de las 24 horas del WhatsApp oficial: escríbalo y use «Mi WhatsApp»'
-                : w.template ? 'Escriba el mensaje: sale dentro del aviso aprobado (Enter envía, Mayús+Enter cambia de línea)'
+                : w.template ? 'Escriba el mensaje (sale como mensaje oficial; Enter envía, Mayús+Enter cambia de línea)'
                 : 'Escriba un mensaje (Enter envía, Mayús+Enter cambia de línea)';
             if (note) { note.textContent = w.text || ''; note.className = 'px-4 py-1.5 text-[11px] ' + (w.allowed ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20') + (w.text ? '' : ' hidden'); }
         }
@@ -3413,7 +3413,11 @@
             chatListUnsub = 'pendiente';   // subscribe avisa enseguida: que no vuelva a entrar aqui
             chatListUnsub = api.subscribe(function () {
                 updateChatsBadge();
-                if (currentView === 'chats') { renderChatList(); if (chatCurrentId) renderChatHeader(); }
+                if (currentView === 'chats') {
+                    // Si al entrar la lista aun no habia llegado: en cuanto llega con mensajes sin leer, se abre No leidos (una vez)
+                    if (!chatUnreadAuto && api.state.ready && (Number(api.state.unread) || 0) > 0 && chatFilter === 'all' && !(document.getElementById('chat-search') || {}).value) { chatUnreadAuto = true; chatFilter = 'unread'; }
+                    paintChatFilters(); renderChatList(); if (chatCurrentId) renderChatHeader();
+                }
             });
         }
         function updateChatsBadge() {
@@ -3424,8 +3428,25 @@
             badge.textContent = n > 99 ? '99+' : String(n);
             badge.classList.toggle('hidden', !n);
         }
+        // SISDEL (2026-11-27, pedido del usuario: "que se active No leidos por si hay mensajes pendientes de leer"): la pestaña dice
+        // cuantos hay y, sin leer, resalta en verde; al entrar a los chats con mensajes sin leer se abre esa pestaña
+        function paintChatFilters() {
+            const api = sisdelChatsApi();
+            const unread = api && api.state ? Number(api.state.unread) || 0 : 0;
+            ['all', 'unread', 'vecinos'].forEach(function (k) {
+                const b = document.getElementById('chat-filter-' + k);
+                if (!b) return;
+                const on = k === chatFilter;
+                b.className = 'px-3 py-1.5 rounded-full ' + (on ? 'bg-emerald-600 text-white' : (k === 'unread' && unread ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 ring-2 ring-emerald-500' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'));
+                if (k === 'unread') b.textContent = unread ? 'No leídos (' + (unread > 99 ? '99+' : unread) + ')' : 'No leídos';
+            });
+        }
+        var chatUnreadAuto = false;
         function initChats() {
             ensureChatsSubscription();
+            // La primera vez que se abren los chats (en esta visita) con mensajes sin leer, se ve directo No leidos
+            const api0 = sisdelChatsApi();
+            if (!chatUnreadAuto && api0 && api0.state && api0.state.ready && (Number(api0.state.unread) || 0) > 0) { chatUnreadAuto = true; chatFilter = 'unread'; }
             chatCheckOfficial();   // si el WhatsApp oficial esta activo, el chat lo dice y le escribe a cualquiera con el aviso aprobado
             setChatFilter(chatFilter);
             renderChatPane();
@@ -3436,10 +3457,7 @@
         }
         function setChatFilter(kind) {
             chatFilter = kind === 'unread' || kind === 'vecinos' ? kind : 'all';
-            ['all', 'unread', 'vecinos'].forEach(function (k) {
-                const b = document.getElementById('chat-filter-' + k);
-                if (b) b.className = 'px-3 py-1.5 rounded-full ' + (k === chatFilter ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300');
-            });
+            paintChatFilters();
             renderChatList();
         }
         function chatOf(id) {
@@ -3688,11 +3706,15 @@
                 else if (url && m.type === 'video') media = '<video controls preload="none" src="' + chatEsc(url) + '" class="rounded-lg max-h-64 mb-1"></video>';
                 else if (url) media = '<a href="' + chatEsc(url) + '" target="_blank" rel="noopener noreferrer" class="underline"><i class="fas fa-file mr-1"></i>' + chatEsc(m.fileName || chatTypeLabel(m.type)) + '</a>';
                 else if (m.type && m.type !== 'chat' && !m.placeholder) media = '<span class="italic text-xs opacity-70">[' + chatEsc(chatTypeLabel(m.type)) + ']</span>';
-                const body = m.body ? '<div class="whitespace-pre-wrap break-words">' + chatEsc(m.body) + '</div>' : (m.placeholder ? '<div class="italic text-xs opacity-60">(mensaje sin texto todavía)</div>' : '');
-                const who = mine ? (m.source === 'sisdel' ? (m.sentByName ? 'Enviado por ' + chatEsc(m.sentByName) : 'Enviado desde SISDEL') : 'Desde el teléfono o un envío automático') : '';
+                // SISDEL (2026-11-27): lo que se escribio en el chat se ve como un mensaje normal; si salio dentro de una plantilla de Meta
+                // (fuera de las 24 horas), una linea chica lo dice y el texto completo que le llego esta al pasar el raton
+                const shown = mine && m.template && m.aviso ? m.aviso : m.body;
+                const body = shown ? '<div class="whitespace-pre-wrap break-words">' + chatEsc(shown) + '</div>' : (m.placeholder ? '<div class="italic text-xs opacity-60">(mensaje sin texto todavía)</div>' : '');
+                const tplNote = mine && m.template ? '<div class="mt-0.5 text-[10px] italic opacity-70" title="' + chatEsc('Le llegó: ' + (m.body || '')) + '">' + (m.source === 'recordatorio' ? 'Aviso de Recordatorios' : 'Mensaje oficial (plantilla de Meta)') + '</div>' : '';
+                const who = mine ? (m.source === 'sisdel' ? (m.sentByName ? 'Enviado por ' + chatEsc(m.sentByName) : 'Enviado desde SISDEL') : m.source === 'recordatorio' ? 'Recordatorios' + (m.sentByName && m.sentByName !== 'Recordatorios' ? ' · ' + chatEsc(m.sentByName) : '') : 'Desde el teléfono o un envío automático') : '';
                 const err = m.ack === 'failed' && m.error ? '<div class="text-[11px] text-rose-600">No se envió: ' + chatEsc(m.error) + '</div>' : '';
                 return sep + '<div class="flex ' + (mine ? 'justify-end' : 'justify-start') + '"><div class="max-w-[78%] px-3 py-2 rounded-2xl text-sm shadow-sm ' + (mine ? 'bg-emerald-100 dark:bg-emerald-800/60 text-slate-800 dark:text-slate-50 rounded-br-md' : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-bl-md') + '">'
-                    + media + body + err
+                    + media + body + tplNote + err
                     + '<div class="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-slate-500 dark:text-slate-300">' + (who ? '<span class="mr-auto">' + who + '</span>' : '') + chatEsc(new Date(m.at).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })) + (mine ? ' ' + chatTicks(m.ack) : '') + '</div>'
                     + '</div></div>';
             }).join('');

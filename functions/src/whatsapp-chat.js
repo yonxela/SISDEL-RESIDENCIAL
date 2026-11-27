@@ -26,16 +26,30 @@ const defaultChannel = (config) => (config && config.provider === 'simulado' ? (
 const needsWindow = (channel) => channel === 'meta';
 // El aviso aprobado por Meta (aviso_general) con lo escrito en el chat, para escribirle a un residente fuera de las 24 horas (o que
 // nunca le escribio al numero oficial). { tpl, params, text } o null si no hay una plantilla con hueco para el aviso
+// Primero la plantilla CORTA del chat (mensaje_chat, metaTemplates.chat: "Mensaje de la administracion de X: lo escrito. Puede
+// responder a este chat."), que parece un mensaje normal; si no esta cargada, o Meta no la entrega, la de aviso_general (fallback)
 function chatTemplate(config, vars) {
-    const tpl = meta.templateFor(config, 'varios');
-    if (!tpl || !tpl.params.includes('aviso')) return null;
-    const params = meta.templateParams(tpl, vars);
-    return { tpl, params, text: meta.renderTemplate(tpl, params).trim() };
+    const build = (tpl) => {
+        if (!tpl || !tpl.params.includes('aviso')) return null;
+        const params = meta.templateParams(tpl, vars);
+        return { tpl, params, text: meta.renderTemplate(tpl, params).trim() };
+    };
+    const short = build(meta.normalizeTemplate(config && config.metaTemplates && config.metaTemplates.chat));
+    const general = build(meta.templateFor(config, 'varios'));
+    if (short) return { ...short, fallback: general };
+    return general;
 }
 async function sendChat(config, phone, body, referenceId, channel, template) {
     if (config.provider === 'simulado') return { ok: true, id: channel === 'meta' ? `wamid.SIM-${referenceId}` : `SIM-${referenceId}` };
     if (channel === 'meta') {
         if (!meta.usesMeta(config)) return { ok: false, error: 'El WhatsApp oficial (Meta) no está activo' };
+        if (template && template.fallback) {
+            const first = await meta.sendTemplate(config, phone, template.tpl, template.params);
+            if (first.ok) return { ok: true, id: String(first.id || '') };
+            logger.warn('whatsapp-chat: Meta no entrego la plantilla corta, va la general', { code: first.code, error: first.error });
+            const second = await meta.sendTemplate(config, phone, template.fallback.tpl, template.fallback.params);
+            return second.ok ? { ok: true, id: String(second.id || ''), used: template.fallback } : { ok: false, error: `Meta (${second.code}): ${second.error}` };
+        }
         const r = template ? await meta.sendTemplate(config, phone, template.tpl, template.params) : await meta.sendText(config, phone, body);
         return r.ok ? { ok: true, id: String(r.id || '') } : { ok: false, error: `Meta (${r.code}): ${r.error}` };
     }

@@ -21,6 +21,13 @@
 // Los documentos de un envio los escribe solo el servidor; OIKOS los lee para mostrar el avance (reglas de Firestore).
 // Aqui no se importa firebase: la base y el proveedor entran por parametro (se prueba con scripts/test-recordatorios.mjs).
 const { normalizePhone } = require('./rondas/avisos');
+const chatCore = require('./whatsapp-chat-core');
+// Lo que salio por el WhatsApp oficial queda tambien en el chat de ese vecino (OIKOS > Chats WhatsApp): si falla, no importa
+async function toChat(db, condominioId, phone, user, residentId, text, ids, tpl, byName) {
+    try {
+        await chatCore.recordOutgoing({ db, condominioId, phone, residentId, name: user && user.name, unit: user && user.casa, text, waId: ids && ids[0], template: tpl ? tpl.name : '', byName });
+    } catch (e) { /* el envio ya salio: el chat es un extra */ }
+}
 
 const MAX_RECIPIENTS = 1500;
 const MAX_TEXT = 1000;
@@ -384,10 +391,12 @@ async function processCampaign(ctx) {
             let channel = null;
             let error = null;
             const sendErrors = [];
-            const sendOpts = tpl && doc.data().params ? { template: tpl, params: doc.data().params, errors: sendErrors } : { errors: sendErrors };
+            const sentIds = [];
+            const sendOpts = tpl && doc.data().params ? { template: tpl, params: doc.data().params, errors: sendErrors, ids: sentIds } : { errors: sendErrors };
             try { channel = await whatsapp.send(config, phone, doc.data().text, sendOpts); } catch (e) { error = e && e.message ? e.message : 'error'; }
             if (channel) {
                 await doc.ref.update({ status: 'sent', channel, sentAt: isoNow() });
+                if (channel === 'META') await toChat(db, condominioId, phone, user.data(), doc.id, doc.data().text, sentIds, tpl, 'Recordatorios');
                 await bump('sent');
                 sent++; streak = 0;
                 if (capped) {
@@ -523,7 +532,9 @@ async function sendOne({ db, whatsapp, condominioId, caller, data, verify = {}, 
     let error = null;
     const startedMs = now().getTime();
     const sendErrors = [];
-    try { channel = await whatsapp.send(config, phone, text, tpl ? { template: tpl, params, errors: sendErrors } : { errors: sendErrors }); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    const sentIds = [];
+    try { channel = await whatsapp.send(config, phone, text, tpl ? { template: tpl, params, errors: sendErrors, ids: sentIds } : { errors: sendErrors }); } catch (e) { error = e && e.message ? e.message : 'error'; }
+    if (channel === 'META') await toChat(db, condominioId, phone, user, residentId, text, sentIds, tpl, String((caller && caller.name) || ''));
     // "Enviado" solo dice que UltraMsg lo acepto: se mira que paso de verdad (en cola, rechazado por WhatsApp, entregado...)
     const delivery = channel ? await verifyDelivery({ whatsapp, config, phone, sinceMs: startedMs, ...verify }) : null;
     await condoRef.collection('recordatorios_individuales').doc().set({

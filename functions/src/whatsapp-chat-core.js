@@ -367,7 +367,7 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
             const condoSnap = await condoRef.get();
             const nombre = (resident && resident.name) || (people.names && people.names[0]) || 'vecino';
             template = typeof whatsapp.chatTemplate === 'function'
-                ? whatsapp.chatTemplate(config, { nombre, condominio: condoSnap.exists ? String(condoSnap.data().name || '') : '', aviso: body })
+                ? whatsapp.chatTemplate(config, { nombre, condominio: condoSnap.exists ? String(condoSnap.data().name || '') : '', aviso: body.replace(/[\s.]+$/, '') || body })
                 : null;
             if (!template) throw fail('failed-precondition', 'Con el WhatsApp oficial solo se le puede escribir libremente a un residente hasta 24 horas después de su último mensaje. Para escribirle ahora use un aviso con plantilla (Recordatorios); cuando él responda, se le contesta aquí.');
         }
@@ -396,6 +396,11 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
         await chatRef.set({ lastMessage: { ...lastOf(msg), ack: 'failed' } }, { merge: true });
         return { ok: false, id: ref.id, chatId: phone, error };
     }
+    // Meta no entrego la plantilla corta y salio la general: el chat guarda lo que de verdad le llego
+    if (result.used && result.used.tpl) {
+        await ref.set({ body: result.used.text, template: result.used.tpl.name, matchKey: matchKeyOf(phone, result.used.text), updatedAt: now().toISOString() }, { merge: true });
+        msg.body = result.used.text;
+    }
     // Meta devuelve el id de WhatsApp al aceptar el mensaje: sus palomitas lo buscan por ese id
     if (channel === 'meta' && result.id) {
         await ref.set({ waId: text(result.id, 300), providerId: text(result.id, 300), updatedAt: now().toISOString() }, { merge: true });
@@ -403,7 +408,7 @@ async function sendMessage({ db, whatsapp, condominioId, caller, data, now = () 
     } else {
         await ref.set({ providerId: text(result.id, 100), updatedAt: now().toISOString() }, { merge: true });
     }
-    return { ok: true, id: ref.id, chatId: phone, channel, ...(template ? { template: template.tpl.name } : {}) };
+    return { ok: true, id: ref.id, chatId: phone, channel, ...(template ? { template: (result.used && result.used.tpl ? result.used.tpl : template.tpl).name } : {}) };
 }
 
 // ── Marcar un chat como leido ──
@@ -444,8 +449,37 @@ async function loadHistory({ db, whatsapp, condominioId, data, now = () => new D
     return { ok: true, saved };
 }
 
+// ── Un mensaje que salio por otro lado (Recordatorios: el envio a todos o a un residente, por el WhatsApp oficial) ──
+// Queda en el chat de ese vecino (pedido del usuario el 2026-11-27: "de los mensajes masivos, si el vecino responde, que se vea en
+// este chat"): asi, cuando responde, se ve a que contesta. Con el id de Meta (wamid) sus palomitas lo encuentran. Nunca hace
+// fallar el envio (quien llama ignora un error). Devuelve el id del mensaje en el chat o null.
+async function recordOutgoing({ db, condominioId, phone, residentId, name, unit, text: body, waId, template, source = 'recordatorio', byName = '', channel = 'meta', now = () => new Date() }) {
+    const p = normalizePhone(phone);
+    if (!p || !condominioId || !body) return null;
+    const nowIso = now().toISOString();
+    const chatRef = db.doc(`condominios/${condominioId}/whatsapp_chats/${p}`);
+    const msgs = chatRef.collection('wa_mensajes');
+    const ref = waId ? msgs.doc(docIdOf(waId)) : msgs.doc();
+    const msg = {
+        waId: waId ? text(waId, 300) : null, ref: ref.id, fromMe: true, type: 'chat', body: text(body, MAX_TEXT), media: '', fileName: '',
+        at: nowIso, receivedAt: nowIso, ack: 'pending', source, sentByName: text(byName, 100), channel, template: text(template || '', 100), updatedAt: nowIso
+    };
+    await db.runTransaction(async (tx) => {
+        const chat = await tx.get(chatRef);
+        const old = chat.exists ? chat.data() : {};
+        tx.set(ref, msg, { merge: true });
+        const fresh = chat.exists ? {} : {
+            createdAt: nowIso, unread: 0, channel,
+            residentIds: residentId ? [String(residentId)] : [], names: name ? [text(name, 120)] : [], units: unit ? [text(unit, 60)] : [], roles: ['vecino']
+        };
+        const newer = !old.lastAt || nowIso >= String(old.lastAt);
+        tx.set(chatRef, { phone: p, ...fresh, ...(newer ? { lastAt: nowIso, lastMessage: { ...lastOf(msg), id: msg.waId || '' } } : {}), updatedAt: nowIso }, { merge: true });
+    });
+    return ref.id;
+}
+
 module.exports = {
     MAX_TEXT, ACK_RANK, WINDOW_MS, fail, normAck, phoneOfJid, docIdOf, matchKeyOf, parseWebhook, parseMeta, isMeta, buildPhoneIndex, phoneIndex, chatPeople,
-    saveMessage, saveAck, handleWebhook, sendMessage, markRead, loadHistory,
+    saveMessage, saveAck, handleWebhook, sendMessage, markRead, loadHistory, recordOutgoing,
     _resetIndex: () => { cached = { at: 0, index: null }; }
 };

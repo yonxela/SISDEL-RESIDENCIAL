@@ -6,7 +6,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
 import {
     getFirestore, connectFirestoreEmulator, collection, collectionGroup, doc, getDoc, getDocs,
-    setDoc, updateDoc, deleteDoc, deleteField, writeBatch, query, where, orderBy
+    setDoc, updateDoc, deleteDoc, deleteField, writeBatch, query, where, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
 import { PROJECT_ID, EMULATOR, localDate, isoDaysAgo, sha256 } from './lib.mjs';
@@ -1387,6 +1387,45 @@ async function run() {
     const adm12 = await loginAs('PA120');
     await denied('mora: un administrador al que se le quito no descuenta', () => setDoc(mref(adm12, 'md-adm12'), md(adm12, 'md-adm12')));
     await allowed('mora: pero sigue registrando pagos', () => setDoc(mref(adm12, 'adm12-in'), mv('adm12-in', { type: 'income' })));
+    // Actualizar saldo (pedido del usuario el 2026-11-27): un ajuste que baja lo que debe (pago que no es dinero) o lo sube
+    // (cargo especial), con su privilegio (lo trae el administrador), motivo, imagen de respaldo guardada antes y quien lo hizo
+    {
+        const IMG = 'data:image/jpeg;base64,' + 'A'.repeat(400);
+        const resp = (c, id, extra = {}) => ({ id, resiId: 'u-ana', image: IMG, mime: 'image/jpeg', width: 10, height: 10, name: 'hoja.jpg', byId: c.auth.currentUser.uid, byName: 'Prueba', createdAt: serverTimestamp(), ...extra });
+        const rsref = (c, id) => rref(c, 'finanzas_respaldos', id);
+        const adj = (c, id, extra = {}) => mv(id, { type: 'income', amount: 492.22, concept: 'Ajuste de saldo: baja lo que debe', saldoAjuste: true, reason: 'Saldo segun la hoja de la administracion anterior', respaldoIds: ['rsp-1'], byId: c.auth.currentUser.uid, byName: 'Prueba', before: { net: -992.22 }, after: { net: -500 }, ...extra });
+        await allowed('saldo: el administrador guarda la imagen de respaldo', () => setDoc(rsref(admin, 'rsp-1'), resp(admin, 'rsp-1')));
+        await denied('saldo: una imagen de respaldo no se cambia', () => updateDoc(rsref(admin, 'rsp-1'), { name: 'otra.jpg' }));
+        await denied('saldo: ni se borra', () => deleteDoc(rsref(admin, 'rsp-1')));
+        await denied('saldo: un respaldo que no es imagen se rechaza', () => setDoc(rsref(admin, 'rsp-x'), resp(admin, 'rsp-x', { mime: 'text/html' })));
+        await denied('saldo: ni a nombre de otra persona', () => setDoc(rsref(admin, 'rsp-y'), resp(admin, 'rsp-y', { byId: 'u-ana' })));
+        await denied('saldo: el cajero no guarda respaldos', () => setDoc(rsref(cajero, 'rsp-c'), resp(cajero, 'rsp-c')));
+        await allowed('saldo: quien lee las finanzas ve el respaldo', () => getDoc(rsref(cajero, 'rsp-1')));
+        await denied('saldo: un vecino no ve el respaldo', () => getDoc(rsref(ana, 'rsp-1')));
+        await allowed('saldo: el administrador (sin marcar nada) baja lo que debe un residente', () => setDoc(mref(admin, 'aj-1'), adj(admin, 'aj-1')));
+        await allowed('saldo: y lo sube (un cargo especial)', () => setDoc(mref(admin, 'aj-2'), adj(admin, 'aj-2', { type: 'charge', kind: 'extra', concept: 'Ajuste de saldo: sube lo que debe' })));
+        await denied('saldo: sin motivo de 10 letras se rechaza', () => setDoc(mref(admin, 'aj-3'), adj(admin, 'aj-3', { reason: 'Corregir' })));
+        await denied('saldo: sin respaldo se rechaza', () => setDoc(mref(admin, 'aj-4'), adj(admin, 'aj-4', { respaldoIds: [] })));
+        await denied('saldo: con un respaldo que no existe se rechaza', () => setDoc(mref(admin, 'aj-5'), adj(admin, 'aj-5', { respaldoIds: ['no-existe'] })));
+        await denied('saldo: con el respaldo de otro residente se rechaza', () => setDoc(mref(admin, 'aj-6'), adj(admin, 'aj-6', { resiId: 'u-maria' })));
+        await denied('saldo: a nombre de otra persona se rechaza', () => setDoc(mref(admin, 'aj-7'), adj(admin, 'aj-7', { byId: 'u-ana' })));
+        await denied('saldo: antedatado (otra fecha que la de hoy) se rechaza', () => setDoc(mref(admin, 'aj-8'), adj(admin, 'aj-8', { date: '2025-01-15T12:00:00.000Z' })));
+        await denied('saldo: como cuota (no cargo especial) se rechaza', () => setDoc(mref(admin, 'aj-9'), adj(admin, 'aj-9', { type: 'charge', kind: 'fee', period: '2026-10' })));
+        await denied('saldo: el cajero (registra pagos) no ajusta saldos', () => setDoc(mref(cajero, 'aj-c'), adj(cajero, 'aj-c')));
+        await denied('saldo: quien descuenta mora tampoco', () => setDoc(mref(moraOp, 'aj-m'), adj(moraOp, 'aj-m')));
+        const sajOp = await opWith('u-saj', 'PSAJ1', 'Ajusta saldos', ['finanzas.saldos_ajustar']);
+        await allowed('saldo: al operador al que se le marco si guarda el respaldo', () => setDoc(rsref(sajOp, 'rsp-2'), resp(sajOp, 'rsp-2')));
+        await allowed('saldo: y ajusta el saldo', () => setDoc(mref(sajOp, 'aj-op'), adj(sajOp, 'aj-op', { respaldoIds: ['rsp-2'] })));
+        await denied('saldo: el cajero no anula un ajuste (aunque anule pagos)', () => updateDoc(mref(cajero, 'aj-1'), annul()));
+        const anulaPagos = await opWith('u-anp', 'PANP1', 'Anula pagos y cargos', ['finanzas.pagos_anular', 'finanzas.cargos_anular', 'finanzas.deshacer']);
+        await denied('saldo: quien anula pagos, cargos y deshace tampoco (es un ajuste)', () => updateDoc(mref(anulaPagos, 'aj-2'), annul()));
+        await allowed('saldo: quien ajusta saldos lo anula (queda con su motivo)', () => updateDoc(mref(sajOp, 'aj-1'), annul()));
+        await createUserAs(admin, mkUser('u-adm13', 'Admin sin ajustar saldos', 'admin', { privilegios: { 'finanzas.saldos_ajustar': false } }), 'PA130');
+        const adm13 = await loginAs('PA130');
+        await denied('saldo: un administrador al que se le quito no ajusta saldos', () => setDoc(mref(adm13, 'aj-a13'), adj(adm13, 'aj-a13')));
+        await denied('saldo: ni guarda respaldos', () => setDoc(rsref(adm13, 'rsp-a13'), resp(adm13, 'rsp-a13')));
+        await denied('saldo: un pago marcado como ajuste no pasa por el camino de los pagos', () => setDoc(mref(cajero, 'aj-cp'), mv('aj-cp', { type: 'income', saldoAjuste: true })));
+    }
     // Carga de saldos de otro sistema (La Perla, 2026-11-20): la mora al corte, la mora exonerada y el saldo a favor inicial
     // (que no sale en caja) solo los pone una carga por script; desde el navegador nadie, ni el administrador
     const cutFee = (id, extra) => mv(id, { type: 'charge', kind: 'fee', period: '2026-10', manual: true, ...extra });

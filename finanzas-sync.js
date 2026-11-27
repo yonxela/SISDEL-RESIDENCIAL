@@ -418,6 +418,9 @@ const SisdelFinanzas = (() => {
         if (!prev) {
             // Todo movimiento nace con un monto numerico mayor que cero (igual que las reglas)
             if (!(typeof next.amount === 'number' && next.amount > 0)) return [[]];
+            // Ajuste de saldo (Actualizar saldo): un pago que no es dinero o un cargo, solo con su privilegio (las reglas
+            // exigen ademas el motivo, el respaldo y quien lo hizo)
+            if (next.saldoAjuste === true) return [['finanzas.saldos_ajustar']];
             // Un pago con otra fecha que la de su registro exige ademas cambiar la fecha (privilegio de gerente)
             if (type === 'income') return paymentDateMoved(next) ? [['finanzas.pagos_registrar'], ['finanzas.pagos_fecha']] : [['finanzas.pagos_registrar']];
             if (type === 'expense') return [['finanzas.egresos_registrar']];
@@ -435,6 +438,10 @@ const SisdelFinanzas = (() => {
         if (keys.every((k) => k === 'updated_at')) return [];
         if (prev.type === 'charge' && !prev.period && keys.every((k) => ['period', 'kind', 'updated_at'].includes(k))) return [];
         if (keys.every((k) => MOVEMENT_ANNUL_KEYS.includes(k))) {
+            // Un ajuste de saldo solo lo anula o lo devuelve quien actualiza saldos (ni "deshacer" ni anular pagos o cargos)
+            if (prev.saldoAjuste === true) {
+                return (next.deleted === true) !== (prev.deleted === true) ? [['finanzas.saldos_ajustar']] : [[]];
+            }
             if (next.deleted === true && prev.deleted !== true) {
                 const own = prev.type === 'income' ? ['finanzas.pagos_anular']
                     : prev.type === 'expense' ? ['finanzas.egresos_anular']

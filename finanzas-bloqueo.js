@@ -32,7 +32,7 @@
     // SISDEL: el reporte financiero (reportes_resumen) tambien abre Reportes: ahi estan el de ingresos, egresos y saldo
     // por mes y el acceso a su ventana
     const REPORT_KEYS = ['reportes_ingresos', 'reportes_morosos', 'reportes_gastos', 'reportes_libro', 'reportes_resumen', 'reportes_descuentos', 'reportes_marbetes', 'reportes_visitas'];
-    const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular', 'mora_descontar'];
+    const ANNUL_KEYS = ['pagos_anular', 'egresos_anular', 'cargos_anular', 'mora_descontar', 'saldos_ajustar'];
     const CONFIG_WRITE_KEYS = ['config_general', 'config_cuota', 'config_conceptos'];
 
     // Pantallas del menu y el privilegio (basta uno) que abre cada una
@@ -125,6 +125,8 @@
         [/^marbeteEditPlates\(/, ['residentes_editar']],
         // Descuento de mora (pestana Descontar mora del Ingreso): marcar meses, escribir un total y aplicarlo
         [/^(setIncTab\('descuento'\)|(discToggle|discToggleAll|discClear|applyMoraDiscount)\()/, ['mora_descontar']],
+        // Actualizar saldo (menu de cada residente y el estado de cuenta): su propio privilegio de gerente
+        [/^(openSaldoAjuste|sajSetMode|sajSetDir|sajInput|sajAddImages|sajRemoveImage|submitSaldoAjuste)\(/, ['saldos_ajustar']],
         [/^openMonthIncomes\(/, ['reportes_ingresos']],
         [/^openResidentStatusReport\(/, ['reportes_morosos']],
         [/^(openReportModal|shareReportWhatsApp|setReportMode)\(/, ['reportes_resumen']],
@@ -195,6 +197,7 @@
         [['reportes_exportar', 'residentes_contactar'], ['#mbm-wa', '#vsm-wa']],
         [['residentes_editar'], ['#mbm-add-plate']],
         [['mora_descontar'], ['#inc-tab-descuento', '#inc-pane-descuento']],
+        [['saldos_ajustar'], ['#residents-table-body .dropdown button[onclick^="openSaldoAjuste("]', '#ec-saldo-ajuste-btn', '#modal-saldo-ajuste']],
         [['reportes_resumen'], ['#rep-tab-resumen', '#rep-tab-month-balance', '#modal-report', '#btn-rep-share', '#dash-months-report']],
         [['reportes_exportar'], [
             '#view-reports button[onclick="printCurrentReport()"]', '#view-reports button[onclick="downloadCurrentReportPDF()"]',
@@ -370,7 +373,13 @@
                 const tx = win.eval('Store').getRaw('transactions').find((t) => t && String(t.id) === String(args[0]));
                 type = tx && tx.type;
             } catch (e) { /* ignorar */ }
-            const key = type === 'income' ? 'pagos_anular' : type === 'expense' ? 'egresos_anular' : type === 'mora_discount' ? 'mora_descontar' : 'cargos_anular';
+            let adjust = false;
+            try {
+                const tx = win.eval('Store').getRaw('transactions').find((t) => t && String(t.id) === String(args[0]));
+                adjust = !!(tx && tx.saldoAjuste === true);
+            } catch (e) { /* ignorar */ }
+            // Un ajuste de saldo solo lo anula quien actualiza saldos
+            const key = adjust ? 'saldos_ajustar' : type === 'income' ? 'pagos_anular' : type === 'expense' ? 'egresos_anular' : type === 'mora_discount' ? 'mora_descontar' : 'cargos_anular';
             if (can(PREFIX + key)) return true;
             deny();
             return false;

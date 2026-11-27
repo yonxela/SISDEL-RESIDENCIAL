@@ -41,7 +41,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 
 <!-- BEGIN tabla-privilegios (scripts/generar-tabla-privilegios.mjs) -->
 
-164 privilegios: 34 paraguas y 130 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
+165 privilegios: 34 paraguas y 131 acciones. **Garantía** dice quién hace cumplir cada uno: *Reglas* = las reglas de Firestore (o el servidor) lo rechazan aunque se salten la pantalla; *Pantalla* = solo oculta o bloquea en la interfaz (lectura de datos que las reglas no separan por campo).
 
 ### Privilegios de gerente
 
@@ -55,6 +55,7 @@ Dónde se usa: en `admin.html`, botón **Configuración** (`admin.html#configura
 | `finanzas.cargos_anular` | Anular cargos y cuotas **(sensible)**. Anular una cuota o un cargo especial desde el estado de cuenta. | los de su paraguas | Reglas |
 | `finanzas.cuotas_meses` | Cargar cuotas por mes a un residente. Elegir los meses que se le cobran al crear o editar un residente ("Cargar cuotas por mes"). Empieza apagado: solo lo tiene a quien se le marque aquí. | los de su paraguas | Reglas |
 | `finanzas.cuotas_corregir` | Corregir cuotas duplicadas **(sensible)**. Anular en bloque las cuotas repetidas. | los de su paraguas | Reglas |
+| `finanzas.saldos_ajustar` | Actualización de saldo de un residente **(sensible)**. La opción «Actualización de saldo» del menú de cada residente y del estado de cuenta: escribir el saldo correcto (o cuánto sube o baja lo que debe), con el motivo y al menos una imagen de respaldo. No registra dinero; cada cambio queda con quién lo hizo, su motivo y su respaldo, y se puede anular. | los de su paraguas | Reglas |
 | `finanzas.pagos_fecha` | Cambiar la fecha de un pago al registrarlo **(sensible)**. Registrar un pago con una fecha anterior a hoy (por ejemplo, una boleta de días atrás); la fecha cuenta para la mora. Sin este privilegio el pago queda con la fecha y la hora en que se registra. | los de su paraguas | Reglas |
 | `finanzas.pagos_anular` | Anular pagos (ingresos) **(sensible)**. Anular un pago ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
 | `finanzas.egresos_anular` | Anular egresos **(sensible)**. Anular un gasto ya registrado (queda con su motivo; nunca se borra). | los de su paraguas | Reglas |
@@ -376,6 +377,7 @@ condominios/{condoId}
     accesos/{id}                    REGISTRO de ingresos y salidas (solo se agrega, nunca se cambia ni se borra): un registro con campos propios por cada movimiento de un vecino, su vehículo o una visita (`accesos.js`)
     finanzas_residentes/{userId}    datos financieros del vecino (DPI, NIT, direccion, agua del lote, mismo dueno, lote, notas, finiquito)
     finanzas_movimientos/{id}       cargos, pagos y egresos del Sistema Financiero (`server_at`: sello que pone el servidor en cada cambio)
+    finanzas_respaldos/{id}         imagenes de respaldo de una Actualizacion de saldo (una por documento; no se cambian ni se borran)
     finanzas_config/oikos_settings  cuota, dia de cobro, moneda
     finanzas_config/bancos          historial de la cuenta favorita de Bancos (solo lo escribe el servidor: setFavoriteBank)
     finanzas_bancos/{id}            cuentas bancarias (banco, numero, tipo, moneda, saldo y fecha de apertura; el saldo no se guarda)

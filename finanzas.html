@@ -132,8 +132,8 @@
     <script src="privilegios.js?v=20261125m"></script>
     <script src="sisdel-core.js?v=20261125m"></script>
     <script src="finanzas-datos.js?v=20261112a"></script>
-    <script src="finanzas-sync.js?v=20261124b"></script>
-    <script src="finanzas-bloqueo.js?v=20261124b"></script>
+    <script src="finanzas-sync.js?v=20261127a"></script>
+    <script src="finanzas-bloqueo.js?v=20261127a"></script>
     <script src="finanzas-bancos.js?v=20261116a"></script>
     <script src="finanzas-chats.js?v=20261117a"></script>
     <script src="avisos-push.js?v=20261124a"></script>
@@ -245,6 +245,36 @@
                     status: (residentId) => delivery({ action: 'status', residentId: String(residentId), condoId }),
                     arm: (residentId) => delivery({ action: 'arm', residentId: String(residentId), condoId }),
                     cancel: (residentId) => delivery({ action: 'cancel', residentId: String(residentId), condoId })
+                };
+            }
+
+            // Imagenes de respaldo de "Actualizar saldo" (OIKOS, pedido del usuario el 2026-11-27): van aparte, una por documento
+            // en finanzas_respaldos (no dentro del movimiento: la lista de movimientos la baja cada equipo). Guardar pide
+            // finanzas.saldos_ajustar (las reglas tambien: respaldoOk); leer, poder leer las finanzas. OIKOS guarda primero las
+            // imagenes y despues el ajuste, que lleva sus ids (las reglas comprueban que la primera exista y sea de ese residente).
+            window.sisdelRespaldos = null;
+            if (session.role === 'master' || SISDEL.can('finanzas.ver')) {
+                const respaldos = window.sisdelFirebase.db.collection('condominios').doc(condoId).collection('finanzas_respaldos');
+                window.sisdelRespaldos = {
+                    canSave: SISDEL.can('finanzas.saldos_ajustar'),
+                    save: async (resiId, images) => {
+                        const who = window.sisdelWho || {};
+                        const ids = [];
+                        for (const img of (images || []).slice(0, 3)) {
+                            const ref = respaldos.doc();
+                            await ref.set({
+                                id: ref.id, resiId: String(resiId), image: String(img.dataUrl || ''), mime: img.mime || 'image/jpeg',
+                                width: Number(img.width) || 0, height: Number(img.height) || 0, name: String(img.name || '').slice(0, 120),
+                                byId: String(who.id || ''), byName: String(who.name || ''), createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                            ids.push(ref.id);
+                        }
+                        return ids;
+                    },
+                    get: async (id) => {
+                        const snap = await respaldos.doc(String(id)).get();
+                        return snap.exists ? snap.data() : null;
+                    }
                 };
             }
 

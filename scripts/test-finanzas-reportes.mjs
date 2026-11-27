@@ -110,11 +110,15 @@ console.log('\nSaldo a favor inicial (no es dinero de la caja)');
     const cm = R.cashMonths([opening], { end: '2026-11', count: 3, dayKey: gtDay });
     equal('el tablero no lo cuenta ni lo toma como mes con dinero', [cm.total.income, cm.first, cm.hasCash], [0, null, false]);
     equal('la ventana del reporte financiero tampoco', R.periodSummary([opening], { from: '2026-11-01', to: '2026-11-30', dayKey: gtDay }).income, 0);
+    // Un ajuste de saldo que baja lo que debe (Actualizar saldo, 2026-11-27) tampoco es dinero, pero si baja lo que se debe
+    const adjust = tx('aj', 'income', '2026-11-09T18:00:00.000Z', 600, { resiId: 'a', saldoAjuste: true });
+    const mbAdj = R.monthBalance([...onlyCharges, adjust, pay('p9', 'b', '2026-11-10T15:00:00.000Z', 100)], { from: '2026-11-01', to: '2026-11-30', dayKey: gtDay });
+    equal('un ajuste de saldo que baja lo que debe no entra en los ingresos del mes pero si baja lo que se debe', [mbAdj.months[0].income, mbAdj.months[0].receivable, R.cashMonths([adjust], { end: '2026-11', count: 3, dayKey: gtDay }).total.income], [100, 1085.5 - 600 - 100, 0]);
     yes('el modulo dice que es un saldo a favor inicial', R.isOpeningCredit(opening) && !R.isOpeningCredit(pay('p', 'a', '2026-11-09T18:00:00.000Z', 1)) && !R.isOpeningCredit({ type: 'charge', openingCredit: true }));
     const oikos = read('finanzas/index.html');
-    yes('OIKOS no lo cuenta como dinero (Contabilidad, caja, tablero, exportar y reportes de dinero usan isCashTx)', /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\) && !isOpeningCredit\(t\); \}/.test(oikos) && /if \(!isCashTx\(t\)\) return; if \(t\.type === 'income'\) inc \+=/.test(oikos) && /if \(t\.type !== 'income' \|\| isOpeningCredit\(t\)\) return false;/.test(oikos));
+    yes('OIKOS no lo cuenta como dinero (Contabilidad, caja, tablero, exportar y reportes de dinero usan isCashTx)', /function isCashTx\(t\) \{ return !!t && \(t\.type === 'income' \|\| t\.type === 'expense'\) && !isNonCashCredit\(t\); \}/.test(oikos) && /function isNonCashCredit\(t\) \{ return isOpeningCredit\(t\) \|\|/.test(oikos) && /if \(!isCashTx\(t\)\) return; if \(t\.type === 'income'\) inc \+=/.test(oikos) && /if \(t\.type !== 'income' \|\| isNonCashCredit\(t\)\) return false;/.test(oikos));
     // En el estado de cuenta es un Pago (suma, con su concepto "Saldo a favor al ..."): el signo de cada fila depende de tipo 'Pago'
-    yes('el detalle lo llama "Saldo a favor inicial" y no dice que se le cambio la fecha', /const tipoLabel = isOpeningCredit\(tx\) \? 'Saldo a favor inicial'/.test(oikos) && oikos.includes('tx-opening-note') && /return tx && tx\.type === 'income' && !isOpeningCredit\(tx\)/.test(oikos) && /if \(t\.type === 'income'\) \{ tipo = 'Pago'; monto = amt;/.test(oikos));
+    yes('el detalle lo llama "Saldo a favor inicial" y no dice que se le cambio la fecha', /: isOpeningCredit\(tx\) \? 'Saldo a favor inicial'/.test(oikos) && oikos.includes('tx-opening-note') && /return tx && tx\.type === 'income' && !isNonCashCredit\(tx\)/.test(oikos) && /if \(t\.type === 'income'\) \{ tipo = 'Pago'; monto = amt;/.test(oikos));
 }
 
 console.log('\nUn periodo (ventana del reporte financiero)');

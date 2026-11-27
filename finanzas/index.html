@@ -21,9 +21,9 @@
     <script src="./sisdel-mora.js?v=20261120a"></script>
     <!-- SISDEL: calculos de los reportes (ingresos, egresos y saldo por mes) y su paso a Excel y WhatsApp con el modulo de
          reportes de SISDEL (reportes-export.js, el mismo del panel Reportes) -->
-    <script src="./sisdel-reportes.js?v=20261124b"></script>
+    <script src="./sisdel-reportes.js?v=20261127a"></script>
     <!-- SISDEL: bancos (que le toca a cada cuenta, libro y saldos) -->
-    <script src="./sisdel-bancos.js?v=20261120a"></script>
+    <script src="./sisdel-bancos.js?v=20261127a"></script>
     <script src="../reportes-export.js?v=20261115a"></script>
     <!-- SISDEL: el QR del boton de panico de cada vecino (el mismo modulo de Reportes > QR de panico y de panico.html) -->
     <script src="../panico-qr.js?v=20261122a"></script>
@@ -2040,6 +2040,64 @@
         </div>
     </div>
     <!-- ACCOUNT STATEMENT MODAL -->
+    <!-- SISDEL: Actualizar saldo de un residente (pedido del usuario el 2026-11-27): el saldo correcto o cuanto sube o baja, el
+         motivo y la imagen de respaldo. Ver openSaldoAjuste. Encima del estado de cuenta (z-60) para abrirse tambien desde ahi -->
+    <div id="modal-saldo-ajuste" class="fixed inset-0 z-[60] flex items-center justify-center glass-overlay hidden-section opacity-0">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[92vh] overflow-y-auto border-t-4 border-violet-500">
+            <div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center mr-3 shrink-0"><i class="fas fa-scale-balanced text-violet-600 dark:text-violet-300"></i></div><div class="min-w-0"><h3 class="text-xl font-bold dark:text-white">Actualización de saldo</h3><p id="saj-info" class="text-sm text-slate-500 dark:text-slate-400 truncate"></p></div><button type="button" onclick="closeModal('modal-saldo-ajuste')" class="ml-auto -mr-2 -mt-1 shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <p class="text-xs font-bold uppercase text-slate-400 mb-1">Saldo de hoy</p>
+            <div id="saj-now" class="grid grid-cols-3 gap-2 mb-4 text-sm"></div>
+            <div class="grid grid-cols-2 gap-2 mb-3" role="group" aria-label="Cómo actualizar el saldo">
+                <button type="button" id="saj-mode-target" onclick="sajSetMode('target')" class="px-3 py-2 rounded-lg border text-sm font-semibold transition"><i class="fas fa-pen-to-square mr-1.5"></i>Escribir el saldo correcto</button>
+                <button type="button" id="saj-mode-delta" onclick="sajSetMode('delta')" class="px-3 py-2 rounded-lg border text-sm font-semibold transition"><i class="fas fa-plus-minus mr-1.5"></i>Subir o bajar una cantidad</button>
+            </div>
+            <div id="saj-pane-target">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1" for="saj-target-amount">El saldo correcto es</label>
+                <div class="flex gap-2">
+                    <select id="saj-target-kind" onchange="sajInput()" class="px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm">
+                        <option value="debe">Debe</option>
+                        <option value="favor">Saldo a favor</option>
+                        <option value="cero">Al día (cero)</option>
+                    </select>
+                    <input type="number" id="saj-target-amount" min="0" step="0.01" placeholder="0.00" oninput="sajInput()" class="flex-1 min-w-0 px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-right outline-none focus:ring-2 focus:ring-violet-500">
+                </div>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Con la mora incluida: es lo que dirá su saldo en la lista de residentes.</p>
+            </div>
+            <div id="saj-pane-delta" class="hidden">
+                <div class="grid grid-cols-2 gap-2 mb-2" role="group" aria-label="Sube o baja">
+                    <button type="button" id="saj-dir-down" onclick="sajSetDir('down')" class="px-3 py-2 rounded-lg border text-sm font-semibold transition"><i class="fas fa-arrow-down mr-1.5"></i>Bajar lo que debe</button>
+                    <button type="button" id="saj-dir-up" onclick="sajSetDir('up')" class="px-3 py-2 rounded-lg border text-sm font-semibold transition"><i class="fas fa-arrow-up mr-1.5"></i>Subir lo que debe</button>
+                </div>
+                <input type="number" id="saj-delta-amount" min="0" step="0.01" placeholder="0.00" oninput="sajInput()" aria-label="Cantidad" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg font-mono text-right outline-none focus:ring-2 focus:ring-violet-500">
+            </div>
+            <div id="saj-result" class="mt-3 rounded-lg px-3 py-2 text-sm"></div>
+            <label class="block text-xs font-bold text-slate-400 uppercase mt-4 mb-1" for="saj-reason">Motivo: por qué se actualiza <span class="text-rose-500">*</span></label>
+            <textarea id="saj-reason" rows="3" maxlength="500" oninput="sajInput()" placeholder="Ej.: Saldo según la hoja de cobros de la administración anterior, revisada en la junta del 20 de noviembre." class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 dark:text-white border border-slate-200 dark:border-slate-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-violet-500"></textarea>
+            <p id="saj-reason-count" class="text-[11px] text-slate-400 text-right"></p>
+            <div class="flex items-center justify-between mt-2 mb-1"><span class="text-xs font-bold text-slate-400 uppercase">Respaldo: imagen del documento <span class="text-rose-500">*</span></span><span id="saj-img-count" class="text-[11px] text-slate-500 dark:text-slate-400"></span></div>
+            <div class="flex flex-wrap gap-2 items-center">
+                <div id="saj-imgs" class="flex flex-wrap gap-2"></div>
+                <label id="saj-add" for="saj-file" class="w-24 h-24 rounded-lg border-2 border-dashed border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-300 flex flex-col items-center justify-center text-xs font-semibold cursor-pointer hover:bg-violet-50 dark:hover:bg-violet-900/20 text-center px-1"><i class="fas fa-camera text-lg mb-1"></i>Agregar foto</label>
+                <input type="file" id="saj-file" accept="image/*" multiple class="hidden" onchange="sajAddImages(this)">
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">La hoja, el acta, la boleta o el documento que justifica el cambio (hasta 3 fotos).</p>
+            <p class="mt-3 text-xs text-slate-500 dark:text-slate-400"><i class="fas fa-circle-info mr-1"></i>No es dinero: no entra en caja, Contabilidad ni bancos. Queda en el estado de cuenta con el motivo, quién lo hizo y el respaldo, y se puede anular.</p>
+            <p id="saj-bridge-note" class="hidden mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">La actualización de saldo solo funciona dentro de garita.app.</p>
+            <p id="saj-error" class="hidden mt-3 text-sm font-semibold text-rose-600 dark:text-rose-400"></p>
+            <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 justify-end">
+                <button type="button" onclick="closeModal('modal-saldo-ajuste')" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-lg font-semibold text-sm transition">Cancelar</button>
+                <button type="button" id="saj-submit" onclick="submitSaldoAjuste()" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"><i class="fas fa-scale-balanced mr-1.5"></i>Guardar la actualización</button>
+            </div>
+        </div>
+    </div>
+    <!-- SISDEL: la imagen de respaldo de un ajuste de saldo, en grande (encima del detalle del movimiento, z-70) -->
+    <div id="modal-saj-viewer" class="fixed inset-0 z-[80] flex items-center justify-center glass-overlay hidden-section opacity-0" onclick="if(event.target===this){closeModal('modal-saj-viewer')}">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-4 max-h-[94vh] flex flex-col">
+            <div class="flex items-center mb-2"><p id="saj-viewer-info" class="text-sm font-semibold text-slate-600 dark:text-slate-300 truncate"></p><button type="button" onclick="closeModal('modal-saj-viewer')" class="ml-auto shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition" title="Cerrar" aria-label="Cerrar"><i class="fas fa-times sisdel-x-lg"></i></button></div>
+            <div class="flex-1 min-h-0 overflow-auto bg-slate-100 dark:bg-slate-900 rounded-lg flex items-center justify-center"><img id="saj-viewer-img" alt="Respaldo de la actualización de saldo" class="max-w-full max-h-[78vh] object-contain"></div>
+            <div class="mt-3 flex justify-end"><button type="button" onclick="sajDownloadImage()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition"><i class="fas fa-download mr-1.5"></i>Descargar</button></div>
+        </div>
+    </div>
     <div id="modal-estado-cuenta" class="fixed inset-0 z-50 flex items-center justify-center glass-overlay hidden-section opacity-0">
         <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl p-8 max-h-[92vh] flex flex-col border-t-4 border-indigo-500">
             <div class="flex items-center justify-between mb-4">
@@ -2047,6 +2105,7 @@
                     <div class="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar text-lg"></i></div>
                     <div><h3 class="text-xl font-bold dark:text-white">Estado de Cuenta</h3><p class="text-sm text-slate-500 dark:text-slate-400" id="ec-resident-info">Residente</p></div>
                 </div>
+                <button type="button" id="ec-saldo-ajuste-btn" onclick="openSaldoAjuste(ecResidentId)" title="Actualización de saldo" class="ml-auto mr-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:hover:bg-violet-900/50 dark:text-violet-300 transition"><i class="fas fa-scale-balanced mr-1.5"></i>Actualización de saldo</button>
                 <button onclick="closeModal('modal-estado-cuenta')" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2 rounded-lg transition"><i class="fas fa-times sisdel-x-lg"></i></button>
             </div>
             <!-- SISDEL: dos vistas (pedido del usuario el 2026-11-20: "ese estado de cuenta solo debe mostrar las cuotas pendientes de
@@ -3077,7 +3136,7 @@
                 const raw = Store.getRaw('transactions');
                 let changed = false;
                 raw.forEach(t => {
-                    if (!t || t.type !== 'charge' || t.period) return;
+                    if (!t || t.type !== 'charge' || t.period || t.saldoAjuste === true) return;
                     const p = parseFeePeriod(t.concept);
                     if (p) { t.period = p; t.kind = 'fee'; changed = true; }
                 });
@@ -4043,7 +4102,11 @@
         // de una carga de saldos de otro sistema (openingCredit: La Perla, 2026-11-20) es un pago del residente (baja lo que
         // debe y queda en su estado de cuenta) pero se pago antes y fuera de OIKOS: no es dinero de la caja.
         function isOpeningCredit(t) { return !!t && t.type === 'income' && t.openingCredit === true; }
-        function isCashTx(t) { return !!t && (t.type === 'income' || t.type === 'expense') && !isOpeningCredit(t); }
+        // SISDEL: un ajuste de saldo ("Actualizar saldo", 2026-11-27) que baja lo que debe un residente tambien es un pago que no es
+        // dinero (saldoAjuste); uno que lo sube es un cargo (y no es dinero de por si)
+        function isBalanceAdjust(t) { return !!t && t.saldoAjuste === true; }
+        function isNonCashCredit(t) { return isOpeningCredit(t) || (!!t && t.type === 'income' && isBalanceAdjust(t)); }
+        function isCashTx(t) { return !!t && (t.type === 'income' || t.type === 'expense') && !isNonCashCredit(t); }
         // El saldo del libro de un residente (todos sus movimientos vivos, como r.balance)
         function sisdelLedgerBalance(residentId) {
             const r = Store.get('residents').find(x => String(x.id) === String(residentId));
@@ -4629,6 +4692,7 @@
                         <div id="menu-fav-${r.id}" class="dropdown absolute right-[4.75rem] top-10 bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-slate-700 rounded-lg w-60 z-10 text-left overflow-hidden whitespace-normal">
                             <div class="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Estado de cuenta y mensajes</div>
                             <button onclick="openEstadoCuenta('${r.id}')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400"><i class="fas fa-file-invoice-dollar w-5"></i> Estado de Cuenta</button>
+                            <button onclick="openSaldoAjuste(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-violet-50 dark:hover:bg-slate-700 text-violet-700 dark:text-violet-300"><i class="fas fa-scale-balanced w-5"></i> Actualización de saldo</button>
                             <button onclick="contactWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700"><i class="fab fa-whatsapp w-5 text-emerald-500"></i> Contactar</button>
                             <button onclick="contactMyWhatsApp(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-400"><i class="fas fa-mobile-screen-button w-5"></i> Enviar desde mi WhatsApp</button>
                             ${codeNow ? `<button onclick="openSendCode(this.dataset.id)" data-id="${esc(r.id)}" class="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 dark:hover:bg-slate-700 text-amber-700 dark:text-amber-400"><i class="fas fa-key w-5"></i> Enviar clave de acceso</button>` : ''}
@@ -6986,7 +7050,7 @@
             const s = Store.get('settings');
             const fee = parseFloat(s.fee) || 0;
             // Get all income transactions for this resident
-            const payments = txs.filter(t => t.type === 'income' && !isOpeningCredit(t) && t.resiId === resident.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+            const payments = txs.filter(t => t.type === 'income' && !isNonCashCredit(t) && t.resiId === resident.id).sort((a, b) => new Date(b.date) - new Date(a.date));
             // Get last 3 months with payments
             const monthSet = new Map();
             const fmt = new Intl.DateTimeFormat('es-ES', { month: 'short', year: 'numeric' });
@@ -8187,7 +8251,7 @@
             const from = document.getElementById('rep-from')?.value || '';
             const to = document.getElementById('rep-to')?.value || '';
             const txs = Store.get('transactions').filter(function (t) {
-                if (t.type !== 'income' || isOpeningCredit(t)) return false;
+                if (t.type !== 'income' || isNonCashCredit(t)) return false;
                 if (!t.date) return false;
                 const d = localDayKey(t.date);
                 if (from && d < from) return false;
@@ -11214,7 +11278,7 @@
         // Un pago al que se le cambio la fecha al registrarlo (mas de 10 minutos de diferencia con su registro)
         function txDateChanged(tx) {
             const date = Date.parse((tx && tx.date) || ''), created = Date.parse((tx && tx.created_at) || '');
-            return tx && tx.type === 'income' && !isOpeningCredit(tx) && Number.isFinite(date) && Number.isFinite(created) && Math.abs(date - created) >= 10 * 60 * 1000;
+            return tx && tx.type === 'income' && !isNonCashCredit(tx) && Number.isFinite(date) && Number.isFinite(created) && Math.abs(date - created) >= 10 * 60 * 1000;
         }
         function findRecentSamePayment(resId, amount) {
             const mem = sisdelMem();
@@ -12481,7 +12545,7 @@
             const resById = new Map(residents.map(r => [r.id, r]));
             // Filtrar ingresos del mes
             const monthTxs = allTxs.filter(t => {
-                if (t.type !== 'income' || isOpeningCredit(t)) return false;
+                if (t.type !== 'income' || isNonCashCredit(t)) return false;
                 if (!t.date) return false;
                 const dt = new Date(t.date);
                 const key = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
@@ -12582,6 +12646,268 @@
         // Cerrar con "Volver" deja visible el estado de cuenta al fondo
         // (comportamiento natural de modales apilados).
         // ════════════════════════════════════════════════════════════════════
+        // ─── SISDEL: "Actualizar saldo" de un residente (pedido del usuario el 2026-11-27: "en esos puntos agregar opcion
+        // actualizar saldo de residente, con su explicacion porque, y que pida una imagen para respaldar, disponible para el
+        // administrador y para demas usuarios a quien se le asigne ese privilegio"). El saldo no se escribe a mano: se registra
+        // un AJUSTE con la diferencia, asi todo lo demas (saldo, estado de cuenta, mora, reportes, servidor) lo cuenta como
+        // siempre y queda el rastro. Para que deba MENOS es un pago que no es dinero (type income, saldoAjuste: no entra en caja,
+        // Contabilidad, tablero, bancos ni reportes de dinero: isNonCashCredit); para que deba MAS, un cargo especial (charge kind
+        // extra: cuenta como vencido de una vez y no genera mora). Lleva el motivo, quien lo hizo y de 1 a 3 imagenes de respaldo,
+        // que se guardan aparte (finanzas_respaldos, por el puente window.parent.sisdelRespaldos) para no cargar la lista de
+        // movimientos. Privilegio finanzas.saldos_ajustar (reglas: balanceAdjustOk; finanzas-sync.js; finanzas-bloqueo.js).
+        var saj = { rid: null, mode: 'target', dir: 'down', images: [], busy: false };
+        var SAJ_MAX_IMAGES = 3;
+        var SAJ_MAX_AMOUNT = 9999999;
+        function sajBridge() {
+            try { return window.parent && window.parent !== window ? window.parent.sisdelRespaldos || null : null; } catch (e) { return null; }
+        }
+        function sajResident() { return (Store.get('residents') || []).find(x => String(x.id) === String(saj.rid)) || null; }
+        const sajCents = (v) => Math.round((parseFloat(v) || 0) * 100);
+        // Lo que tiene hoy: neto en centavos (positivo = saldo a favor, negativo = debe), con lo que debe partido en cuotas y mora
+        function sajNow(r) {
+            const owed = sisdelOwedOf(r);
+            const shown = sajCents(residentShownBalance(r).shown);
+            return { net: shown, owed: sajCents(owed.total), pending: sajCents(owed.pending), mora: sajCents(owed.mora), credit: Math.max(0, shown) };
+        }
+        // Como se lee un saldo neto: "debe Q500.00", "tiene un saldo a favor de Q100.00" o "esta al dia" (hoy) / "queda al dia"
+        function sajNetText(cents, today) {
+            if (cents < 0) return 'debe ' + formatMoney(-cents / 100);
+            if (cents > 0) return 'tiene un saldo a favor de ' + formatMoney(cents / 100);
+            return today ? 'está al día' : 'queda al día';
+        }
+        // El ajuste que hace falta: { up: true si sube lo que debe, amount en centavos, target: neto final } o { error }
+        function sajPlan(r) {
+            const now = sajNow(r);
+            if (saj.mode === 'target') {
+                const kind = document.getElementById('saj-target-kind').value;
+                const raw = document.getElementById('saj-target-amount').value;
+                const amount = kind === 'cero' ? 0 : sajCents(raw);
+                if (kind !== 'cero' && (!(amount > 0) || amount > SAJ_MAX_AMOUNT * 100)) return { now, error: 'Escriba el saldo correcto.' };
+                const target = kind === 'debe' ? -amount : kind === 'favor' ? amount : 0;
+                const diff = target - now.net;
+                if (diff === 0) return { now, error: 'Ese ya es su saldo: no hay nada que actualizar.' };
+                return { now, up: diff < 0, amount: Math.abs(diff), target };
+            }
+            const amount = sajCents(document.getElementById('saj-delta-amount').value);
+            if (!(amount > 0) || amount > SAJ_MAX_AMOUNT * 100) return { now, error: 'Escriba cuánto sube o baja lo que debe.' };
+            const up = saj.dir === 'up';
+            return { now, up, amount, target: now.net + (up ? -amount : amount) };
+        }
+        function openSaldoAjuste(id) {
+            const r = (Store.get('residents') || []).find(x => String(x.id) === String(id));
+            if (!r) return;
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('active'));
+            saj = { rid: String(r.id), mode: 'target', dir: 'down', images: [], busy: false };
+            document.getElementById('saj-info').textContent = [r.unit, r.name].filter(Boolean).join(' - ');
+            document.getElementById('saj-target-kind').value = 'debe';
+            document.getElementById('saj-target-amount').value = '';
+            document.getElementById('saj-delta-amount').value = '';
+            document.getElementById('saj-reason').value = '';
+            document.getElementById('saj-file').value = '';
+            document.getElementById('saj-error').classList.add('hidden');
+            sajPaint();
+            openModal('modal-saldo-ajuste');
+            setTimeout(() => { const f = document.getElementById('saj-target-amount'); if (f) f.focus(); }, 320);
+        }
+        function sajSetMode(mode) { saj.mode = mode === 'delta' ? 'delta' : 'target'; sajPaint(); }
+        function sajSetDir(dir) { saj.dir = dir === 'up' ? 'up' : 'down'; sajPaint(); }
+        function sajInput() { sajPaint(); }
+        function sajPaint() {
+            const r = sajResident();
+            if (!r) return;
+            const now = sajNow(r);
+            const box = (label, cents, cls) => `<div class="rounded-lg bg-slate-50 dark:bg-slate-700/60 px-3 py-2 min-w-0"><span class="block text-[10px] font-bold uppercase text-slate-400">${label}</span><span class="block font-mono font-bold ${cls}">${formatMoney(cents / 100)}</span></div>`;
+            document.getElementById('saj-now').innerHTML = now.credit > 0
+                ? box('Cuotas y cargos', 0, 'dark:text-white') + box('Mora', 0, 'dark:text-white') + box('Saldo a favor', now.credit, 'text-emerald-600 dark:text-emerald-400')
+                : box('Cuotas y cargos', now.pending, 'dark:text-white') + box('Mora', now.mora, 'text-amber-600 dark:text-amber-400') + box(now.owed > 0 ? 'Debe hoy' : 'Al día', now.owed, now.owed > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400');
+            const on = 'bg-violet-600 text-white border-violet-600';
+            const off = 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-200 border-slate-200 dark:border-slate-600';
+            const setBtn = (id, active) => {
+                const btn = document.getElementById(id);
+                btn.classList.remove(...on.split(' '), ...off.split(' '));
+                btn.classList.add(...(active ? on : off).split(' '));
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            };
+            setBtn('saj-mode-target', saj.mode === 'target');
+            setBtn('saj-mode-delta', saj.mode === 'delta');
+            setBtn('saj-dir-down', saj.dir === 'down');
+            setBtn('saj-dir-up', saj.dir === 'up');
+            document.getElementById('saj-pane-target').classList.toggle('hidden', saj.mode !== 'target');
+            document.getElementById('saj-pane-delta').classList.toggle('hidden', saj.mode !== 'delta');
+            const kind = document.getElementById('saj-target-kind').value;
+            document.getElementById('saj-target-amount').disabled = kind === 'cero';
+            const plan = sajPlan(r);
+            const result = document.getElementById('saj-result');
+            if (plan.error) {
+                result.className = 'mt-3 rounded-lg px-3 py-2 text-sm bg-slate-50 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300';
+                result.textContent = `Hoy ${sajNetText(now.net, true)}. ${plan.error}`;
+            } else {
+                result.className = 'mt-3 rounded-lg px-3 py-2 text-sm font-semibold ' + (plan.up ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300');
+                result.textContent = `Hoy ${sajNetText(now.net, true)}; con la actualización ${sajNetText(plan.target)}. La actualización ${plan.up ? 'SUBE' : 'BAJA'} lo que debe en ${formatMoney(plan.amount / 100)}.`;
+            }
+            const reason = String(document.getElementById('saj-reason').value || '').trim();
+            document.getElementById('saj-reason-count').textContent = `${reason.length} / 500${reason.length < 10 ? ' (mínimo 10)' : ''}`;
+            sajPaintImages();
+            const ready = !plan.error && reason.length >= 10 && saj.images.length > 0 && !saj.busy && !!sajBridge();
+            const btn = document.getElementById('saj-submit');
+            btn.disabled = !ready;
+            btn.title = ready ? '' : (plan.error ? plan.error : reason.length < 10 ? 'Escriba el motivo (10 letras o más).' : !saj.images.length ? 'Agregue al menos una imagen de respaldo.' : !sajBridge() ? 'Solo dentro de garita.app.' : '');
+            document.getElementById('saj-bridge-note').classList.toggle('hidden', !!sajBridge());
+        }
+        function sajPaintImages() {
+            const wrap = document.getElementById('saj-imgs');
+            wrap.innerHTML = saj.images.map((img, i) => `<div class="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700">
+                <img src="${img.dataUrl}" alt="Respaldo ${i + 1}" class="w-full h-full object-cover">
+                <button type="button" onclick="sajRemoveImage(this.dataset.i)" data-i="${i}" title="Quitar esta imagen" aria-label="Quitar esta imagen" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center shadow"><i class="fas fa-times"></i></button>
+            </div>`).join('');
+            const add = document.getElementById('saj-add');
+            add.classList.toggle('hidden', saj.images.length >= SAJ_MAX_IMAGES);
+            document.getElementById('saj-img-count').textContent = saj.images.length
+                ? `${saj.images.length} de ${SAJ_MAX_IMAGES} imágenes`
+                : 'Obligatorio: al menos una imagen';
+        }
+        function sajRemoveImage(i) {
+            saj.images.splice(Number(i), 1);
+            sajPaint();
+        }
+        // Lee una imagen y la achica para que se lea bien (hasta 1600 px) sin pasar de lo que cabe en la base
+        function sajCompress(file) {
+            return new Promise((resolve, reject) => {
+                if (!file || !/^image\//.test(file.type || '')) { reject(new Error('Ese archivo no es una imagen.')); return; }
+                if (file.size > 25 * 1024 * 1024) { reject(new Error('La imagen pesa más de 25 MB.')); return; }
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onerror = () => reject(new Error('No se pudo abrir la imagen (use una foto JPG o PNG).'));
+                    img.onload = () => {
+                        const tries = [[1600, 0.78], [1600, 0.62], [1280, 0.6], [1024, 0.55], [800, 0.5]];
+                        for (const [maxDim, quality] of tries) {
+                            let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+                            if (w > maxDim || h > maxDim) { if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; } else { w = Math.round(w * maxDim / h); h = maxDim; } }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(img, 0, 0, w, h);
+                            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                            if (dataUrl.length < 900000) { resolve({ dataUrl, width: w, height: h, mime: 'image/jpeg', name: String(file.name || '').slice(0, 120) }); return; }
+                        }
+                        reject(new Error('La imagen es demasiado grande aun achicada.'));
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+        async function sajAddImages(input) {
+            const files = Array.from((input && input.files) || []);
+            input.value = '';
+            const err = document.getElementById('saj-error');
+            err.classList.add('hidden');
+            for (const file of files) {
+                if (saj.images.length >= SAJ_MAX_IMAGES) { err.textContent = `Solo se guardan ${SAJ_MAX_IMAGES} imágenes por ajuste.`; err.classList.remove('hidden'); break; }
+                try { saj.images.push(await sajCompress(file)); }
+                catch (e) { err.textContent = (file.name ? file.name + ': ' : '') + (e && e.message ? e.message : 'No se pudo usar la imagen.'); err.classList.remove('hidden'); }
+            }
+            sajPaint();
+        }
+        async function submitSaldoAjuste() {
+            if (saj.busy) return;
+            const r = sajResident();
+            if (!r) return;
+            const err = document.getElementById('saj-error');
+            const fail = (msg) => { err.textContent = msg; err.classList.remove('hidden'); };
+            err.classList.add('hidden');
+            const plan = sajPlan(r);
+            const reason = String(document.getElementById('saj-reason').value || '').trim();
+            if (plan.error) { fail(plan.error); return; }
+            if (reason.length < 10) { fail('Escriba el motivo del ajuste (10 letras o más): queda en el estado de cuenta.'); document.getElementById('saj-reason').focus(); return; }
+            if (!saj.images.length) { fail('Agregue al menos una imagen de respaldo (la hoja, el acta o el documento que lo justifica).'); return; }
+            const bridge = sajBridge();
+            if (!bridge || typeof bridge.save !== 'function') { fail('La actualización de saldo solo funciona dentro de garita.app (los respaldos se guardan en la nube).'); return; }
+            // Quien lo hace: la sesion de SISDEL (las reglas exigen que sea la misma cuenta)
+            let who = null;
+            try { who = window.parent && window.parent !== window ? window.parent.sisdelWho : null; } catch (e) { who = null; }
+            if (!(who && who.id)) { fail('No se pudo saber quién está usando el sistema. Salga, vuelva a entrar e intente de nuevo.'); return; }
+            const amount = plan.amount / 100;
+            if (!confirm(`¿Guardar la actualización de saldo de ${[r.unit, r.name].filter(Boolean).join(' - ')}?\n\nHoy ${sajNetText(plan.now.net, true)}; con la actualización ${sajNetText(plan.target)}.\nLa actualización ${plan.up ? 'SUBE' : 'BAJA'} lo que debe en ${formatMoney(amount)}.\nMotivo: ${reason}\nRespaldo: ${saj.images.length === 1 ? '1 imagen' : saj.images.length + ' imágenes'}\n\nNo es dinero: no entra en caja ni en Contabilidad. Queda en su estado de cuenta con su nombre, el motivo y el respaldo, y se puede anular.`)) return;
+            saj.busy = true;
+            const btn = document.getElementById('saj-submit');
+            const label = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Guardando el respaldo...';
+            let ids = null;
+            try { ids = await bridge.save(String(r.id), saj.images.map(x => ({ ...x }))); }
+            catch (e) {
+                saj.busy = false; btn.innerHTML = label; sajPaint();
+                fail('No se pudo guardar el respaldo, así que el saldo no se cambió. ' + (e && e.message ? e.message : 'Revise su conexión e intente de nuevo.'));
+                return;
+            }
+            const now = new Date().toISOString();
+            const tx = {
+                id: Date.now().toString(), date: now, created_at: now, type: plan.up ? 'charge' : 'income', amount, resiId: String(r.id),
+                concept: plan.up ? 'Actualización de saldo: sube lo que debe' : 'Actualización de saldo: baja lo que debe',
+                saldoAjuste: true, reason, respaldoIds: ids, byId: String(who.id || ''), byName: String(who.name || ''),
+                mode: saj.mode === 'target' ? 'saldo' : 'cantidad',
+                before: { net: plan.now.net / 100, total: plan.now.owed / 100, pending: plan.now.pending / 100, mora: plan.now.mora / 100 },
+                after: { net: plan.target / 100 }
+            };
+            if (plan.up) tx.kind = 'extra';
+            History.push();
+            const txs = Store.get('transactions');
+            txs.push(tx);
+            Store.set('transactions', txs);
+            saj.busy = false;
+            btn.innerHTML = label;
+            closeModal('modal-saldo-ajuste');
+            try { renderResidents(); } catch (e) { /* la lista se pinta al volver */ }
+            try { if (ecResidentId && String(ecResidentId) === String(r.id) && !document.getElementById('modal-estado-cuenta').classList.contains('hidden-section')) openEstadoCuenta(r.id); } catch (e) { /* se ve al abrirlo */ }
+            showToast(`Actualización de saldo guardada: ${[r.unit, r.name].filter(Boolean).join(' - ')} ${sajNetText(plan.target)}.`);
+        }
+        // Las imagenes de respaldo de un ajuste, en el detalle del movimiento (se piden a la nube al abrirlo)
+        async function sajLoadDetailImages(tx) {
+            const wrap = document.getElementById('tx-adjust-imgs');
+            if (!wrap || !tx || !Array.isArray(tx.respaldoIds)) return;
+            const bridge = sajBridge();
+            if (!bridge || typeof bridge.get !== 'function') { wrap.textContent = 'Los respaldos se ven dentro de garita.app.'; return; }
+            wrap.textContent = 'Cargando el respaldo...';
+            const found = [];
+            for (const id of tx.respaldoIds.slice(0, SAJ_MAX_IMAGES)) {
+                try { const d = await bridge.get(String(id)); if (d && /^data:image\/(jpeg|png|webp);base64,/.test(String(d.image || ''))) found.push(d); } catch (e) { /* uno que no se pudo leer no frena a los demas */ }
+            }
+            if (document.getElementById('tx-adjust-imgs') !== wrap) return;
+            if (!found.length) { wrap.textContent = 'No se pudo leer el respaldo (revise su conexión).'; return; }
+            wrap.textContent = '';
+            window.sajDetailImages = found;
+            found.forEach((d, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'w-24 h-24 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 cursor-zoom-in';
+                b.title = 'Ver el respaldo ' + (i + 1);
+                b.dataset.i = String(i);
+                b.onclick = function () { sajViewImage(Number(this.dataset.i)); };
+                const im = document.createElement('img');
+                im.src = d.image; im.alt = 'Respaldo ' + (i + 1); im.className = 'w-full h-full object-cover';
+                b.appendChild(im);
+                wrap.appendChild(b);
+            });
+        }
+        function sajViewImage(i) {
+            const d = (window.sajDetailImages || [])[i];
+            if (!d) return;
+            document.getElementById('saj-viewer-img').src = d.image;
+            document.getElementById('saj-viewer-info').textContent = `Respaldo ${i + 1}${d.name ? ' · ' + d.name : ''}${d.byName ? ' · subido por ' + d.byName : ''}`;
+            openModal('modal-saj-viewer');
+        }
+        function sajDownloadImage() {
+            const src = document.getElementById('saj-viewer-img').src;
+            if (!src || !src.startsWith('data:image/')) return;
+            const a = document.createElement('a');
+            a.href = src;
+            a.download = 'respaldo_actualizacion_saldo_' + Date.now() + '.jpg';
+            a.click();
+        }
         function openTxDetail(txId) {
             const txs = Store.getRaw('transactions');   // también anulados (para auditar)
             const tx = txs.find(t => t && String(t.id) === String(txId));
@@ -12589,7 +12915,7 @@
             const isInc = tx.type === 'income';
             const isExp = tx.type === 'expense';
             const isCharge = tx.type === 'charge';
-            const tipoLabel = isOpeningCredit(tx) ? 'Saldo a favor inicial' : isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type === 'mora_discount' ? 'Descuento de mora' : tx.type;
+            const tipoLabel = isBalanceAdjust(tx) ? (isInc ? 'Actualización de saldo: baja' : 'Actualización de saldo: sube') : isOpeningCredit(tx) ? 'Saldo a favor inicial' : isInc ? 'Pago recibido' : isCharge ? 'Cargo aplicado' : isExp ? 'Egreso' : tx.type === 'mora_discount' ? 'Descuento de mora' : tx.type;
             const tipoBadge = isInc
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
                 : isCharge
@@ -12630,7 +12956,15 @@
                         <p><i class="fas fa-calendar-alt mr-1"></i>Meses: ${esc(discMonthsText(tx, true))}</p>
                         <p><i class="fas fa-comment mr-1"></i>Motivo: ${esc(tx.reason || '')}</p>
                         <p><i class="fas fa-user mr-1"></i>Lo hizo: ${esc(tx.byName || tx.byId || '')}</p>
-                        ${tx.before ? `<p><i class="fas fa-scale-balanced mr-1"></i>Debía ${esc(formatMoney(tx.before.total))} (mora ${esc(formatMoney(tx.before.mora))}) y quedó debiendo ${esc(formatMoney(tx.after ? tx.after.total : 0))}. No se registró dinero.</p>` : ''}
+                        ${tx.before && tx.type === 'mora_discount' ? `<p><i class="fas fa-scale-balanced mr-1"></i>Debía ${esc(formatMoney(tx.before.total))} (mora ${esc(formatMoney(tx.before.mora))}) y quedó debiendo ${esc(formatMoney(tx.after ? tx.after.total : 0))}. No se registró dinero.</p>` : ''}
+                    </div>` : ''}
+                    ${isBalanceAdjust(tx) ? `<div class="tx-adjust-detail mt-1 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                        <p class="font-semibold text-violet-700 dark:text-violet-300"><i class="fas fa-scale-balanced mr-1"></i>Actualización de saldo: no es dinero (no entra en caja ni en Contabilidad).</p>
+                        <p><i class="fas fa-comment mr-1"></i>Motivo: ${esc(tx.reason || '')}</p>
+                        <p><i class="fas fa-user mr-1"></i>Lo hizo: ${esc(tx.byName || tx.byId || '')}</p>
+                        ${tx.before && tx.after ? `<p><i class="fas fa-arrow-right-arrow-left mr-1"></i>Antes ${esc(sajNetText(Math.round((parseFloat(tx.before.net) || 0) * 100), true))}; después ${esc(sajNetText(Math.round((parseFloat(tx.after.net) || 0) * 100)))}.</p>` : ''}
+                        <p class="pt-1 font-semibold"><i class="fas fa-image mr-1"></i>Respaldo:</p>
+                        <div id="tx-adjust-imgs" class="flex flex-wrap gap-2"></div>
                     </div>` : ''}
                 </div>
                 <span class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap ${tipoBadge}">${tipoLabel}</span>
@@ -12679,6 +13013,7 @@
             }
 
             body.innerHTML = html;
+            if (isBalanceAdjust(tx)) sajLoadDetailImages(tx);
 
             // Footer: botones contextuales
             const footer = document.getElementById('tx-detail-footer');

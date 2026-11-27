@@ -1145,6 +1145,96 @@ async function run() {
         await oikos(`(() => { deleteTransaction('disc-test-07'); deleteTransaction('disc-test-08'); Store.get = window.__real.get; window.alert = window.__real.alert; window.confirm = window.__real.confirm; window.prompt = window.__real.prompt; navigate('accounting'); })()`);
         equal('todo queda guardado en la nube', await idle(), 'ok');
 
+        // ───────── Actualizar saldo (pedido del usuario el 2026-11-27) ─────────
+        console.log('\nActualización de saldo: menu del residente, motivo, imagen de respaldo y nube');
+        await oikos(`(() => {
+            window.__sajReal = { alert: window.alert, confirm: window.confirm, prompt: window.prompt };
+            window.__sajConfirms = [];
+            window.alert = () => {}; window.confirm = (m) => { window.__sajConfirms.push(String(m)); return true; }; window.prompt = () => 'prueba de anulacion';
+        })()`);
+        const sajStart = await oikos(`(() => {
+            navigate('residents'); renderResidents();
+            const btn = document.querySelector('#residents-table-body button[onclick^="openSaldoAjuste("][data-id="u-ana"]');
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            const o = sisdelOwedOf(r);
+            return { btn: !!btn, inFavMenu: !!(btn && btn.closest('[id^="menu-fav-"]')), owed: o.total, net: Math.round(residentShownBalance(r).shown * 100) / 100 };
+        })()`);
+        equal('la opcion "Actualización de saldo" esta en el menu de estado de cuenta y mensajes de cada residente', [sajStart.btn, sajStart.inFavMenu], [true, true]);
+        const sajOpen = await oikos(`(() => {
+            document.querySelector('#residents-table-body button[onclick^="openSaldoAjuste("][data-id="u-ana"]').click();
+            const m = document.getElementById('modal-saldo-ajuste');
+            return { open: !m.classList.contains('hidden-section'), info: document.getElementById('saj-info').textContent, now: document.getElementById('saj-now').textContent, off: document.getElementById('saj-submit').disabled };
+        })()`);
+        record('se abre la ventana con el residente, su saldo de hoy y el boton apagado', sajOpen.open && /Ana/.test(sajOpen.info) && /Debe hoy|Al día|Saldo a favor/.test(sajOpen.now) && sajOpen.off, JSON.stringify(sajOpen));
+        // Subir lo que debe con "el saldo correcto": que deba Q150 mas
+        const sajTarget = Math.round((sajStart.owed + 150) * 100) / 100;
+        const sajUp = await oikos(`(() => {
+            document.getElementById('saj-target-kind').value = 'debe';
+            const a = document.getElementById('saj-target-amount'); a.value = '${sajTarget.toFixed(2)}'; a.dispatchEvent(new Event('input', { bubbles: true }));
+            const res = document.getElementById('saj-result').textContent;
+            const short = document.getElementById('saj-reason'); short.value = 'Corregir'; short.dispatchEvent(new Event('input', { bubbles: true }));
+            const offShort = document.getElementById('saj-submit').disabled;
+            short.value = 'Saldo segun la hoja de cobros de la administracion anterior'; short.dispatchEvent(new Event('input', { bubbles: true }));
+            const offNoImage = document.getElementById('saj-submit').disabled;
+            return { res, offShort, offNoImage, title: document.getElementById('saj-submit').title };
+        })()`);
+        record('el saldo correcto dice cuanto SUBE lo que debe; sin motivo de 10 letras ni imagen no se puede guardar', /SUBE/.test(sajUp.res) && sajUp.res.includes('Q150.00') && sajUp.offShort && sajUp.offNoImage && /imagen/.test(sajUp.title), JSON.stringify(sajUp));
+        // Una imagen de respaldo (un PNG dibujado en la pagina, como una foto del telefono)
+        const sajImg = await oikos(`(async () => {
+            const c = document.createElement('canvas'); c.width = 320; c.height = 200;
+            const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 200); g.fillStyle = '#000'; g.font = '20px sans-serif'; g.fillText('Hoja de saldos', 20, 40);
+            const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+            await sajAddImages({ files: [new File([blob], 'hoja.png', { type: 'image/png' })], value: '' });
+            await sajAddImages({ files: [new File([new Blob(['hola'], { type: 'text/plain' })], 'nota.txt', { type: 'text/plain' })], value: '' });
+            return { n: saj.images.length, jpeg: String(saj.images[0] && saj.images[0].dataUrl).startsWith('data:image/jpeg;base64,'), thumbs: document.querySelectorAll('#saj-imgs img').length, err: document.getElementById('saj-error').textContent, on: !document.getElementById('saj-submit').disabled };
+        })()`);
+        record('la imagen se agrega (achicada a JPEG), un archivo que no es imagen se rechaza y el boton se enciende', sajImg.n === 1 && sajImg.jpeg && sajImg.thumbs === 1 && /no es una imagen/.test(sajImg.err) && sajImg.on, JSON.stringify(sajImg));
+        const sajSaved = await oikos(`(async () => {
+            window.__sajConfirms.length = 0;
+            await submitSaldoAjuste();
+            const tx = Store.get('transactions').filter((t) => t.saldoAjuste === true).pop();
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            return { confirm: window.__sajConfirms[0] || '', tx, owed: sisdelOwedOf(r).total, closed: document.getElementById('modal-saldo-ajuste').classList.contains('opacity-0'), cash: isCashTx(tx), who: window.parent.sisdelWho };
+        })()`);
+        record('pide confirmar (antes, despues, motivo y respaldo) y registra un cargo especial de ajuste', /SUBE/.test(sajSaved.confirm) && /Motivo: Saldo segun/.test(sajSaved.confirm) && /1 imagen/.test(sajSaved.confirm) && sajSaved.tx && sajSaved.tx.type === 'charge' && sajSaved.tx.kind === 'extra' && sajSaved.closed, sajSaved.confirm);
+        equal('el ajuste guarda el monto, el motivo, quien lo hizo, el respaldo y el saldo antes y despues; no es dinero', [sajSaved.tx.amount, sajSaved.tx.reason, sajSaved.tx.byId === sajSaved.who.id, (sajSaved.tx.respaldoIds || []).length, sajSaved.tx.before.net, sajSaved.tx.after.net, sajSaved.cash],
+            [150, 'Saldo segun la hoja de cobros de la administracion anterior', true, 1, sajStart.net, -sajTarget, false]);
+        equal('lo que debe Ana es ahora el saldo correcto que se escribio', sajSaved.owed, sajTarget);
+        equal('el ajuste llega a la nube (las reglas lo aceptan con su respaldo)', await idle(), 'ok');
+        const cloudAdj = await txRef(sajSaved.tx.id).get();
+        const cloudResp = await condoRef.collection('finanzas_respaldos').doc(String(sajSaved.tx.respaldoIds[0])).get();
+        equal('en la nube: el ajuste y su imagen de respaldo (aparte, del mismo residente)', [cloudAdj.exists, cloudAdj.get('saldoAjuste'), cloudResp.exists, cloudResp.get('resiId'), /^data:image\/jpeg;base64,/.test(cloudResp.get('image') || '')], [true, true, true, 'u-ana', true]);
+        // Bajar lo que debe con "subir o bajar una cantidad": vuelve a lo de antes
+        const sajDown = await oikos(`(async () => {
+            openSaldoAjuste('u-ana'); sajSetMode('delta'); sajSetDir('down');
+            const a = document.getElementById('saj-delta-amount'); a.value = '150'; a.dispatchEvent(new Event('input', { bubbles: true }));
+            const res = document.getElementById('saj-result').textContent;
+            const why = document.getElementById('saj-reason'); why.value = 'Se devuelve: la hoja tenia un error de suma'; why.dispatchEvent(new Event('input', { bubbles: true }));
+            const c = document.createElement('canvas'); c.width = 100; c.height = 100;
+            const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+            await sajAddImages({ files: [new File([blob], 'acta.png', { type: 'image/png' })], value: '' });
+            await submitSaldoAjuste();
+            const tx = Store.get('transactions').filter((t) => t.saldoAjuste === true).pop();
+            const r = Store.get('residents').find((x) => x.id === 'u-ana');
+            navigate('accounting');
+            return { res, tx, owed: sisdelOwedOf(r).total, cash: isCashTx(tx), lastPay: (Store.get('transactions').filter((t) => t.type === 'income' && !isNonCashCredit(t) && t.resiId === 'u-ana').length) };
+        })()`);
+        record('bajar una cantidad dice que BAJA lo que debe y registra un pago que no es dinero (no entra en caja)', /BAJA/.test(sajDown.res) && sajDown.tx.type === 'income' && sajDown.tx.saldoAjuste === true && !sajDown.cash, sajDown.res);
+        equal('Ana vuelve a deber lo de antes', sajDown.owed, sajStart.owed);
+        equal('tambien llega a la nube', await idle(), 'ok');
+        // El detalle del movimiento: motivo, quien y el respaldo (que se lee aparte de la nube)
+        await oikos(`openTxDetail(${JSON.stringify(sajSaved.tx.id)})`);
+        await waitFor('el detalle del ajuste muestra la imagen de respaldo', () => oikos(`document.querySelectorAll('#tx-adjust-imgs img').length === 1`), 20000);
+        const sajDetail = await oikos(`(() => { const t = document.getElementById('tx-detail-body').textContent; closeModal('modal-tx-detail'); return t; })()`);
+        record('el detalle dice que es una actualización de saldo, su motivo y quien lo hizo', /Actualización de saldo/.test(sajDetail) && /Saldo segun la hoja/.test(sajDetail) && /Lo hizo/.test(sajDetail), sajDetail.slice(0, 200));
+        // Anular los dos (quien ajusta saldos): todo queda como al principio
+        await sleep(400);
+        const sajAnnul = await oikos(`(() => { deleteTransaction(${JSON.stringify(sajSaved.tx.id)}); deleteTransaction(${JSON.stringify(sajDown.tx.id)}); const r = Store.get('residents').find((x) => x.id === 'u-ana'); return sisdelOwedOf(r).total; })()`);
+        equal('anular los dos ajustes deja a Ana como estaba', sajAnnul, sajStart.owed);
+        await oikos(`(() => { window.alert = window.__sajReal.alert; window.confirm = window.__sajReal.confirm; window.prompt = window.__sajReal.prompt; })()`);
+        equal('las anulaciones llegan a la nube', await idle(), 'ok');
+        equal('en la nube quedan anulados, con su motivo (nada se borra)', [(await txRef(sajSaved.tx.id).get()).get('deleted'), (await txRef(sajDown.tx.id).get()).get('deleted')], [true, true]);
+
         console.log('\nTablero: ingresos, gastos y saldo por mes en tres graficas, con flechas');
         // Un gasto de hace 4 meses registrado "en otro equipo" (directo en la nube): asi hay meses atras a donde ir
         const gtNow = new Date(Date.now() - 6 * 3600000);
@@ -1767,7 +1857,7 @@ async function run() {
         })()`);
         equal('cada residente trae tres puntos, el lapiz y tres puntos', pmOut.botones, ['Estado de cuenta y mensajes', 'Editar', 'Más opciones']);
         equal('izquierda: estado de cuenta y mensajes (con Enviar clave de acceso: el administrador ve las claves); derecha: lo demas, con Generar codigo boton de panico', [pmOut.izq, pmOut.der],
-            [['Estado de Cuenta', 'Contactar', 'Enviar desde mi WhatsApp', 'Enviar clave de acceso', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Gestionar visita', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
+            [['Estado de Cuenta', 'Actualización de saldo', 'Contactar', 'Enviar desde mi WhatsApp', 'Enviar clave de acceso', 'Chat de WhatsApp'], ['Cargar cuotas por mes', 'Generar marbete', 'Gestionar visita', 'Generar código botón de pánico', 'Finiquitar relación', 'Eliminar']]);
         equal('el boton de la izquierda abre solo su menu', pmOut.soloIzq, [true, false]);
         equal('el codigo del boton de panico: la tarjeta del vecino con su QR y el enlace con su condominio y su id (sin codigo de acceso)',
             [pmOut.modal.abierta, pmOut.modal.url, pmOut.modal.qr, /BOTÓN DE PÁNICO/.test(pmOut.modal.tarjeta), /Ana García/.test(pmOut.modal.tarjeta), pmOut.modal.botones], [true, `${BASE}/panico.html?c=${CONDO}&v=u-ana`, 1, true, true, [false, false, false, false]]);

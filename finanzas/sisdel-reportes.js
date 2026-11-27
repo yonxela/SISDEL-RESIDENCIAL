@@ -40,7 +40,9 @@
 
     // Saldo a favor inicial de una carga de saldos de otro sistema: es un pago del residente (baja lo que debe) pero no es
     // dinero que entro a la caja de OIKOS (lo pago antes, fuera del sistema). Solo lo pone una carga por script (reglas).
-    const isOpeningCredit = (t) => !!t && t.type === 'income' && t.openingCredit === true;
+    // Lo mismo un ajuste de saldo que baja lo que debe un residente (saldoAjuste, "Actualizar saldo", 2026-11-27): no es dinero.
+    // Un ajuste que SUBE lo que debe es un cargo (charge) y cuenta como cualquier cargo.
+    const isOpeningCredit = (t) => !!t && t.type === 'income' && (t.openingCredit === true || t.saldoAjuste === true);
 
     const dayKeyOf = (options) => (typeof options.dayKey === 'function' ? options.dayKey : (iso) => String(iso || '').slice(0, 10));
     const zeroSums = () => ({ income: 0, expense: 0, charge: 0 });

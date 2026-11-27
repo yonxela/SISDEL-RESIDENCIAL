@@ -195,6 +195,7 @@ service cloud.firestore {
     function pFinanzasCargosAnular(c) { return pFinanzasSaldosModificar(c) && childOk(c, 'finanzas.cargos_anular'); }
     function pFinanzasCuotasMeses(c) { return pFinanzasSaldosModificar(c) && childOn(c, 'finanzas.cuotas_meses'); }
     function pFinanzasCuotasCorregir(c) { return pFinanzasSaldosModificar(c) && childOk(c, 'finanzas.cuotas_corregir'); }
+    function pFinanzasSaldosAjustar(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.saldos_ajustar', ['admin']); }
     function pFinanzasPagosFecha(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.pagos_fecha', ['admin']); }
     function pFinanzasPagosAnular(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.pagos_anular', ['admin']); }
     function pFinanzasEgresosAnular(c) { return pFinanzasUsar(c) && childAuto(c, 'finanzas.egresos_anular', ['admin']); }
@@ -589,7 +590,9 @@ service cloud.firestore {
           // ni con las marcas de una carga de saldos de otro sistema (finanzas/sisdel-mora.js): la mora al corte y la
           // exonerada, y el saldo a favor inicial (un pago que no sale en caja). Solo las pone una carga por script
           && !request.resource.data.keys().hasAny(['moraOpening', 'moraOpeningAt', 'moraExempt', 'openingCredit'])
-          && ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId) && incomeDateOk())
+          // Un ajuste de saldo (saldoAjuste: true) va solo por su camino: su privilegio, motivo, respaldo y quien lo hizo
+          && (request.resource.data.get('saldoAjuste', false) == true ? balanceAdjustOk() :
+          ((request.resource.data.get('type', '') == 'income' && pFinanzasPagosRegistrar(condoId) && incomeDateOk())
           || (request.resource.data.get('type', '') == 'expense' && pFinanzasEgresosRegistrar(condoId))
           // Las cuotas automaticas (auto:true) las genera quien tiene "cuota del mes"; las manuales (boton Cuota del mes,
           // meses de un residente o cargo con concepto de cuota) llevan manual:true y no se distinguen entre si en las reglas
@@ -598,7 +601,27 @@ service cloud.firestore {
                     && (pFinanzasCuotasMes(condoId)
                         || (request.resource.data.get('auto', false) != true && (pFinanzasCuotasMeses(condoId) || pFinanzasCargosCrear(condoId)))))
                   || (request.resource.data.get('kind', '') == 'extra' && pFinanzasCargosCrear(condoId))))
-          || (request.resource.data.get('type', '') == 'mora_discount' && moraDiscountOk()));
+          || (request.resource.data.get('type', '') == 'mora_discount' && moraDiscountOk())));
+      }
+      // Actualizar el saldo de un residente (pedido del usuario el 2026-11-27): no es dinero. Para que deba MENOS es un pago que
+      // no sale en caja (type income) y para que deba MAS un cargo especial (charge kind extra), los dos con saldoAjuste: true,
+      // asi el saldo, el estado de cuenta, la mora y los reportes los cuentan como siempre. Lleva residente, motivo (10 letras o
+      // mas), de 1 a 3 imagenes de respaldo ya guardadas en finanzas_respaldos (la primera tiene que existir y ser de ese
+      // residente), quien lo hizo (la sesion) y la fecha de hoy (como un pago sin cambio de fecha: no se puede antedatar)
+      function balanceAdjustOk() {
+        let d = request.resource.data;
+        return pFinanzasSaldosAjustar(condoId)
+          && (d.get('type', '') == 'income' || (d.get('type', '') == 'charge' && d.get('kind', '') == 'extra'))
+          && d.get('resiId', '') is string && d.resiId.size() > 0
+          && d.get('reason', '') is string && d.reason.size() >= 10 && d.reason.size() <= 500
+          && d.get('byId', '') == request.auth.uid
+          && d.get('respaldoIds', null) is list && d.respaldoIds.size() >= 1 && d.respaldoIds.size() <= 3
+          && d.get('date', null) is string && d.get('created_at', null) is string
+          && timestamp.value(d.date) > timestamp.value(d.created_at) - duration.value(10, 'm')
+          && timestamp.value(d.date) < timestamp.value(d.created_at) + duration.value(10, 'm')
+          && timestamp.value(d.created_at) > request.time - duration.value(7, 'd')
+          && timestamp.value(d.created_at) < request.time + duration.value(1, 'd')
+          && get(/databases/$(database)/documents/condominios/$(condoId)/finanzas_respaldos/$(d.respaldoIds[0])).data.get('resiId', '') == d.resiId;
       }
       // Descuento de mora (pedido del dueno, 2026-11-18): no es dinero, baja la mora de las cuotas que dice moraItems (motor de
       // mora: finanzas/sisdel-mora.js). Lleva residente, sus cuotas, el motivo y quien lo hizo (la sesion: el reporte de
@@ -632,17 +655,36 @@ service cloud.firestore {
           // "deshacer" solo quita el alta de un cargo o una cuota recien hecha, nunca un pago ni un egreso
           || (request.resource.data.get('deleted', false) == true && resource.data.get('deleted', false) != true
               && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'updated_at', 'server_at'])
-              && ((resource.data.get('type', '') == 'charge' && undoWindow('created_at') && pFinanzasDeshacer(condoId))
+              && (resource.data.get('saldoAjuste', false) == true ? pFinanzasSaldosAjustar(condoId) :
+                 ((resource.data.get('type', '') == 'charge' && undoWindow('created_at') && pFinanzasDeshacer(condoId))
                   || (resource.data.get('type', '') == 'income' && pFinanzasPagosAnular(condoId))
                   || (resource.data.get('type', '') == 'expense' && pFinanzasEgresosAnular(condoId))
                   || (resource.data.get('type', '') == 'mora_discount' && pFinanzasMoraDescontar(condoId))
                   || (resource.data.get('type', '') == 'charge'
-                      && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId))))))
+                      && (pFinanzasCargosAnular(condoId) || (resource.data.get('kind', '') == 'fee' && pFinanzasCuotasCorregir(condoId)))))))
           // Devolver una anulacion es "deshacer"
           // (el motivo y la fecha de la anulacion quedan en el documento; restored_at anota cuando se devolvio)
           || (resource.data.get('deleted', false) == true && request.resource.data.get('deleted', false) != true
               && finChanged().hasOnly(['deleted', 'deleted_at', 'deleted_reason', 'restored_at', 'updated_at', 'server_at'])
-              && pFinanzasDeshacer(condoId) && undoWindow('updated_at'));
+              && pFinanzasDeshacer(condoId) && undoWindow('updated_at')
+              && (resource.data.get('saldoAjuste', false) != true || pFinanzasSaldosAjustar(condoId)));
+      }
+      // Imagenes de respaldo de un ajuste de saldo (una por documento, para no cargar la lista de movimientos que baja cada
+      // equipo): las guarda quien actualiza saldos y las lee quien lee las finanzas; no se cambian ni se borran
+      match /finanzas_respaldos/{docId} {
+        function respaldoOk() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['id', 'resiId', 'image', 'mime', 'width', 'height', 'name', 'byId', 'byName', 'createdAt'])
+            && d.get('id', '') == docId
+            && d.get('resiId', '') is string && d.resiId.size() > 0
+            && d.get('mime', '') in ['image/jpeg', 'image/png', 'image/webp']
+            && d.get('image', '') is string && d.image.size() > 100 && d.image.size() < 950000
+            && d.get('byId', '') == request.auth.uid
+            && d.get('createdAt', null) == request.time;
+        }
+        allow read: if canReadFinance();
+        allow create: if pFinanzasSaldosAjustar(condoId) && respaldoOk();
+        allow update, delete: if false;
       }
       match /finanzas_movimientos/{docId} {
         allow read: if canReadFinance();
